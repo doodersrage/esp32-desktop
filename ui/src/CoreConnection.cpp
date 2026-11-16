@@ -35,6 +35,11 @@ CoreConnection::CoreConnection(QObject *parent)
         m_earlySerialEvents.clear();
         m_earlyInstallEvents.clear();
         m_earlyBoardEvents.clear();
+        m_earlySimEvents.clear();
+        if (m_simSub != 0) {
+            m_simSub = 0;
+            emit simStopped(tr("The connection to the core was lost."));
+        }
         if (m_boardJob != 0) {
             m_boardJob = 0;
             emit boardFinished(m_boardOperation, false, tr("The connection to the core was lost."), {});
@@ -102,7 +107,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.8.0"_s},
+        {u"protocol"_s, u"0.9.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -208,6 +213,11 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
+    } else if (method == u"sim.output" || method == u"sim.exited") {
+        if (sub == m_simSub)
+            handleSimEvent(method, params);
+        else if (m_simSub == -1)
+            m_earlySimEvents.append({method, params}); // our id is not known yet
     } else if (method == u"board.progress" || method == u"board.finished") {
         if (sub == m_boardJob)
             handleBoardEvent(method, params);
@@ -509,5 +519,69 @@ void CoreConnection::flashBuild(const QString &port, const QString &project, con
         emit boardConsentRequired(port, project, board, data.value(u"token"_s).toString(),
                                   data.value(u"plan"_s).toObject());
         return true;
+    });
+}
+
+void CoreConnection::startSim(const QString &project, const QString &board)
+{
+    if (m_simSub != 0)
+        return; // one simulator at a time
+    m_simSub = -1;
+    m_client->call(u"sim.start"_s, {{u"project"_s, project}, {u"board"_s, board}}, this,
+                   [this, project, board](const RpcReply &r) {
+                       if (!r.ok) {
+                           m_simSub = 0;
+                           m_earlySimEvents.clear();
+                           emit simStopped(r.errorMessage);
+                           return;
+                       }
+                       const QJsonObject o = r.result.toObject();
+                       m_simSub = o.value(u"subscription"_s).toInteger();
+                       emit simStarted(project, board, o.value(u"chip"_s).toString());
+                       const auto early = std::exchange(m_earlySimEvents, {});
+                       for (const auto &[m, p] : early) {
+                           if (m_simSub > 0 && p.value(u"subscription"_s).toInteger() == m_simSub)
+                               handleSimEvent(m, p);
+                       }
+                   });
+}
+
+void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &params)
+{
+    if (method == u"sim.output") {
+        emit simOutput(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        return;
+    }
+    m_simSub = 0;
+    emit simStopped(params.value(u"reason"_s).toString());
+}
+
+void CoreConnection::stopSim()
+{
+    if (m_simSub <= 0)
+        return;
+    const qint64 sub = std::exchange(m_simSub, 0);
+    m_client->call(u"core.unsubscribe"_s, {{u"subscription"_s, sub}}, this, [](const RpcReply &) {});
+    emit simStopped(tr("Stopped."));
+}
+
+void CoreConnection::writeSim(const QByteArray &bytes)
+{
+    if (m_simSub <= 0)
+        return;
+    m_client->call(u"sim.write"_s, {{u"subscription"_s, m_simSub}, {u"data"_s, QString::fromLatin1(bytes.toBase64())}},
+                   this, [this](const RpcReply &r) {
+                       if (!r.ok)
+                           emit requestFailed(u"sim.write"_s, r.errorMessage);
+                   });
+}
+
+void CoreConnection::resetSim()
+{
+    if (m_simSub <= 0)
+        return;
+    m_client->call(u"sim.reset"_s, {{u"subscription"_s, m_simSub}}, this, [this](const RpcReply &r) {
+        if (!r.ok)
+            emit requestFailed(u"sim.reset"_s, r.errorMessage);
     });
 }

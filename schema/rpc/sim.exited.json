@@ -1,0 +1,30 @@
+{
+  "event": "sim.exited",
+  "description": "QEMU stopped by itself (it crashed, or the firmware powered off). Sent once.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "reason"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "reason": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "reason": "QEMU closed the UART"
+      }
+    }
+  ]
+}

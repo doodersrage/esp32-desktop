@@ -223,7 +223,7 @@ async fn core_hello_round_trip() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
     let def = method_def("core.hello");
-    let params = json!({ "client": "test", "protocol": "0.8.0" });
+    let params = json!({ "client": "test", "protocol": "0.9.0" });
     assert_valid(&def["params"], &params, "core.hello params");
     let r = c.call("core.hello", params).await.unwrap();
     assert_valid(&def["result"], &r, "core.hello result");
@@ -1149,4 +1149,126 @@ async fn board_erase_needs_confirmation_and_the_stub() {
         0xE9,
         "flash was changed"
     );
+}
+
+/// Wait for sim.output until `marker` has appeared; checks each event's schema.
+async fn sim_wait_for(c: &mut Client, sub: &Value, marker: &str) {
+    let mut text = String::new();
+    while !text.contains(marker) {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(30), c.next_notification())
+            .await
+            .unwrap_or_else(|_| panic!("no `{marker}` in: {text}"))
+            .unwrap();
+        let event = n["method"].as_str().unwrap();
+        assert_valid(&method_def(event)["params"], &n["params"], event);
+        assert_eq!(event, "sim.output", "{n}");
+        assert_eq!(&n["params"]["subscription"], sub);
+        text.push_str(n["params"]["text"].as_str().unwrap());
+    }
+}
+
+fn qemu_processes() -> usize {
+    std::fs::read_dir("/proc")
+        .unwrap()
+        .filter_map(|e| std::fs::read_to_string(e.ok()?.path().join("cmdline")).ok())
+        .filter(|c| c.contains("qemu-system") && c.contains("esp32bench"))
+        .count()
+}
+
+#[tokio::test]
+async fn sim_runs_a_build_with_console_and_reset() {
+    let Some(hello) = firmware("hello-esp32.bin") else {
+        eprintln!("skipping: hello firmware not built");
+        return;
+    };
+    if esp32bench_sim::install::find_qemu(esp32bench_sim::Arch::Xtensa).is_err() {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    }
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&hello, out.join("blink.ino.merged.bin")).unwrap();
+
+    let r = c
+        .call("sim.start", json!({ "project": "blink", "board": "esp32" }))
+        .await
+        .unwrap();
+    assert_valid(&method_def("sim.start")["result"], &r, "sim.start result");
+    assert_eq!(r["chip"], "esp32");
+    let sub = r["subscription"].clone();
+    sim_wait_for(&mut c, &sub, "esp32bench-hello ready").await;
+
+    use base64::Engine;
+    let data = base64::engine::general_purpose::STANDARD.encode(b"ping 42\r\n");
+    c.call("sim.write", json!({ "subscription": sub, "data": data }))
+        .await
+        .unwrap();
+    sim_wait_for(&mut c, &sub, "esp32bench-hello echo ping 42").await;
+
+    c.call("sim.reset", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+    sim_wait_for(&mut c, &sub, "esp32bench-hello ready").await;
+
+    let before = qemu_processes();
+    assert!(before >= 1);
+    c.call("core.unsubscribe", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+    for _ in 0..50 {
+        if qemu_processes() < before {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(
+        qemu_processes() < before,
+        "QEMU still running after unsubscribe"
+    );
+    match c.call("sim.reset", json!({ "subscription": sub })).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("reset a stopped simulator: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn sim_refuses_workbench_only_boards_and_missing_builds() {
+    // The example library plus a C6 build of blink: C6 is not simulated.
+    let dir = tempfile::tempdir().unwrap();
+    let mut m: Value = serde_json::from_slice(&std::fs::read(example_manifest()).unwrap()).unwrap();
+    let mut c6 = m["projects"][0]["builds"][0].clone();
+    c6["board"] = json!("esp32c6");
+    m["projects"][0]["builds"].as_array_mut().unwrap().push(c6);
+    let src = dir.path().join("site.json");
+    std::fs::write(&src, serde_json::to_vec(&m).unwrap()).unwrap();
+    let (d, sock, _lock) = daemon_with_source(&src).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+
+    let out = d.path().join("builds/blink/esp32c6/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(out.join("blink.ino.merged.bin"), b"x").unwrap();
+    match c
+        .call(
+            "sim.start",
+            json!({ "project": "blink", "board": "esp32c6" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => {
+            assert_eq!(e.code, code::FAILED);
+            assert!(e.message.contains("workbench-only"), "{}", e.message);
+        }
+        other => panic!("simulated a C6: {other:?}"),
+    }
+    match c
+        .call("sim.start", json!({ "project": "blink", "board": "esp32" }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND, "{}", e.message),
+        other => panic!("started without a build: {other:?}"),
+    }
 }

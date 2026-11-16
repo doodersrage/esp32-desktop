@@ -1,0 +1,41 @@
+{
+  "method": "sim.write",
+  "description": "Send bytes to the simulated chip's UART0.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "data"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "data": {
+        "type": "string",
+        "contentEncoding": "base64"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "errors": [
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "data": "cGluZwo="
+      },
+      "result": {}
+    }
+  ]
+}

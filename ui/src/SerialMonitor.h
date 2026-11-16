@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include <QStringDecoder>
 #include <QWidget>
 
+class ConsoleView;
 class CoreConnection;
 class QJsonArray;
 class QComboBox;
@@ -31,8 +31,6 @@ public:
 
 private:
     void setPorts(const QJsonArray &ports);
-    void appendBytes(const QByteArray &bytes);
-    void appendNotice(const QString &text);
     void send();
     void setOpen(bool open);
     void suggestBaud(int baud);
@@ -43,11 +41,9 @@ private:
     QPushButton *m_open;
     QPushButton *m_reset;
     QPushButton *m_clear;
-    QPlainTextEdit *m_output;
+    ConsoleView *m_output;
     QLineEdit *m_input;
     QComboBox *m_ending;
     QPushButton *m_send;
-    // Stateful, so a character split across two chunks still decodes.
-    QStringDecoder m_decoder{QStringDecoder::Utf8};
     bool m_open_ = false;
 };

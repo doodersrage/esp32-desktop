@@ -12,6 +12,7 @@ class ProjectView;
 class QSplitter;
 class SerialMonitor;
 class SetupDialog;
+class SimulatorPanel;
 class QDockWidget;
 class QLabel;
 class QPushButton;
@@ -29,6 +30,7 @@ public:
     BuildPanel *buildPanel() const { return m_buildPanel; }
     SerialMonitor *serialMonitor() const { return m_serial; }
     SetupDialog *setupDialog() const { return m_setup; }
+    SimulatorPanel *simulator() const { return m_sim; }
     void showSetup();
 
     // Ask the user whether to build a downloaded project. Returns true to build.
@@ -61,6 +63,8 @@ private:
     QDockWidget *m_serialDock = nullptr;
     SerialMonitor *m_serial = nullptr;
     SetupDialog *m_setup = nullptr;
+    QDockWidget *m_simDock = nullptr;
+    SimulatorPanel *m_sim = nullptr;
     BoardInfoDialog *m_boardInfo = nullptr;
     // A serial monitor closed to free the port for flashing, reopened afterwards.
     QString m_reopenSerial;

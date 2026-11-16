@@ -8,6 +8,7 @@
 #include "ProjectView.h"
 #include "SerialMonitor.h"
 #include "SetupDialog.h"
+#include "SimulatorPanel.h"
 
 #include <QAction>
 #include <QApplication>
@@ -68,6 +69,17 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_serialDock->setWidget(m_serial);
     addDockWidget(Qt::BottomDockWidgetArea, m_serialDock);
     tabifyDockWidget(m_buildDock, m_serialDock);
+
+    m_simDock = new QDockWidget(tr("Simulator"), this);
+    m_simDock->setObjectName(u"simDock"_s);
+    m_sim = new SimulatorPanel(core, m_simDock);
+    m_simDock->setWidget(m_sim);
+    addDockWidget(Qt::BottomDockWidgetArea, m_simDock);
+    tabifyDockWidget(m_serialDock, m_simDock);
+    connect(core, &CoreConnection::simStarted, this, [this] {
+        m_simDock->show();
+        m_simDock->raise();
+    });
     connect(m_devices, &DevicesPanel::portActivated, this, [this](const QString &path) {
         m_serialDock->show();
         m_serialDock->raise();
@@ -183,6 +195,7 @@ void MainWindow::buildMenus()
     view->addAction(m_devicesDock->toggleViewAction());
     view->addAction(m_buildDock->toggleViewAction());
     view->addAction(m_serialDock->toggleViewAction());
+    view->addAction(m_simDock->toggleViewAction());
 
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
     QAction *setup = tools->addAction(QIcon::fromTheme(u"configure"_s), tr("&Toolchain setup…"));

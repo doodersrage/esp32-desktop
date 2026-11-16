@@ -6,9 +6,12 @@
 #include "BuildPanel.h"
 #include "LibraryPanel.h"
 #include "ProjectView.h"
+#include "SimulatorPanel.h"
 #include "MainWindow.h"
 
+#include <QDir>
 #include <QFile>
+#include <QScopeGuard>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -75,6 +78,10 @@ private slots:
         // as the library source, so the test needs no network.
         qputenv("XDG_CACHE_HOME", dir.filePath(u"cache"_s).toLocal8Bit());
         qputenv("XDG_DATA_HOME", dir.filePath(u"data"_s).toLocal8Bit());
+        // The private data dir has no QEMU; point the daemon at the user's pinned one.
+        const QString qemuBin = QDir::homePath()
+            + u"/.local/share/esp32bench/qemu/esp-develop-9.2.2-20261109/xtensa/qemu/bin"_s;
+        qputenv("ESP32BENCH_QEMU_DIR", qemuBin.toLocal8Bit());
         qputenv("ESP32BENCH_ARDUINO_CLI", writeFakeArduinoCli(dir.path()).toLocal8Bit());
         qputenv("ESP32BENCH_MANIFEST",
                 QByteArray(ESP32BENCH_SOURCE_DIR "/../schema/project-manifest/example.json"));
@@ -88,6 +95,11 @@ private slots:
 
         QSignalSpy listed(&core, &CoreConnection::devicesListed);
         QVERIFY2(core.startCore(), qPrintable(core.lastError()));
+        // Stop the daemon we started however the test ends.
+        const auto stopDaemon = qScopeGuard([&core] {
+            if (core.startedCorePid() > 0)
+                ::kill(pid_t(core.startedCorePid()), SIGTERM);
+        });
         QTRY_COMPARE_WITH_TIMEOUT(core.state(), CoreConnection::State::Connected, 10000);
         QVERIFY(window.connectionText().contains(u"Connected"_s));
         // The panel asks for devices as soon as the core connects.
@@ -111,6 +123,23 @@ private slots:
         QCOMPARE(window.asked, 1);
         QVERIFY2(finished.at(0).at(0).toBool(), qPrintable(finished.at(0).at(1).toString()));
         QVERIFY(window.buildPanel()->logText().contains(u"Sketch uses 1234 bytes"_s));
+
+        // Run it in the simulator, with the real hello firmware standing in for the
+        // stand-in compiler's empty image: UI -> daemon -> QEMU.
+        const QString hello = QStringLiteral(ESP32BENCH_SOURCE_DIR "/../tests/firmware/out/hello-esp32.bin");
+        const QString image = dir.filePath(u"cache/esp32bench/builds/blink/esp32/out/blink.ino.merged.bin"_s);
+        if (QFile::exists(hello) && QFile::exists(qemuBin + u"/qemu-system-xtensa"_s)) {
+            QVERIFY(QFile::remove(image));
+            QVERIFY(QFile::copy(hello, image));
+            QPushButton *run = window.buildPanel()->simulateButton();
+            QVERIFY(run->isEnabled());
+            run->click();
+            QTRY_VERIFY_WITH_TIMEOUT(window.simulator()->outputText().contains(u"esp32bench-hello ready"_s), 30000);
+            core.stopSim();
+            QTRY_VERIFY(!core.isSimRunning());
+        } else {
+            qWarning("hello firmware or QEMU missing; simulator step skipped");
+        }
 
 
         const QString shot = qEnvironmentVariable("ESP32BENCH_SCREENSHOT");

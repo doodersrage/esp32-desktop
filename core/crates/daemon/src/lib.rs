@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.8.0";
+pub const PROTOCOL: &str = "0.9.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -48,6 +48,8 @@ pub struct State {
     pub flash_consent: esp32bench_build::Consent<FlashPlan>,
     /// One board operation at a time.
     board_lock: tokio::sync::Mutex<()>,
+    /// Running simulators by (connection, subscription), to send them commands.
+    sims: std::sync::Mutex<HashMap<(u64, u64), tokio::sync::mpsc::UnboundedSender<SimCmd>>>,
 }
 
 /// What board.flash will write, shown to the user before it runs.
@@ -102,6 +104,7 @@ impl State {
             arduino_data: esp32bench_toolchain::Env::default_arduino_data()
                 .unwrap_or_else(|| PathBuf::from(".arduino15")),
             flash_consent: esp32bench_build::Consent::new(),
+            sims: std::sync::Mutex::new(HashMap::new()),
             board_lock: tokio::sync::Mutex::new(()),
         }
     }
@@ -130,8 +133,21 @@ pub fn router(state: Arc<State>) -> Router {
     let (s1, s2, s3, s4) = (state.clone(), state.clone(), state.clone(), state.clone());
     let (s5, s6, s7) = (state.clone(), state.clone(), state.clone());
     let (s8, s9) = (state.clone(), state.clone());
-    let (s10, s11, s12) = (state.clone(), state.clone(), state);
+    let (s10, s11, s12) = (state.clone(), state.clone(), state.clone());
+    let (s13, s14, s15) = (state.clone(), state.clone(), state);
     Router::new()
+        .method("sim.start", move |p, ctx| {
+            let s = s13.clone();
+            async move { sim_start(p, ctx, s).await }
+        })
+        .method("sim.write", move |p, ctx| {
+            let s = s14.clone();
+            async move { sim_write(p, ctx, s).await }
+        })
+        .method("sim.reset", move |p, ctx| {
+            let s = s15.clone();
+            async move { sim_reset(p, ctx, s).await }
+        })
         .method("board.inspect", move |p, ctx| {
             let s = s10.clone();
             async move { board_inspect(p, ctx, s).await }
@@ -445,6 +461,193 @@ fn toolchain_install(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         sub.send("toolchain.finished", event);
     });
     Ok(json!({ "job": job }))
+}
+
+/// Commands for a running simulator session, sent to the task that owns it.
+enum SimCmd {
+    Write(Vec<u8>),
+    Reset(tokio::sync::oneshot::Sender<Result<(), String>>),
+}
+
+/// Removes a simulator from the table when its subscription ends; dropping the task
+/// also drops its Session, which stops QEMU.
+struct SimEntry {
+    state: Arc<State>,
+    key: (u64, u64),
+}
+
+impl Drop for SimEntry {
+    fn drop(&mut self) {
+        let mut sims = self.state.sims.lock().unwrap_or_else(|p| p.into_inner());
+        sims.remove(&self.key);
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SimStartParams {
+    project: String,
+    board: String,
+}
+
+async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: SimStartParams = parse_params(params)?;
+    for id in [&p.project, &p.board] {
+        esp32bench_build::safe_id(id).map_err(|e| RpcError::invalid_params(e.to_string()))?;
+    }
+    let manifest = state
+        .library
+        .load()
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                "the project library has not been downloaded",
+            )
+        })?;
+    let chip_id = manifest
+        .boards
+        .iter()
+        .find(|b| b.id == p.board)
+        .map(|b| b.chip.clone())
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                format!("no board `{}` in the library", p.board),
+            )
+        })?;
+    // Only chips QEMU covers; never claim a simulation we cannot run (rule 6).
+    let chip: esp32bench_sim::Chip = chip_id.parse().map_err(|_| {
+        RpcError::new(
+            code::FAILED,
+            format!("{chip_id} is workbench-only: the simulator runs ESP32, ESP32-S3 and ESP32-C3"),
+        )
+    })?;
+    let image = state
+        .builds_root
+        .join(&p.project)
+        .join(&p.board)
+        .join("out")
+        .join(format!("{}.ino.merged.bin", p.project));
+    if !image.is_file() {
+        return Err(RpcError::new(
+            code::NOT_FOUND,
+            format!("`{}` has not been built for `{}` yet", p.project, p.board),
+        ));
+    }
+    let qemu = esp32bench_sim::install::find_qemu(chip.arch())
+        .map_err(|e| RpcError::new(code::UNAVAILABLE, e.to_string()))?;
+    let mut session = esp32bench_sim::Session::start(esp32bench_sim::SessionConfig {
+        chip,
+        qemu,
+        image,
+        gdb_port: None,
+        start_paused: false,
+        machine: None,
+        extra_args: Vec::new(),
+        env: Vec::new(),
+    })
+    .await
+    .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SimCmd>();
+    let conn = ctx.connection_id();
+    let id = ctx.subscribe(move |sub| {
+        let key = (conn, sub.id());
+        state
+            .sims
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(key, tx);
+        let entry = SimEntry {
+            state: state.clone(),
+            key,
+        };
+        async move {
+            let _entry = entry;
+            use base64::Engine;
+            loop {
+                tokio::select! {
+                    chunk = session.uart.read_chunk() => match chunk {
+                        Ok(Some(bytes)) => {
+                            let sent = sub.send("sim.output", json!({
+                                "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
+                                "text": String::from_utf8_lossy(&bytes),
+                            }));
+                            if !sent {
+                                break;
+                            }
+                        }
+                        Ok(None) => {
+                            sub.send("sim.exited", json!({ "reason": "QEMU closed the UART" }));
+                            break;
+                        }
+                        Err(e) => {
+                            sub.send("sim.exited", json!({ "reason": e.to_string() }));
+                            break;
+                        }
+                    },
+                    cmd = rx.recv() => match cmd {
+                        Some(SimCmd::Write(bytes)) => {
+                            let _ = session.uart.write(&bytes).await;
+                        }
+                        Some(SimCmd::Reset(done)) => {
+                            let _ = done.send(session.reset().await.map_err(|e| e.to_string()));
+                        }
+                        None => break,
+                    },
+                }
+            }
+            // Ask QEMU to quit; the Session's drop kills it if it does not.
+            let _ = session.shutdown().await;
+        }
+    });
+    Ok(json!({ "subscription": id, "chip": chip }))
+}
+
+fn sim_sender(
+    state: &State,
+    ctx: &Ctx,
+    subscription: u64,
+) -> Result<tokio::sync::mpsc::UnboundedSender<SimCmd>, RpcError> {
+    state
+        .sims
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&(ctx.connection_id(), subscription))
+        .cloned()
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                format!("no simulator {subscription} on this connection"),
+            )
+        })
+}
+
+async fn sim_write(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    use base64::Engine;
+    let p: SerialWriteParams = parse_params(params)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&p.data)
+        .map_err(|e| RpcError::invalid_params(format!("data is not base64: {e}")))?;
+    sim_sender(&state, &ctx, p.subscription)?
+        .send(SimCmd::Write(bytes))
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?;
+    Ok(json!({}))
+}
+
+async fn sim_reset(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: SerialRefParams = parse_params(params)?;
+    let (done, result) = tokio::sync::oneshot::channel();
+    sim_sender(&state, &ctx, p.subscription)?
+        .send(SimCmd::Reset(done))
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?;
+    result
+        .await
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?
+        .map_err(|e| RpcError::new(code::FAILED, e))?;
+    Ok(json!({}))
 }
 
 #[derive(Deserialize)]

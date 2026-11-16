@@ -1,0 +1,37 @@
+{
+  "event": "sim.output",
+  "description": "Bytes the simulated chip printed on UART0, as they arrived.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "data",
+      "text"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "data": {
+        "type": "string",
+        "contentEncoding": "base64"
+      },
+      "text": {
+        "type": "string",
+        "description": "The same bytes as UTF-8, invalid sequences replaced."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "data": "dGljayAxMDAwIG1zCg==",
+        "text": "tick 1000 ms\n"
+      }
+    }
+  ]
+}

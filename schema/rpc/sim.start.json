@@ -1,0 +1,64 @@
+{
+  "method": "sim.start",
+  "description": "Run the last build of a project for a board (build.start's output) in QEMU. Only ESP32, ESP32-S3 and ESP32-C3 boards are simulated; others are workbench-only and refused. Returns a subscription: sim.output carries UART0, sim.exited says when QEMU stopped. sim.write and sim.reset act on it; core.unsubscribe stops QEMU, as does closing the connection. The simulator is firmware-level: no Wi-Fi radio, no attached parts.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "board"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string"
+      },
+      "board": {
+        "type": "string"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "chip"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "chip": {
+        "enum": [
+          "esp32",
+          "esp32s3",
+          "esp32c3"
+        ]
+      }
+    }
+  },
+  "errors": [
+    -32000,
+    -32003,
+    -32005
+  ],
+  "events": [
+    "sim.output",
+    "sim.exited"
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink",
+        "board": "esp32"
+      },
+      "result": {
+        "subscription": 5,
+        "chip": "esp32"
+      }
+    }
+  ]
+}

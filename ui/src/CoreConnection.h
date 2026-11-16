@@ -95,6 +95,14 @@ public:
     void eraseBoard(const QString &port);
     bool isBoardBusy() const { return m_boardJob != 0; }
 
+    // sim.start: run the last build of a project for a board in QEMU. simStarted, then
+    // simOutput until simStopped. One simulator at a time.
+    void startSim(const QString &project, const QString &board);
+    void stopSim();
+    void writeSim(const QByteArray &bytes);
+    void resetSim();
+    bool isSimRunning() const { return m_simSub > 0; }
+
     // Error code the core uses when consent is missing (docs/rpc.md).
     static constexpr int ConsentRequired = -32002;
 
@@ -130,6 +138,10 @@ signals:
     void boardProgress(const QString &stage, qint64 written, qint64 total);
     // `result` has `info`, `partitions` and `written` where the job produced them.
     void boardFinished(const QString &operation, bool ok, const QString &error, const QJsonObject &result);
+    // Simulator.
+    void simStarted(const QString &project, const QString &board, const QString &chip);
+    void simOutput(const QByteArray &bytes);
+    void simStopped(const QString &reason);
     // A request failed. `method` is the RPC method name.
     void requestFailed(const QString &method, const QString &message);
 
@@ -145,6 +157,7 @@ private:
     void startBoardJob(const QString &operation, const QString &method, const QJsonObject &params,
                        std::function<bool(const RpcReply &)> onRefused = {});
     void handleBoardEvent(const QString &method, const QJsonObject &params);
+    void handleSimEvent(const QString &method, const QJsonObject &params);
 
     RpcClient *m_client;
     QTimer *m_retry;
@@ -167,4 +180,6 @@ private:
     qint64 m_boardJob = 0; // running board job, -1 while starting, or 0
     QString m_boardOperation;
     QList<QPair<QString, QJsonObject>> m_earlyBoardEvents;
+    qint64 m_simSub = 0; // running sim.start subscription, -1 while starting, or 0
+    QList<QPair<QString, QJsonObject>> m_earlySimEvents;
 };

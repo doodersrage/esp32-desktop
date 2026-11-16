@@ -29,8 +29,15 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     , m_port(new QComboBox(this))
     , m_flash(new QPushButton(QIcon::fromTheme(u"media-flash"_s, QIcon::fromTheme(u"document-send"_s)),
                               tr("Flash to board"), this))
+    , m_simulate(new QPushButton(QIcon::fromTheme(u"media-playback-start"_s), tr("Run in simulator"), this))
     , m_progress(new QProgressBar(this))
 {
+    m_simulate->setToolTip(tr("Run the last successful build in QEMU (ESP32, ESP32-S3 and ESP32-C3 boards)"));
+    connect(m_simulate, &QPushButton::clicked, this, [this] {
+        if (m_core->isSimRunning())
+            m_core->stopSim();
+        m_core->startSim(m_builtProject, m_builtBoard);
+    });
     m_port->setToolTip(tr("Board to flash"));
     m_port->setMinimumContentsLength(12);
     m_flash->setToolTip(tr("Write the last successful build to the selected board"));
@@ -54,6 +61,7 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     top->addWidget(m_cancel);
     top->addWidget(m_port);
     top->addWidget(m_flash);
+    top->addWidget(m_simulate);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     layout->addWidget(m_progress);
@@ -151,6 +159,7 @@ void BuildPanel::setPorts(const QJsonArray &ports)
 
 void BuildPanel::updateFlashButton()
 {
+    m_simulate->setEnabled(!m_builtProject.isEmpty() && m_core->state() == CoreConnection::State::Connected);
     m_flash->setEnabled(!m_builtProject.isEmpty() && m_port->count() > 0
                         && m_core->state() == CoreConnection::State::Connected && !m_core->isBoardBusy());
 }

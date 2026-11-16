@@ -22,6 +22,7 @@ esp32bench-flash = { path = "../flash" }
 esp32bench-library = { path = "../library" }
 esp32bench-rpc = { path = "../rpc" }
 esp32bench-serial = { path = "../serial" }
+esp32bench-sim = { path = "../sim" }
 esp32bench-toolchain = { path = "../toolchain" }
 libc.workspace = true
 serde.workspace = true
@@ -30,7 +31,6 @@ sha2.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
-esp32bench-sim = { path = "../sim" }
 libc.workspace = true
 esp32bench-library = { path = "../library" }
 jsonschema.workspace = true
