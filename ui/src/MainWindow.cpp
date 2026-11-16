@@ -211,6 +211,10 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_startCore->setIcon(QIcon::fromTheme(u"media-playback-start"_s));
     m_startCore->setToolTip(tr("Start the esp32bench core in the background"));
     connect(m_startCore, &QPushButton::clicked, this, &MainWindow::startCore);
+    connect(m_core, &CoreConnection::autoStartFailed, this, [this](const QString &message) {
+        m_autoStartError = message;
+        showConnectionState();
+    });
     statusBar()->addWidget(m_connection, 1);
     statusBar()->addPermanentWidget(m_startCore);
 
@@ -265,6 +269,7 @@ void MainWindow::showConnectionState()
     const S s = m_core->state();
     switch (s) {
     case S::Connected:
+        m_autoStartError.clear();
         m_connection->setText(tr("Connected to core %1").arg(m_core->coreVersion()));
         break;
     case S::Connecting:
@@ -274,7 +279,9 @@ void MainWindow::showConnectionState()
         m_connection->setText(tr("Incompatible core: %1").arg(m_core->lastError()));
         break;
     case S::Disconnected:
-        m_connection->setText(tr("The core is not running. Retrying…"));
+        m_connection->setText(m_autoStartError.isEmpty()
+                                  ? tr("The core is not running. Retrying…")
+                                  : tr("The core is not running, and starting it failed: %1").arg(m_autoStartError));
         break;
     }
     m_startCore->setVisible(s == S::Disconnected);

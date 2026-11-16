@@ -72,6 +72,7 @@ private:
     DebugPanel *m_debugger = nullptr;
     QDockWidget *m_displayDock = nullptr;
     DisplayPanel *m_display = nullptr;
+    QString m_autoStartError;
     SimulatorPanel *m_sim = nullptr;
     BoardInfoDialog *m_boardInfo = nullptr;
     // A serial monitor closed to free the port for flashing, reopened afterwards.

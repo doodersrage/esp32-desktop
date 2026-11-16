@@ -37,7 +37,7 @@ The owner ran the app on KDE Plasma (Wayland, Breeze dark), with the core from a
 - In the app, Debug in simulator on that build stopped at breakpoint 1 in `setup` (`blink.ino` line 4), with the call stack and registers.
 - Flash to board with the C3 selected refused the ESP32 build: "the board is an esp32c3, but this build is for esp32". Nothing was written.
 
-Seen while checking: there is no app icon yet (packaging); the core has to be started with the Start core button each time. Fixed since: the Debugger opened as a tab over the Simulator console (it now sits beside it, and a saved layout with the tab is corrected when debugging starts), and the Devices table showed a horizontal scrollbar (the USB device column now stretches and elides).
+Seen while checking: there is no app icon yet (packaging). Fixed since: the core had to be started with the Start core button each time (the app now starts it once on launch if none is running); the Debugger opened as a tab over the Simulator console (it now sits beside it, and a saved layout with the tab is corrected when debugging starts), and the Devices table showed a horizontal scrollbar (the USB device column now stretches and elides).
 
 ## Not yet tried on real hardware
 

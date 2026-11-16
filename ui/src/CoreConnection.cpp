@@ -69,6 +69,12 @@ CoreConnection::CoreConnection(QObject *parent)
     });
     connect(m_client, &RpcClient::connectionError, this, [this](const QString &message) {
         m_lastError = message;
+        if (m_autoStart && !m_autoStartTried && m_state != State::Incompatible) {
+            m_autoStartTried = true;
+            if (startCore())
+                return; // it connects once the core has bound its socket
+            emit autoStartFailed(m_lastError);
+        }
         if (m_state != State::Incompatible) {
             setState(State::Disconnected);
             m_retry->start();

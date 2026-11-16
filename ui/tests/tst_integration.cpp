@@ -94,11 +94,11 @@ private slots:
         core.setSocketPath(sock);
         AgreeingWindow window(&core);
         window.show();
-        core.start();
-        QCOMPARE(core.state(), CoreConnection::State::Disconnected);
-
         QSignalSpy listed(&core, &CoreConnection::devicesListed);
-        QVERIFY2(core.startCore(), qPrintable(core.lastError()));
+        QSignalSpy autoStartFailed(&core, &CoreConnection::autoStartFailed);
+        // As the app does: no core is running, so the first attempt starts one.
+        core.setAutoStart(true);
+        core.start();
         // Stop the daemon we started however the test ends.
         const auto stopDaemon = qScopeGuard([&core] {
             if (core.startedCorePid() > 0)
@@ -106,6 +106,8 @@ private slots:
         });
         QTRY_COMPARE_WITH_TIMEOUT(core.state(), CoreConnection::State::Connected, 10000);
         QVERIFY(window.connectionText().contains(u"Connected"_s));
+        QCOMPARE(autoStartFailed.size(), 0);
+        QVERIFY(core.startedCorePid() > 0);
         // The panel asks for devices as soon as the core connects.
         QTRY_VERIFY_WITH_TIMEOUT(listed.size() >= 1, 5000);
         QVERIFY(!window.devicesPanel()->statusText().contains(u"Not connected"_s));

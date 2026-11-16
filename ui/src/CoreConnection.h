@@ -39,6 +39,9 @@ public:
     static QString defaultSocketPath();
 
     void setSocketPath(const QString &path);
+    // Start the core once if the first connection attempt finds none (the app does
+    // this; tests leave it off). Later disconnects are not restarted automatically.
+    void setAutoStart(bool on) { m_autoStart = on; }
     QString socketPath() const { return m_socketPath; }
 
     void start();          // Begin connecting, and keep retrying while disconnected.
@@ -119,6 +122,8 @@ public:
     RpcClient *client() const { return m_client; }
 
 signals:
+    // setAutoStart: the core was not running and could not be started.
+    void autoStartFailed(const QString &message);
     void stateChanged(CoreConnection::State state);
     void devicesListed(const QJsonArray &ports);
     // The library.list result: available, source, version, generated, fetchedAt, projects.
@@ -203,5 +208,7 @@ private:
     QList<QPair<QString, QJsonObject>> m_earlyBoardEvents;
     qint64 m_simSub = 0; // running sim.start subscription, -1 while starting, or 0
     bool m_debugging = false;
+    bool m_autoStart = false;
+    bool m_autoStartTried = false;
     QList<QPair<QString, QJsonObject>> m_earlySimEvents;
 };

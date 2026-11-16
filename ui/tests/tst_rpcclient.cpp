@@ -262,6 +262,24 @@ private slots:
         QCOMPARE(conn.state(), CoreConnection::State::Disconnected);
         QVERIFY(!conn.lastError().isEmpty());
     }
+
+    void autoStartTriesOnceAndSaysWhy()
+    {
+        // A daemon path that cannot run: the start fails, and later retries do not
+        // try again.
+        qputenv("ESP32BENCH_DAEMON", m_dir.filePath(u"no-such-esp32benchd"_s).toLocal8Bit());
+        CoreConnection conn;
+        conn.setSocketPath(m_dir.filePath(u"nobody-here-either.sock"_s));
+        conn.setAutoStart(true);
+        QSignalSpy failed(&conn, &CoreConnection::autoStartFailed);
+        conn.start();
+        QTRY_COMPARE(failed.size(), 1);
+        QVERIFY(failed.at(0).at(0).toString().contains(u"no-such-esp32benchd"_s));
+        QTest::qWait(2500); // more than one retry
+        QCOMPARE(failed.size(), 1);
+        QCOMPARE(conn.state(), CoreConnection::State::Disconnected);
+        qunsetenv("ESP32BENCH_DAEMON");
+    }
 };
 
 QTEST_MAIN(TestRpcClient)

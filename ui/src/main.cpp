@@ -16,6 +16,7 @@ int main(int argc, char *argv[])
     CoreConnection core;
     MainWindow window(&core);
     window.show();
+    core.setAutoStart(true);
     core.start();
     return QApplication::exec();
 }
