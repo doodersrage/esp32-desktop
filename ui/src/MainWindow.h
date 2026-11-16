@@ -16,6 +16,7 @@ class SimulatorPanel;
 class DebugPanel;
 class DisplayPanel;
 class PinsPanel;
+class CircuitPanel;
 class QDockWidget;
 class QLabel;
 class QPushButton;
@@ -37,6 +38,7 @@ public:
     DebugPanel *debugger() const { return m_debugger; }
     DisplayPanel *display() const { return m_display; }
     PinsPanel *pins() const { return m_pins; }
+    CircuitPanel *circuit() const { return m_circuit; }
     void showSetup();
 
     // Ask the user whether to build a downloaded project. Returns true to build.
@@ -76,6 +78,8 @@ private:
     DisplayPanel *m_display = nullptr;
     QDockWidget *m_pinsDock = nullptr;
     PinsPanel *m_pins = nullptr;
+    QDockWidget *m_circuitDock = nullptr;
+    CircuitPanel *m_circuit = nullptr;
     QString m_autoStartError;
     SimulatorPanel *m_sim = nullptr;
     BoardInfoDialog *m_boardInfo = nullptr;

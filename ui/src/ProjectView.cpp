@@ -286,6 +286,8 @@ void ProjectView::showBuild(int index)
     for (const QJsonValue &v : b.value(u"sample"_s).toArray())
         sample << v.toString();
     m_output->setPlainText(sample.join(u'\n'));
+    emit boardSelected(m_project.value(u"id"_s).toString(), b.value(u"board"_s).toString(),
+                       b.value(u"pins"_s).toArray());
 }
 
 void ProjectView::updateBuildButton()

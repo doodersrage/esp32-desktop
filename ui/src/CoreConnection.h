@@ -113,6 +113,15 @@ public:
     // no pin access. setSimPin drives one of them.
     QList<int> simPins() const { return m_simPins; }
     void setSimPin(int gpio, bool level);
+    // Whether the running simulation's virtual parts work (sim.start's partsActive).
+    bool simPartsActive() const { return m_simSub > 0 && m_simPartsActive; }
+    // sim.press: press or release a button part.
+    void pressPart(const QString &id, bool pressed);
+
+    // circuit.get / circuit.set: the virtual parts on a project's board. Both answer
+    // with circuitLoaded (set with what was saved).
+    void loadCircuit(const QString &project, const QString &board);
+    void saveCircuit(const QString &project, const QString &board, const QJsonObject &circuit);
 
     // debug.*: on the simulator started with debug. Results come as signals.
     void debugBreak(const QString &location);
@@ -164,6 +173,9 @@ signals:
     void simFrame(const QImage &image);
     // sim.pins: pins that changed, each {gpio, level?, output?}.
     void simPinsChanged(const QJsonArray &pins);
+    // sim.parts: parts whose state changed, each {id, on}.
+    void simPartsChanged(const QJsonArray &parts);
+    void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
     void simStopped(const QString &reason);
 
     // Debugger.
@@ -215,6 +227,7 @@ private:
     qint64 m_simSub = 0; // running sim.start subscription, -1 while starting, or 0
     bool m_debugging = false;
     QList<int> m_simPins;
+    bool m_simPartsActive = false;
     bool m_autoStart = false;
     bool m_autoStartTried = false;
     QList<QPair<QString, QJsonObject>> m_earlySimEvents;

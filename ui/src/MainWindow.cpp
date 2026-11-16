@@ -12,6 +12,7 @@
 #include "DebugPanel.h"
 #include "DisplayPanel.h"
 #include "PinsPanel.h"
+#include "CircuitPanel.h"
 
 #include <algorithm>
 
@@ -114,7 +115,24 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     connect(core, &CoreConnection::simStarted, this, [this] {
         if (!m_core->simPins().isEmpty())
             m_pinsDock->show();
+        if (m_core->simPartsActive()) {
+            m_circuitDock->show();
+            m_circuitDock->raise();
+        }
     });
+
+    // Virtual parts on the selected project's board, on the right above the pins.
+    m_circuitDock = new QDockWidget(tr("Circuit"), this);
+    m_circuitDock->setObjectName(u"circuitDock"_s);
+    m_circuit = new CircuitPanel(core, m_circuitDock);
+    m_circuitDock->setWidget(m_circuit);
+    addDockWidget(Qt::RightDockWidgetArea, m_circuitDock);
+    // One tab group on the right, so the canvas gets the full height: Circuit, Pins
+    // and Display. Each is raised when it has something to show.
+    tabifyDockWidget(m_circuitDock, m_pinsDock);
+    tabifyDockWidget(m_circuitDock, m_displayDock);
+    m_circuitDock->raise();
+    connect(m_project, &ProjectView::boardSelected, m_circuit, &CircuitPanel::showBoard);
 
     m_debugDock = new QDockWidget(tr("Debugger"), this);
     m_debugDock->setObjectName(u"debugDock"_s);
@@ -258,6 +276,7 @@ void MainWindow::buildMenus()
     view->addAction(m_debugDock->toggleViewAction());
     view->addAction(m_displayDock->toggleViewAction());
     view->addAction(m_pinsDock->toggleViewAction());
+    view->addAction(m_circuitDock->toggleViewAction());
 
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
     QAction *setup = tools->addAction(QIcon::fromTheme(u"configure"_s), tr("&Toolchain setup…"));

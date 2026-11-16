@@ -5,6 +5,7 @@
 #include "DebugPanel.h"
 #include "DisplayPanel.h"
 #include "PinsPanel.h"
+#include "CircuitPanel.h"
 #include "DevicesPanel.h"
 #include "BuildPanel.h"
 #include "LibraryPanel.h"
@@ -200,6 +201,14 @@ private slots:
             // Pins dock shows it as an output going high and low.
             const QString gpioFw = QStringLiteral(ESP32BENCH_SOURCE_DIR "/../tests/firmware/out/gpio-esp32.bin");
             if (haveFork && QFile::exists(gpioFw)) {
+                // Parts on Blink's board, saved through the core: an LED on the
+                // firmware's output, and a button (to 3V3) on its input.
+                CircuitPanel *circuit = window.circuit();
+                QTRY_VERIFY(circuit->addLedButton()->isEnabled()); // the board is selected
+                circuit->addPart(u"led"_s, 2, false, u"Status"_s);
+                QTRY_COMPARE(circuit->parts().size(), 1);
+                circuit->addPart(u"button"_s, 4, false, {});
+                QTRY_COMPARE(circuit->parts().size(), 2);
                 QVERIFY(QFile::remove(image));
                 QVERIFY(QFile::copy(gpioFw, image));
                 window.buildPanel()->simulateButton()->click();
@@ -208,6 +217,16 @@ private slots:
                 QTRY_COMPARE_WITH_TIMEOUT(window.pins()->row(2)->text(PinsPanel::DirectionColumn), u"output"_s, 20000);
                 QTRY_COMPARE_WITH_TIMEOUT(window.pins()->row(2)->text(PinsPanel::LevelColumn), u"high"_s, 20000);
                 QTRY_COMPARE_WITH_TIMEOUT(window.pins()->row(2)->text(PinsPanel::LevelColumn), u"low"_s, 20000);
+                // The LED on the canvas blinks with it, and the button reaches the firmware.
+                QVERIFY(core.simPartsActive());
+                QTRY_VERIFY_WITH_TIMEOUT(circuit->isOn(u"led-1"_s), 20000);
+                QTRY_VERIFY_WITH_TIMEOUT(!circuit->isOn(u"led-1"_s), 20000);
+                core.pressPart(u"button-1"_s, true);
+                QTRY_VERIFY_WITH_TIMEOUT(window.simulator()->outputText().contains(u"esp32bench-gpio in 4=1"_s), 10000);
+                QTRY_VERIFY(circuit->isOn(u"button-1"_s));
+                core.pressPart(u"button-1"_s, false);
+                QTRY_VERIFY(!circuit->isOn(u"button-1"_s));
+                QTRY_VERIFY_WITH_TIMEOUT(window.circuit()->isOn(u"led-1"_s), 20000); // for the screenshot
                 core.stopSim();
                 QTRY_VERIFY(!core.isSimRunning());
             } else {

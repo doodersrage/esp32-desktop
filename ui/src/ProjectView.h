@@ -39,6 +39,10 @@ public:
     QPushButton *buildButton() const { return m_build; }
     QString notesText() const;
 
+signals:
+    // The project and board now shown, with the build's pin list as the library has it.
+    void boardSelected(const QString &project, const QString &board, const QJsonArray &pins);
+
 private:
     void showBuild(int index);
     void showPlaceholder(const QString &text);

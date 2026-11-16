@@ -39,6 +39,7 @@ CoreConnection::CoreConnection(QObject *parent)
         if (m_simSub != 0) {
             m_simSub = 0;
             m_simPins.clear();
+            m_simPartsActive = false;
             emit simStopped(tr("The connection to the core was lost."));
         }
         if (m_boardJob != 0) {
@@ -220,7 +221,8 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
-    } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.exited"
+    } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.parts"
+               || method == u"sim.exited"
                || method.startsWith(u"debug.")) {
         if (sub == m_simSub)
             handleSimEvent(method, params);
@@ -548,6 +550,7 @@ void CoreConnection::startSim(const QString &project, const QString &board, bool
                        m_simSub = o.value(u"subscription"_s).toInteger();
                        m_debugging = o.value(u"debug"_s).toBool();
                        m_simPins.clear();
+                       m_simPartsActive = o.value(u"partsActive"_s).toBool();
                        for (const QJsonValue &g : o.value(u"pins"_s).toArray())
                            m_simPins << g.toInt();
                        emit simStarted(project, board, o.value(u"chip"_s).toString());
@@ -565,6 +568,10 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
 {
     if (method == u"sim.output") {
         emit simOutput(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        return;
+    }
+    if (method == u"sim.parts") {
+        emit simPartsChanged(params.value(u"parts"_s).toArray());
         return;
     }
     if (method == u"sim.pins") {
@@ -601,6 +608,7 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
     m_simSub = 0;
     m_debugging = false;
     m_simPins.clear();
+    m_simPartsActive = false;
     emit simStopped(params.value(u"reason"_s).toString());
 }
 
@@ -611,6 +619,7 @@ void CoreConnection::stopSim()
     const qint64 sub = std::exchange(m_simSub, 0);
     m_debugging = false;
     m_simPins.clear();
+    m_simPartsActive = false;
     m_client->call(u"core.unsubscribe"_s, {{u"subscription"_s, sub}}, this, [](const RpcReply &) {});
     emit simStopped(tr("Stopped."));
 }
@@ -697,5 +706,40 @@ void CoreConnection::setSimPin(int gpio, bool level)
                    [this](const RpcReply &r) {
                        if (!r.ok)
                            emit requestFailed(u"sim.setPin"_s, r.errorMessage);
+                   });
+}
+
+void CoreConnection::pressPart(const QString &id, bool pressed)
+{
+    if (!simPartsActive())
+        return;
+    m_client->call(u"sim.press"_s, {{u"subscription"_s, m_simSub}, {u"part"_s, id}, {u"pressed"_s, pressed}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok)
+                           emit requestFailed(u"sim.press"_s, r.errorMessage);
+                   });
+}
+
+void CoreConnection::loadCircuit(const QString &project, const QString &board)
+{
+    m_client->call(u"circuit.get"_s, {{u"project"_s, project}, {u"board"_s, board}}, this,
+                   [this, project, board](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"circuit.get"_s, r.errorMessage);
+                           return;
+                       }
+                       emit circuitLoaded(project, board, r.result.toObject().value(u"circuit"_s).toObject());
+                   });
+}
+
+void CoreConnection::saveCircuit(const QString &project, const QString &board, const QJsonObject &circuit)
+{
+    m_client->call(u"circuit.set"_s, {{u"project"_s, project}, {u"board"_s, board}, {u"circuit"_s, circuit}}, this,
+                   [this, project, board, circuit](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"circuit.set"_s, r.errorMessage);
+                           return;
+                       }
+                       emit circuitLoaded(project, board, circuit);
                    });
 }
