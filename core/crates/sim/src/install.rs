@@ -1,7 +1,7 @@
 //! Locating and installing the pinned QEMU build under the user's data directory.
 //!
-//! Layout: `$XDG_DATA_HOME/esp32-desktop/qemu/<release>/<arch>/qemu/bin/<binary>`.
-//! `ESP32D_QEMU_DIR` overrides the location for one arch-independent `bin/` directory.
+//! Layout: `$XDG_DATA_HOME/esp32bench/qemu/<release>/<arch>/qemu/bin/<binary>`.
+//! `ESP32BENCH_QEMU_DIR` overrides the location for one arch-independent `bin/` directory.
 
 use std::path::{Path, PathBuf};
 
@@ -11,8 +11,8 @@ use tokio::process::Command;
 use crate::pin::{self, QEMU_RELEASE};
 use crate::{Arch, Error};
 
-pub const APP_DIR: &str = "esp32-desktop";
-pub const QEMU_DIR_ENV: &str = "ESP32D_QEMU_DIR";
+pub const APP_DIR: &str = "esp32bench";
+pub const QEMU_DIR_ENV: &str = "ESP32BENCH_QEMU_DIR";
 
 pub fn data_dir() -> Result<PathBuf, Error> {
     if let Some(d) = std::env::var_os("XDG_DATA_HOME").filter(|d| !d.is_empty()) {

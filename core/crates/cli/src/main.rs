@@ -1,4 +1,4 @@
-//! `esp32d`: command-line access to the esp32-desktop core.
+//! `esp32bench`: command-line access to the esp32-desktop core.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -7,12 +7,12 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
-use esp32d_sim::uart::WaitOutcome;
-use esp32d_sim::{Arch, Chip, Session, SessionConfig, gdb, image, install, pin};
+use esp32bench_sim::uart::WaitOutcome;
+use esp32bench_sim::{Arch, Chip, Session, SessionConfig, gdb, image, install, pin};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 #[derive(Parser)]
-#[command(name = "esp32d", version, about = "esp32-desktop core command line")]
+#[command(name = "esp32bench", version, about = "esp32bench core command line")]
 struct Cli {
     #[command(subcommand)]
     command: Cmd,

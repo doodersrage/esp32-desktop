@@ -217,7 +217,7 @@ impl Drop for DirGuard {
     }
 }
 
-/// A private directory for one session under `$XDG_RUNTIME_DIR/esp32-desktop/`.
+/// A private directory for one session under `$XDG_RUNTIME_DIR/esp32bench/`.
 fn new_runtime_dir() -> Result<PathBuf, Error> {
     use std::os::unix::fs::DirBuilderExt;
     static COUNTER: AtomicU32 = AtomicU32::new(0);

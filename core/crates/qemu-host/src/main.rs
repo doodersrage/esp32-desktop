@@ -8,23 +8,30 @@
 //! core's session code can start this program in place of `qemu-system-*`.
 //! Settings come from the environment:
 //!
-//! - `ESP32D_QEMU_LIB`: path to `libqemu-xtensa.so` or `libqemu-riscv32.so`.
-//! - `ESP32D_GPIO_PINS`: comma-separated GPIO numbers to bridge, e.g. `2,4`.
-//! - `ESP32D_GPIO_SOCK`: Unix socket path to listen on for one client.
+//! - `ESP32BENCH_QEMU_LIB`: path to `libqemu-xtensa.so` or `libqemu-riscv32.so`.
+//! - `ESP32BENCH_GPIO_PINS`: comma-separated GPIO numbers to bridge, e.g. `2,4`.
+//! - `ESP32BENCH_GPIO_SOCK`: Unix socket path to listen on for one client.
+//! - `ESP32BENCH_I2C_DEVICES` (optional): comma-separated `<bus>:<hex address>` pairs,
+//!   e.g. `0:3c`. Each is a 256-byte register device: the first byte written after a
+//!   start sets the register pointer, later bytes write registers, and reads return
+//!   registers from the pointer on. Register `n` starts as `n + 0x40`. The fork's I2C
+//!   callback is synchronous, so devices are modelled here rather than in the core.
 //!
 //! Socket protocol, one line per message:
 //!
-//! - host to client: `out <gpio> <0|1>` when the firmware drives a pin, and
-//!   `dir <gpio> <value>` when a pin's direction changes.
+//! - host to client: `out <gpio> <0|1>` when the firmware drives a pin,
+//!   `dir <gpio> <value>` when a pin's direction changes, and
+//!   `i2c <bus> <addr> <ack|nack>` when the firmware starts a transfer.
 //! - client to host: `set <gpio> <0|1>` to drive an input pin.
 
+use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_int, c_void};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::UnixListener;
 use std::process::ExitCode;
-use std::sync::OnceLock;
 use std::sync::mpsc::{self, Sender};
+use std::sync::{Mutex, OnceLock};
 
 /// Layout of `callbacks_t` in `hw/xtensa/esp32_picsimlab.c` at commit 885a6e7061.
 #[repr(C)]
@@ -86,8 +93,91 @@ extern "C" fn on_dir_pin(pin: c_int, value: c_int) {
     }
 }
 
-extern "C" fn on_i2c_event(_id: u8, _addr: u8, _event: u16) -> c_int {
-    0
+// Event codes from QEMU's `enum i2c_event` (include/hw/i2c/i2c.h) and the fork's
+// hw/i2c/picsimlab_i2c.c, which adds a byte write (`data << 8 | 5`) and a read (`6`).
+const I2C_START_RECV: u16 = 0;
+const I2C_START_SEND: u16 = 1;
+const I2C_START_SEND_ASYNC: u16 = 2;
+const I2C_WRITE_BYTE: u16 = 5;
+const I2C_READ_BYTE: u16 = 6;
+
+struct I2cDevice {
+    regs: [u8; 256],
+    pointer: u8,
+    /// The next written byte is a register pointer, not data.
+    expect_pointer: bool,
+}
+
+impl I2cDevice {
+    fn new() -> Self {
+        let mut regs = [0u8; 256];
+        for (i, r) in regs.iter_mut().enumerate() {
+            *r = (i as u8).wrapping_add(0x40);
+        }
+        I2cDevice {
+            regs,
+            pointer: 0,
+            expect_pointer: false,
+        }
+    }
+
+    /// Handle one bus event; the return value goes back to QEMU (0 = ACK, or the byte read).
+    fn event(&mut self, event: u16) -> c_int {
+        match event & 0xff {
+            I2C_START_SEND | I2C_START_SEND_ASYNC => {
+                self.expect_pointer = true;
+                0
+            }
+            I2C_WRITE_BYTE => {
+                let data = (event >> 8) as u8;
+                if self.expect_pointer {
+                    self.pointer = data;
+                    self.expect_pointer = false;
+                } else {
+                    self.regs[usize::from(self.pointer)] = data;
+                    self.pointer = self.pointer.wrapping_add(1);
+                }
+                0
+            }
+            I2C_READ_BYTE => {
+                let v = self.regs[usize::from(self.pointer)];
+                self.pointer = self.pointer.wrapping_add(1);
+                c_int::from(v)
+            }
+            _ => 0, // START_RECV, FINISH, NACK
+        }
+    }
+}
+
+/// Modelled I2C devices by (bus, 7-bit address).
+static I2C: OnceLock<Mutex<HashMap<(u8, u8), I2cDevice>>> = OnceLock::new();
+
+extern "C" fn on_i2c_event(id: u8, addr: u8, event: u16) -> c_int {
+    let Some(devices) = I2C.get() else {
+        return 1;
+    };
+    let Ok(mut devices) = devices.lock() else {
+        return 1;
+    };
+    let start = matches!(
+        event & 0xff,
+        I2C_START_RECV | I2C_START_SEND | I2C_START_SEND_ASYNC
+    );
+    match devices.get_mut(&(id, addr)) {
+        Some(dev) => {
+            if start {
+                emit(format!("i2c {id} {addr:#04x} ack"));
+            }
+            dev.event(event)
+        }
+        // NACK the address so a scan only finds modelled devices.
+        None => {
+            if start {
+                emit(format!("i2c {id} {addr:#04x} nack"));
+            }
+            1
+        }
+    }
 }
 
 extern "C" fn on_spi_event(_id: u8, _event: u16) -> u8 {
@@ -102,7 +192,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(status) => ExitCode::from(u8::try_from(status).unwrap_or(1)),
         Err(e) => {
-            eprintln!("esp32d-qemu-host: {e}");
+            eprintln!("esp32bench-qemu-host: {e}");
             ExitCode::FAILURE
         }
     }
@@ -113,9 +203,17 @@ fn env(name: &str) -> Result<std::ffi::OsString, String> {
 }
 
 fn run() -> Result<c_int, String> {
-    let lib = env("ESP32D_QEMU_LIB")?;
-    let sock = env("ESP32D_GPIO_SOCK")?;
-    let gpios = parse_pins(&env("ESP32D_GPIO_PINS")?.to_string_lossy())?;
+    let lib = env("ESP32BENCH_QEMU_LIB")?;
+    let sock = env("ESP32BENCH_GPIO_SOCK")?;
+    let gpios = parse_pins(&env("ESP32BENCH_GPIO_PINS")?.to_string_lossy())?;
+
+    let i2c = match std::env::var_os("ESP32BENCH_I2C_DEVICES") {
+        Some(v) => parse_i2c(&v.to_string_lossy())?,
+        None => Vec::new(),
+    };
+    let _ = I2C.set(Mutex::new(
+        i2c.into_iter().map(|k| (k, I2cDevice::new())).collect(),
+    ));
 
     let qemu = load(&lib)?;
 
@@ -177,6 +275,24 @@ fn parse_pins(s: &str) -> Result<Vec<i16>, String> {
         .collect()
 }
 
+fn parse_i2c(s: &str) -> Result<Vec<(u8, u8)>, String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            let (bus, addr) = p.split_once(':').ok_or(format!("bad I2C device `{p}`"))?;
+            let bus = bus
+                .parse::<u8>()
+                .map_err(|_| format!("bad I2C bus in `{p}`"))?;
+            let addr = u8::from_str_radix(addr.trim_start_matches("0x"), 16)
+                .ok()
+                .filter(|a| *a < 0x80)
+                .ok_or(format!("bad I2C address in `{p}`"))?;
+            Ok((bus, addr))
+        })
+        .collect()
+}
+
 /// Accept one client; send it pin events and apply its `set` commands.
 fn start_bridge(
     listener: UnixListener,
@@ -205,7 +321,7 @@ fn start_bridge(
             let mut parts = line.split_whitespace();
             let (Some("set"), Some(gpio), Some(level)) = (parts.next(), parts.next(), parts.next())
             else {
-                eprintln!("esp32d-qemu-host: ignoring `{line}`");
+                eprintln!("esp32bench-qemu-host: ignoring `{line}`");
                 continue;
             };
             let Some(index) = gpio
@@ -213,7 +329,7 @@ fn start_bridge(
                 .ok()
                 .and_then(|g| GPIOS.get()?.iter().position(|x| *x == g))
             else {
-                eprintln!("esp32d-qemu-host: GPIO {gpio} is not bridged");
+                eprintln!("esp32bench-qemu-host: GPIO {gpio} is not bridged");
                 continue;
             };
             let level = c_int::from(level != "0");
@@ -225,7 +341,7 @@ fn start_bridge(
             // SAFETY: these are the library's own functions, called with the lock held
             // around the IRQ change as QEMU requires for non-QEMU threads.
             unsafe {
-                bql_lock(c"esp32d-qemu-host".as_ptr(), 0);
+                bql_lock(c"esp32bench-qemu-host".as_ptr(), 0);
                 set_pin(index, level);
                 bql_unlock();
             }
@@ -292,6 +408,35 @@ mod tests {
         assert_eq!(parse_pins(" 2 , 4 ,").unwrap(), vec![2, 4]);
         assert!(parse_pins("2,x").is_err());
         assert!(parse_pins("99").is_err());
+    }
+
+    #[test]
+    fn parses_i2c_devices() {
+        assert_eq!(
+            parse_i2c("0:3c, 1:0x50").unwrap(),
+            vec![(0, 0x3c), (1, 0x50)]
+        );
+        assert!(parse_i2c("0:80").is_err());
+        assert!(parse_i2c("3c").is_err());
+    }
+
+    #[test]
+    fn i2c_device_models_a_register_file() {
+        let mut d = I2cDevice::new();
+        // Write pointer 0x10, then read two bytes.
+        assert_eq!(d.event(I2C_START_SEND), 0);
+        assert_eq!(d.event((0x10 << 8) | I2C_WRITE_BYTE), 0);
+        assert_eq!(d.event(I2C_START_RECV), 0);
+        assert_eq!(d.event(I2C_READ_BYTE), 0x50);
+        assert_eq!(d.event(I2C_READ_BYTE), 0x51);
+        // Write pointer 0x20 and data 0xAB, then read it back.
+        d.event(I2C_START_SEND);
+        d.event((0x20 << 8) | I2C_WRITE_BYTE);
+        d.event((0xAB << 8) | I2C_WRITE_BYTE);
+        d.event(I2C_START_SEND);
+        d.event((0x20 << 8) | I2C_WRITE_BYTE);
+        d.event(I2C_START_RECV);
+        assert_eq!(d.event(I2C_READ_BYTE), 0xAB);
     }
 
     #[test]

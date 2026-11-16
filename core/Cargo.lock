@@ -171,26 +171,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "esp32d"
+name = "esp32bench"
 version = "0.0.1"
 dependencies = [
  "anyhow",
  "clap",
- "esp32d-sim",
+ "esp32bench-sim",
  "tokio",
 ]
 
 [[package]]
-name = "esp32d-qemu-host"
+name = "esp32bench-qemu-host"
 version = "0.0.1"
 dependencies = [
- "esp32d-sim",
+ "esp32bench-sim",
  "libc",
  "tokio",
 ]
 
 [[package]]
-name = "esp32d-sim"
+name = "esp32bench-sim"
 version = "0.0.1"
 dependencies = [
  "libc",

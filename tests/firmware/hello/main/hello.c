@@ -1,9 +1,9 @@
 // Boot-test firmware for esp32-desktop.
 //
 // UART0 markers:
-//   "esp32d-hello ready target=<chip> idf=<version> cores=<n>"  after boot
-//   "esp32d-hello tick <n>"   about once a second
-//   "esp32d-hello echo <line>" for each line received on UART0
+//   "esp32bench-hello ready target=<chip> idf=<version> cores=<n>"  after boot
+//   "esp32bench-hello tick <n>"   about once a second
+//   "esp32bench-hello echo <line>" for each line received on UART0
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -22,7 +22,7 @@ void app_main(void)
     esp_chip_info_t info;
     esp_chip_info(&info);
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, 256, 0, 0, NULL, 0));
-    printf("esp32d-hello ready target=%s idf=%s cores=%d\n",
+    printf("esp32bench-hello ready target=%s idf=%s cores=%d\n",
            CONFIG_IDF_TARGET, esp_get_idf_version(), info.cores);
     fflush(stdout);
 
@@ -34,7 +34,7 @@ void app_main(void)
     for (;;) {
         int64_t now = esp_timer_get_time();
         if (now >= next_tick) {
-            printf("esp32d-hello tick %" PRIu32 "\n", ++tick);
+            printf("esp32bench-hello tick %" PRIu32 "\n", ++tick);
             fflush(stdout);
             next_tick += 1000000;
             continue;
@@ -47,7 +47,7 @@ void app_main(void)
         if (c == '\r' || c == '\n') {
             if (len > 0) {
                 line[len] = '\0';
-                printf("esp32d-hello echo %s\n", line);
+                printf("esp32bench-hello echo %s\n", line);
                 fflush(stdout);
                 len = 0;
             }

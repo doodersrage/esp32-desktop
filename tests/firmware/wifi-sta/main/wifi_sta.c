@@ -4,9 +4,9 @@
 // hardware or on a fork without Wi-Fi this never gets an address.
 //
 // UART0 markers:
-//   "esp32d-wifi start"        Wi-Fi driver started
-//   "esp32d-wifi got ip <ip>"  station has an IPv4 address (the pass condition)
-//   "esp32d-wifi disconnected reason=<n>"
+//   "esp32bench-wifi start"        Wi-Fi driver started
+//   "esp32bench-wifi got ip <ip>"  station has an IPv4 address (the pass condition)
+//   "esp32bench-wifi disconnected reason=<n>"
 
 #include <stdio.h>
 
@@ -20,15 +20,15 @@
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        printf("esp32d-wifi start\n");
+        printf("esp32bench-wifi start\n");
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         const wifi_event_sta_disconnected_t *d = data;
-        printf("esp32d-wifi disconnected reason=%d\n", d->reason);
+        printf("esp32bench-wifi disconnected reason=%d\n", d->reason);
         esp_wifi_connect();
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         const ip_event_got_ip_t *ip = data;
-        printf("esp32d-wifi got ip " IPSTR "\n", IP2STR(&ip->ip_info.ip));
+        printf("esp32bench-wifi got ip " IPSTR "\n", IP2STR(&ip->ip_info.ip));
     }
 }
 

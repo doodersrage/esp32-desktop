@@ -8,10 +8,10 @@ Phase 0 ends with one decision: which QEMU fork the project builds on. Everythin
 
 ## Before writing code
 
-- [x] Install ESP-IDF and run `idf.py qemu monitor` on the stock `hello_world` example by hand. Confirms the toolchain and QEMU binaries work on this machine. *Done with `esp32d` and `tests/firmware/hello` rather than `idf.py qemu`; IDF v6.0.2 is at `~/esp/esp-idf`.*
+- [x] Install ESP-IDF and run `idf.py qemu monitor` on the stock `hello_world` example by hand. Confirms the toolchain and QEMU binaries work on this machine. *Done with `esp32bench` and `tests/firmware/hello` rather than `idf.py qemu`; IDF v6.0.2 is at `~/esp/esp-idf`.*
 - [x] Install `arduino-cli` and the ESP32 Arduino core. Compile the Blink example for an ESP32 dev board. *arduino-cli 1.5.1 from Arch `extra`, core 3.3.12; compiled `tests/firmware/hello-arduino` instead of Blink.*
 - [x] Record the exact versions used in the table below. These become the first pinned versions.
-- [ ] Decide the app name. Binary name, package name, socket path, config directory and URL scheme all derive from it. *Open. The code uses `esp32d` for the CLI and crates and `esp32-desktop` for data and runtime directories as placeholders.*
+- [x] Decide the app name. Binary name, package name, socket path, config directory and URL scheme all derive from it. *`esp32bench`, matching esp32bench.dev and the `esp32bench://` scheme: CLI `esp32bench`, crates `esp32bench-*`, data in `~/.local/share/esp32bench`, runtime sockets in `$XDG_RUNTIME_DIR/esp32bench`, environment variables `ESP32BENCH_*`. The repo stays `esp32-desktop`.*
 
 | Component | Version pinned |
 | --- | --- |
@@ -30,7 +30,7 @@ Keep these small and in `tests/firmware/`. Each prints a known marker string on 
 - [x] `hello-arduino`: Arduino sketch that prints over `Serial`. *Also echoes input.*
 - [x] `gpio-blink`: toggles one GPIO and prints each state change. *Combined with `gpio-input` as `tests/firmware/gpio`.*
 - [x] `gpio-input`: prints when an input pin changes.
-- [ ] `i2c-scan`: scans the I2C bus and prints what it finds.
+- [x] `i2c-scan`: scans the I2C bus and prints what it finds. *Then reads two registers from 0x3C.*
 - [x] `wifi-sta` (added): joins an open emulated network and prints its IP.
 
 ## The CLI
@@ -57,12 +57,12 @@ Run every row against both forks and fill in the result. Use "yes", "no" or "par
 | UART0 input works (type into the firmware) | yes | yes |
 | Reset from the host works | yes, QMP `system_reset` | yes, QMP `system_reset` |
 | GDB attach, breakpoint and step work | yes, all three chips | yes, all three chips |
-| Host can read a GPIO output (`gpio-blink`) | no hook | yes on ESP32 and C3, through `esp32d-qemu-host` and the library build; GPIO 0–31 only. No S3 |
-| Host can drive a GPIO input (`gpio-input`) | no hook | yes on ESP32 and C3, through `esp32d-qemu-host`. No S3 |
-| Host can answer as an I2C device (`i2c-scan`) | no hook | partial: `picsimlab_i2c_event` callback exists, not tested yet |
+| Host can read a GPIO output (`gpio-blink`) | no hook | yes on ESP32 and C3, through `esp32bench-qemu-host` and the library build; GPIO 0–31 only. No S3 |
+| Host can drive a GPIO input (`gpio-input`) | no hook | yes on ESP32 and C3, through `esp32bench-qemu-host`. No S3 |
+| Host can answer as an I2C device (`i2c-scan`) | no hook (ESP32 has a fixed built-in TMP105 at 0x48) | yes on ESP32 and C3, through `esp32bench-qemu-host`: the scan finds only the modelled device and register reads return its values. Callback is synchronous, and the host answers for the whole bus |
 | Wi-Fi station connects to an emulated network | no: panics on ESP32, no IP on S3/C3 | yes on ESP32 and C3 (C3 needs an eFuse image); no on S3 |
 | Runs at roughly real-time speed | yes: 1.00 wall s per guest s, idle firmware | yes: 1.00 wall s per guest s, idle firmware |
-| Can be driven as a separate process (not only as a linked library) | yes | yes: executables for most rows; the library through `esp32d-qemu-host`, one process per session |
+| Can be driven as a separate process (not only as a linked library) | yes | yes: executables for most rows; the library through `esp32bench-qemu-host`, one process per session |
 | Builds from source on Arch without patches | not tried (prebuilt binaries used) | yes, both as executables and with `build_libqemu-esp32.sh` |
 | Upstream had commits in the last 6 months | yes, 2026-11-06 | yes, 2026-11-14 |
 

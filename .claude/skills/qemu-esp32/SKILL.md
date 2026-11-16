@@ -46,7 +46,7 @@ For Arduino builds, merge the bootloader, partition and app binaries that `ardui
 
 ## 4. Launch
 
-The core does this for you: `esp32d sim run --chip <chip> <image>` or `esp32d sim boot-test`. It uses the pinned build from `esp32d qemu install`, starts QEMU paused with `-display none -monitor none -S`, connects UART0 and QMP, then sends `cont`. Do not add `-no-reboot`: it turns a QMP `system_reset` into a shutdown. Verified with `esp-develop-9.2.2-20261109` on ESP32, S3 and C3.
+The core does this for you: `esp32bench sim run --chip <chip> <image>` or `esp32bench sim boot-test`. It uses the pinned build from `esp32bench qemu install`, starts QEMU paused with `-display none -monitor none -S`, connects UART0 and QMP, then sends `cont`. Do not add `-no-reboot`: it turns a QMP `system_reset` into a shutdown. Verified with `esp-develop-9.2.2-20261109` on ESP32, S3 and C3.
 
 The equivalent by hand:
 
@@ -55,8 +55,8 @@ qemu-system-xtensa \
   -nographic \
   -machine esp32 \
   -drive file=flash.bin,if=mtd,format=raw \
-  -serial unix:/run/user/$UID/esp32-desktop/uart0.sock,server,nowait \
-  -qmp unix:/run/user/$UID/esp32-desktop/qmp.sock,server,nowait
+  -serial unix:/run/user/$UID/esp32bench/uart0.sock,server,nowait \
+  -qmp unix:/run/user/$UID/esp32bench/qmp.sock,server,nowait
 ```
 
 - UART0 is the `-serial` socket. Treat its output as bytes.
@@ -77,7 +77,7 @@ The core speaks GDB/MI to it; the same client is used for real boards.
 
 A boot test passes when an expected marker string appears on UART0 within a timeout, and fails on a panic banner or timeout. Always kill QEMU at the end of the test, pass or fail.
 
-In `core/crates/sim/tests/boot.rs` the tests skip unless QEMU is installed and `ESP32D_TEST_IMAGE_<CHIP>` (e.g. `ESP32D_TEST_IMAGE_ESP32C3`) points at a merged image. `rst:0x` only proves the ROM ran; use an app-level marker to prove the firmware booted.
+In `core/crates/sim/tests/boot.rs` the tests skip unless QEMU is installed and `ESP32BENCH_TEST_IMAGE_<CHIP>` (e.g. `ESP32BENCH_TEST_IMAGE_ESP32C3`) points at a merged image. `rst:0x` only proves the ROM ran; use an app-level marker to prove the firmware booted.
 
 Known gap in Espressif's fork: no Wi-Fi radio. Firmware that starts Wi-Fi panics on ESP32 (`LoadStorePIFAddrError` at `0x60033c00`) and hangs on S3 and C3. Results are in `docs/qemu-forks.md`.
 
@@ -97,4 +97,4 @@ Results so far are in `docs/PHASE0.md` (checklist) and `docs/qemu-forks.md` (det
 - IDF 4.4 builds fail flash init on S3 and C3; IDF 6 builds boot.
 - GPIO, I2C and SPI hooks are C callbacks in library builds only.
 
-To run a build other than the pinned one: `esp32d sim boot-test --qemu <binary> [--machine <name>] [--qemu-arg=<arg>]...`.
+To run a build other than the pinned one: `esp32bench sim boot-test --qemu <binary> [--machine <name>] [--qemu-arg=<arg>]...`.

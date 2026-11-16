@@ -1,5 +1,5 @@
 [package]
-name = "esp32d-qemu-host"
+name = "esp32bench-qemu-host"
 description = "Runs lcgamboa's QEMU library and bridges its GPIO hooks to a Unix socket (phase 0 spike)"
 version.workspace = true
 edition.workspace = true
@@ -9,5 +9,5 @@ publish.workspace = true
 libc.workspace = true
 
 [dev-dependencies]
-esp32d-sim = { path = "../sim" }
+esp32bench-sim = { path = "../sim" }
 tokio.workspace = true

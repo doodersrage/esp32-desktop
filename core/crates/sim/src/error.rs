@@ -16,7 +16,7 @@ pub enum Error {
     #[error("image is {0} bytes; the largest flash QEMU emulates is 16 MiB")]
     ImageTooLarge(usize),
 
-    #[error("QEMU for {arch} is not installed (looked for {path}); run `esp32d qemu install`")]
+    #[error("QEMU for {arch} is not installed (looked for {path}); run `esp32bench qemu install`")]
     QemuNotInstalled { arch: Arch, path: PathBuf },
     #[error("no home or data directory: set XDG_DATA_HOME or HOME")]
     NoDataDir,

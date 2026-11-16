@@ -1,5 +1,5 @@
 [package]
-name = "esp32d-sim"
+name = "esp32bench-sim"
 description = "QEMU supervision for ESP32 simulation: launch, UART, QMP and GDB"
 version.workspace = true
 edition.workspace = true

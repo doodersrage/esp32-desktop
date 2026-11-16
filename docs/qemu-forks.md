@@ -1,17 +1,17 @@
 # QEMU fork comparison (phase 0)
 
-This note records how each QEMU fork runs real firmware, to settle the fork choice in `PLAN.md`. Both forks have been tested as separate processes, and lcgamboa's GPIO hooks through its library build. I2C hooks have not been tested. The pass/fail checklist is in `PHASE0.md`; this note has the details.
+This note records how each QEMU fork runs real firmware, to settle the fork choice in `PLAN.md`. Both forks have been tested as separate processes, and lcgamboa's GPIO and I2C hooks through its library build. The pass/fail checklist is in `PHASE0.md`; this note has the details.
 
 Last updated: 2026-11-15
 
 ## Test setup
 
-- **Driver:** `esp32d sim boot-test` from `core/`. QEMU starts paused, UART0 and QMP connect over Unix sockets, then the CPU runs.
+- **Driver:** `esp32bench sim boot-test` from `core/`. QEMU starts paused, UART0 and QMP connect over Unix sockets, then the CPU runs.
 - **Firmware:** the esp32bench.dev release images in `esp32-bench/dist/firmware/`. Both are Arduino builds on ESP-IDF v4.4.7, merged images in DIO mode declaring 4 MiB flash.
   - `pin-detective` 0.1.0: reads GPIO levels and prints them. No Wi-Fi.
   - `probeharbor-probe` 1.5.2: starts Wi-Fi at boot.
-- **Wi-Fi firmware:** `tests/firmware/wifi-sta` (IDF v6.0.2) joins the open network `PICSimLabWifi` and prints `esp32d-wifi got ip <ip>`.
-- **Pinned firmware:** `tests/firmware/hello`, built with ESP-IDF v6.0.2 (`tests/firmware/IDF_VERSION`) by `tests/firmware/build.sh`. It prints `esp32d-hello ready` and then a tick every second. These images are what `cargo test` boots by default.
+- **Wi-Fi firmware:** `tests/firmware/wifi-sta` (IDF v6.0.2) joins the open network `PICSimLabWifi` and prints `esp32bench-wifi got ip <ip>`.
+- **Pinned firmware:** `tests/firmware/hello`, built with ESP-IDF v6.0.2 (`tests/firmware/IDF_VERSION`) by `tests/firmware/build.sh`. It prints `esp32bench-hello ready` and then a tick every second. These images are what `cargo test` boots by default.
 
 ## Espressif fork, `esp-develop-9.2.2-20261109`
 
@@ -77,7 +77,9 @@ These exist only when QEMU is built as a library (`build_libqemu-esp32.sh`, whic
 
 The state is one global per process (`global_s`), so one library instance runs one chip. To keep the core's separate-process model, each session would need a small helper process that loads `libqemu-xtensa.so` or `libqemu-riscv32.so`, registers these callbacks and forwards them over a socket. In the plain executables the callbacks are no-ops.
 
-**Tested:** `core/crates/qemu-host` (`esp32d-qemu-host`) is that helper. The core's session code starts it in place of `qemu-system-*` with the same arguments; it loads the library, registers the callbacks and serves pin events on a Unix socket. With `tests/firmware/gpio` on `esp32-picsimlab` and `esp32c3-picsimlab`, the host saw GPIO 2 toggle every 500 ms and the firmware saw GPIO 4 follow `set 4 1` and `set 4 0` from the host. `core/crates/qemu-host/tests/gpio.rs` repeats this.
+**Tested:** `core/crates/qemu-host` (`esp32bench-qemu-host`) is that helper. The core's session code starts it in place of `qemu-system-*` with the same arguments; it loads the library, registers the callbacks and serves pin events on a Unix socket. With `tests/firmware/gpio` on `esp32-picsimlab` and `esp32c3-picsimlab`, the host saw GPIO 2 toggle every 500 ms and the firmware saw GPIO 4 follow `set 4 1` and `set 4 0` from the host. `core/crates/qemu-host/tests/hooks.rs` repeats this.
+
+With `tests/firmware/i2c-scan` and `ESP32BENCH_I2C_DEVICES=0:3c`, the firmware's scan of bus 0 found only 0x3C, and reading registers 0x10 and 0x11 returned the host's values (0x50, 0x51), on both machines. The same test file covers this.
 
 Details that matter for phase 4:
 
@@ -86,9 +88,11 @@ Details that matter for phase 4:
 - `qemu_picsimlab_set_pin` does not take QEMU's big lock (the fork has the call commented out), so the host takes it (`bql_lock_impl`/`bql_unlock`) around each call.
 - Callbacks run on QEMU's threads and must not block; the host queues events to a writer thread.
 - Library builds use `--enable-debug`, as the fork's script sets it.
+- The I2C callback is synchronous: it runs on QEMU's thread and returns the ACK or the byte read. Part models therefore run inside the host process (or behind a blocking round trip), not as asynchronous messages to the core.
+- One catch-all device per bus answers every address, so the host decides for the whole bus. On ESP32 bus 0, NACKing 0x48 hides the fork's built-in TMP105.
+- In the plain executables the I2C callback is a no-op that ACKs everything, so a firmware scan finds all 112 addresses and reads return 0. Use the library build whenever a project uses I2C.
 
 ## Open questions
 
 - Should simulator boot tests stub out Wi-Fi, or should a project be marked as "no simulator" when it starts Wi-Fi at boot? lcgamboa's fork answers this for ESP32 and C3 only.
-- Do the I2C hooks work well enough to model a sensor? `picsimlab_i2c_event` exists but is untested.
 - Emulated networking gives guest firmware network access. The app needs a consent decision before enabling it (rule 4); `restrict=on` is a safe default.

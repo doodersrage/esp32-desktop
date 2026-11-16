@@ -1,22 +1,25 @@
-//! QEMU boot tests. They need the pinned QEMU (`esp32d qemu install`) and a merged
+//! QEMU boot tests. They need the pinned QEMU (`esp32bench qemu install`) and a merged
 //! image per chip. By default that is `tests/firmware/out/hello-<chip>.bin`, built by
 //! `tests/firmware/build.sh`, and the test waits for its ready line. Set
-//! `ESP32D_TEST_IMAGE_<CHIP>` (for example `ESP32D_TEST_IMAGE_ESP32C3=/path/flash.bin`)
+//! `ESP32BENCH_TEST_IMAGE_<CHIP>` (for example `ESP32BENCH_TEST_IMAGE_ESP32C3=/path/flash.bin`)
 //! to boot another image; the test then only waits for the ROM's `rst:0x`.
 //! Without QEMU or an image, each test is skipped.
 
 use std::path::PathBuf;
 use std::time::Duration;
 
-use esp32d_sim::uart::WaitOutcome;
-use esp32d_sim::{Chip, Session, SessionConfig, gdb, install};
+use esp32bench_sim::uart::WaitOutcome;
+use esp32bench_sim::{Chip, Session, SessionConfig, gdb, install};
 
-const HELLO_MARKER: &[u8] = b"esp32d-hello ready";
+const HELLO_MARKER: &[u8] = b"esp32bench-hello ready";
 const ROM_MARKER: &[u8] = b"rst:0x";
 
 /// The image to boot and the UART0 line that proves it booted.
 fn image_for(chip: Chip) -> Option<(PathBuf, &'static [u8])> {
-    let var = format!("ESP32D_TEST_IMAGE_{}", chip.machine().to_ascii_uppercase());
+    let var = format!(
+        "ESP32BENCH_TEST_IMAGE_{}",
+        chip.machine().to_ascii_uppercase()
+    );
     if let Some(image) = std::env::var_os(&var) {
         return Some((image.into(), ROM_MARKER));
     }
@@ -109,7 +112,7 @@ fn built_image(project: &str, chip: Chip) -> Option<PathBuf> {
 /// The Arduino sketch, built with the pinned ESP32 Arduino core, boots and resets.
 #[tokio::test]
 async fn arduino_hello_boots() {
-    const READY: &[u8] = b"esp32d-arduino ready";
+    const READY: &[u8] = b"esp32bench-arduino ready";
     for chip in Chip::ALL {
         let Some(image) = built_image("hello-arduino", chip) else {
             continue;
@@ -165,7 +168,7 @@ async fn uart_input_reaches_the_firmware() {
         s.uart.write(b"ping 42\r\n").await.unwrap();
         assert_eq!(
             s.uart
-                .wait_for(b"esp32d-hello echo ping 42", t, |_| {})
+                .wait_for(b"esp32bench-hello echo ping 42", t, |_| {})
                 .await
                 .unwrap(),
             WaitOutcome::Found,

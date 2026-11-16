@@ -1,5 +1,5 @@
 [package]
-name = "esp32d"
+name = "esp32bench"
 description = "Command-line interface to the esp32-desktop core"
 version.workspace = true
 edition.workspace = true
@@ -8,5 +8,5 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-esp32d-sim = { path = "../sim" }
+esp32bench-sim = { path = "../sim" }
 tokio.workspace = true
