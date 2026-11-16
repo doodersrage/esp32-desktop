@@ -505,6 +505,7 @@ dependencies = [
  "anyhow",
  "clap",
  "esp32bench-build",
+ "esp32bench-debug",
  "esp32bench-device",
  "esp32bench-flash",
  "esp32bench-library",
@@ -538,6 +539,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "esp32bench-build",
+ "esp32bench-debug",
  "esp32bench-device",
  "esp32bench-flash",
  "esp32bench-library",
@@ -551,6 +553,16 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "esp32bench-debug"
+version = "0.0.1"
+dependencies = [
+ "esp32bench-sim",
+ "serde_json",
+ "thiserror",
  "tokio",
 ]
 

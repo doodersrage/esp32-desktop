@@ -1,0 +1,15 @@
+[package]
+name = "esp32bench-debug"
+description = "GDB/MI client for esp32bench: parse MI records, drive a toolchain GDB against a target"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+esp32bench-sim = { path = "../sim" }

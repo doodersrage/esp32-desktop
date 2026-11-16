@@ -1,0 +1,105 @@
+{
+  "method": "debug.inspect",
+  "description": "While the firmware is stopped: its call stack (innermost first, at most 32 frames) and its general registers in hex (pc, a0-a15 and a few specials on Xtensa; pc and x0-x31 by ABI name on RISC-V).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "frames",
+      "registers"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "frames": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "addr"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "addr": {
+              "type": "string"
+            },
+            "func": {
+              "type": "string"
+            },
+            "file": {
+              "type": "string"
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "registers": {
+        "type": "array",
+        "items": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "required": [
+            "name",
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5
+      },
+      "result": {
+        "frames": [
+          {
+            "addr": "0x400d1a2f",
+            "func": "loop",
+            "file": "/home/me/blink/blink.ino",
+            "line": 9
+          }
+        ],
+        "registers": [
+          {
+            "name": "pc",
+            "value": "0x400d1a2f"
+          },
+          {
+            "name": "ar0",
+            "value": "0x800d2b44"
+          }
+        ]
+      }
+    }
+  ]
+}

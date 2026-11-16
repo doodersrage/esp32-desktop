@@ -1,0 +1,25 @@
+{
+  "event": "debug.running",
+  "description": "The debugged firmware is running again.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5
+      }
+    }
+  ]
+}

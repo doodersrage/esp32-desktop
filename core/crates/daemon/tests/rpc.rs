@@ -1247,6 +1247,219 @@ async fn sim_runs_a_build_with_console_and_reset() {
     }
 }
 
+/// Wait for a debug event named `event`, checking every notification on the way
+/// against its schema (UART output keeps arriving meanwhile).
+async fn debug_wait(c: &mut Client, sub: &Value, event: &str) -> Value {
+    loop {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(30), c.next_notification())
+            .await
+            .unwrap_or_else(|_| panic!("no {event}"))
+            .unwrap();
+        let method = n["method"].as_str().unwrap();
+        assert_valid(&method_def(method)["params"], &n["params"], method);
+        assert_eq!(&n["params"]["subscription"], sub);
+        if method == event {
+            return n["params"].clone();
+        }
+        assert_ne!(method, "debug.exited", "GDB exited");
+    }
+}
+
+#[tokio::test]
+async fn sim_debugs_a_build_with_gdb() {
+    let (Some(hello), Some(elf)) = (
+        firmware("hello-esp32.bin"),
+        Some(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../tests/firmware/build/hello-esp32/esp32bench-hello.elf"),
+        )
+        .filter(|p| p.is_file()),
+    ) else {
+        eprintln!("skipping: hello firmware not built");
+        return;
+    };
+    let data = esp32bench_toolchain::Env::default_arduino_data().unwrap_or_default();
+    if esp32bench_sim::install::find_qemu(esp32bench_sim::Arch::Xtensa).is_err()
+        || esp32bench_debug::find_gdb(&data, "esp32").is_none()
+    {
+        eprintln!("skipping: needs QEMU and the Arduino core's GDB");
+        return;
+    }
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&hello, out.join("blink.ino.merged.bin")).unwrap();
+    std::fs::copy(&elf, out.join("blink.ino.elf")).unwrap();
+
+    let r = c
+        .call(
+            "sim.start",
+            json!({ "project": "blink", "board": "esp32", "debug": true }),
+        )
+        .await
+        .unwrap();
+    assert_valid(&method_def("sim.start")["result"], &r, "sim.start result");
+    assert_eq!(r["debug"], true);
+    let sub = r["subscription"].clone();
+    // Starts paused at the reset vector.
+    debug_wait(&mut c, &sub, "debug.stopped").await;
+
+    let r = c
+        .call(
+            "debug.break",
+            json!({ "subscription": sub, "location": "app_main" }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("debug.break")["result"],
+        &r,
+        "debug.break result",
+    );
+    assert_eq!(r["breakpoint"]["func"], "app_main");
+    let number = r["breakpoint"]["number"].clone();
+
+    c.call(
+        "debug.control",
+        json!({ "subscription": sub, "action": "continue" }),
+    )
+    .await
+    .unwrap();
+    debug_wait(&mut c, &sub, "debug.running").await;
+    let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
+    assert_eq!(stop["reason"], "breakpoint-hit");
+    assert_eq!(stop["breakpoint"], number);
+    assert_eq!(stop["frame"]["func"], "app_main");
+    assert!(stop["frame"]["file"].as_str().unwrap().ends_with("hello.c"));
+
+    let r = c
+        .call("debug.inspect", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("debug.inspect")["result"],
+        &r,
+        "debug.inspect result",
+    );
+    assert_eq!(r["frames"][0]["func"], "app_main");
+    assert!(
+        r["registers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x["name"] == "pc")
+    );
+
+    c.call(
+        "debug.control",
+        json!({ "subscription": sub, "action": "next" }),
+    )
+    .await
+    .unwrap();
+    let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
+    assert_eq!(stop["reason"], "end-stepping-range");
+
+    c.call(
+        "debug.delete",
+        json!({ "subscription": sub, "breakpoint": number }),
+    )
+    .await
+    .unwrap();
+    c.call(
+        "debug.control",
+        json!({ "subscription": sub, "action": "continue" }),
+    )
+    .await
+    .unwrap();
+    // It runs on: the firmware gets to its ready line.
+    let mut seen = String::new();
+    while !seen.contains("esp32bench-hello ready") {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(30), c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        if n["method"] == "sim.output" {
+            seen.push_str(n["params"]["text"].as_str().unwrap());
+        }
+    }
+    c.call(
+        "debug.control",
+        json!({ "subscription": sub, "action": "interrupt" }),
+    )
+    .await
+    .unwrap();
+    let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
+    assert_eq!(stop["reason"], "signal-received");
+
+    // Locations are checked before GDB sees them.
+    match c
+        .call(
+            "debug.break",
+            json!({ "subscription": sub, "location": "x\n-gdb-exit" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("odd location accepted: {other:?}"),
+    }
+    c.call("core.unsubscribe", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn debug_needs_a_debug_session() {
+    let Some(hello) = firmware("hello-esp32.bin") else {
+        eprintln!("skipping: hello firmware not built");
+        return;
+    };
+    if esp32bench_sim::install::find_qemu(esp32bench_sim::Arch::Xtensa).is_err() {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    }
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&hello, out.join("blink.ino.merged.bin")).unwrap();
+    // No ELF: debugging is refused up front.
+    match c
+        .call(
+            "sim.start",
+            json!({ "project": "blink", "board": "esp32", "debug": true }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("debugged without an ELF: {other:?}"),
+    }
+    let r = c
+        .call("sim.start", json!({ "project": "blink", "board": "esp32" }))
+        .await
+        .unwrap();
+    assert_eq!(r["debug"], false);
+    match c
+        .call(
+            "debug.control",
+            json!({ "subscription": r["subscription"], "action": "continue" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
+        other => panic!("debug on a plain simulator: {other:?}"),
+    }
+    match c
+        .call("debug.inspect", json!({ "subscription": 999 }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("debug on no simulator: {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn sim_refuses_workbench_only_boards_and_missing_builds() {
     // The example library plus a C6 build of blink: C6 is not simulated.

@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.9.0";
+pub const PROTOCOL: &str = "0.10.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -134,7 +134,8 @@ pub fn router(state: Arc<State>) -> Router {
     let (s5, s6, s7) = (state.clone(), state.clone(), state.clone());
     let (s8, s9) = (state.clone(), state.clone());
     let (s10, s11, s12) = (state.clone(), state.clone(), state.clone());
-    let (s13, s14, s15) = (state.clone(), state.clone(), state);
+    let (s13, s14, s15) = (state.clone(), state.clone(), state.clone());
+    let (d1, d2, d3, d4) = (state.clone(), state.clone(), state.clone(), state);
     Router::new()
         .method("sim.start", move |p, ctx| {
             let s = s13.clone();
@@ -147,6 +148,22 @@ pub fn router(state: Arc<State>) -> Router {
         .method("sim.reset", move |p, ctx| {
             let s = s15.clone();
             async move { sim_reset(p, ctx, s).await }
+        })
+        .method("debug.break", move |p, ctx| {
+            let s = d1.clone();
+            async move { debug_break(p, ctx, s).await }
+        })
+        .method("debug.delete", move |p, ctx| {
+            let s = d2.clone();
+            async move { debug_delete(p, ctx, s).await }
+        })
+        .method("debug.control", move |p, ctx| {
+            let s = d3.clone();
+            async move { debug_control(p, ctx, s).await }
+        })
+        .method("debug.inspect", move |p, ctx| {
+            let s = d4.clone();
+            async move { debug_inspect(p, ctx, s).await }
         })
         .method("board.inspect", move |p, ctx| {
             let s = s10.clone();
@@ -467,6 +484,83 @@ fn toolchain_install(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
 enum SimCmd {
     Write(Vec<u8>),
     Reset(tokio::sync::oneshot::Sender<Result<(), String>>),
+    Debug(
+        DebugReq,
+        tokio::sync::oneshot::Sender<Result<Value, String>>,
+    ),
+}
+
+/// A request for the GDB attached to a simulator started with `debug: true`.
+enum DebugReq {
+    Break(String),
+    Delete(u32),
+    Control(String),
+    Inspect,
+}
+
+/// GDB attached to a paused simulator, ready for requests.
+struct Debugger {
+    gdb: esp32bench_debug::Gdb,
+    events: tokio::sync::mpsc::UnboundedReceiver<esp32bench_debug::Event>,
+}
+
+async fn start_debugger(
+    state: &State,
+    chip: &str,
+    elf: &Path,
+    port: u16,
+) -> Result<Debugger, RpcError> {
+    let gdb_path = esp32bench_debug::find_gdb(&state.arduino_data, chip).ok_or_else(|| {
+        RpcError::new(
+            code::UNAVAILABLE,
+            "GDB comes with the ESP32 core; install it from the toolchain setup",
+        )
+    })?;
+    let (mut gdb, events) = esp32bench_debug::Gdb::start(&gdb_path, elf)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    gdb.connect(port)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    Ok(Debugger { gdb, events })
+}
+
+async fn debug_request(gdb: &mut esp32bench_debug::Gdb, req: DebugReq) -> Result<Value, String> {
+    let r = match req {
+        DebugReq::Break(loc) => gdb.break_insert(&loc).await.map(|b| {
+            let mut bp = stop_frame(&b);
+            bp["number"] = json!(b["number"].as_str().and_then(|n| n.parse::<u32>().ok()).unwrap_or(0));
+            json!({ "breakpoint": bp })
+        }),
+        DebugReq::Delete(n) => gdb.break_delete(n).await.map(|()| json!({})),
+        DebugReq::Control(a) => gdb.control(&a).await.map(|()| json!({})),
+        DebugReq::Inspect => async {
+            let frames = gdb.frames().await?;
+            let registers = gdb.registers().await?;
+            Ok(json!({
+                "frames": frames.as_array().into_iter().flatten().map(stop_frame).collect::<Vec<_>>(),
+                "registers": registers.into_iter().map(|(name, value)| json!({ "name": name, "value": value })).collect::<Vec<_>>(),
+            }))
+        }
+        .await,
+    };
+    r.map_err(|e| e.to_string())
+}
+
+/// A GDB frame as the API reports it: function, source file and line when known.
+fn stop_frame(f: &Value) -> Value {
+    let mut out = serde_json::Map::new();
+    out.insert("addr".into(), json!(f["addr"].as_str().unwrap_or("")));
+    if let Some(func) = f["func"].as_str().filter(|s| *s != "??") {
+        out.insert("func".into(), json!(func));
+    }
+    if let Some(file) = f["fullname"].as_str().or(f["file"].as_str()) {
+        out.insert("file".into(), json!(file));
+    }
+    if let Some(line) = f["line"].as_str().and_then(|l| l.parse::<u32>().ok()) {
+        out.insert("line".into(), json!(line));
+    }
+    Value::Object(out)
 }
 
 /// Removes a simulator from the table when its subscription ends; dropping the task
@@ -488,6 +582,8 @@ impl Drop for SimEntry {
 struct SimStartParams {
     project: String,
     board: String,
+    #[serde(default)]
+    debug: bool,
 }
 
 async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
@@ -536,20 +632,44 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             format!("`{}` has not been built for `{}` yet", p.project, p.board),
         ));
     }
+    let elf = image.with_file_name(format!("{}.ino.elf", p.project));
+    if p.debug && !elf.is_file() {
+        return Err(RpcError::new(
+            code::NOT_FOUND,
+            format!("the build of `{}` has no ELF file to debug", p.project),
+        ));
+    }
     let qemu = esp32bench_sim::install::find_qemu(chip.arch())
         .map_err(|e| RpcError::new(code::UNAVAILABLE, e.to_string()))?;
+    // QEMU's GDB stub listens on loopback only; any free port will do.
+    let gdb_port = if p.debug {
+        let l = std::net::TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| RpcError::internal(e.to_string()))?;
+        Some(
+            l.local_addr()
+                .map_err(|e| RpcError::internal(e.to_string()))?
+                .port(),
+        )
+    } else {
+        None
+    };
     let mut session = esp32bench_sim::Session::start(esp32bench_sim::SessionConfig {
         chip,
         qemu,
         image,
-        gdb_port: None,
-        start_paused: false,
+        gdb_port,
+        // Debugging starts paused at the first instruction, for breakpoints in setup.
+        start_paused: p.debug,
         machine: None,
         extra_args: Vec::new(),
         env: Vec::new(),
     })
     .await
     .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    let mut debugger = match gdb_port {
+        Some(port) => Some(start_debugger(&state, &chip_id, &elf, port).await?),
+        None => None,
+    };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SimCmd>();
     let conn = ctx.connection_id();
@@ -595,7 +715,39 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                         Some(SimCmd::Reset(done)) => {
                             let _ = done.send(session.reset().await.map_err(|e| e.to_string()));
                         }
+                        Some(SimCmd::Debug(req, done)) => {
+                            let r = match debugger.as_mut() {
+                                Some(d) => debug_request(&mut d.gdb, req).await,
+                                None => Err("this simulator was not started for debugging".into()),
+                            };
+                            let _ = done.send(r);
+                        }
                         None => break,
+                    },
+                    ev = async {
+                        match debugger.as_mut() {
+                            Some(d) => d.events.recv().await,
+                            None => std::future::pending().await,
+                        }
+                    } => match ev {
+                        Some(esp32bench_debug::Event::Stopped(v)) => {
+                            let mut params = json!({
+                                "reason": v["reason"].as_str().unwrap_or("paused"),
+                                "frame": stop_frame(&v["frame"]),
+                            });
+                            if let Some(n) = v["bkptno"].as_str().and_then(|n| n.parse::<u32>().ok()) {
+                                params["breakpoint"] = json!(n);
+                            }
+                            sub.send("debug.stopped", params);
+                        }
+                        Some(esp32bench_debug::Event::Running) => {
+                            sub.send("debug.running", json!({}));
+                        }
+                        Some(esp32bench_debug::Event::Console(_)) => {}
+                        Some(esp32bench_debug::Event::Exited) | None => {
+                            debugger = None;
+                            sub.send("debug.exited", json!({}));
+                        }
                     },
                 }
             }
@@ -603,7 +755,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             let _ = session.shutdown().await;
         }
     });
-    Ok(json!({ "subscription": id, "chip": chip }))
+    Ok(json!({ "subscription": id, "chip": chip, "debug": p.debug }))
 }
 
 fn sim_sender(
@@ -635,6 +787,73 @@ async fn sim_write(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
         .send(SimCmd::Write(bytes))
         .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?;
     Ok(json!({}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DebugBreakParams {
+    subscription: u64,
+    location: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DebugDeleteParams {
+    subscription: u64,
+    breakpoint: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DebugControlParams {
+    subscription: u64,
+    action: String,
+}
+
+async fn debug_call(
+    state: &State,
+    ctx: &Ctx,
+    subscription: u64,
+    req: DebugReq,
+) -> Result<Value, RpcError> {
+    let (done, result) = tokio::sync::oneshot::channel();
+    sim_sender(state, ctx, subscription)?
+        .send(SimCmd::Debug(req, done))
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?;
+    result
+        .await
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?
+        .map_err(|e| RpcError::new(code::FAILED, e))
+}
+
+async fn debug_break(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: DebugBreakParams = parse_params(params)?;
+    if !esp32bench_debug::valid_location(&p.location) {
+        return Err(RpcError::invalid_params(
+            "location must be a function name or file:line",
+        ));
+    }
+    debug_call(&state, &ctx, p.subscription, DebugReq::Break(p.location)).await
+}
+
+async fn debug_delete(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: DebugDeleteParams = parse_params(params)?;
+    debug_call(&state, &ctx, p.subscription, DebugReq::Delete(p.breakpoint)).await
+}
+
+async fn debug_control(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: DebugControlParams = parse_params(params)?;
+    if !["continue", "next", "step", "finish", "interrupt"].contains(&p.action.as_str()) {
+        return Err(RpcError::invalid_params(
+            "action must be continue, next, step, finish or interrupt",
+        ));
+    }
+    debug_call(&state, &ctx, p.subscription, DebugReq::Control(p.action)).await
+}
+
+async fn debug_inspect(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: SerialRefParams = parse_params(params)?;
+    debug_call(&state, &ctx, p.subscription, DebugReq::Inspect).await
 }
 
 async fn sim_reset(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {

@@ -1,0 +1,48 @@
+{
+  "method": "debug.control",
+  "description": "Run or step the debugged firmware: continue, next (step over), step (into), finish (out of the function), or interrupt (pause). The result comes at once; debug.running and debug.stopped follow.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "action"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "action": {
+        "enum": [
+          "continue",
+          "next",
+          "step",
+          "finish",
+          "interrupt"
+        ]
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "action": "continue"
+      },
+      "result": {}
+    }
+  ]
+}

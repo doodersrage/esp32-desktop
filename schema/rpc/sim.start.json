@@ -1,6 +1,6 @@
 {
   "method": "sim.start",
-  "description": "Run the last build of a project for a board (build.start's output) in QEMU. Only ESP32, ESP32-S3 and ESP32-C3 boards are simulated; others are workbench-only and refused. Returns a subscription: sim.output carries UART0, sim.exited says when QEMU stopped. sim.write and sim.reset act on it; core.unsubscribe stops QEMU, as does closing the connection. The simulator is firmware-level: no Wi-Fi radio, no attached parts.",
+  "description": "Run the last build of a project for a board (build.start's output) in QEMU. Only ESP32, ESP32-S3 and ESP32-C3 boards are simulated; others are workbench-only and refused. Returns a subscription: sim.output carries UART0, sim.exited says when QEMU stopped. sim.write and sim.reset act on it; core.unsubscribe stops QEMU, as does closing the connection. With debug: true, QEMU starts paused with its GDB stub on loopback and the core attaches the Arduino core's GDB to the build's ELF; debug.* methods and debug.stopped, debug.running and debug.exited events then work on the same subscription. The simulator is firmware-level: no Wi-Fi radio, no attached parts.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -15,6 +15,10 @@
       },
       "board": {
         "type": "string"
+      },
+      "debug": {
+        "type": "boolean",
+        "default": false
       }
     }
   },
@@ -37,6 +41,9 @@
           "esp32s3",
           "esp32c3"
         ]
+      },
+      "debug": {
+        "type": "boolean"
       }
     }
   },
@@ -47,7 +54,10 @@
   ],
   "events": [
     "sim.output",
-    "sim.exited"
+    "sim.exited",
+    "debug.stopped",
+    "debug.running",
+    "debug.exited"
   ],
   "examples": [
     {
@@ -57,7 +67,20 @@
       },
       "result": {
         "subscription": 5,
-        "chip": "esp32"
+        "chip": "esp32",
+        "debug": false
+      }
+    },
+    {
+      "params": {
+        "project": "blink",
+        "board": "esp32",
+        "debug": true
+      },
+      "result": {
+        "subscription": 6,
+        "chip": "esp32",
+        "debug": true
       }
     }
   ]

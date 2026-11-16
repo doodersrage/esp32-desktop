@@ -9,6 +9,7 @@
 #include "SerialMonitor.h"
 #include "SetupDialog.h"
 #include "SimulatorPanel.h"
+#include "DebugPanel.h"
 
 #include <QAction>
 #include <QApplication>
@@ -79,6 +80,19 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     connect(core, &CoreConnection::simStarted, this, [this] {
         m_simDock->show();
         m_simDock->raise();
+    });
+
+    m_debugDock = new QDockWidget(tr("Debugger"), this);
+    m_debugDock->setObjectName(u"debugDock"_s);
+    m_debugger = new DebugPanel(core, m_debugDock);
+    m_debugDock->setWidget(m_debugger);
+    // Beside the simulator's console, not tabbed over it: both are needed at once.
+    splitDockWidget(m_simDock, m_debugDock, Qt::Horizontal);
+    m_debugDock->hide(); // until the first debug session
+    connect(core, &CoreConnection::debugStarted, this, [this] {
+        m_simDock->show();
+        m_debugDock->show();
+        m_debugDock->raise();
     });
     connect(m_devices, &DevicesPanel::portActivated, this, [this](const QString &path) {
         m_serialDock->show();
@@ -196,6 +210,7 @@ void MainWindow::buildMenus()
     view->addAction(m_buildDock->toggleViewAction());
     view->addAction(m_serialDock->toggleViewAction());
     view->addAction(m_simDock->toggleViewAction());
+    view->addAction(m_debugDock->toggleViewAction());
 
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
     QAction *setup = tools->addAction(QIcon::fromTheme(u"configure"_s), tr("&Toolchain setup…"));

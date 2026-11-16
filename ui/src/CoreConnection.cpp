@@ -107,7 +107,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.9.0"_s},
+        {u"protocol"_s, u"0.10.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -213,7 +213,7 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
-    } else if (method == u"sim.output" || method == u"sim.exited") {
+    } else if (method == u"sim.output" || method == u"sim.exited" || method.startsWith(u"debug.")) {
         if (sub == m_simSub)
             handleSimEvent(method, params);
         else if (m_simSub == -1)
@@ -522,12 +522,13 @@ void CoreConnection::flashBuild(const QString &port, const QString &project, con
     });
 }
 
-void CoreConnection::startSim(const QString &project, const QString &board)
+void CoreConnection::startSim(const QString &project, const QString &board, bool debug)
 {
     if (m_simSub != 0)
         return; // one simulator at a time
     m_simSub = -1;
-    m_client->call(u"sim.start"_s, {{u"project"_s, project}, {u"board"_s, board}}, this,
+    m_debugging = false;
+    m_client->call(u"sim.start"_s, {{u"project"_s, project}, {u"board"_s, board}, {u"debug"_s, debug}}, this,
                    [this, project, board](const RpcReply &r) {
                        if (!r.ok) {
                            m_simSub = 0;
@@ -537,7 +538,10 @@ void CoreConnection::startSim(const QString &project, const QString &board)
                        }
                        const QJsonObject o = r.result.toObject();
                        m_simSub = o.value(u"subscription"_s).toInteger();
+                       m_debugging = o.value(u"debug"_s).toBool();
                        emit simStarted(project, board, o.value(u"chip"_s).toString());
+                       if (m_debugging)
+                           emit debugStarted();
                        const auto early = std::exchange(m_earlySimEvents, {});
                        for (const auto &[m, p] : early) {
                            if (m_simSub > 0 && p.value(u"subscription"_s).toInteger() == m_simSub)
@@ -552,7 +556,24 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
         emit simOutput(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
         return;
     }
+    if (method == u"debug.stopped") {
+        emit debugStopped(params.value(u"reason"_s).toString(), params.value(u"frame"_s).toObject(),
+                          params.value(u"breakpoint"_s).toInt());
+        return;
+    }
+    if (method == u"debug.running") {
+        emit debugRunning();
+        return;
+    }
+    if (method == u"debug.exited") {
+        m_debugging = false;
+        emit debugExited();
+        return;
+    }
+    if (method != u"sim.exited")
+        return;
     m_simSub = 0;
+    m_debugging = false;
     emit simStopped(params.value(u"reason"_s).toString());
 }
 
@@ -561,6 +582,7 @@ void CoreConnection::stopSim()
     if (m_simSub <= 0)
         return;
     const qint64 sub = std::exchange(m_simSub, 0);
+    m_debugging = false;
     m_client->call(u"core.unsubscribe"_s, {{u"subscription"_s, sub}}, this, [](const RpcReply &) {});
     emit simStopped(tr("Stopped."));
 }
@@ -583,5 +605,58 @@ void CoreConnection::resetSim()
     m_client->call(u"sim.reset"_s, {{u"subscription"_s, m_simSub}}, this, [this](const RpcReply &r) {
         if (!r.ok)
             emit requestFailed(u"sim.reset"_s, r.errorMessage);
+    });
+}
+
+void CoreConnection::debugBreak(const QString &location)
+{
+    if (!isDebugging())
+        return;
+    m_client->call(u"debug.break"_s, {{u"subscription"_s, m_simSub}, {u"location"_s, location}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"debug.break"_s, r.errorMessage);
+                           return;
+                       }
+                       emit breakpointSet(r.result.toObject().value(u"breakpoint"_s).toObject());
+                   });
+}
+
+void CoreConnection::debugDelete(int breakpoint)
+{
+    if (!isDebugging())
+        return;
+    m_client->call(u"debug.delete"_s, {{u"subscription"_s, m_simSub}, {u"breakpoint"_s, breakpoint}}, this,
+                   [this, breakpoint](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"debug.delete"_s, r.errorMessage);
+                           return;
+                       }
+                       emit breakpointDeleted(breakpoint);
+                   });
+}
+
+void CoreConnection::debugControl(const QString &action)
+{
+    if (!isDebugging())
+        return;
+    m_client->call(u"debug.control"_s, {{u"subscription"_s, m_simSub}, {u"action"_s, action}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok)
+                           emit requestFailed(u"debug.control"_s, r.errorMessage);
+                   });
+}
+
+void CoreConnection::debugInspect()
+{
+    if (!isDebugging())
+        return;
+    m_client->call(u"debug.inspect"_s, {{u"subscription"_s, m_simSub}}, this, [this](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"debug.inspect"_s, r.errorMessage);
+            return;
+        }
+        const QJsonObject o = r.result.toObject();
+        emit debugInspected(o.value(u"frames"_s).toArray(), o.value(u"registers"_s).toArray());
     });
 }

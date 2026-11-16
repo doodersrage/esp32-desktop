@@ -1,0 +1,64 @@
+{
+  "event": "debug.stopped",
+  "description": "The debugged firmware stopped: at the start (reason \"paused\"), at a breakpoint (\"breakpoint-hit\", with its number), after a step (\"end-stepping-range\", \"function-finished\") or on interrupt (\"signal-received\").",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "reason",
+      "frame"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "reason": {
+        "type": "string"
+      },
+      "frame": {
+        "type": "object",
+        "required": [
+          "addr"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "addr": {
+            "type": "string"
+          },
+          "func": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "breakpoint": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "reason": "breakpoint-hit",
+        "breakpoint": 1,
+        "frame": {
+          "addr": "0x400d1a2c",
+          "func": "setup",
+          "file": "/home/me/blink/blink.ino",
+          "line": 4
+        }
+      }
+    }
+  ]
+}

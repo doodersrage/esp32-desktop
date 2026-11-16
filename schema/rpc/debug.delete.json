@@ -1,0 +1,42 @@
+{
+  "method": "debug.delete",
+  "description": "Remove a breakpoint set with debug.break.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "breakpoint"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "breakpoint": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "errors": [
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "breakpoint": 1
+      },
+      "result": {}
+    }
+  ]
+}

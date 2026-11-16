@@ -27,6 +27,16 @@ pub enum Arch {
 impl Chip {
     pub const ALL: [Chip; 3] = [Chip::Esp32, Chip::Esp32s3, Chip::Esp32c3];
 
+    /// The chip id used in the API and the project library ("esp32", "esp32s3",
+    /// "esp32c3"), the same as its serialized form.
+    pub fn id(self) -> &'static str {
+        match self {
+            Chip::Esp32 => "esp32",
+            Chip::Esp32s3 => "esp32s3",
+            Chip::Esp32c3 => "esp32c3",
+        }
+    }
+
     pub fn arch(self) -> Arch {
         match self {
             Chip::Esp32 | Chip::Esp32s3 => Arch::Xtensa,
@@ -140,6 +150,13 @@ mod tests {
             "atmega328".parse::<Chip>(),
             Err(Error::UnknownChip(_))
         ));
+    }
+
+    #[test]
+    fn id_matches_serialized_form() {
+        for c in [Chip::Esp32, Chip::Esp32s3, Chip::Esp32c3] {
+            assert_eq!(serde_json::to_value(c).unwrap(), c.id());
+        }
     }
 
     #[test]

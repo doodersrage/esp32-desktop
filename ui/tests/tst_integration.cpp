@@ -2,6 +2,7 @@
 // daemon binary. Set ESP32BENCH_SCREENSHOT to a .png path to save the main window.
 
 #include "CoreConnection.h"
+#include "DebugPanel.h"
 #include "DevicesPanel.h"
 #include "BuildPanel.h"
 #include "LibraryPanel.h"
@@ -17,6 +18,8 @@
 #include <QTemporaryDir>
 #include <QStandardPaths>
 #include <QTest>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QTreeWidget>
 
 #include <csignal>
@@ -137,6 +140,33 @@ private slots:
             QTRY_VERIFY_WITH_TIMEOUT(window.simulator()->outputText().contains(u"esp32bench-hello ready"_s), 30000);
             core.stopSim();
             QTRY_VERIFY(!core.isSimRunning());
+
+            // Debug it: QEMU paused under the Arduino core's GDB, a breakpoint in
+            // app_main, continue, and the stack where it stopped.
+            const QString elf = QStringLiteral(ESP32BENCH_SOURCE_DIR
+                                               "/../tests/firmware/build/hello-esp32/esp32bench-hello.elf");
+            const QString gdb = QDir::homePath()
+                + u"/.arduino15/packages/esp32/tools/xtensa-esp-elf-gdb/17.1_20260402/bin/xtensa-esp32-elf-gdb"_s;
+            if (QFile::exists(elf) && QFile::exists(gdb)) {
+                const QString built = dir.filePath(u"cache/esp32bench/builds/blink/esp32/out/blink.ino.elf"_s);
+                QVERIFY(QFile::remove(built));
+                QVERIFY(QFile::copy(elf, built));
+                DebugPanel *dbg = window.debugger();
+                window.buildPanel()->debugButton()->click();
+                QTRY_VERIFY_WITH_TIMEOUT(dbg->statusText().contains(u"before the firmware starts"_s), 30000);
+                dbg->locationInput()->setText(u"app_main"_s);
+                dbg->addButton()->click();
+                QTRY_COMPARE_WITH_TIMEOUT(dbg->breakpoints()->count(), 1, 10000);
+                dbg->continueButton()->click();
+                QTRY_VERIFY_WITH_TIMEOUT(dbg->statusText().contains(u"Stopped at breakpoint 1 in app_main (hello.c"_s), 30000);
+                QTRY_VERIFY_WITH_TIMEOUT(dbg->stack()->topLevelItemCount() > 0, 10000);
+                QCOMPARE(dbg->stack()->topLevelItem(0)->text(0), u"app_main"_s);
+                QVERIFY(dbg->registers()->topLevelItemCount() > 0);
+                core.stopSim();
+                QTRY_VERIFY(!core.isSimRunning());
+            } else {
+                qWarning("hello ELF or GDB missing; debugger step skipped");
+            }
         } else {
             qWarning("hello firmware or QEMU missing; simulator step skipped");
         }

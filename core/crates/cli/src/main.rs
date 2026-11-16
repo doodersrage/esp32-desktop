@@ -618,9 +618,21 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             if paused && session.gdb.is_none() {
                 bail!("--paused needs --gdb, or nothing can resume the target");
             }
+            let chip = session.chip;
             let mut s = start(session, paused).await?;
             if let Some(addr) = s.gdb_addr() {
                 eprintln!("GDB stub on {addr}");
+                // The same GDB the app's debugger uses.
+                let data = esp32bench_toolchain::Env::default_arduino_data().unwrap_or_default();
+                match esp32bench_debug::find_gdb(&data, chip.id()) {
+                    Some(gdb) => eprintln!(
+                        "attach with: {} -iex 'set auto-load off' -ex 'target remote {addr}' <firmware.elf>",
+                        gdb.display()
+                    ),
+                    None => eprintln!(
+                        "GDB comes with the ESP32 core (esp32bench toolchain install esp32-core)"
+                    ),
+                }
             }
             let mut out = std::io::stdout();
             // Lines typed on stdin go to UART0 RX, ending in CR LF like a serial terminal.

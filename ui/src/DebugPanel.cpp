@@ -1,0 +1,227 @@
+#include "DebugPanel.h"
+
+#include "CoreConnection.h"
+
+#include <QFileInfo>
+#include <QFontDatabase>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QIcon>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QPushButton>
+#include <QSplitter>
+#include <QTreeWidget>
+#include <QVBoxLayout>
+
+using namespace Qt::StringLiterals;
+
+namespace {
+constexpr int NumberRole = Qt::UserRole + 1;
+}
+
+DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
+    : QWidget(parent)
+    , m_core(core)
+    , m_status(new QLabel(this))
+    , m_continue(new QPushButton(QIcon::fromTheme(u"debug-run"_s, QIcon::fromTheme(u"media-playback-start"_s)),
+                                 tr("Continue"), this))
+    , m_pause(new QPushButton(QIcon::fromTheme(u"media-playback-pause"_s), tr("Pause"), this))
+    , m_next(new QPushButton(QIcon::fromTheme(u"debug-step-over"_s), tr("Step over"), this))
+    , m_step(new QPushButton(QIcon::fromTheme(u"debug-step-into"_s), tr("Step into"), this))
+    , m_finish(new QPushButton(QIcon::fromTheme(u"debug-step-out"_s), tr("Step out"), this))
+    , m_location(new QLineEdit(this))
+    , m_add(new QPushButton(QIcon::fromTheme(u"list-add"_s), tr("Add breakpoint"), this))
+    , m_remove(new QPushButton(QIcon::fromTheme(u"list-remove"_s), tr("Remove"), this))
+    , m_breakpoints(new QListWidget(this))
+    , m_stack(new QTreeWidget(this))
+    , m_registers(new QTreeWidget(this))
+{
+    m_status->setWordWrap(true);
+    m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_continue->setToolTip(tr("Run until a breakpoint or Pause"));
+    m_next->setToolTip(tr("Run to the next line, stepping over calls"));
+    m_step->setToolTip(tr("Run to the next line, stepping into calls"));
+    m_finish->setToolTip(tr("Run until the current function returns"));
+    m_location->setPlaceholderText(tr("Function or file:line, e.g. setup or blink.ino:12"));
+    m_add->setToolTip(tr("Breakpoints can be added while the firmware is paused"));
+
+    const QFont fixed = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    m_stack->setHeaderLabels({tr("Function"), tr("Location")});
+    m_stack->setRootIsDecorated(false);
+    m_registers->setHeaderLabels({tr("Register"), tr("Value")});
+    m_registers->setRootIsDecorated(false);
+    m_registers->setFont(fixed);
+    m_registers->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+
+    connect(m_continue, &QPushButton::clicked, this, [this] { m_core->debugControl(u"continue"_s); });
+    connect(m_pause, &QPushButton::clicked, this, [this] { m_core->debugControl(u"interrupt"_s); });
+    connect(m_next, &QPushButton::clicked, this, [this] { m_core->debugControl(u"next"_s); });
+    connect(m_step, &QPushButton::clicked, this, [this] { m_core->debugControl(u"step"_s); });
+    connect(m_finish, &QPushButton::clicked, this, [this] { m_core->debugControl(u"finish"_s); });
+    connect(m_add, &QPushButton::clicked, this, &DebugPanel::addBreakpoint);
+    connect(m_location, &QLineEdit::returnPressed, this, &DebugPanel::addBreakpoint);
+    connect(m_remove, &QPushButton::clicked, this, [this] {
+        if (QListWidgetItem *item = m_breakpoints->currentItem())
+            m_core->debugDelete(item->data(NumberRole).toInt());
+    });
+    connect(m_breakpoints, &QListWidget::currentItemChanged, this, [this] { setMode(m_mode); });
+
+    auto *controls = new QHBoxLayout;
+    for (QPushButton *b : {m_continue, m_pause, m_next, m_step, m_finish})
+        controls->addWidget(b);
+    controls->addStretch(1);
+    auto *add = new QHBoxLayout;
+    add->addWidget(m_location, 1);
+    add->addWidget(m_add);
+    add->addWidget(m_remove);
+
+    auto *bpBox = new QWidget(this);
+    auto *bpLayout = new QVBoxLayout(bpBox);
+    bpLayout->setContentsMargins(0, 0, 0, 0);
+    bpLayout->addWidget(new QLabel(tr("Breakpoints"), bpBox));
+    bpLayout->addLayout(add);
+    bpLayout->addWidget(m_breakpoints, 1);
+    auto *stackBox = new QWidget(this);
+    auto *stackLayout = new QVBoxLayout(stackBox);
+    stackLayout->setContentsMargins(0, 0, 0, 0);
+    stackLayout->addWidget(new QLabel(tr("Call stack"), stackBox));
+    stackLayout->addWidget(m_stack, 1);
+
+    auto *splitter = new QSplitter(Qt::Horizontal, this);
+    splitter->addWidget(bpBox);
+    splitter->addWidget(stackBox);
+    splitter->addWidget(m_registers);
+    splitter->setStretchFactor(1, 1);
+
+    auto *layout = new QVBoxLayout(this);
+    layout->addWidget(m_status);
+    layout->addLayout(controls);
+    layout->addWidget(splitter, 1);
+
+    connect(m_core, &CoreConnection::debugStarted, this, [this] {
+        m_breakpoints->clear();
+        m_stack->clear();
+        m_registers->clear();
+        setMode(Mode::Paused);
+    });
+    connect(m_core, &CoreConnection::debugStopped, this, &DebugPanel::stopped);
+    connect(m_core, &CoreConnection::debugRunning, this, [this] {
+        m_status->setText(tr("Running."));
+        setMode(Mode::Running);
+    });
+    connect(m_core, &CoreConnection::debugExited, this, [this] {
+        m_status->setText(tr("GDB has stopped; the simulator keeps running without the debugger."));
+        setMode(Mode::Off);
+    });
+    connect(m_core, &CoreConnection::simStopped, this, [this] {
+        if (m_mode == Mode::Off)
+            return;
+        m_status->setText(tr("The simulator has stopped."));
+        setMode(Mode::Off);
+    });
+    connect(m_core, &CoreConnection::breakpointSet, this, [this](const QJsonObject &bp) {
+        const int number = bp.value(u"number"_s).toInt();
+        auto *item = new QListWidgetItem(tr("%1: %2").arg(number).arg(where(bp)), m_breakpoints);
+        item->setData(NumberRole, number);
+        item->setToolTip(bp.value(u"file"_s).toString());
+        m_location->clear();
+    });
+    connect(m_core, &CoreConnection::breakpointDeleted, this, [this](int number) {
+        for (int i = 0; i < m_breakpoints->count(); ++i) {
+            if (m_breakpoints->item(i)->data(NumberRole).toInt() == number)
+                delete m_breakpoints->takeItem(i);
+        }
+        setMode(m_mode);
+    });
+    connect(m_core, &CoreConnection::debugInspected, this, &DebugPanel::showInspection);
+    connect(m_core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
+        if (method.startsWith(u"debug."))
+            m_status->setText(tr("Debugger: %1").arg(message));
+    });
+    m_status->setText(tr("Not debugging. Build a project for an ESP32, ESP32-S3 or ESP32-C3 board, "
+                         "then choose Debug in simulator."));
+    setMode(Mode::Off);
+}
+
+QString DebugPanel::statusText() const
+{
+    return m_status->text();
+}
+
+void DebugPanel::addBreakpoint()
+{
+    const QString loc = m_location->text().trimmed();
+    if (loc.isEmpty() || m_mode != Mode::Paused)
+        return;
+    m_core->debugBreak(loc);
+}
+
+QString DebugPanel::where(const QJsonObject &frame)
+{
+    const QString func = frame.value(u"func"_s).toString();
+    const QString file = QFileInfo(frame.value(u"file"_s).toString()).fileName();
+    const int line = frame.value(u"line"_s).toInt();
+    if (!func.isEmpty() && !file.isEmpty() && line > 0)
+        return tr("%1 (%2, line %3)").arg(func, file).arg(line);
+    if (!func.isEmpty())
+        return func;
+    return frame.value(u"addr"_s).toString();
+}
+
+void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int breakpoint)
+{
+    if (reason == u"paused" && frame.value(u"func"_s).toString().isEmpty())
+        m_status->setText(tr("Paused before the firmware starts. Add breakpoints, then Continue."));
+    else if (reason == u"breakpoint-hit")
+        m_status->setText(tr("Stopped at breakpoint %1 in %2.").arg(breakpoint).arg(where(frame)));
+    else
+        m_status->setText(tr("Paused in %1.").arg(where(frame)));
+    for (int i = 0; i < m_breakpoints->count(); ++i) {
+        if (breakpoint > 0 && m_breakpoints->item(i)->data(NumberRole).toInt() == breakpoint)
+            m_breakpoints->setCurrentRow(i);
+    }
+    setMode(Mode::Paused);
+    m_core->debugInspect();
+}
+
+void DebugPanel::showInspection(const QJsonArray &frames, const QJsonArray &registers)
+{
+    m_stack->clear();
+    for (const QJsonValue &v : frames) {
+        const QJsonObject f = v.toObject();
+        const QString file = QFileInfo(f.value(u"file"_s).toString()).fileName();
+        const int line = f.value(u"line"_s).toInt();
+        auto *item = new QTreeWidgetItem(m_stack);
+        item->setText(0, f.value(u"func"_s).toString(f.value(u"addr"_s).toString()));
+        item->setText(1, line > 0 ? tr("%1:%2").arg(file).arg(line) : file);
+        item->setToolTip(1, f.value(u"file"_s).toString());
+    }
+    m_registers->clear();
+    for (const QJsonValue &v : registers) {
+        const QJsonObject r = v.toObject();
+        auto *item = new QTreeWidgetItem(m_registers);
+        item->setText(0, r.value(u"name"_s).toString());
+        item->setText(1, r.value(u"value"_s).toString());
+    }
+}
+
+void DebugPanel::setMode(Mode mode)
+{
+    m_mode = mode;
+    const bool paused = mode == Mode::Paused;
+    m_continue->setEnabled(paused);
+    m_next->setEnabled(paused);
+    m_step->setEnabled(paused);
+    m_finish->setEnabled(paused);
+    m_pause->setEnabled(mode == Mode::Running);
+    // GDB takes breakpoints only while the target is stopped.
+    m_location->setEnabled(paused);
+    m_add->setEnabled(paused);
+    m_remove->setEnabled(paused && m_breakpoints->currentItem());
+    if (mode == Mode::Running) {
+        m_stack->clear();
+        m_registers->clear();
+    }
+}

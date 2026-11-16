@@ -24,6 +24,7 @@ public:
     QComboBox *portPicker() const { return m_port; }
     QPushButton *flashButton() const { return m_flash; }
     QPushButton *simulateButton() const { return m_simulate; }
+    QPushButton *debugButton() const { return m_debug; }
 
 signals:
     // Flash the last successful build to `port`.
@@ -43,6 +44,7 @@ private:
     QComboBox *m_port;
     QPushButton *m_flash;
     QPushButton *m_simulate;
+    QPushButton *m_debug;
     QProgressBar *m_progress;
     // The last build that succeeded, which Flash writes.
     QString m_builtProject;

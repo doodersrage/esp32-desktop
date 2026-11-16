@@ -1,0 +1,25 @@
+{
+  "event": "debug.exited",
+  "description": "GDB has gone; debug requests now fail. The simulator keeps running.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5
+      }
+    }
+  ]
+}

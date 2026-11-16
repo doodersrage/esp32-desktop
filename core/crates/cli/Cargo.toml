@@ -10,6 +10,7 @@ publish.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 esp32bench-build = { path = "../build" }
+esp32bench-debug = { path = "../debug" }
 esp32bench-device = { path = "../device" }
 esp32bench-flash = { path = "../flash" }
 esp32bench-library = { path = "../library" }

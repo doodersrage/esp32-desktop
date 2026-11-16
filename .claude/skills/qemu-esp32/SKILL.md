@@ -73,6 +73,14 @@ target remote :1234
 
 The core speaks GDB/MI to it; the same client is used for real boards.
 
+Gotchas found building the debugger (`core/crates/debug`):
+
+- Keep UART0 drained. If nothing reads the UART socket, QEMU stalls once its buffer fills, and a `continue` never reaches the breakpoint.
+- Set `mi-async on` before connecting, or GDB will not take `-exec-interrupt` while the target runs. Breakpoints still need the target stopped.
+- Use hardware breakpoints (`-break-insert -h`): code runs from flash.
+- On the C3, `-data-list-register-values` for all registers fails (QEMU cannot read the `htimedelta` CSR). Ask for registers by number.
+- Start GDB with `-iex "set auto-load off"` before the ELF: a downloaded project's ELF could carry GDB scripts.
+
 ## 6. Boot tests
 
 A boot test passes when an expected marker string appears on UART0 within a timeout, and fails on a panic banner or timeout. Always kill QEMU at the end of the test, pass or fail.

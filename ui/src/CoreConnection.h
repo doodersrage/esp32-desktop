@@ -97,11 +97,20 @@ public:
 
     // sim.start: run the last build of a project for a board in QEMU. simStarted, then
     // simOutput until simStopped. One simulator at a time.
-    void startSim(const QString &project, const QString &board);
+    // With debug, QEMU starts paused with GDB attached: debugStarted follows simStarted,
+    // then the debug* calls below work until the simulator stops.
+    void startSim(const QString &project, const QString &board, bool debug = false);
     void stopSim();
     void writeSim(const QByteArray &bytes);
     void resetSim();
     bool isSimRunning() const { return m_simSub > 0; }
+    bool isDebugging() const { return m_simSub > 0 && m_debugging; }
+
+    // debug.*: on the simulator started with debug. Results come as signals.
+    void debugBreak(const QString &location);
+    void debugDelete(int breakpoint);
+    void debugControl(const QString &action);
+    void debugInspect();
 
     // Error code the core uses when consent is missing (docs/rpc.md).
     static constexpr int ConsentRequired = -32002;
@@ -142,6 +151,15 @@ signals:
     void simStarted(const QString &project, const QString &board, const QString &chip);
     void simOutput(const QByteArray &bytes);
     void simStopped(const QString &reason);
+
+    // Debugger.
+    void debugStarted();
+    void debugStopped(const QString &reason, const QJsonObject &frame, int breakpoint);
+    void debugRunning();
+    void debugExited();
+    void breakpointSet(const QJsonObject &breakpoint);
+    void breakpointDeleted(int number);
+    void debugInspected(const QJsonArray &frames, const QJsonArray &registers);
     // A request failed. `method` is the RPC method name.
     void requestFailed(const QString &method, const QString &message);
 
@@ -181,5 +199,6 @@ private:
     QString m_boardOperation;
     QList<QPair<QString, QJsonObject>> m_earlyBoardEvents;
     qint64 m_simSub = 0; // running sim.start subscription, -1 while starting, or 0
+    bool m_debugging = false;
     QList<QPair<QString, QJsonObject>> m_earlySimEvents;
 };
