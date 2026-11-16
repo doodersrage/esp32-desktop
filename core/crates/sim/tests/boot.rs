@@ -50,6 +50,7 @@ fn setup(chip: Chip) -> Option<(SessionConfig, &'static [u8])> {
         start_paused: false,
         machine: None,
         extra_args: Vec::new(),
+        env: Vec::new(),
     };
     Some((cfg, marker))
 }
@@ -90,6 +91,58 @@ async fn esp32s3_boots() {
 #[tokio::test]
 async fn esp32c3_boots() {
     boot_reset_and_quit(Chip::Esp32c3).await;
+}
+
+/// A built firmware image from tests/firmware/out, if present.
+fn built_image(project: &str, chip: Chip) -> Option<PathBuf> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/firmware/out")
+        .join(format!("{project}-{chip}.bin"));
+    if p.is_file() {
+        Some(p)
+    } else {
+        eprintln!("skipping {project} on {chip}: {} not built", p.display());
+        None
+    }
+}
+
+/// The Arduino sketch, built with the pinned ESP32 Arduino core, boots and resets.
+#[tokio::test]
+async fn arduino_hello_boots() {
+    const READY: &[u8] = b"esp32d-arduino ready";
+    for chip in Chip::ALL {
+        let Some(image) = built_image("hello-arduino", chip) else {
+            continue;
+        };
+        let Ok(qemu) = install::find_qemu(chip.arch()) else {
+            eprintln!("skipping hello-arduino on {chip}: QEMU not installed");
+            continue;
+        };
+        let cfg = SessionConfig {
+            chip,
+            qemu,
+            image,
+            gdb_port: None,
+            start_paused: false,
+            machine: None,
+            extra_args: Vec::new(),
+            env: Vec::new(),
+        };
+        let mut s = Session::start(cfg).await.unwrap();
+        let t = Duration::from_secs(30);
+        assert_eq!(
+            s.uart.wait_for(READY, t, |_| {}).await.unwrap(),
+            WaitOutcome::Found,
+            "{chip}"
+        );
+        s.reset().await.unwrap();
+        assert_eq!(
+            s.uart.wait_for(READY, t, |_| {}).await.unwrap(),
+            WaitOutcome::Found,
+            "{chip} after reset"
+        );
+        s.shutdown().await.unwrap();
+    }
 }
 
 /// The hello firmware echoes lines it receives on UART0.

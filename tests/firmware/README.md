@@ -1,10 +1,12 @@
 # Boot-test firmware
 
-Small firmware projects that the core's QEMU boot tests run. The ESP-IDF version is pinned in `IDF_VERSION`.
+Small firmware projects that the core's QEMU boot tests run. The ESP-IDF version is pinned in `IDF_VERSION` and the ESP32 Arduino core version in `ARDUINO_ESP32_VERSION`.
 
 | Project | What it does | Marker on UART0 |
 | --- | --- | --- |
 | `hello` | Prints a ready line, a tick every second, and echoes lines received on UART0 | `esp32d-hello ready`, `esp32d-hello echo <line>` |
+| `hello-arduino` | Arduino sketch: ready line, ticks and echo, built with the pinned ESP32 Arduino core | `esp32d-arduino ready` |
+| `gpio` | Toggles GPIO 2 every 500 ms and reports changes on GPIO 4 | `esp32d-gpio ready`, `esp32d-gpio in 4=<level>` |
 | `wifi-sta` | Joins the open network `PICSimLabWifi`. Only lcgamboa's QEMU fork emulates it, on ESP32 and C3 | `esp32d-wifi got ip <ip>` |
 
 ## Building
@@ -22,6 +24,15 @@ Then build merged 4 MiB images into `tests/firmware/out/`:
 ```sh
 IDF_PATH=~/esp/esp-idf tests/firmware/build.sh            # hello
 IDF_PATH=~/esp/esp-idf tests/firmware/build.sh wifi-sta
+IDF_PATH=~/esp/esp-idf tests/firmware/build.sh gpio
+tests/firmware/build.sh hello-arduino                  # needs arduino-cli and the pinned core
+```
+
+For the Arduino core:
+
+```sh
+arduino-cli core install "esp32:esp32@$(cat tests/firmware/ARDUINO_ESP32_VERSION)" \
+    --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
 ```
 
 The script refuses to run against any other IDF version. `cargo test --manifest-path core/Cargo.toml` picks up the images automatically.

@@ -1,6 +1,6 @@
 # QEMU fork comparison (phase 0)
 
-This note records how each QEMU fork runs real firmware, to settle the fork choice in `PLAN.md`. Both forks have been tested as separate processes; lcgamboa's library mode (GPIO and I2C hooks) has not. The pass/fail checklist is in `PHASE0.md`; this note has the details.
+This note records how each QEMU fork runs real firmware, to settle the fork choice in `PLAN.md`. Both forks have been tested as separate processes, and lcgamboa's GPIO hooks through its library build. I2C hooks have not been tested. The pass/fail checklist is in `PHASE0.md`; this note has the details.
 
 Last updated: 2026-11-15
 
@@ -68,7 +68,7 @@ Findings:
 
 ### GPIO, I2C and other host hooks
 
-These exist only when QEMU is built as a library. `hw/xtensa/esp32_picsimlab.c` (and the C3 equivalent) export:
+These exist only when QEMU is built as a library (`build_libqemu-esp32.sh`, which leaves `build/libqemu-xtensa.so` and `build/libqemu-riscv32.so`; the ROMs stay in the source tree's `pc-bios/`, so pass `-L <fork>/pc-bios`). `hw/xtensa/esp32_picsimlab.c` (and the C3 equivalent) export:
 
 - `qemu_picsimlab_register_callbacks(callbacks)`: the host supplies function pointers for pin writes and directions (`picsimlab_write_pin`, `picsimlab_dir_pin`), I2C and SPI events, UART TX and RMT.
 - `qemu_picsimlab_set_pin(pin, value)` and `qemu_picsimlab_set_apin(channel, value)`: drive digital and analog inputs.
@@ -77,8 +77,18 @@ These exist only when QEMU is built as a library. `hw/xtensa/esp32_picsimlab.c` 
 
 The state is one global per process (`global_s`), so one library instance runs one chip. To keep the core's separate-process model, each session would need a small helper process that loads `libqemu-xtensa.so` or `libqemu-riscv32.so`, registers these callbacks and forwards them over a socket. In the plain executables the callbacks are no-ops.
 
+**Tested:** `core/crates/qemu-host` (`esp32d-qemu-host`) is that helper. The core's session code starts it in place of `qemu-system-*` with the same arguments; it loads the library, registers the callbacks and serves pin events on a Unix socket. With `tests/firmware/gpio` on `esp32-picsimlab` and `esp32c3-picsimlab`, the host saw GPIO 2 toggle every 500 ms and the firmware saw GPIO 4 follow `set 4 1` and `set 4 0` from the host. `core/crates/qemu-host/tests/gpio.rs` repeats this.
+
+Details that matter for phase 4:
+
+- The pin map is read during machine set-up, so the set of bridged pins is fixed per session.
+- Output and direction changes are reported only for GPIO 0–31. ESP32's GPIO 32 and 33 can be driven as inputs but not watched as outputs.
+- `qemu_picsimlab_set_pin` does not take QEMU's big lock (the fork has the call commented out), so the host takes it (`bql_lock_impl`/`bql_unlock`) around each call.
+- Callbacks run on QEMU's threads and must not block; the host queues events to a writer thread.
+- Library builds use `--enable-debug`, as the fork's script sets it.
+
 ## Open questions
 
 - Should simulator boot tests stub out Wi-Fi, or should a project be marked as "no simulator" when it starts Wi-Fi at boot? lcgamboa's fork answers this for ESP32 and C3 only.
-- Do the lcgamboa library hooks work from a helper process? Untested; it needs a library build and a small host program.
+- Do the I2C hooks work well enough to model a sensor? `picsimlab_i2c_event` exists but is untested.
 - Emulated networking gives guest firmware network access. The app needs a consent decision before enabling it (rule 4); `restrict=on` is a safe default.

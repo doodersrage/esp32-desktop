@@ -39,6 +39,9 @@ pub struct SessionConfig {
     /// Further QEMU arguments, appended as-is. Each element is one argument; nothing is
     /// passed through a shell.
     pub extra_args: Vec<OsString>,
+    /// Environment variables set for the QEMU process only, e.g. for a host program
+    /// that wraps a QEMU library.
+    pub env: Vec<(OsString, OsString)>,
 }
 
 /// Files a session uses, all inside one private runtime directory.
@@ -122,6 +125,7 @@ impl Session {
         let stderr = std::fs::File::create(&paths.stderr)?;
         let mut cmd = Command::new(&cfg.qemu);
         cmd.args(qemu_args(&cfg, &paths))
+            .envs(cfg.env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::from(stderr))
@@ -324,6 +328,7 @@ mod tests {
             start_paused: false,
             machine: None,
             extra_args: Vec::new(),
+            env: Vec::new(),
         }
     }
 

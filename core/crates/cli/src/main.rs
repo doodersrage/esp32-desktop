@@ -208,6 +208,7 @@ async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
         start_paused,
         machine: a.machine,
         extra_args: a.qemu_args.into_iter().map(Into::into).collect(),
+        env: Vec::new(),
     })
     .await?;
     Ok(s)

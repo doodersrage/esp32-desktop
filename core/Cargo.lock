@@ -181,6 +181,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "esp32d-qemu-host"
+version = "0.0.1"
+dependencies = [
+ "esp32d-sim",
+ "libc",
+ "tokio",
+]
+
+[[package]]
 name = "esp32d-sim"
 version = "0.0.1"
 dependencies = [

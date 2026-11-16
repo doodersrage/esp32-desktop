@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/sim", "crates/cli"]
+members = ["crates/sim", "crates/cli", "crates/qemu-host"]
 
 [workspace.package]
 version = "0.0.1"
