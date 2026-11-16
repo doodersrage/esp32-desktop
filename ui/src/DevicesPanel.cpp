@@ -50,6 +50,10 @@ DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
     m_tree->setRootIsDecorated(false);
     m_tree->setUniformRowHeights(true);
     m_tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    m_tree->setToolTip(tr("Double-click a port to open it in the serial monitor"));
+    connect(m_tree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item) {
+        emit portActivated(item->text(PortColumn));
+    });
 
     auto *top = new QHBoxLayout;
     top->addWidget(m_status, 1);

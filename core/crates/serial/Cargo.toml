@@ -1,0 +1,15 @@
+[package]
+name = "esp32bench-serial"
+description = "Serial monitor for esp32bench: open a port, stream its bytes, write, reset the board"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serialport.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+libc.workspace = true

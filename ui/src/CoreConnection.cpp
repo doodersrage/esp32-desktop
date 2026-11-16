@@ -32,6 +32,11 @@ CoreConnection::CoreConnection(QObject *parent)
         m_devicesSubscription = 0; // the core drops subscriptions and jobs with the connection
         m_earlyLibraryEvents.clear();
         m_earlyBuildEvents.clear();
+        m_earlySerialEvents.clear();
+        if (m_serialSub != 0) {
+            m_serialSub = 0;
+            emit serialClosed(tr("The connection to the core was lost."));
+        }
         if (m_buildJob != 0) {
             m_buildJob = 0;
             emit buildFinished(false, tr("The connection to the core was lost."), {});
@@ -87,7 +92,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.5.0"_s},
+        {u"protocol"_s, u"0.6.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -193,6 +198,11 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
+    } else if (method == u"serial.data" || method == u"serial.closed") {
+        if (sub == m_serialSub)
+            handleSerialEvent(method, params);
+        else if (m_serialSub == -1)
+            m_earlySerialEvents.append({method, params}); // our id is not known yet
     } else if (method == u"library.refreshed") {
         if (sub == m_libraryJob)
             finishLibraryRefresh(params);
@@ -309,5 +319,69 @@ void CoreConnection::cancelBuild()
             m_buildJob = 0;
             emit buildFinished(false, tr("Cancelled."), {});
         }
+    });
+}
+
+void CoreConnection::openSerial(const QString &path, int baud)
+{
+    if (m_serialSub != 0)
+        return; // one port at a time
+    m_serialSub = -1;
+    m_client->call(u"serial.open"_s, {{u"path"_s, path}, {u"baud"_s, baud}}, this,
+                   [this, path, baud](const RpcReply &r) {
+                       if (!r.ok) {
+                           m_serialSub = 0;
+                           m_earlySerialEvents.clear();
+                           emit serialClosed(r.errorMessage);
+                           return;
+                       }
+                       m_serialSub = r.result.toObject().value(u"subscription"_s).toInteger();
+                       emit serialOpened(path, baud);
+                       const auto early = std::exchange(m_earlySerialEvents, {});
+                       for (const auto &[method, params] : early) {
+                           if (m_serialSub > 0 && params.value(u"subscription"_s).toInteger() == m_serialSub)
+                               handleSerialEvent(method, params);
+                       }
+                   });
+}
+
+void CoreConnection::handleSerialEvent(const QString &method, const QJsonObject &params)
+{
+    if (method == u"serial.data") {
+        emit serialData(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        return;
+    }
+    m_serialSub = 0;
+    emit serialClosed(params.value(u"reason"_s).toString());
+}
+
+void CoreConnection::closeSerial()
+{
+    if (m_serialSub <= 0)
+        return;
+    const qint64 sub = std::exchange(m_serialSub, 0);
+    m_client->call(u"core.unsubscribe"_s, {{u"subscription"_s, sub}}, this, [](const RpcReply &) {});
+    emit serialClosed(tr("Closed."));
+}
+
+void CoreConnection::writeSerial(const QByteArray &bytes)
+{
+    if (m_serialSub <= 0)
+        return;
+    m_client->call(u"serial.write"_s,
+                   {{u"subscription"_s, m_serialSub}, {u"data"_s, QString::fromLatin1(bytes.toBase64())}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok)
+                           emit requestFailed(u"serial.write"_s, r.errorMessage);
+                   });
+}
+
+void CoreConnection::resetSerial()
+{
+    if (m_serialSub <= 0)
+        return;
+    m_client->call(u"serial.reset"_s, {{u"subscription"_s, m_serialSub}}, this, [this](const RpcReply &r) {
+        if (!r.ok)
+            emit requestFailed(u"serial.reset"_s, r.errorMessage);
     });
 }

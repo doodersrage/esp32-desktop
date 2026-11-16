@@ -32,6 +32,9 @@ enum Cmd {
     /// Find connected boards.
     #[command(subcommand)]
     Device(DeviceCmd),
+    /// Talk to a board over its serial port.
+    #[command(subcommand)]
+    Serial(SerialCmd),
     /// The esp32bench.dev project library.
     #[command(subcommand)]
     Library(LibraryCmd),
@@ -84,6 +87,24 @@ enum LibraryCmd {
         /// Print JSON instead of a table.
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum SerialCmd {
+    /// Print what the board sends (raw bytes) and send it each line typed, until
+    /// Ctrl-C or the board goes away.
+    Monitor {
+        /// Serial port, e.g. /dev/ttyUSB0 (see `device list`).
+        port: PathBuf,
+        #[arg(long, default_value_t = 115_200)]
+        baud: u32,
+        /// Reset the board after opening, to see it boot.
+        #[arg(long)]
+        reset: bool,
+        /// End sent lines with CR LF instead of LF.
+        #[arg(long)]
+        crlf: bool,
     },
 }
 
@@ -388,6 +409,45 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 out.image.display(),
                 out.elf.display()
             );
+        }
+        Cmd::Serial(SerialCmd::Monitor {
+            port,
+            baud,
+            reset,
+            crlf,
+        }) => {
+            let (mut p, mut rx) = esp32bench_serial::Port::open(&port, baud)?;
+            eprintln!(
+                "connected to {} at {baud} baud; Ctrl-C to quit",
+                port.display()
+            );
+            if reset {
+                p.reset()?;
+            }
+            let ending = if crlf { "\r\n" } else { "\n" };
+            let mut out = std::io::stdout();
+            let mut stdin = BufReader::new(tokio::io::stdin()).lines();
+            let mut stdin_open = true;
+            loop {
+                tokio::select! {
+                    ev = rx.recv() => match ev {
+                        Some(esp32bench_serial::Event::Data(bytes)) => {
+                            out.write_all(&bytes)?;
+                            out.flush()?;
+                        }
+                        Some(esp32bench_serial::Event::Closed(reason)) => {
+                            eprintln!("\nport closed: {reason}");
+                            return Ok(ExitCode::FAILURE);
+                        }
+                        None => break,
+                    },
+                    line = stdin.next_line(), if stdin_open => match line? {
+                        Some(l) => p.write(format!("{l}{ending}").as_bytes())?,
+                        None => stdin_open = false,
+                    },
+                    _ = tokio::signal::ctrl_c() => break,
+                }
+            }
         }
         Cmd::Rpc {
             method,

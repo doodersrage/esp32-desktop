@@ -1,0 +1,30 @@
+{
+  "event": "serial.closed",
+  "description": "The port went away (unplugged) or failed. Sent once; the subscription is over.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "reason"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "reason": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "reason": "the port was closed"
+      }
+    }
+  ]
+}

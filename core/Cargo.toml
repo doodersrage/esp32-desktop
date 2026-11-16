@@ -9,6 +9,7 @@ members = [
     "crates/daemon",
     "crates/library",
     "crates/build",
+    "crates/serial",
 ]
 
 [workspace.package]
@@ -19,6 +20,7 @@ publish = false
 
 [workspace.dependencies]
 anyhow = "1"
+base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 jsonschema = { version = "0.61", default-features = false }
 libc = "0.2"

@@ -223,7 +223,7 @@ async fn core_hello_round_trip() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
     let def = method_def("core.hello");
-    let params = json!({ "client": "test", "protocol": "0.5.0" });
+    let params = json!({ "client": "test", "protocol": "0.6.0" });
     assert_valid(&def["params"], &params, "core.hello params");
     let r = c.call("core.hello", params).await.unwrap();
     assert_valid(&def["result"], &r, "core.hello result");
@@ -589,6 +589,227 @@ async fn build_refuses_prebuilt_and_unknown_projects() {
                 assert_eq!(e.code, want, "{project}/{board}: {}", e.message)
             }
             other => panic!("{project}/{board}: expected an error, got {other:?}"),
+        }
+    }
+}
+
+/// A pty pair: the master fd (the "board") and the slave path (the "port").
+fn pty() -> (std::os::fd::OwnedFd, PathBuf) {
+    use std::os::fd::FromRawFd;
+    let (mut master, mut slave) = (-1, -1);
+    let mut name = [0 as libc::c_char; 128];
+    // SAFETY: openpty with valid out-pointers and a large enough name buffer.
+    let r = unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            name.as_mut_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    assert_eq!(r, 0);
+    // SAFETY: fresh fds from openpty; the slave is reopened by path.
+    unsafe { libc::close(slave) };
+    let path = unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }
+        .to_string_lossy()
+        .into_owned();
+    (
+        unsafe { std::os::fd::OwnedFd::from_raw_fd(master) },
+        PathBuf::from(path),
+    )
+}
+
+/// A daemon whose serial.open may open `allowed` (a pty) in place of device.list ports.
+async fn serial_daemon(
+    allowed: &Path,
+) -> (tempfile::TempDir, PathBuf, esp32bench_daemon::InstanceLock) {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("rt/core.sock");
+    let (listener, lock) = esp32bench_daemon::bind(&sock).unwrap();
+    let mut st = esp32bench_daemon::State::new(
+        esp32bench_library::Cache::new(dir.path().join("cache")),
+        example_manifest().to_string_lossy().into_owned(),
+        dir.path().join("builds"),
+        dir.path().join("sketchbook"),
+    );
+    st.serial_allow = Some(vec![allowed.to_owned()]);
+    let router = esp32bench_daemon::router(Arc::new(st));
+    tokio::spawn(esp32bench_rpc::serve(listener, Arc::new(router)));
+    (dir, sock, lock)
+}
+
+fn b64(bytes: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+fn un_b64(s: &str) -> Vec<u8> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(s).unwrap()
+}
+
+#[tokio::test]
+async fn serial_streams_bytes_both_ways() {
+    use std::os::fd::AsRawFd;
+    let (master, port) = pty();
+    let (_d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+
+    let r = c
+        .call("serial.open", json!({ "path": port, "baud": 115200 }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("serial.open")["result"],
+        &r,
+        "serial.open result",
+    );
+    let sub = r["subscription"].as_u64().unwrap();
+
+    // The board prints something that is not valid UTF-8.
+    let out = b"boot ok \xff\n";
+    // SAFETY: write a valid buffer to the pty master.
+    unsafe { libc::write(master.as_raw_fd(), out.as_ptr().cast(), out.len()) };
+    let mut got = Vec::new();
+    while got.len() < out.len() {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(2), c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(n["method"], "serial.data");
+        assert_valid(
+            &method_def("serial.data")["params"],
+            &n["params"],
+            "serial.data",
+        );
+        assert_eq!(n["params"]["subscription"], sub);
+        got.extend(un_b64(n["params"]["data"].as_str().unwrap()));
+        assert!(n["params"]["text"].as_str().unwrap().starts_with("boot ok"));
+    }
+    assert_eq!(got, out, "raw bytes must arrive unchanged");
+
+    let r = c
+        .call(
+            "serial.write",
+            json!({ "subscription": sub, "data": b64(b"ping\n") }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("serial.write")["result"],
+        &r,
+        "serial.write result",
+    );
+    let mut pfd = libc::pollfd {
+        fd: master.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: poll and read on the valid pty master.
+    assert!(unsafe { libc::poll(&mut pfd, 1, 1000) } > 0);
+    let mut buf = [0u8; 16];
+    let n = unsafe { libc::read(master.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
+    assert_eq!(&buf[..n as usize], b"ping\n");
+
+    // A pty has no modem lines, so reset fails cleanly rather than crashing.
+    match c.call("serial.reset", json!({ "subscription": sub })).await {
+        Ok(_) => {}
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn serial_refuses_paths_and_other_connections() {
+    let (_master, port) = pty();
+    let (_d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+
+    // Only ports the core knows about; never an arbitrary file.
+    for bad in ["/etc/passwd", "/dev/sda", "../../dev/ttyS0"] {
+        match c
+            .call("serial.open", json!({ "path": bad, "baud": 115200 }))
+            .await
+        {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND, "{bad}"),
+            other => panic!("{bad} was opened: {other:?}"),
+        }
+    }
+    match c
+        .call("serial.open", json!({ "path": port, "baud": 1234 }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("bad baud accepted: {other:?}"),
+    }
+
+    let sub = c
+        .call("serial.open", json!({ "path": port, "baud": 115200 }))
+        .await
+        .unwrap()["subscription"]
+        .as_u64()
+        .unwrap();
+    // The port is opened exclusively.
+    match c
+        .call("serial.open", json!({ "path": port, "baud": 115200 }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::BUSY, "{}", e.message),
+        other => panic!("opened twice: {other:?}"),
+    }
+    // Another connection cannot write to this connection's port, even with its id.
+    let mut other = Client::connect(&sock).await.unwrap();
+    match other
+        .call(
+            "serial.write",
+            json!({ "subscription": sub, "data": b64(b"x") }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("wrote to another connection's port: {other:?}"),
+    }
+
+    // Closing it frees the device for the next open.
+    c.call("core.unsubscribe", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+    let mut reopened = false;
+    for _ in 0..20 {
+        if c.call("serial.open", json!({ "path": port, "baud": 115200 }))
+            .await
+            .is_ok()
+        {
+            reopened = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(reopened, "the port stayed busy after unsubscribe");
+}
+
+#[tokio::test]
+async fn serial_reports_when_the_board_goes_away() {
+    let (master, port) = pty();
+    let (_d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    c.call("serial.open", json!({ "path": port, "baud": 115200 }))
+        .await
+        .unwrap();
+    drop(master); // unplugged
+    loop {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(3), c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        if n["method"] == "serial.closed" {
+            assert_valid(
+                &method_def("serial.closed")["params"],
+                &n["params"],
+                "serial.closed",
+            );
+            break;
         }
     }
 }

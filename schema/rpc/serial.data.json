@@ -1,0 +1,38 @@
+{
+  "event": "serial.data",
+  "description": "Bytes received on an open port, as they arrived (not split into lines).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "data",
+      "text"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "data": {
+        "type": "string",
+        "contentEncoding": "base64",
+        "description": "The raw bytes, base64."
+      },
+      "text": {
+        "type": "string",
+        "description": "The same bytes decoded as UTF-8, with invalid sequences replaced. A multi-byte character split across two events shows as replacement characters; use `data` when that matters."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "data": "dGljayAxMDAwIG1zDQo=",
+        "text": "tick 1000 ms\r\n"
+      }
+    }
+  ]
+}

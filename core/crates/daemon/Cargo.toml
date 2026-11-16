@@ -15,16 +15,19 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
+base64.workspace = true
 esp32bench-build = { path = "../build" }
 esp32bench-device = { path = "../device" }
 esp32bench-library = { path = "../library" }
 esp32bench-rpc = { path = "../rpc" }
+esp32bench-serial = { path = "../serial" }
 libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+libc.workspace = true
 esp32bench-library = { path = "../library" }
 jsonschema.workspace = true
 tempfile.workspace = true

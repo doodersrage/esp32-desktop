@@ -95,7 +95,11 @@ pub fn parse_params<T: DeserializeOwned>(params: Value) -> Result<T, RpcError> {
 pub struct Ctx {
     outbox: mpsc::UnboundedSender<Value>,
     subs: Arc<Subscriptions>,
+    connection: u64,
 }
+
+/// Source of connection ids, unique for the life of the process.
+static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
 
 /// The connection's live subscriptions: id to the task producing its events.
 #[derive(Default)]
@@ -147,6 +151,12 @@ impl Ctx {
             "method": method,
             "params": params,
         }));
+    }
+
+    /// This connection's id. Subscription ids are only unique within a connection, so
+    /// state kept per subscription outside the connection is keyed by both.
+    pub fn connection_id(&self) -> u64 {
+        self.connection
     }
 
     /// True once the client has disconnected; long-running work should stop.
@@ -330,6 +340,7 @@ pub async fn serve_connection(stream: UnixStream, router: Arc<Router>) -> std::i
     let ctx = Ctx {
         outbox: tx.clone(),
         subs: subs.clone(),
+        connection: NEXT_CONNECTION.fetch_add(1, Ordering::Relaxed),
     };
     let result = loop {
         let line = match read_line(&mut reader).await {

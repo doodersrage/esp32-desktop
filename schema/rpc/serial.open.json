@@ -1,0 +1,67 @@
+{
+  "method": "serial.open",
+  "description": "Open a serial port that device.list reports and stream what it sends. RTS and DTR are switched off, so the board is neither held in reset nor put in download mode. Returns a subscription: serial.data events carry the bytes, serial.closed says when the port went away. core.unsubscribe closes the port, as does closing the connection.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "baud"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "A path from device.list."
+      },
+      "baud": {
+        "enum": [
+          9600,
+          19200,
+          38400,
+          57600,
+          74880,
+          115200,
+          230400,
+          460800,
+          921600,
+          2000000
+        ]
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "errors": [
+    -32000,
+    -32001,
+    -32005
+  ],
+  "events": [
+    "serial.data",
+    "serial.closed"
+  ],
+  "examples": [
+    {
+      "params": {
+        "path": "/dev/ttyUSB0",
+        "baud": 115200
+      },
+      "result": {
+        "subscription": 3
+      }
+    }
+  ]
+}

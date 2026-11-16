@@ -69,6 +69,14 @@ public:
     void cancelBuild();
     bool isBuilding() const { return m_buildJob != 0; }
 
+    // serial.open: one port at a time. serialOpened, then serialData until
+    // serialClosed (unplugged, closed, or the connection dropped).
+    void openSerial(const QString &path, int baud);
+    void closeSerial();
+    void writeSerial(const QByteArray &bytes);
+    void resetSerial();
+    bool isSerialOpen() const { return m_serialSub > 0; }
+
     // Error code the core uses when consent is missing (docs/rpc.md).
     static constexpr int ConsentRequired = -32002;
 
@@ -89,6 +97,10 @@ signals:
     void buildLog(const QString &stream, const QString &line);
     // `image` is the merged flash image when ok.
     void buildFinished(bool ok, const QString &error, const QString &image);
+    // Serial monitor.
+    void serialOpened(const QString &path, int baud);
+    void serialData(const QByteArray &bytes);
+    void serialClosed(const QString &reason);
     // A request failed. `method` is the RPC method name.
     void requestFailed(const QString &method, const QString &message);
 
@@ -99,6 +111,7 @@ private:
     void onNotification(const QString &method, const QJsonObject &params);
     void finishLibraryRefresh(const QJsonObject &params);
     void handleBuildEvent(const QString &method, const QJsonObject &params);
+    void handleSerialEvent(const QString &method, const QJsonObject &params);
 
     RpcClient *m_client;
     QTimer *m_retry;
@@ -114,4 +127,6 @@ private:
     QList<QJsonObject> m_earlyLibraryEvents;
     qint64 m_buildJob = 0; // running build.start job, -1 while starting, or 0
     QList<QPair<QString, QJsonObject>> m_earlyBuildEvents;
+    qint64 m_serialSub = 0; // open serial.open subscription, -1 while opening, or 0
+    QList<QPair<QString, QJsonObject>> m_earlySerialEvents;
 };

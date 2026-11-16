@@ -1,0 +1,36 @@
+{
+  "method": "serial.reset",
+  "description": "Reset the board on a port this connection opened, as esptool's hard reset does: DTR off, then a 100 ms pulse on RTS (wired to EN on most boards). Boards without the auto-reset circuit ignore it.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "errors": [
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 3
+      },
+      "result": {}
+    }
+  ]
+}

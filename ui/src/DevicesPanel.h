@@ -27,6 +27,10 @@ public:
 public slots:
     void refresh();
 
+signals:
+    // The user double-clicked a port (to open it in the serial monitor).
+    void portActivated(const QString &path);
+
 private:
     void showMessage(const QString &text);
     void updateEnabled();

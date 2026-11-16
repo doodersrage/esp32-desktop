@@ -1,6 +1,7 @@
 //! The core daemon's method table and socket setup. `main.rs` only parses arguments
 //! and handles signals; everything here is testable without a running daemon.
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::os::fd::AsRawFd;
@@ -14,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.5.0";
+pub const PROTOCOL: &str = "0.6.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -36,6 +37,31 @@ pub struct State {
     pub arduino_cli: Option<PathBuf>,
     /// One build at a time.
     build_lock: tokio::sync::Mutex<()>,
+    /// Open serial ports by (connection, subscription): subscription ids are only
+    /// unique within a connection.
+    serial_ports: std::sync::Mutex<HashMap<(u64, u64), SharedPort>>,
+    /// Ports serial.open may open instead of those device.list reports (tests).
+    pub serial_allow: Option<Vec<PathBuf>>,
+}
+
+type SharedPort = Arc<std::sync::Mutex<esp32bench_serial::Port>>;
+
+/// Removes a serial port from the table when its subscription ends, however it ends,
+/// which drops the Port and closes the device.
+struct PortEntry {
+    state: Arc<State>,
+    key: (u64, u64),
+}
+
+impl Drop for PortEntry {
+    fn drop(&mut self) {
+        let mut ports = self
+            .state
+            .serial_ports
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        ports.remove(&self.key);
+    }
 }
 
 impl State {
@@ -54,6 +80,8 @@ impl State {
             sketchbook,
             arduino_cli: None,
             build_lock: tokio::sync::Mutex::new(()),
+            serial_ports: std::sync::Mutex::new(HashMap::new()),
+            serial_allow: None,
         }
     }
 
@@ -78,8 +106,21 @@ impl State {
 
 /// Every method the daemon serves. A test checks this against `schema/rpc/`.
 pub fn router(state: Arc<State>) -> Router {
-    let (s1, s2, s3, s4) = (state.clone(), state.clone(), state.clone(), state);
+    let (s1, s2, s3, s4) = (state.clone(), state.clone(), state.clone(), state.clone());
+    let (s5, s6, s7) = (state.clone(), state.clone(), state);
     Router::new()
+        .method("serial.open", move |p, ctx| {
+            let s = s5.clone();
+            async move { serial_open(p, ctx, s).await }
+        })
+        .method("serial.write", move |p, ctx| {
+            let s = s6.clone();
+            async move { serial_write(p, ctx, s).await }
+        })
+        .method("serial.reset", move |p, ctx| {
+            let s = s7.clone();
+            async move { serial_reset(p, ctx, s).await }
+        })
         .method("build.start", move |p, ctx| {
             let s = s4.clone();
             async move { build_start(p, ctx, s).await }
@@ -314,6 +355,150 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         sub.send("build.finished", event);
     });
     Ok(json!({ "job": job, "plan": result_plan }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SerialOpenParams {
+    path: PathBuf,
+    baud: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SerialWriteParams {
+    subscription: u64,
+    data: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SerialRefParams {
+    subscription: u64,
+}
+
+fn serial_error(e: esp32bench_serial::Error) -> RpcError {
+    use esp32bench_serial::Error as E;
+    let code = match &e {
+        E::Baud(_) => code::INVALID_PARAMS,
+        E::Busy(_) => code::BUSY,
+        E::NotFound(_) => code::NOT_FOUND,
+        E::Permission(_) | E::Port { .. } => code::FAILED,
+    };
+    RpcError::new(code, e.to_string())
+}
+
+async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: SerialOpenParams = parse_params(params)?;
+    // The path is untrusted: only open something device.list reports as a serial
+    // port, never an arbitrary file or device node.
+    let allowed = match &state.serial_allow {
+        Some(list) => list.contains(&p.path),
+        None => list_ports(true)
+            .await?
+            .iter()
+            .any(|x| Path::new(&x.path) == p.path),
+    };
+    if !allowed {
+        return Err(RpcError::new(
+            code::NOT_FOUND,
+            format!(
+                "{} is not a serial port this machine reports",
+                p.path.display()
+            ),
+        ));
+    }
+    let (port, mut rx) = {
+        let path = p.path.clone();
+        tokio::task::spawn_blocking(move || esp32bench_serial::Port::open(&path, p.baud))
+            .await
+            .map_err(|e| RpcError::internal(e.to_string()))?
+            .map_err(serial_error)?
+    };
+    let port: SharedPort = Arc::new(std::sync::Mutex::new(port));
+    let conn = ctx.connection_id();
+    let id = ctx.subscribe(move |sub| {
+        // Registered before the task can run, and removed by `entry` when the task
+        // ends or is aborted, so the table never holds a closed subscription's port.
+        let key = (conn, sub.id());
+        state
+            .serial_ports
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(key, port);
+        let entry = PortEntry {
+            state: state.clone(),
+            key,
+        };
+        async move {
+            let _entry = entry;
+            use base64::Engine;
+            while let Some(event) = rx.recv().await {
+                match event {
+                    esp32bench_serial::Event::Data(bytes) => {
+                        let sent = sub.send(
+                            "serial.data",
+                            json!({
+                                "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
+                                "text": String::from_utf8_lossy(&bytes),
+                            }),
+                        );
+                        if !sent {
+                            break;
+                        }
+                    }
+                    esp32bench_serial::Event::Closed(reason) => {
+                        sub.send("serial.closed", json!({ "reason": reason }));
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    Ok(json!({ "subscription": id }))
+}
+
+/// The port a connection opened under `subscription`.
+fn open_port(state: &State, ctx: &Ctx, subscription: u64) -> Result<SharedPort, RpcError> {
+    state
+        .serial_ports
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&(ctx.connection_id(), subscription))
+        .cloned()
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                format!("no open serial port {subscription} on this connection"),
+            )
+        })
+}
+
+async fn serial_write(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    use base64::Engine;
+    let p: SerialWriteParams = parse_params(params)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&p.data)
+        .map_err(|e| RpcError::invalid_params(format!("data is not base64: {e}")))?;
+    let port = open_port(&state, &ctx, p.subscription)?;
+    tokio::task::spawn_blocking(move || {
+        port.lock().unwrap_or_else(|p| p.into_inner()).write(&bytes)
+    })
+    .await
+    .map_err(|e| RpcError::internal(e.to_string()))?
+    .map_err(serial_error)?;
+    Ok(json!({}))
+}
+
+async fn serial_reset(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: SerialRefParams = parse_params(params)?;
+    let port = open_port(&state, &ctx, p.subscription)?;
+    // The reset pulse sleeps for 100 ms; keep it off the async workers.
+    tokio::task::spawn_blocking(move || port.lock().unwrap_or_else(|p| p.into_inner()).reset())
+        .await
+        .map_err(|e| RpcError::internal(e.to_string()))?
+        .map_err(serial_error)?;
+    Ok(json!({}))
 }
 
 #[derive(Deserialize)]

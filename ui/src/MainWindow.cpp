@@ -5,6 +5,7 @@
 #include "DevicesPanel.h"
 #include "LibraryPanel.h"
 #include "ProjectView.h"
+#include "SerialMonitor.h"
 
 #include <QAction>
 #include <QApplication>
@@ -55,6 +56,19 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_buildDock->setWidget(m_buildPanel);
     addDockWidget(Qt::BottomDockWidgetArea, m_buildDock);
     connect(core, &CoreConnection::buildStarted, m_buildDock, &QDockWidget::show);
+    connect(core, &CoreConnection::buildStarted, m_buildDock, &QDockWidget::raise);
+
+    m_serialDock = new QDockWidget(tr("Serial monitor"), this);
+    m_serialDock->setObjectName(u"serialDock"_s);
+    m_serial = new SerialMonitor(core, m_serialDock);
+    m_serialDock->setWidget(m_serial);
+    addDockWidget(Qt::BottomDockWidgetArea, m_serialDock);
+    tabifyDockWidget(m_buildDock, m_serialDock);
+    connect(m_devices, &DevicesPanel::portActivated, this, [this](const QString &path) {
+        m_serialDock->show();
+        m_serialDock->raise();
+        m_serial->openPort(path);
+    });
     connect(core, &CoreConnection::buildConsentRequired, this,
             [this](const QString &project, const QString &board, const QString &token, const QJsonObject &plan) {
                 if (confirmBuild(project, board, plan))
@@ -88,6 +102,7 @@ void MainWindow::buildMenus()
     QMenu *view = menuBar()->addMenu(tr("&View"));
     view->addAction(m_devicesDock->toggleViewAction());
     view->addAction(m_buildDock->toggleViewAction());
+    view->addAction(m_serialDock->toggleViewAction());
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
     QAction *about = help->addAction(QIcon::fromTheme(u"help-about"_s), tr("&About ESP32 Bench"));
