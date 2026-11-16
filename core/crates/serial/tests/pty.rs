@@ -23,6 +23,13 @@ fn pty() -> (OwnedFd, PathBuf) {
         )
     };
     assert_eq!(r, 0, "openpty failed");
+    // Close-on-exec: otherwise QEMU processes that parallel tests spawn inherit the
+    // master, and dropping it here no longer hangs up the port.
+    // SAFETY: fcntl on fds openpty just returned.
+    unsafe {
+        libc::fcntl(master, libc::F_SETFD, libc::FD_CLOEXEC);
+        libc::fcntl(slave, libc::F_SETFD, libc::FD_CLOEXEC);
+    }
     // SAFETY: openpty returned two fresh fds we now own; the slave is reopened by path.
     unsafe { libc::close(slave) };
     let path = unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }

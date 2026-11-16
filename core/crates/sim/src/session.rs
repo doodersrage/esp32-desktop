@@ -319,6 +319,26 @@ async fn connect_when_ready(
 mod tests {
     use super::*;
 
+    /// Write an executable script without this process ever holding it open for writing.
+    /// Parallel tests fork; a child that inherited a write handle would make running the
+    /// script fail with "Text file busy" (ETXTBSY).
+    fn write_script(path: &std::path::Path, content: impl AsRef<[u8]>) {
+        use std::io::Write;
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+            .arg(path)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(content.as_ref())
+            .unwrap();
+        assert!(child.wait().unwrap().success());
+    }
+
     fn cfg(chip: Chip, gdb: Option<u16>) -> SessionConfig {
         SessionConfig {
             chip,
@@ -384,11 +404,9 @@ mod tests {
 
     #[tokio::test]
     async fn reports_qemu_stderr_when_it_dies_at_start() {
-        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let fake = dir.path().join("fake-qemu");
-        std::fs::write(&fake, "#!/bin/sh\necho 'Assertion failed' >&2\nexit 3\n").unwrap();
-        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        write_script(&fake, "#!/bin/sh\necho 'Assertion failed' >&2\nexit 3\n");
         let image = dir.path().join("flash.bin");
         let mut data = vec![0xFF; 8192];
         data[0x1000..0x1004].copy_from_slice(&[0xE9, 3, 2, 0x20]);

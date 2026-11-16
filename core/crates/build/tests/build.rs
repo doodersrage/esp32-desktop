@@ -2,7 +2,6 @@
 //! toolchain or network is needed. Set ESP32BENCH_TEST_ARDUINO=1 to also compile for
 //! real with the installed arduino-cli (downloads libraries).
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -140,8 +139,7 @@ esac
 "#,
         log = log.display(),
     );
-    std::fs::write(&path, script).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    write_script(&path, script);
     path
 }
 
@@ -264,4 +262,24 @@ async fn compiles_for_real_when_asked() {
         std::fs::metadata(&out.image).unwrap().len(),
         4 * 1024 * 1024
     );
+}
+
+/// Write an executable script without this process ever holding it open for writing.
+/// Parallel tests fork; a child that inherited a write handle would make running the
+/// script fail with "Text file busy" (ETXTBSY).
+fn write_script(path: &std::path::Path, content: impl AsRef<[u8]>) {
+    use std::io::Write;
+    let mut child = std::process::Command::new("sh")
+        .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+        .arg(path)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(content.as_ref())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
 }

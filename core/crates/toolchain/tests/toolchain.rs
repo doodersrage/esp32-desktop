@@ -2,7 +2,6 @@
 //! small package index files. QEMU state depends on the machine, so only its shape
 //! is checked here.
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use esp32bench_toolchain::{
@@ -100,8 +99,7 @@ esac
         log = log.display()
     );
     let path = dir.join("arduino-cli");
-    std::fs::write(&path, script).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    write_script(&path, script);
     path
 }
 
@@ -218,12 +216,10 @@ fn ids_round_trip() {
 async fn a_failing_arduino_cli_is_broken_not_missing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("arduino-cli");
-    std::fs::write(
+    write_script(
         &path,
         "#!/bin/sh\necho '{\"error\": \"Error: invalid path creating config dir\"}' >&2\nexit 10\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    );
     let s = status(&env(dir.path(), Some(path.clone()))).await;
     assert_eq!(s[0].state, State::Broken);
     assert_eq!(s[0].path.as_deref(), Some(path.as_path()));
@@ -264,4 +260,24 @@ fn group_membership_matches_id() {
         "not in my own group {first}"
     );
     assert!(!esp32bench_toolchain::in_group("no-such-group-esp32bench"));
+}
+
+/// Write an executable script without this process ever holding it open for writing.
+/// Parallel tests fork; a child that inherited a write handle would make running the
+/// script fail with "Text file busy" (ETXTBSY).
+fn write_script(path: &std::path::Path, content: impl AsRef<[u8]>) {
+    use std::io::Write;
+    let mut child = std::process::Command::new("sh")
+        .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+        .arg(path)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(content.as_ref())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
 }

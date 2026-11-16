@@ -52,10 +52,9 @@ fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
 /// A stand-in arduino-cli: installs nothing, and "compiles" by printing a line and
 /// writing empty output files where arduino-cli would.
 fn fake_arduino_cli(dir: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     std::fs::create_dir_all(dir).unwrap();
     let path = dir.join("fake-arduino-cli");
-    std::fs::write(
+    write_script(
         &path,
         r#"#!/bin/sh
 case "$1" in
@@ -68,9 +67,7 @@ case "$1" in
     : > "$out/$name.ino.merged.bin"; : > "$out/$name.ino.elf" ;;
 esac
 "#,
-    )
-    .unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    );
     path
 }
 
@@ -265,7 +262,15 @@ async fn second_daemon_cannot_take_the_socket() {
     drop(c);
     drop(lock);
     assert!(!sock.exists());
-    let (_l, _lock2) = esp32bench_daemon::bind(&sock).unwrap();
+    // A child that a parallel test forks keeps a copy of the lock's descriptor until
+    // it execs (close-on-exec), so allow a moment before the lock is free again.
+    for _ in 0..40 {
+        if esp32bench_daemon::bind(&sock).is_ok() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("the lock was not released after the first daemon stopped");
 }
 
 #[test]
@@ -609,6 +614,13 @@ fn pty() -> (std::os::fd::OwnedFd, PathBuf) {
         )
     };
     assert_eq!(r, 0);
+    // Close-on-exec: otherwise QEMU processes that parallel tests spawn inherit the
+    // master, and dropping it here no longer hangs up the port.
+    // SAFETY: fcntl on fds openpty just returned.
+    unsafe {
+        libc::fcntl(master, libc::F_SETFD, libc::FD_CLOEXEC);
+        libc::fcntl(slave, libc::F_SETFD, libc::FD_CLOEXEC);
+    }
     // SAFETY: fresh fds from openpty; the slave is reopened by path.
     unsafe { libc::close(slave) };
     let path = unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }
@@ -798,8 +810,9 @@ async fn serial_reports_when_the_board_goes_away() {
         .await
         .unwrap();
     drop(master); // unplugged
+    // Generous: under a full parallel run, QEMU tests load the machine.
     loop {
-        let n = tokio::time::timeout(std::time::Duration::from_secs(3), c.next_notification())
+        let n = tokio::time::timeout(std::time::Duration::from_secs(15), c.next_notification())
             .await
             .unwrap()
             .unwrap();
@@ -1271,4 +1284,24 @@ async fn sim_refuses_workbench_only_boards_and_missing_builds() {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND, "{}", e.message),
         other => panic!("started without a build: {other:?}"),
     }
+}
+
+/// Write an executable script without this process ever holding it open for writing.
+/// Parallel tests fork; a child that inherited a write handle would make running the
+/// script fail with "Text file busy" (ETXTBSY).
+fn write_script(path: &std::path::Path, content: impl AsRef<[u8]>) {
+    use std::io::Write;
+    let mut child = std::process::Command::new("sh")
+        .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+        .arg(path)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(content.as_ref())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
 }
