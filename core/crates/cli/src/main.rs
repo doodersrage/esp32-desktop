@@ -134,6 +134,20 @@ enum BoardCmd {
         #[command(flatten)]
         conn: BoardConn,
         image: PathBuf,
+        /// Write every byte of the image, erased tail included (to restore a backup
+        /// exactly).
+        #[arg(long)]
+        whole: bool,
+    },
+    /// Read flash into a file (by default all of it): a backup to restore with
+    /// `board flash --whole`.
+    Read {
+        #[command(flatten)]
+        conn: BoardConn,
+        out: PathBuf,
+        /// Bytes to read. Default: the whole flash.
+        #[arg(long)]
+        size: Option<u32>,
     },
     /// Erase the whole flash, saved settings included.
     Erase {
@@ -685,7 +699,7 @@ fn board_command(cmd: BoardCmd) -> Result<()> {
             }
             b.run()?;
         }
-        BoardCmd::Flash { conn, image } => {
+        BoardCmd::Flash { conn, image, whole } => {
             let data =
                 std::fs::read(&image).with_context(|| format!("reading {}", image.display()))?;
             let mut b = esp32bench_flash::Board::connect(&conn.options())?;
@@ -699,7 +713,11 @@ fn board_command(cmd: BoardCmd) -> Result<()> {
                     image.display()
                 );
             }
-            let part = esp32bench_flash::trim_erased_tail(&data);
+            let part = if whole {
+                &data[..]
+            } else {
+                esp32bench_flash::trim_erased_tail(&data)
+            };
             eprintln!(
                 "writing {} bytes to {} ({})",
                 part.len(),
@@ -712,6 +730,22 @@ fn board_command(cmd: BoardCmd) -> Result<()> {
                 }
             })?;
             eprintln!("\rdone, resetting the board");
+            b.run()?;
+        }
+        BoardCmd::Read { conn, out, size } => {
+            let mut b = esp32bench_flash::Board::connect(&conn.options())?;
+            let info = b.info()?;
+            let len = match size {
+                Some(n) => n,
+                None => u32::try_from(info.flash_bytes).context("flash too large")?,
+            };
+            eprintln!(
+                "reading {len} bytes from {} ({})",
+                conn.port.display(),
+                info.chip
+            );
+            b.read(0, len, &out)?;
+            eprintln!("saved {}", out.display());
             b.run()?;
         }
         BoardCmd::Erase { conn, yes } => {

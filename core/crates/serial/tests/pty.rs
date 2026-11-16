@@ -130,3 +130,20 @@ fn refuses_bad_baud_and_missing_ports() {
         Err(Error::NotFound(_))
     ));
 }
+
+#[test]
+fn writing_to_a_port_nobody_reads_returns_promptly() {
+    // A port nobody reads must not block a write. (A pty does not reproduce the
+    // original hang: its drain returns at once. The real case, a C3 whose firmware
+    // reads UART0 while we write to its USB port, was checked on hardware; see
+    // docs/hardware-notes.md.)
+    let (_master, path) = pty();
+    let (mut port, _rx) = Port::open(&path, 115_200).unwrap();
+    let start = std::time::Instant::now();
+    let _ = port.write(b"ping 42\n");
+    assert!(
+        start.elapsed() < Duration::from_secs(1),
+        "write blocked for {:?}",
+        start.elapsed()
+    );
+}

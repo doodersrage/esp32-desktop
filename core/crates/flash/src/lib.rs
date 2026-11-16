@@ -334,6 +334,18 @@ impl Board {
         parse_partition_table(&bytes)
     }
 
+    /// Read `len` bytes of flash from `offset` into the file `out` (a backup, or a
+    /// check of what was written).
+    pub fn read(&mut self, offset: u32, len: u32, out: &Path) -> Result<(), Error> {
+        let file = out.to_owned();
+        let r = if self.use_stub {
+            self.flasher.read_flash(offset, len, 0x1000, 64, file)
+        } else {
+            self.flasher.read_flash_rom(offset, len, 0x1000, 64, file)
+        };
+        r.map_err(board_err)
+    }
+
     /// Write `data` at `offset`. espflash checks the result against the chip's MD5
     /// before returning.
     pub fn write(

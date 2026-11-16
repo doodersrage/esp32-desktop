@@ -91,15 +91,16 @@ impl Port {
         &self.path
     }
 
+    /// Hand `bytes` to the kernel. Deliberately no flush (tcdrain): it waits until the
+    /// device has taken every byte, which never happens if the firmware does not read
+    /// this port (a C3 reading UART0 while we write to its USB port). The write itself
+    /// gives up after the port's 100 ms timeout if the buffer stays full.
     pub fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
         use std::io::Write;
-        self.writer
-            .write_all(bytes)
-            .and_then(|()| self.writer.flush())
-            .map_err(|e| Error::Port {
-                path: self.path.clone(),
-                detail: e.to_string(),
-            })
+        self.writer.write_all(bytes).map_err(|e| Error::Port {
+            path: self.path.clone(),
+            detail: e.to_string(),
+        })
     }
 
     /// Reset the chip the way esptool's hard reset does: DTR off (so it boots the
@@ -121,6 +122,11 @@ impl Port {
 impl Drop for Port {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        // Throw away output the device never took. Otherwise closing the port waits
+        // for it to drain (Linux's closing_wait, 30 s by default), which never happens
+        // when the firmware does not read this port, e.g. a C3 reading UART0 while we
+        // wrote to its USB port. Seen on hardware; see docs/hardware-notes.md.
+        let _ = self.writer.clear(serialport::ClearBuffer::Output);
     }
 }
 
