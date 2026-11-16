@@ -119,6 +119,16 @@ Both forks have Espressif's virtual RGB panel (`hw/display/esp_rgb.c`), which fi
 - **`esp32-picsimlab` did not read "QEMU"** at APB_CTRL + 0x78, which the driver checks, so it refused the panel ("not available on real hardware"). The fork's `esp32` machine sets it by adding the date register's memory region a second time, which is the assertion that makes that machine abort. Patch 0002 gives the register its own region.
 - With both patches the `rgb` test firmware draws and updates on all three chips on both forks (`core/crates/sim/tests/display.rs`).
 
+### Arduino builds panic on the fork (found 2026-11-16, not fixed)
+
+Arduino core 3.3.12 builds (Blink, the library's `oled`) panic with `Guru Meditation Error ... (Cache error). Cache disabled but cached memory region accessed` on lcgamboa's fork, usually within seconds of start-up, in about half of runs. They then reboot, and often come up on a later try. Espressif's QEMU runs the same images cleanly. ESP-IDF test firmware does not trigger it, which is why the automated tests never saw it.
+
+- Where: core 0 is in `nvs_flash_init` (Arduino's `initArduino`), reading flash; it has disabled both cores' caches, and the trap fires as it re-enables them in `spi_flash_restore_cache`. Core 1 is parked in `spi_flash_op_block_func`, as it should be. ESP-IDF firmware that touches flash after boot would hit it too.
+- Not the cause, tested: the fork's changes to `esp32_cache_data_sync` (swapping in Espressif's version changed nothing); the per-CPU cache wiring (identical to Espressif's `esp32.c`); multi-threaded TCG (`-accel tcg,thread=single` crashed more, not less). It happens on the fork's executable as well as its library.
+- Upstream: our pin is still the fork's head, and no issue mentions it.
+
+Left to compare with Espressif's tree: interrupt routing and masking during flash operations (`esp32_intc.c`, the interrupt matrix), and the DPORT cache control and trap-enable registers.
+
 ## Open questions
 
 - Should simulator boot tests stub out Wi-Fi, or should a project be marked as "no simulator" when it starts Wi-Fi at boot? lcgamboa's fork answers this for ESP32 and C3 only.
