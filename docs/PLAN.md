@@ -29,6 +29,7 @@ v1 is done when every esp32bench.dev library project builds and flashes from the
 | Toolchain | Detect an existing ESP-IDF and Arduino core, offer a managed install | The AUR `esp-idf` package is one supported source. |
 | Serial monitor | Plain text view (`QPlainTextEdit`) (decided 2026-11-16) | Line-based output needs no terminal emulation, and `qt6-base` already has it. |
 | Virtual part data | Placed in the app first, saved per project and board on this computer; the shared manifest may carry the same data later (decided 2026-11-16) | The library's wiring is free text, so parts need structured data from somewhere. Placing them in the app works for every project at once with no site change. The circuit file format is versioned in `schema/` and designed so the manifest can adopt it as an optional addition. |
+| Part models | A JSON description plus a [Rhai](https://rhai.rs) script per model, run in the per-session host process (decided 2026-11-16) | The plan asked for data files plus a small script. Rhai is pure Rust (no C library, no extra Arch package), sandboxed by default (no files, network or processes), and MIT-licensed. The host must answer I2C synchronously, so every part runs there, beside the QEMU library. Details: [parts.md](parts.md). |
 
 The cost of going native is that the esp32-bench Astro UI is not reused. The shared data schema still carries the library content over.
 
@@ -125,7 +126,7 @@ Phase 4 builds on lcgamboa's library hooks, which phase 0 proved for GPIO and I2
 - **First-run setup:** toolchains are several gigabytes. A setup wizard detects what is installed, shows download sizes, and supports several IDF and Arduino core versions side by side.
 - **Translations:** the site ships in five languages. Wrap every UI string for Qt translation from the first view.
 - **Signal trace view:** with GPIO hooks, a logic-analyzer panel for simulated pins is cheap to add. Export VCD so traces open in PulseView.
-- **Part model format:** define virtual parts (LED, button, sensor) as data files plus a small script, so new parts do not need a C++ change.
+- **Part model format:** decided: a JSON description plus a Rhai script per model ([parts.md](parts.md)).
 - **Project format:** a plain, git-friendly on-disk layout for local projects, compatible with the site's manifest.
 - **Repo layout:** a separate repo from the site, with the shared schema published as its own package.
 

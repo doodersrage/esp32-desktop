@@ -51,6 +51,7 @@ Do not reopen these without the owner asking. Each has its reasoning in `docs/PL
 - Arch Linux and Plasma are the only supported platform for v1.
 - The serial monitor is a plain text view (`QPlainTextEdit`), not QTermWidget.
 - Virtual parts are placed in the app first, saved per project and board on this computer, in a versioned circuit format the shared manifest may adopt later.
+- Part models are a JSON description plus a Rhai script, built into the program, and run in `esp32bench-qemu-host` (`docs/parts.md`).
 
 ## Decisions that are open
 
