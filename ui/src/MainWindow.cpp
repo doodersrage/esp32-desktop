@@ -107,10 +107,17 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_debugger = new DebugPanel(core, m_debugDock);
     m_debugDock->setWidget(m_debugger);
     // Beside the simulator's console, not tabbed over it: both are needed at once.
-    splitDockWidget(m_simDock, m_debugDock, Qt::Horizontal);
+    // (splitDockWidget would only add a tab, since the console is in a tab group.)
+    addDockWidget(Qt::BottomDockWidgetArea, m_debugDock, Qt::Horizontal);
     m_debugDock->hide(); // until the first debug session
     connect(core, &CoreConnection::debugStarted, this, [this] {
+        // A layout saved while the debugger was tabbed over the console: move it out.
+        if (tabifiedDockWidgets(m_debugDock).contains(m_simDock)) {
+            removeDockWidget(m_debugDock);
+            addDockWidget(Qt::BottomDockWidgetArea, m_debugDock, Qt::Horizontal);
+        }
         m_simDock->show();
+        m_simDock->raise();
         m_debugDock->show();
         m_debugDock->raise();
     });

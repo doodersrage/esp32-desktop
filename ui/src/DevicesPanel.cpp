@@ -50,7 +50,12 @@ DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
     m_tree->setHeaderLabels({tr("Port"), tr("Possible chips"), tr("USB device"), tr("USB ID")});
     m_tree->setRootIsDecorated(false);
     m_tree->setUniformRowHeights(true);
+    // Short columns fit their text; the long USB device name takes what is left and
+    // is elided, so a narrow dock needs no horizontal scrollbar.
+    m_tree->header()->setStretchLastSection(false);
     m_tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    m_tree->header()->setSectionResizeMode(BridgeColumn, QHeaderView::Stretch);
+    m_tree->setTextElideMode(Qt::ElideRight);
     m_tree->setToolTip(tr("Double-click a port to open it in the serial monitor; right-click for more"));
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint &pos) {

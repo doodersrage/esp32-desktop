@@ -4,6 +4,7 @@
 #include "BuildPanel.h"
 #include "CoreConnection.h"
 #include "DebugPanel.h"
+#include "MainWindow.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -12,6 +13,7 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QPointer>
+#include <QDockWidget>
 #include <QPushButton>
 #include <QTemporaryDir>
 #include <QTest>
@@ -166,6 +168,31 @@ private slots:
         QTRY_VERIFY(!core.isDebugging());
         QVERIFY(!panel.continueButton()->isEnabled());
         QVERIFY(!panel.addButton()->isEnabled());
+    }
+
+    void debuggerSitsBesideTheConsole()
+    {
+        // A private config directory: MainWindow restores and saves its layout.
+        QTemporaryDir config;
+        qputenv("XDG_CONFIG_HOME", config.path().toLocal8Bit());
+        CoreConnection core;
+        core.setSocketPath(path());
+        MainWindow window(&core);
+        window.show();
+        auto *sim = window.findChild<QDockWidget *>(u"simDock"_s);
+        auto *dbg = window.findChild<QDockWidget *>(u"debugDock"_s);
+        QVERIFY(sim && dbg);
+        emit core.debugStarted();
+        QVERIFY(dbg->isVisible());
+        QVERIFY(sim->isVisible());
+        QVERIFY(!window.tabifiedDockWidgets(dbg).contains(sim));
+
+        // A layout saved with the debugger tabbed over the console is fixed on start.
+        window.tabifyDockWidget(sim, dbg);
+        QVERIFY(window.tabifiedDockWidgets(dbg).contains(sim));
+        emit core.debugStarted();
+        QVERIFY(!window.tabifiedDockWidgets(dbg).contains(sim));
+        QVERIFY(dbg->isVisible() && sim->isVisible());
     }
 
     void buildPanelOffersDebugging()

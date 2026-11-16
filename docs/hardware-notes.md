@@ -34,7 +34,10 @@ The owner ran the app on KDE Plasma (Wayland, Breeze dark), with the core from a
 - The library listed all 54 projects, and Blink built for ESP32 with the real `arduino-cli` and core 3.3.12.
 - That build, debugged on lcgamboa's fork from the CLI with the Arduino core's GDB: a hardware breakpoint in `setup()` stopped at `blink.ino` line 4, and stepping and the call stack (`loopTask` in the core's `main.cpp`) worked.
 
-Seen while checking: there is no app icon yet (packaging), the Devices table shows a horizontal scrollbar when its columns are wider than the dock, and the core has to be started with the Start core button each time.
+- In the app, Debug in simulator on that build stopped at breakpoint 1 in `setup` (`blink.ino` line 4), with the call stack and registers.
+- Flash to board with the C3 selected refused the ESP32 build: "the board is an esp32c3, but this build is for esp32". Nothing was written.
+
+Seen while checking: there is no app icon yet (packaging); the core has to be started with the Start core button each time. Fixed since: the Debugger opened as a tab over the Simulator console (it now sits beside it, and a saved layout with the tab is corrected when debugging starts), and the Devices table showed a horizontal scrollbar (the USB device column now stretches and elides).
 
 ## Not yet tried on real hardware
 
