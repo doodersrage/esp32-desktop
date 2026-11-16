@@ -89,3 +89,12 @@ Run the same firmware against both forks and record results in `docs/`:
 - lcgamboa fork: builds as a library, adds Wi-Fi, exposes GPIO, ADC, UART and I2C callbacks, but may lag current IDF versions.
 
 Record for each: which IDF and Arduino core versions boot, which peripherals respond, and how GPIO state can be read and driven from the host.
+
+Results so far are in `docs/PHASE0.md` (checklist) and `docs/qemu-forks.md` (details). Known traps with lcgamboa's fork at commit `885a6e7061`:
+
+- Use `-machine esp32-picsimlab`; the plain `esp32` machine aborts at start-up.
+- Wi-Fi: `--qemu-arg=-nic --qemu-arg=user,model=esp32_wifi,restrict=on` (or `esp32c3_wifi`). C3 Wi-Fi also needs an eFuse image on `nvram.esp32c3.efuse`, or QEMU aborts.
+- IDF 4.4 builds fail flash init on S3 and C3; IDF 6 builds boot.
+- GPIO, I2C and SPI hooks are C callbacks in library builds only.
+
+To run a build other than the pinned one: `esp32d sim boot-test --qemu <binary> [--machine <name>] [--qemu-arg=<arg>]...`.

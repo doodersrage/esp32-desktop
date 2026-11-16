@@ -9,6 +9,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use esp32d_sim::uart::WaitOutcome;
 use esp32d_sim::{Arch, Chip, Session, SessionConfig, gdb, image, install, pin};
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 #[derive(Parser)]
 #[command(name = "esp32d", version, about = "esp32-desktop core command line")]
@@ -74,7 +75,7 @@ struct SessionArgs {
 
 #[derive(Subcommand)]
 enum SimCmd {
-    /// Boot an image and stream UART0 to stdout until QEMU exits or Ctrl-C.
+    /// Boot an image, stream UART0 to stdout and stdin lines to UART0, until QEMU exits or Ctrl-C.
     Run {
         #[command(flatten)]
         session: SessionArgs,
@@ -163,11 +164,18 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 eprintln!("GDB stub on {addr}");
             }
             let mut out = std::io::stdout();
+            // Lines typed on stdin go to UART0 RX, ending in CR LF like a serial terminal.
+            let mut stdin = BufReader::new(tokio::io::stdin()).lines();
+            let mut stdin_open = true;
             loop {
                 tokio::select! {
                     chunk = s.uart.read_chunk() => match chunk? {
                         Some(bytes) => { out.write_all(&bytes)?; out.flush()?; }
                         None => break,
+                    },
+                    line = stdin.next_line(), if stdin_open => match line? {
+                        Some(l) => s.uart.write(format!("{l}\r\n").as_bytes()).await?,
+                        None => stdin_open = false,
                     },
                     _ = tokio::signal::ctrl_c() => break,
                 }

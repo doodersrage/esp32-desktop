@@ -92,6 +92,36 @@ async fn esp32c3_boots() {
     boot_reset_and_quit(Chip::Esp32c3).await;
 }
 
+/// The hello firmware echoes lines it receives on UART0.
+#[tokio::test]
+async fn uart_input_reaches_the_firmware() {
+    for chip in Chip::ALL {
+        let Some((cfg, marker)) = setup(chip) else {
+            continue;
+        };
+        if marker != HELLO_MARKER {
+            eprintln!("skipping UART input on {chip}: needs the hello firmware");
+            continue;
+        }
+        let mut s = Session::start(cfg).await.unwrap();
+        let t = Duration::from_secs(30);
+        assert_eq!(
+            s.uart.wait_for(marker, t, |_| {}).await.unwrap(),
+            WaitOutcome::Found
+        );
+        s.uart.write(b"ping 42\r\n").await.unwrap();
+        assert_eq!(
+            s.uart
+                .wait_for(b"esp32d-hello echo ping 42", t, |_| {})
+                .await
+                .unwrap(),
+            WaitOutcome::Found,
+            "{chip} did not echo"
+        );
+        s.shutdown().await.unwrap();
+    }
+}
+
 #[tokio::test]
 async fn gdb_stub_answers_while_halted() {
     let Some((mut cfg, _)) = setup(Chip::Esp32) else {

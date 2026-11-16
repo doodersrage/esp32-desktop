@@ -1,0 +1,3 @@
+# QEMU boots only DIO or DOUT images, and emulates 2, 4, 8 or 16 MiB of flash.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y

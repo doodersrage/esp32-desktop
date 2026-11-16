@@ -2,14 +2,18 @@
 
 use std::time::Duration;
 
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::Instant;
 
 use crate::Error;
 
 /// Banners that mean the firmware crashed.
-pub const PANIC_MARKERS: [&[u8]; 2] = [b"Guru Meditation Error", b"abort() was called"];
+pub const PANIC_MARKERS: [&[u8]; 3] = [
+    b"Guru Meditation Error",
+    b"abort() was called",
+    b"assert failed: ", // IDF's assert handler, e.g. a failed flash init at start-up
+];
 
 /// Lines that end a panic report.
 const PANIC_END_MARKERS: [&[u8]; 2] = [b"Rebooting...", b"CPU halted."];
@@ -37,6 +41,12 @@ pub struct Uart {
 impl Uart {
     pub fn new(stream: UnixStream) -> Self {
         Uart { stream }
+    }
+
+    /// Send bytes to the firmware's UART0 RX.
+    pub async fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        self.stream.write_all(bytes).await?;
+        Ok(())
     }
 
     /// Read the next chunk. `None` means QEMU closed the socket.
@@ -203,6 +213,33 @@ mod tests {
             out,
             WaitOutcome::Panic("abort() was called at PC 0x400d1234".into())
         );
+    }
+
+    #[tokio::test]
+    async fn treats_idf_assert_as_panic() {
+        let (a, mut b) = UnixStream::pair().unwrap();
+        let mut uart = Uart::new(a);
+        b.write_all(b"entry 0x403cc710\r\n\r\nassert failed: do_core_init startup.c:328 (flash_ret == ESP_OK)\r\nRebooting...\r\n")
+            .await
+            .unwrap();
+        let out = uart
+            .wait_for(b"app_main", Duration::from_secs(2), |_| {})
+            .await
+            .unwrap();
+        let WaitOutcome::Panic(report) = out else {
+            panic!("expected panic, got {out:?}");
+        };
+        assert!(report.starts_with("assert failed: do_core_init"));
+    }
+
+    #[tokio::test]
+    async fn writes_reach_the_peer() {
+        let (a, mut b) = UnixStream::pair().unwrap();
+        let mut uart = Uart::new(a);
+        uart.write(b"ping\r\n").await.unwrap();
+        let mut got = [0u8; 6];
+        b.read_exact(&mut got).await.unwrap();
+        assert_eq!(&got, b"ping\r\n");
     }
 
     #[tokio::test]

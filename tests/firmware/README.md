@@ -4,7 +4,8 @@ Small firmware projects that the core's QEMU boot tests run. The ESP-IDF version
 
 | Project | What it does | Marker on UART0 |
 | --- | --- | --- |
-| `hello` | Prints a ready line, then a tick every second | `esp32d-hello ready` |
+| `hello` | Prints a ready line, a tick every second, and echoes lines received on UART0 | `esp32d-hello ready`, `esp32d-hello echo <line>` |
+| `wifi-sta` | Joins the open network `PICSimLabWifi`. Only lcgamboa's QEMU fork emulates it, on ESP32 and C3 | `esp32d-wifi got ip <ip>` |
 
 ## Building
 
@@ -19,7 +20,8 @@ git clone --branch "$(cat tests/firmware/IDF_VERSION)" --depth 1 --recurse-submo
 Then build merged 4 MiB images into `tests/firmware/out/`:
 
 ```sh
-IDF_PATH=~/esp/esp-idf tests/firmware/build.sh
+IDF_PATH=~/esp/esp-idf tests/firmware/build.sh            # hello
+IDF_PATH=~/esp/esp-idf tests/firmware/build.sh wifi-sta
 ```
 
 The script refuses to run against any other IDF version. `cargo test --manifest-path core/Cargo.toml` picks up the images automatically.

@@ -8,39 +8,40 @@ Phase 0 ends with one decision: which QEMU fork the project builds on. Everythin
 
 ## Before writing code
 
-- [ ] Install ESP-IDF and run `idf.py qemu monitor` on the stock `hello_world` example by hand. Confirms the toolchain and QEMU binaries work on this machine.
-- [ ] Install `arduino-cli` and the ESP32 Arduino core. Compile the Blink example for an ESP32 dev board.
-- [ ] Record the exact versions used in the table below. These become the first pinned versions.
-- [ ] Decide the app name. Binary name, package name, socket path, config directory and URL scheme all derive from it.
+- [x] Install ESP-IDF and run `idf.py qemu monitor` on the stock `hello_world` example by hand. Confirms the toolchain and QEMU binaries work on this machine. *Done with `esp32d` and `tests/firmware/hello` rather than `idf.py qemu`; IDF v6.0.2 is at `~/esp/esp-idf`.*
+- [ ] Install `arduino-cli` and the ESP32 Arduino core. Compile the Blink example for an ESP32 dev board. *Not installed yet; `arduino-cli` 1.5.1 is in the Arch `extra` repo.*
+- [x] Record the exact versions used in the table below. These become the first pinned versions.
+- [ ] Decide the app name. Binary name, package name, socket path, config directory and URL scheme all derive from it. *Open. The code uses `esp32d` for the CLI and crates and `esp32-desktop` for data and runtime directories as placeholders.*
 
 | Component | Version pinned |
 | --- | --- |
-| ESP-IDF | |
-| ESP32 Arduino core | |
-| Espressif QEMU (xtensa) | |
-| Espressif QEMU (riscv32) | |
-| lcgamboa QEMU (commit) | |
-| Rust toolchain | |
+| ESP-IDF | v6.0.2 (`tests/firmware/IDF_VERSION`) |
+| ESP32 Arduino core | not yet chosen |
+| Espressif QEMU (xtensa) | `esp-develop-9.2.2-20261109` (`core/crates/sim/src/pin.rs`) |
+| Espressif QEMU (riscv32) | `esp-develop-9.2.2-20261109` (`core/crates/sim/src/pin.rs`) |
+| lcgamboa QEMU (commit) | `885a6e7061fb70fac78a074a719423810bc19a17` (2026-11-14), built from source |
+| Rust toolchain | 1.98.1 stable, edition 2024 |
 
 ## Test firmware
 
 Keep these small and in `tests/firmware/`. Each prints a known marker string on UART0 so a boot test can match it.
 
-- [ ] `hello-idf`: ESP-IDF hello-world.
+- [x] `hello-idf`: ESP-IDF hello-world. *As `tests/firmware/hello`; also echoes UART0 input.*
 - [ ] `hello-arduino`: Arduino sketch that prints over `Serial`.
 - [ ] `gpio-blink`: toggles one GPIO and prints each state change.
 - [ ] `gpio-input`: prints when an input pin changes.
 - [ ] `i2c-scan`: scans the I2C bus and prints what it finds.
+- [x] `wifi-sta` (added): joins an open emulated network and prints its IP.
 
 ## The CLI
 
 One binary in `core/` that takes a chip and a flash image, and can:
 
-- [ ] Launch QEMU as a child process and kill it reliably on exit, including on Ctrl-C and on panic.
-- [ ] Stream UART0 from a Unix socket to stdout, as bytes.
-- [ ] Reset the chip over QMP.
-- [ ] Start QEMU waiting for GDB, and attach the toolchain GDB with the project's ELF.
-- [ ] Run as a boot test: exit 0 when a marker string appears within a timeout, non-zero on timeout or panic banner.
+- [x] Launch QEMU as a child process and kill it reliably on exit, including on Ctrl-C and on panic.
+- [x] Stream UART0 from a Unix socket to stdout, as bytes.
+- [x] Reset the chip over QMP.
+- [x] Start QEMU waiting for GDB, and attach the toolchain GDB with the project's ELF.
+- [x] Run as a boot test: exit 0 when a marker string appears within a timeout, non-zero on timeout or panic banner.
 
 ## Fork checklist
 
@@ -48,22 +49,22 @@ Run every row against both forks and fill in the result. Use "yes", "no" or "par
 
 | Check | Espressif fork | lcgamboa fork |
 | --- | --- | --- |
-| Boots `hello-idf` on ESP32 with the pinned IDF | | |
-| Boots `hello-idf` on ESP32-S3 | | |
-| Boots `hello-idf` on ESP32-C3 | | |
-| Boots `hello-arduino` on ESP32 with the pinned Arduino core | | |
-| UART0 output readable over a socket | | |
-| UART0 input works (type into the firmware) | | |
-| Reset from the host works | | |
-| GDB attach, breakpoint and step work | | |
-| Host can read a GPIO output (`gpio-blink`) | | |
-| Host can drive a GPIO input (`gpio-input`) | | |
-| Host can answer as an I2C device (`i2c-scan`) | | |
-| Wi-Fi station connects to an emulated network | | |
-| Runs at roughly real-time speed | | |
-| Can be driven as a separate process (not only as a linked library) | | |
-| Builds from source on Arch without patches | | |
-| Upstream had commits in the last 6 months | | |
+| Boots `hello-idf` on ESP32 with the pinned IDF | yes | yes, on `esp32-picsimlab`; plain `esp32` aborts at start-up |
+| Boots `hello-idf` on ESP32-S3 | yes | yes |
+| Boots `hello-idf` on ESP32-C3 | yes | yes, on `esp32c3` and `esp32c3-picsimlab` |
+| Boots `hello-arduino` on ESP32 with the pinned Arduino core | not tested; esp32bench builds on Arduino core 2.x (IDF 4.4.7) boot on all three chips | not tested; the same builds boot on ESP32 but fail flash init on S3 and C3 |
+| UART0 output readable over a socket | yes | yes |
+| UART0 input works (type into the firmware) | yes | yes |
+| Reset from the host works | yes, QMP `system_reset` | yes, QMP `system_reset` |
+| GDB attach, breakpoint and step work | yes, all three chips | yes, all three chips |
+| Host can read a GPIO output (`gpio-blink`) | no hook | partial: `picsimlab_write_pin` callback, library build only, not tested |
+| Host can drive a GPIO input (`gpio-input`) | no hook | partial: `qemu_picsimlab_set_pin`, library build only, not tested |
+| Host can answer as an I2C device (`i2c-scan`) | no hook | partial: `picsimlab_i2c_event` callback, library build only, not tested |
+| Wi-Fi station connects to an emulated network | no: panics on ESP32, no IP on S3/C3 | yes on ESP32 and C3 (C3 needs an eFuse image); no on S3 |
+| Runs at roughly real-time speed | yes: 1.00 wall s per guest s, idle firmware | yes: 1.00 wall s per guest s, idle firmware |
+| Can be driven as a separate process (not only as a linked library) | yes | partial: executables work for all of the above; GPIO/I2C hooks need the library |
+| Builds from source on Arch without patches | not tried (prebuilt binaries used) | yes |
+| Upstream had commits in the last 6 months | yes, 2026-11-06 | yes, 2026-11-14 |
 
 ## Decision rule
 
