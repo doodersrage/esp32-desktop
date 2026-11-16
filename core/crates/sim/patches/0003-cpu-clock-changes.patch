@@ -1,0 +1,148 @@
+esp32: keep CCOUNT and the tick timers right when the CPU clock changes
+
+Arduino core builds panicked within seconds on the fork in about half of
+runs: as "Cache error" (an interrupt that ESP-IDF reports as one), or
+with Espressif's interrupt matrix as "Interrupt wdt timeout". Checked
+with GDB at the panic: core 0's CCOUNT was ~235M cycles past CCOMPARE0
+with no timer interrupt pending, so its FreeRTOS tick had stopped.
+
+Arduino switches the CPU to 240 MHz at run time (setCpuFrequencyMhz in
+initArduino), while the tick timers are armed; ESP-IDF firmware switches
+during early boot, which is why it never showed this. The machine set
+each CPU's input clock directly, so the CPU never learnt of the change:
+CCOUNT was rescaled and a pending CCOMPARE deadline could end up a whole
+counter wrap away (~18 s at 240 MHz).
+
+This takes Espressif's fix: xtensa_cpu_clock_changed() rebases CCOUNT
+before a rate change and moves pending CCOMPARE deadlines after it,
+registered as the CPU's clk-in callback; and the esp32-picsimlab machine
+drives both CPUs from one cpu-clk source clock, as Espressif's esp32.c
+does, since a clock's callback only runs when its source propagates.
+
+Before: Blink panicked in 6 to 9 of 12 runs of 12 s. After: 16 of 16
+clean. Swapping in
+Espressif's interrupt matrix or timer group was tried and is not needed.
+
+target/xtensa parts taken from espressif/qemu, tag
+esp-develop-9.2.2-20261109 (7411393a2f61e6f0b05af00276d30780769e0839):
+target/xtensa/op_helper.c, cpu.c, cpu.h; the machine change follows
+their hw/xtensa/esp32.c. QEMU and Espressif Systems (Shanghai) Co. Ltd.
+copyrights as in those files; GPL-2.0-or-later. Applied by esp32bench
+(core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu at
+885a6e7061fb70fac78a074a719423810bc19a17, after patch 0002.
+
+diff --git a/target/xtensa/cpu.c b/target/xtensa/cpu.c
+index 6f9039a..b8b2915 100644
+--- a/target/xtensa/cpu.c
++++ b/target/xtensa/cpu.c
+@@ -195,7 +195,9 @@ static void xtensa_cpu_initfn(Object *obj)
+                           UINT64_C(0x100000000));
+     address_space_init(env->address_space_er, env->system_er, "ER");
+ 
+-    cpu->clock = qdev_init_clock_in(DEVICE(obj), "clk-in", NULL, cpu, 0);
++    cpu->clock = qdev_init_clock_in(DEVICE(obj), "clk-in",
++                                    xtensa_cpu_clock_changed, cpu,
++                                    ClockPreUpdate | ClockUpdate);
+     clock_set_hz(cpu->clock, env->config->clock_freq_khz * 1000);
+ #endif
+ }
+diff --git a/target/xtensa/cpu.h b/target/xtensa/cpu.h
+index 748e110..37c444f 100644
+--- a/target/xtensa/cpu.h
++++ b/target/xtensa/cpu.h
+@@ -625,6 +625,7 @@ void xtensa_register_core(XtensaConfigList *node);
+ void xtensa_sim_open_console(Chardev *chr);
+ void check_interrupts(CPUXtensaState *s);
+ void xtensa_irq_init(CPUXtensaState *env);
++void xtensa_cpu_clock_changed(void *opaque, ClockEvent event);
+ qemu_irq *xtensa_get_extints(CPUXtensaState *env);
+ qemu_irq xtensa_get_runstall(CPUXtensaState *env);
+ void xtensa_sync_window_from_phys(CPUXtensaState *env);
+diff --git a/target/xtensa/op_helper.c b/target/xtensa/op_helper.c
+index 028d4e0..dd9359f 100644
+--- a/target/xtensa/op_helper.c
++++ b/target/xtensa/op_helper.c
+@@ -46,6 +46,38 @@ void HELPER(update_ccount)(CPUXtensaState *env)
+         (uint32_t)clock_ns_to_ticks(cpu->clock, now - env->time_base);
+ }
+ 
++/*
++ * CCOUNT is derived from virtual time at the clk-in rate. Rebase it before a
++ * rate change so that the elapsed time is not rescaled (the counter must stay
++ * continuous, as on hardware), then move pending CCOMPARE deadlines to the
++ * new rate. Pending timer interrupts are kept. A match that is already due
++ * but has not fired yet keeps its deadline: CCOUNT is past CCOMPARE, so
++ * counting to the next match would take a whole wrap of the counter.
++ */
++void xtensa_cpu_clock_changed(void *opaque, ClockEvent event)
++{
++    XtensaCPU *cpu = opaque;
++    CPUXtensaState *env = &cpu->env;
++
++    if (event == ClockPreUpdate) {
++        HELPER(update_ccount)(env);
++        env->ccount_base = env->sregs[CCOUNT];
++        env->time_base = env->ccount_time;
++        return;
++    }
++    for (unsigned i = 0; i < env->config->nccompare; ++i) {
++        QEMUTimer *timer = env->ccompare[i].timer;
++
++        if (timer && timer_pending(timer) &&
++            timer_expire_time_ns(timer) > env->time_base) {
++            uint64_t dcc = (uint64_t)(env->sregs[CCOMPARE + i] -
++                                      env->ccount_base - 1) + 1;
++            timer_mod(timer,
++                      env->time_base + clock_ticks_to_ns(cpu->clock, dcc));
++        }
++    }
++}
++
+ void HELPER(wsr_ccount)(CPUXtensaState *env, uint32_t v)
+ {
+     int i;
+--- a/hw/xtensa/esp32_picsimlab.c
++++ b/hw/xtensa/esp32_picsimlab.c
+@@ -9,6 +9,7 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "hw/qdev-clock.h"
+ #include "qemu/log.h"
+ #include "qemu/error-report.h"
+ #include "qemu/units.h"
+@@ -439,8 +440,9 @@
+     qdev_prop_set_int32(DEVICE(&s->frc_timer), "apb_freq", apb_clk_freq);
+     qdev_prop_set_int32(DEVICE(&s->timg[0]), "apb_freq", apb_clk_freq);
+     qdev_prop_set_int32(DEVICE(&s->timg[1]), "apb_freq", apb_clk_freq);
+-    clock_update_hz(s->cpu[0].clock, cpu_clk_freq );
+-    clock_update_hz(s->cpu[1].clock, cpu_clk_freq );
++    /* Through one source clock, so each CPU's clock-change callback runs and
++     * CCOUNT/CCOMPARE follow the new rate (as in Espressif's esp32.c). */
++    clock_update_hz(s->cpu_clk, cpu_clk_freq);
+ }
+ 
+ static void esp32_soc_add_periph_device(MemoryRegion *dest, void* dev, hwaddr dport_base_addr)
+@@ -858,6 +860,12 @@
+         const uint32_t cpuid[ESP32_CPU_COUNT] = { 0xcdcd, 0xabab };
+         s->cpu[i].env.sregs[PRID] = cpuid[i];
+ 
++        if (i == 0) {
++            s->cpu_clk = clock_new(obj, "cpu-clk");
++            clock_set_hz(s->cpu_clk, clock_get_hz(s->cpu[0].clock));
++        }
++        qdev_connect_clock_in(DEVICE(&s->cpu[i]), "clk-in", s->cpu_clk);
++
+         snprintf(name, sizeof(name), "cpu%d-mem", i);
+         memory_region_init(&s->cpu_specific_mem[i], NULL, name, UINT32_MAX);
+ 
+--- a/include/hw/xtensa/esp32.h
++++ b/include/hw/xtensa/esp32.h
+@@ -38,6 +38,7 @@
+ 
+     /*< public >*/
+     XtensaCPU cpu[ESP32_CPU_COUNT];
++    Clock *cpu_clk;
+     Esp32DportState dport;
+     Esp32IntMatrixState intmatrix;
+     Esp32CrosscoreInt crosscore_int;

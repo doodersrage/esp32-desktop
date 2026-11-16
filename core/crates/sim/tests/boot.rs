@@ -242,3 +242,53 @@ async fn gdb_stub_answers_while_halted() {
     );
     s.shutdown().await.unwrap();
 }
+
+/// An Arduino sketch keeps running on lcgamboa's fork. Arduino switches the CPU to
+/// 240 MHz at run time, and before patch 0003 that stopped a core's tick timer: about
+/// half of runs panicked within seconds. ESP-IDF firmware does not exercise it, so
+/// this needs an Arduino build. Repeated, since the failure depended on timing.
+async fn arduino_keeps_running_on_lcgamboa(chip: Chip, runs: usize) {
+    let Some(image) = built_image("hello-arduino", chip) else {
+        eprintln!("skipping {chip}: hello-arduino not built");
+        return;
+    };
+    let Ok(launch) = esp32bench_sim::engine::launch(chip, Some(esp32bench_sim::Engine::Lcgamboa))
+    else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    for run in 1..=runs {
+        let mut s = Session::start(launch.config(chip, image.clone()))
+            .await
+            .unwrap();
+        let mut text = Vec::new();
+        let found = s
+            .uart
+            .wait_for(b"esp32bench-arduino tick 5", Duration::from_secs(30), |b| {
+                text.extend_from_slice(b)
+            })
+            .await
+            .unwrap();
+        let text = String::from_utf8_lossy(&text);
+        assert!(
+            !text.contains("Guru Meditation"),
+            "{chip} run {run} panicked:\n{text}"
+        );
+        assert_eq!(
+            found,
+            WaitOutcome::Found,
+            "{chip} run {run}: no tick 5:\n{text}"
+        );
+        s.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32_runs_arduino() {
+    arduino_keeps_running_on_lcgamboa(Chip::Esp32, 3).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32c3_runs_arduino() {
+    arduino_keeps_running_on_lcgamboa(Chip::Esp32c3, 1).await;
+}
