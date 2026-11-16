@@ -1,2 +1,4 @@
 /core/target/
 /build/
+/tests/firmware/build/
+/tests/firmware/out/
