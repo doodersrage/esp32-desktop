@@ -6,7 +6,7 @@ The plan is in `docs/PLAN.md`. Read it before any design work. It is the source 
 
 ## Current state
 
-Planning only. The repo has no code yet. The next step is phase 0: a Rust CLI that boots a hello-world in QEMU.
+Phase 0 in progress. `core/` has two crates: `esp32d-sim` (QEMU session supervisor, QMP, UART, GDB probe, image checks, pinned QEMU install) and the `esp32d` CLI. Espressif's QEMU fork boots esp32bench.dev firmware on ESP32, S3 and C3, with results in `docs/qemu-forks.md`. The QEMU boot tests in `core/crates/sim/tests/boot.rs` skip unless QEMU is installed (`esp32d qemu install`) and `ESP32D_TEST_IMAGE_<CHIP>` points at a merged image. Still to do in phase 0: a pinned IDF hello-world in `tests/firmware/` and the lcgamboa fork comparison.
 
 The commands and paths below are the intended layout. If one does not exist yet, create it as described here; do not invent a different structure.
 
@@ -28,7 +28,7 @@ The commands and paths below are the intended layout. If one does not exist yet,
 | Build core | `cargo build --manifest-path core/Cargo.toml` |
 | Test core | `cargo test --manifest-path core/Cargo.toml` |
 | Lint core | `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings` |
-| Format core | `cargo fmt --manifest-path core/Cargo.toml` |
+| Format core | `cargo fmt --manifest-path core/Cargo.toml --all` |
 | Configure UI | `cmake -S ui -B build/ui -G Ninja` |
 | Build UI | `cmake --build build/ui` |
 | Test UI | `ctest --test-dir build/ui --output-on-failure` |

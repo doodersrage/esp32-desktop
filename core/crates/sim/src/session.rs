@@ -1,0 +1,369 @@
+//! A supervised QEMU session: one child process with UART0 and QMP on Unix sockets.
+//!
+//! QEMU starts paused (`-S`). The session connects QMP and UART first, then sends
+//! `cont`, so no early boot output is lost. The child is killed when the session is
+//! dropped, and also if this process dies (`PR_SET_PDEATHSIG`).
+
+use std::ffi::OsString;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
+
+use tokio::net::UnixStream;
+use tokio::process::{Child, Command};
+use tokio::time::Instant;
+
+use crate::qmp::Qmp;
+use crate::uart::Uart;
+use crate::{Chip, Error, image};
+
+const READY_TIMEOUT: Duration = Duration::from_secs(10);
+const QUIT_TIMEOUT: Duration = Duration::from_secs(3);
+
+#[derive(Debug, Clone)]
+pub struct SessionConfig {
+    pub chip: Chip,
+    /// Path to the QEMU binary for the chip's architecture.
+    pub qemu: PathBuf,
+    /// Merged flash image. It is padded and copied; the original is never written to.
+    pub image: PathBuf,
+    /// Open a GDB stub on 127.0.0.1 at this port.
+    pub gdb_port: Option<u16>,
+    /// Stay halted after start, for example to attach a debugger before the first instruction.
+    pub start_paused: bool,
+}
+
+/// Files a session uses, all inside one private runtime directory.
+#[derive(Debug, Clone)]
+pub struct SessionPaths {
+    pub dir: PathBuf,
+    pub flash: PathBuf,
+    pub uart: PathBuf,
+    pub qmp: PathBuf,
+    pub stderr: PathBuf,
+}
+
+impl SessionPaths {
+    pub fn in_dir(dir: PathBuf) -> Self {
+        SessionPaths {
+            flash: dir.join("flash.bin"),
+            uart: dir.join("uart0.sock"),
+            qmp: dir.join("qmp.sock"),
+            stderr: dir.join("qemu.stderr"),
+            dir,
+        }
+    }
+}
+
+/// QEMU's argument list for a session. Pure, so it can be tested without QEMU.
+pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
+    let mut args: Vec<OsString> = Vec::new();
+    let mut push = |s: &str| args.push(s.into());
+    push("-machine");
+    push(cfg.chip.machine());
+    push("-display");
+    push("none");
+    push("-monitor");
+    push("none");
+    push("-S");
+
+    let mut drive = OsString::from("file=");
+    drive.push(&paths.flash);
+    drive.push(",if=mtd,format=raw");
+    let mut serial = OsString::from("unix:");
+    serial.push(&paths.uart);
+    serial.push(",server=on,wait=off");
+    let mut qmp = OsString::from("unix:");
+    qmp.push(&paths.qmp);
+    qmp.push(",server=on,wait=off");
+
+    args.extend([
+        "-drive".into(),
+        drive,
+        "-serial".into(),
+        serial,
+        "-qmp".into(),
+        qmp,
+    ]);
+    if let Some(port) = cfg.gdb_port {
+        args.push("-gdb".into());
+        args.push(format!("tcp:127.0.0.1:{port}").into());
+    }
+    args
+}
+
+pub struct Session {
+    child: Child,
+    pub qmp: Qmp,
+    pub uart: Uart,
+    paths: SessionPaths,
+    gdb: Option<SocketAddr>,
+}
+
+impl Session {
+    pub async fn start(cfg: SessionConfig) -> Result<Self, Error> {
+        let data = tokio::fs::read(&cfg.image).await?;
+        let info = image::inspect(cfg.chip, &data)?;
+        let data = image::pad(data, &info);
+
+        let paths = SessionPaths::in_dir(new_runtime_dir()?);
+        let guard = DirGuard(Some(paths.dir.clone()));
+        tokio::fs::write(&paths.flash, &data).await?;
+
+        let stderr = std::fs::File::create(&paths.stderr)?;
+        let mut cmd = Command::new(&cfg.qemu);
+        cmd.args(qemu_args(&cfg, &paths))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(stderr))
+            .kill_on_drop(true);
+        // SAFETY: prctl is async-signal-safe and touches no memory of the parent.
+        // The death signal fires when the spawning thread exits; Tokio worker threads
+        // live as long as the runtime, and kill_on_drop covers orderly shutdown.
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut child = cmd.spawn()?;
+
+        let qmp_stream = connect_when_ready(&mut child, &paths.qmp, &paths.stderr).await?;
+        let mut qmp = Qmp::handshake(qmp_stream).await?;
+        let uart_stream = connect_when_ready(&mut child, &paths.uart, &paths.stderr).await?;
+        let uart = Uart::new(uart_stream);
+        if !cfg.start_paused {
+            qmp.execute("cont", None).await?;
+        }
+
+        guard.disarm();
+        Ok(Session {
+            child,
+            qmp,
+            uart,
+            paths,
+            gdb: cfg.gdb_port.map(|p| SocketAddr::from(([127, 0, 0, 1], p))),
+        })
+    }
+
+    pub fn paths(&self) -> &SessionPaths {
+        &self.paths
+    }
+
+    pub fn gdb_addr(&self) -> Option<SocketAddr> {
+        self.gdb
+    }
+
+    pub async fn reset(&mut self) -> Result<(), Error> {
+        self.qmp.execute("system_reset", None).await.map(|_| ())
+    }
+
+    pub async fn resume(&mut self) -> Result<(), Error> {
+        self.qmp.execute("cont", None).await.map(|_| ())
+    }
+
+    /// Ask QEMU to quit, then kill it if it does not exit promptly.
+    pub async fn shutdown(mut self) -> Result<(), Error> {
+        let _ = self.qmp.execute("quit", None).await;
+        if tokio::time::timeout(QUIT_TIMEOUT, self.child.wait())
+            .await
+            .is_err()
+        {
+            self.child.kill().await?;
+        }
+        Ok(())
+    }
+
+    /// Wait for QEMU to exit on its own.
+    pub async fn wait(&mut self) -> Result<std::process::ExitStatus, Error> {
+        Ok(self.child.wait().await?)
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        let _ = self.child.start_kill();
+        let _ = std::fs::remove_dir_all(&self.paths.dir);
+    }
+}
+
+/// Removes the runtime directory if start-up fails part way.
+struct DirGuard(Option<PathBuf>);
+
+impl DirGuard {
+    fn disarm(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for DirGuard {
+    fn drop(&mut self) {
+        if let Some(d) = self.0.take() {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+}
+
+/// A private directory for one session under `$XDG_RUNTIME_DIR/esp32-desktop/`.
+fn new_runtime_dir() -> Result<PathBuf, Error> {
+    use std::os::unix::fs::DirBuilderExt;
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    let base = std::env::var_os("XDG_RUNTIME_DIR")
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join(crate::install::APP_DIR);
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&base)?;
+    remove_stale_sessions(&base);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = base.join(format!("session-{}-{n}", std::process::id()));
+    std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
+    Ok(dir)
+}
+
+/// Remove session directories whose owning process no longer runs, for example after
+/// the core was killed with SIGKILL. QEMU itself is gone by then (`PR_SET_PDEATHSIG`).
+/// Directories of live processes are left alone, so a reused PID only delays cleanup.
+fn remove_stale_sessions(base: &Path) {
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if let Some(pid) = session_owner(&entry.file_name().to_string_lossy())
+            && pid != std::process::id()
+            && !Path::new("/proc").join(pid.to_string()).exists()
+        {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// The owning PID of a `session-<pid>-<n>` directory name.
+fn session_owner(name: &str) -> Option<u32> {
+    let rest = name.strip_prefix("session-")?;
+    let (pid, n) = rest.split_once('-')?;
+    n.parse::<u32>().ok()?;
+    pid.parse().ok()
+}
+
+/// Retry connecting to a socket QEMU is about to create, failing fast if QEMU exits.
+async fn connect_when_ready(
+    child: &mut Child,
+    sock: &Path,
+    stderr: &Path,
+) -> Result<UnixStream, Error> {
+    let deadline = Instant::now() + READY_TIMEOUT;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            let stderr = std::fs::read(stderr).unwrap_or_default();
+            return Err(Error::QemuExited {
+                status: status.to_string(),
+                stderr: String::from_utf8_lossy(&stderr).trim().to_owned(),
+            });
+        }
+        if let Ok(s) = UnixStream::connect(sock).await {
+            return Ok(s);
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::Timeout("QEMU sockets"));
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(chip: Chip, gdb: Option<u16>) -> SessionConfig {
+        SessionConfig {
+            chip,
+            qemu: "/q".into(),
+            image: "/img.bin".into(),
+            gdb_port: gdb,
+            start_paused: false,
+        }
+    }
+
+    fn strs(v: Vec<OsString>) -> Vec<String> {
+        v.into_iter().map(|s| s.into_string().unwrap()).collect()
+    }
+
+    #[test]
+    fn builds_args_without_gdb() {
+        let paths = SessionPaths::in_dir("/run/s".into());
+        let args = strs(qemu_args(&cfg(Chip::Esp32c3, None), &paths));
+        assert_eq!(
+            args,
+            [
+                "-machine",
+                "esp32c3",
+                "-display",
+                "none",
+                "-monitor",
+                "none",
+                "-S",
+                "-drive",
+                "file=/run/s/flash.bin,if=mtd,format=raw",
+                "-serial",
+                "unix:/run/s/uart0.sock,server=on,wait=off",
+                "-qmp",
+                "unix:/run/s/qmp.sock,server=on,wait=off",
+            ]
+        );
+    }
+
+    #[test]
+    fn gdb_stub_binds_loopback_only() {
+        let paths = SessionPaths::in_dir("/run/s".into());
+        let args = strs(qemu_args(&cfg(Chip::Esp32, Some(3333)), &paths));
+        let i = args.iter().position(|a| a == "-gdb").unwrap();
+        assert_eq!(args[i + 1], "tcp:127.0.0.1:3333");
+    }
+
+    #[test]
+    fn parses_session_dir_names() {
+        assert_eq!(session_owner("session-1234-0"), Some(1234));
+        assert_eq!(session_owner("session-1234"), None);
+        assert_eq!(session_owner("session-x-0"), None);
+        assert_eq!(session_owner("other-1234-0"), None);
+    }
+
+    #[test]
+    fn removes_only_dead_sessions() {
+        let base = tempfile::tempdir().unwrap();
+        // PID 0x7fff_fff0 is above the kernel's maximum, so it is never running.
+        let dead = base.path().join("session-2147483632-0");
+        let live = base
+            .path()
+            .join(format!("session-{}-99", std::process::id()));
+        let other = base.path().join("unrelated");
+        for d in [&dead, &live, &other] {
+            std::fs::create_dir(d).unwrap();
+        }
+        remove_stale_sessions(base.path());
+        assert!(!dead.exists());
+        assert!(live.exists());
+        assert!(other.exists());
+    }
+
+    #[test]
+    fn runtime_dirs_are_private_and_unique() {
+        use std::os::unix::fs::PermissionsExt;
+        let a = new_runtime_dir().unwrap();
+        let b = new_runtime_dir().unwrap();
+        assert_ne!(a, b);
+        let mode = std::fs::metadata(&a).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
+        std::fs::remove_dir(a).unwrap();
+        std::fs::remove_dir(b).unwrap();
+    }
+}

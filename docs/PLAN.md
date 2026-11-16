@@ -54,7 +54,7 @@ The simulator is firmware-level, not circuit-level. Details below come from the 
 - **Debugging:** `idf.py qemu gdb` gives a GDB session against the emulated chip, so the app can offer breakpoints and register views without hardware.
 - **Display:** a virtual framebuffer exists for testing graphics apps. It has no counterpart on real ESP32 hardware.
 - **Security testing:** eFuse emulation lets you try secure boot and flash encryption without irreversible burns.
-- **Gaps (unverified):** no Wi-Fi or BLE radio emulation, and thin GPIO, ADC and I2C device modelling. Confirm against the fork's README in phase 0.
+- **Gaps:** no Wi-Fi radio emulation in Espressif's fork, confirmed in phase 0: firmware that starts Wi-Fi panics on ESP32 and hangs on S3 and C3. BLE, and GPIO, ADC and I2C modelling, are still unverified. Results are in [qemu-forks.md](qemu-forks.md).
 
 ## Architecture
 
