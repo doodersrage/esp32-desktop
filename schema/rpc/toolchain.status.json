@@ -1,0 +1,134 @@
+{
+  "method": "toolchain.status",
+  "description": "What the app needs installed and whether it is: arduino-cli and the pinned ESP32 Arduino core for builds, and the pinned QEMU for the simulator. Never touches the network.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "components"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "components": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "name",
+            "neededFor",
+            "state",
+            "installable"
+          ],
+          "properties": {
+            "id": {
+              "enum": [
+                "arduino-cli",
+                "esp32-core",
+                "qemu-xtensa",
+                "qemu-riscv32"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "neededFor": {
+              "enum": [
+                "build",
+                "simulator"
+              ]
+            },
+            "state": {
+              "enum": [
+                "installed",
+                "missing",
+                "other-version",
+                "broken"
+              ],
+              "description": "broken: present but it fails when run; `hint` has its error."
+            },
+            "version": {
+              "type": "string",
+              "description": "Installed version."
+            },
+            "wanted": {
+              "type": "string",
+              "description": "The version this program is pinned to, when it pins one."
+            },
+            "path": {
+              "type": "string"
+            },
+            "downloadBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Bytes to download to install it, when known."
+            },
+            "installable": {
+              "type": "boolean",
+              "description": "Whether toolchain.install can install it. arduino-cli is a system package and needs root, so it never is."
+            },
+            "hint": {
+              "type": "string",
+              "description": "What to do by hand, when the app cannot install it."
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [],
+  "examples": [
+    {
+      "params": {},
+      "result": {
+        "components": [
+          {
+            "id": "arduino-cli",
+            "name": "arduino-cli",
+            "neededFor": "build",
+            "state": "installed",
+            "version": "1.5.1",
+            "path": "/usr/bin/arduino-cli",
+            "installable": false
+          },
+          {
+            "id": "esp32-core",
+            "name": "ESP32 Arduino core",
+            "neededFor": "build",
+            "state": "other-version",
+            "version": "3.0.0",
+            "wanted": "3.3.12",
+            "downloadBytes": 1810706323,
+            "installable": true
+          },
+          {
+            "id": "qemu-xtensa",
+            "name": "QEMU for ESP32 and ESP32-S3",
+            "neededFor": "simulator",
+            "state": "missing",
+            "wanted": "esp-develop-9.2.2-20261109",
+            "downloadBytes": 16006136,
+            "installable": true
+          },
+          {
+            "id": "qemu-riscv32",
+            "name": "QEMU for ESP32-C3",
+            "neededFor": "simulator",
+            "state": "installed",
+            "version": "esp-develop-9.2.2-20261109",
+            "wanted": "esp-develop-9.2.2-20261109",
+            "path": "/home/u/.local/share/esp32bench/qemu/esp-develop-9.2.2-20261109/riscv32/qemu/bin/qemu-system-riscv32",
+            "installable": true
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -11,6 +11,8 @@ pub struct QemuAsset {
     pub arch: Arch,
     pub url: &'static str,
     pub sha256: &'static str,
+    /// Download size in bytes, as GitHub reports it.
+    pub size: u64,
 }
 
 pub const QEMU_ASSETS: [QemuAsset; 2] = [
@@ -18,11 +20,13 @@ pub const QEMU_ASSETS: [QemuAsset; 2] = [
         arch: Arch::Xtensa,
         url: "https://github.com/espressif/qemu/releases/download/esp-develop-9.2.2-20261109/qemu-xtensa-softmmu-esp_develop_9.2.2_20261109-x86_64-linux-gnu.tar.xz",
         sha256: "fbc3bffa9fa71192847969a627a584aabe2e86d85bed4902a096ff06c2b8a815",
+        size: 16_006_136,
     },
     QemuAsset {
         arch: Arch::Riscv32,
         url: "https://github.com/espressif/qemu/releases/download/esp-develop-9.2.2-20261109/qemu-riscv32-softmmu-esp_develop_9.2.2_20261109-x86_64-linux-gnu.tar.xz",
         sha256: "afa59465495295b8aa4f804768983fa30b0bbf33d0f68a047f9caa436b9164c0",
+        size: 17_544_120,
     },
 ];
 

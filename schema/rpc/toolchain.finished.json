@@ -1,0 +1,40 @@
+{
+  "event": "toolchain.finished",
+  "description": "The end of a toolchain.install job. Sent once, unless it was cancelled.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "ok"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "error": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "ok": true
+      }
+    },
+    {
+      "params": {
+        "subscription": 5,
+        "ok": false,
+        "error": "installing the ESP32 core failed (exit status: 1)"
+      }
+    }
+  ]
+}

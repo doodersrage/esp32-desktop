@@ -1,0 +1,30 @@
+{
+  "event": "toolchain.progress",
+  "description": "One line of progress from a toolchain.install job.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "line"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "line": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "line": "Installing esp32:esp32@3.3.12..."
+      }
+    }
+  ]
+}

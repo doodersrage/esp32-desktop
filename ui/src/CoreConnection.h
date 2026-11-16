@@ -77,6 +77,12 @@ public:
     void resetSerial();
     bool isSerialOpen() const { return m_serialSub > 0; }
 
+    // toolchain.status through toolchainStatus; toolchain.install as a job reporting
+    // through toolchainProgress and toolchainInstallFinished.
+    void requestToolchainStatus();
+    void installComponent(const QString &component);
+    bool isInstalling() const { return m_installJob != 0; }
+
     // Error code the core uses when consent is missing (docs/rpc.md).
     static constexpr int ConsentRequired = -32002;
 
@@ -101,6 +107,10 @@ signals:
     void serialOpened(const QString &path, int baud);
     void serialData(const QByteArray &bytes);
     void serialClosed(const QString &reason);
+    // Toolchain.
+    void toolchainStatus(const QJsonArray &components);
+    void toolchainProgress(const QString &line);
+    void toolchainInstallFinished(bool ok, const QString &error);
     // A request failed. `method` is the RPC method name.
     void requestFailed(const QString &method, const QString &message);
 
@@ -112,6 +122,7 @@ private:
     void finishLibraryRefresh(const QJsonObject &params);
     void handleBuildEvent(const QString &method, const QJsonObject &params);
     void handleSerialEvent(const QString &method, const QJsonObject &params);
+    void handleInstallEvent(const QString &method, const QJsonObject &params);
 
     RpcClient *m_client;
     QTimer *m_retry;
@@ -129,4 +140,6 @@ private:
     QList<QPair<QString, QJsonObject>> m_earlyBuildEvents;
     qint64 m_serialSub = 0; // open serial.open subscription, -1 while opening, or 0
     QList<QPair<QString, QJsonObject>> m_earlySerialEvents;
+    qint64 m_installJob = 0; // running toolchain.install job, -1 while starting, or 0
+    QList<QPair<QString, QJsonObject>> m_earlyInstallEvents;
 };

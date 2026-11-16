@@ -12,6 +12,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QStandardPaths>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -58,6 +59,9 @@ class TestIntegration : public QObject {
     Q_OBJECT
 
 private slots:
+    // Keep QSettings away from the real configuration.
+    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+
     void startsCoreAndListsDevices()
     {
         if (qEnvironmentVariableIsEmpty("ESP32BENCH_DAEMON"))

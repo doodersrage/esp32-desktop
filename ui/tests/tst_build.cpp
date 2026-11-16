@@ -12,6 +12,7 @@
 #include <QPointer>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QStandardPaths>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -106,6 +107,9 @@ private:
     QString path() const { return m_dir.filePath(u"core.sock"_s); }
 
 private slots:
+    // Keep QSettings away from the real configuration.
+    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+
     void consentThenBuildWithEarlyEvents()
     {
         FakeCore fake(path());

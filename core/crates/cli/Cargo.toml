@@ -14,6 +14,7 @@ esp32bench-device = { path = "../device" }
 esp32bench-library = { path = "../library" }
 esp32bench-rpc = { path = "../rpc" }
 esp32bench-serial = { path = "../serial" }
+esp32bench-toolchain = { path = "../toolchain" }
 esp32bench-sim = { path = "../sim" }
 libc.workspace = true
 serde_json.workspace = true

@@ -299,6 +299,7 @@ dependencies = [
  "esp32bench-rpc",
  "esp32bench-serial",
  "esp32bench-sim",
+ "esp32bench-toolchain",
  "libc",
  "serde_json",
  "tokio",
@@ -329,6 +330,7 @@ dependencies = [
  "esp32bench-library",
  "esp32bench-rpc",
  "esp32bench-serial",
+ "esp32bench-toolchain",
  "jsonschema",
  "libc",
  "serde",
@@ -402,6 +404,18 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "esp32bench-toolchain"
+version = "0.0.1"
+dependencies = [
+ "esp32bench-build",
+ "esp32bench-sim",
+ "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
 ]
 

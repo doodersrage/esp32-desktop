@@ -35,6 +35,9 @@ enum Cmd {
     /// Talk to a board over its serial port.
     #[command(subcommand)]
     Serial(SerialCmd),
+    /// Check and install the tools builds and the simulator need.
+    #[command(subcommand)]
+    Toolchain(ToolchainCmd),
     /// The esp32bench.dev project library.
     #[command(subcommand)]
     Library(LibraryCmd),
@@ -88,6 +91,17 @@ enum LibraryCmd {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum ToolchainCmd {
+    /// Show what is installed and what is missing.
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Install one component: esp32-core, qemu-xtensa or qemu-riscv32.
+    Install { component: String },
 }
 
 #[derive(Subcommand)]
@@ -446,6 +460,53 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         None => stdin_open = false,
                     },
                     _ = tokio::signal::ctrl_c() => break,
+                }
+            }
+        }
+        Cmd::Toolchain(cmd) => {
+            let env = esp32bench_toolchain::Env {
+                arduino_cli: None,
+                arduino_data: esp32bench_toolchain::Env::default_arduino_data()
+                    .context("no home directory")?,
+                sketchbook: esp32bench_build::default_sketchbook()
+                    .context("no data directory: set XDG_DATA_HOME or HOME")?,
+            };
+            match cmd {
+                ToolchainCmd::Status { json } => {
+                    let comps = esp32bench_toolchain::status(&env).await;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&comps)?);
+                    } else {
+                        for c in &comps {
+                            let state = serde_json::to_value(c.state)?;
+                            let mut line = format!(
+                                "{:<14} {:<14} {:<10}",
+                                c.id.as_str(),
+                                state.as_str().unwrap_or("?"),
+                                c.needed_for
+                            );
+                            if let Some(v) = &c.version {
+                                line += &format!(" have {v}");
+                            }
+                            if let Some(w) = &c.wanted
+                                && c.version.as_ref() != Some(w)
+                            {
+                                line += &format!(" want {w}");
+                            }
+                            if let Some(b) = c.download_bytes {
+                                line += &format!(" ({} MB to download)", b / 1_000_000);
+                            }
+                            println!("{line}");
+                            if let Some(h) = &c.hint {
+                                println!("{:<14} {h}", "");
+                            }
+                        }
+                    }
+                }
+                ToolchainCmd::Install { component } => {
+                    let id = esp32bench_toolchain::Id::parse(&component)
+                        .with_context(|| format!("unknown component `{component}`"))?;
+                    esp32bench_toolchain::install(&env, id, |l| println!("{l}")).await?;
                 }
             }
         }

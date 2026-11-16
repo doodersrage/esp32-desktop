@@ -1,0 +1,53 @@
+{
+  "method": "toolchain.install",
+  "description": "Install one component that toolchain.status says is installable. Returns a job; toolchain.progress events report what it is doing and toolchain.finished the outcome. job.cancel stops it. Installs and builds run one at a time.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "component"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "component": {
+        "enum": [
+          "arduino-cli",
+          "esp32-core",
+          "qemu-xtensa",
+          "qemu-riscv32"
+        ]
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "errors": [
+    -32005
+  ],
+  "events": [
+    "toolchain.progress",
+    "toolchain.finished"
+  ],
+  "examples": [
+    {
+      "params": {
+        "component": "esp32-core"
+      },
+      "result": {
+        "job": 5
+      }
+    }
+  ]
+}

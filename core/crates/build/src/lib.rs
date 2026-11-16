@@ -373,6 +373,17 @@ impl Drop for GroupGuard {
     }
 }
 
+/// Run arduino-cli with `args` in its own process group (killed if the future is
+/// dropped), streaming every output line to `log`. `name` labels the step in errors.
+pub async fn run_arduino_cli(
+    tools: &Toolchain,
+    name: &'static str,
+    args: Vec<OsString>,
+    log: &mut impl FnMut(Stream, String),
+) -> Result<(), Error> {
+    step(tools, name, args, log).await
+}
+
 async fn step(
     tools: &Toolchain,
     name: &'static str,

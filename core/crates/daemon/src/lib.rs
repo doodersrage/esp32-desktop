@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.6.0";
+pub const PROTOCOL: &str = "0.7.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -42,6 +42,8 @@ pub struct State {
     serial_ports: std::sync::Mutex<HashMap<(u64, u64), SharedPort>>,
     /// Ports serial.open may open instead of those device.list reports (tests).
     pub serial_allow: Option<Vec<PathBuf>>,
+    /// Arduino's data directory (~/.arduino15), for package index files.
+    pub arduino_data: PathBuf,
 }
 
 type SharedPort = Arc<std::sync::Mutex<esp32bench_serial::Port>>;
@@ -82,6 +84,8 @@ impl State {
             build_lock: tokio::sync::Mutex::new(()),
             serial_ports: std::sync::Mutex::new(HashMap::new()),
             serial_allow: None,
+            arduino_data: esp32bench_toolchain::Env::default_arduino_data()
+                .unwrap_or_else(|| PathBuf::from(".arduino15")),
         }
     }
 
@@ -107,8 +111,17 @@ impl State {
 /// Every method the daemon serves. A test checks this against `schema/rpc/`.
 pub fn router(state: Arc<State>) -> Router {
     let (s1, s2, s3, s4) = (state.clone(), state.clone(), state.clone(), state.clone());
-    let (s5, s6, s7) = (state.clone(), state.clone(), state);
+    let (s5, s6, s7) = (state.clone(), state.clone(), state.clone());
+    let (s8, s9) = (state.clone(), state);
     Router::new()
+        .method("toolchain.status", move |p, _| {
+            let s = s8.clone();
+            async move { toolchain_status(p, s).await }
+        })
+        .method("toolchain.install", move |p, ctx| {
+            let s = s9.clone();
+            async move { toolchain_install(p, ctx, s) }
+        })
         .method("serial.open", move |p, ctx| {
             let s = s5.clone();
             async move { serial_open(p, ctx, s).await }
@@ -355,6 +368,53 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         sub.send("build.finished", event);
     });
     Ok(json!({ "job": job, "plan": result_plan }))
+}
+
+fn toolchain_env(state: &State) -> esp32bench_toolchain::Env {
+    esp32bench_toolchain::Env {
+        arduino_cli: state.arduino_cli.clone(),
+        arduino_data: state.arduino_data.clone(),
+        sketchbook: state.sketchbook.clone(),
+    }
+}
+
+async fn toolchain_status(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let _: NoParams = parse_params(params)?;
+    let components = esp32bench_toolchain::status(&toolchain_env(&state)).await;
+    Ok(json!({ "components": components }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InstallParams {
+    component: String,
+}
+
+fn toolchain_install(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: InstallParams = parse_params(params)?;
+    let id = esp32bench_toolchain::Id::parse(&p.component)
+        .ok_or_else(|| RpcError::invalid_params(format!("unknown component `{}`", p.component)))?;
+    if id == esp32bench_toolchain::Id::ArduinoCli {
+        return Err(RpcError::new(
+            code::FAILED,
+            "arduino-cli is a system package; install it with: sudo pacman -S arduino-cli",
+        ));
+    }
+    let job = ctx.subscribe(move |sub| async move {
+        // Installs share the build lock: never swap the core out under a build.
+        let _one_at_a_time = state.build_lock.lock().await;
+        let env = toolchain_env(&state);
+        let r = esp32bench_toolchain::install(&env, id, |line| {
+            sub.send("toolchain.progress", json!({ "line": line }));
+        })
+        .await;
+        let event = match r {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "error": e.to_string() }),
+        };
+        sub.send("toolchain.finished", event);
+    });
+    Ok(json!({ "job": job }))
 }
 
 #[derive(Deserialize)]

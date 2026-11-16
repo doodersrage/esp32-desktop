@@ -223,7 +223,7 @@ async fn core_hello_round_trip() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
     let def = method_def("core.hello");
-    let params = json!({ "client": "test", "protocol": "0.6.0" });
+    let params = json!({ "client": "test", "protocol": "0.7.0" });
     assert_valid(&def["params"], &params, "core.hello params");
     let r = c.call("core.hello", params).await.unwrap();
     assert_valid(&def["result"], &r, "core.hello result");
@@ -811,5 +811,73 @@ async fn serial_reports_when_the_board_goes_away() {
             );
             break;
         }
+    }
+}
+
+#[tokio::test]
+async fn toolchain_status_matches_schema() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let r = c.call("toolchain.status", json!({})).await.unwrap();
+    assert_valid(
+        &method_def("toolchain.status")["result"],
+        &r,
+        "toolchain.status result",
+    );
+    let ids: Vec<&str> = r["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        ["arduino-cli", "esp32-core", "qemu-xtensa", "qemu-riscv32"]
+    );
+}
+
+#[tokio::test]
+async fn toolchain_install_runs_as_a_job() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    // The daemon's stand-in arduino-cli accepts any command, so the core "installs".
+    let r = c
+        .call("toolchain.install", json!({ "component": "esp32-core" }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("toolchain.install")["result"],
+        &r,
+        "toolchain.install result",
+    );
+    loop {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        let event = n["method"].as_str().unwrap();
+        assert_valid(&method_def(event)["params"], &n["params"], event);
+        if event == "toolchain.finished" {
+            assert_eq!(n["params"]["ok"], true, "{n}");
+            break;
+        }
+    }
+    // arduino-cli itself needs root, so it is never installed from here.
+    match c
+        .call("toolchain.install", json!({ "component": "arduino-cli" }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => {
+            assert_eq!(e.code, code::FAILED);
+            assert!(e.message.contains("pacman"));
+        }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    match c
+        .call("toolchain.install", json!({ "component": "gcc" }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("expected invalid params, got {other:?}"),
     }
 }

@@ -33,6 +33,11 @@ CoreConnection::CoreConnection(QObject *parent)
         m_earlyLibraryEvents.clear();
         m_earlyBuildEvents.clear();
         m_earlySerialEvents.clear();
+        m_earlyInstallEvents.clear();
+        if (m_installJob != 0) {
+            m_installJob = 0;
+            emit toolchainInstallFinished(false, tr("The connection to the core was lost."));
+        }
         if (m_serialSub != 0) {
             m_serialSub = 0;
             emit serialClosed(tr("The connection to the core was lost."));
@@ -92,7 +97,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.6.0"_s},
+        {u"protocol"_s, u"0.7.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -198,6 +203,11 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
+    } else if (method == u"toolchain.progress" || method == u"toolchain.finished") {
+        if (sub == m_installJob)
+            handleInstallEvent(method, params);
+        else if (m_installJob == -1)
+            m_earlyInstallEvents.append({method, params}); // our job id is not known yet
     } else if (method == u"serial.data" || method == u"serial.closed") {
         if (sub == m_serialSub)
             handleSerialEvent(method, params);
@@ -384,4 +394,46 @@ void CoreConnection::resetSerial()
         if (!r.ok)
             emit requestFailed(u"serial.reset"_s, r.errorMessage);
     });
+}
+
+void CoreConnection::requestToolchainStatus()
+{
+    const QString method = u"toolchain.status"_s;
+    m_client->call(method, {}, this, [this, method](const RpcReply &r) {
+        if (r.ok)
+            emit toolchainStatus(r.result.toObject().value(u"components"_s).toArray());
+        else
+            emit requestFailed(method, r.errorMessage);
+    });
+}
+
+void CoreConnection::installComponent(const QString &component)
+{
+    if (m_installJob != 0)
+        return; // one at a time
+    m_installJob = -1;
+    m_client->call(u"toolchain.install"_s, {{u"component"_s, component}}, this, [this](const RpcReply &r) {
+        if (!r.ok) {
+            m_installJob = 0;
+            m_earlyInstallEvents.clear();
+            emit toolchainInstallFinished(false, r.errorMessage);
+            return;
+        }
+        m_installJob = r.result.toObject().value(u"job"_s).toInteger();
+        const auto early = std::exchange(m_earlyInstallEvents, {});
+        for (const auto &[method, params] : early) {
+            if (m_installJob > 0 && params.value(u"subscription"_s).toInteger() == m_installJob)
+                handleInstallEvent(method, params);
+        }
+    });
+}
+
+void CoreConnection::handleInstallEvent(const QString &method, const QJsonObject &params)
+{
+    if (method == u"toolchain.progress") {
+        emit toolchainProgress(params.value(u"line"_s).toString());
+        return;
+    }
+    m_installJob = 0;
+    emit toolchainInstallFinished(params.value(u"ok"_s).toBool(), params.value(u"error"_s).toString());
 }

@@ -14,6 +14,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QTemporaryDir>
+#include <QStandardPaths>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -97,6 +98,9 @@ private:
     QString path() const { return m_dir.filePath(u"core.sock"_s); }
 
 private slots:
+    // Keep QSettings away from the real configuration.
+    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+
     void opensShowsOutputAndSends()
     {
         FakeCore fake(path());

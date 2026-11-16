@@ -10,6 +10,7 @@ class LibraryPanel;
 class ProjectView;
 class QSplitter;
 class SerialMonitor;
+class SetupDialog;
 class QDockWidget;
 class QLabel;
 class QPushButton;
@@ -26,6 +27,8 @@ public:
     QString connectionText() const;
     BuildPanel *buildPanel() const { return m_buildPanel; }
     SerialMonitor *serialMonitor() const { return m_serial; }
+    SetupDialog *setupDialog() const { return m_setup; }
+    void showSetup();
 
     // Ask the user whether to build a downloaded project. Returns true to build.
     // Virtual so tests can answer without a modal dialog.
@@ -51,6 +54,7 @@ private:
     BuildPanel *m_buildPanel = nullptr;
     QDockWidget *m_serialDock = nullptr;
     SerialMonitor *m_serial = nullptr;
+    SetupDialog *m_setup = nullptr;
     QLabel *m_connection;
     QPushButton *m_startCore;
 };

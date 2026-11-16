@@ -6,6 +6,7 @@
 #include "LibraryPanel.h"
 #include "ProjectView.h"
 #include "SerialMonitor.h"
+#include "SetupDialog.h"
 
 #include <QAction>
 #include <QApplication>
@@ -16,6 +17,7 @@
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <memory>
 #include <QPushButton>
 #include <QSettings>
 #include <QSplitter>
@@ -75,6 +77,29 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
                     m_core->startBuild(project, board, token);
             });
 
+    m_setup = new SetupDialog(core, this);
+    // First run: if something builds need is missing, show the setup once.
+    connect(core, &CoreConnection::stateChanged, this, [this](CoreConnection::State s) {
+        if (s != CoreConnection::State::Connected)
+            return;
+        QSettings settings;
+        if (settings.value(u"setup/offered"_s).toBool())
+            return;
+        auto conn = std::make_shared<QMetaObject::Connection>();
+        *conn = connect(m_core, &CoreConnection::toolchainStatus, this, [this, conn](const QJsonArray &components) {
+            disconnect(*conn);
+            for (const QJsonValue &v : components) {
+                const QJsonObject c = v.toObject();
+                if (c.value(u"neededFor"_s).toString() == u"build" && c.value(u"state"_s).toString() != u"installed") {
+                    QSettings().setValue(u"setup/offered"_s, true);
+                    showSetup();
+                    return;
+                }
+            }
+        });
+        m_core->requestToolchainStatus();
+    });
+
     m_startCore->setIcon(QIcon::fromTheme(u"media-playback-start"_s));
     m_startCore->setToolTip(tr("Start the esp32bench core in the background"));
     connect(m_startCore, &QPushButton::clicked, this, &MainWindow::startCore);
@@ -103,6 +128,10 @@ void MainWindow::buildMenus()
     view->addAction(m_devicesDock->toggleViewAction());
     view->addAction(m_buildDock->toggleViewAction());
     view->addAction(m_serialDock->toggleViewAction());
+
+    QMenu *tools = menuBar()->addMenu(tr("&Tools"));
+    QAction *setup = tools->addAction(QIcon::fromTheme(u"configure"_s), tr("&Toolchain setup…"));
+    connect(setup, &QAction::triggered, this, &MainWindow::showSetup);
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
     QAction *about = help->addAction(QIcon::fromTheme(u"help-about"_s), tr("&About ESP32 Bench"));
@@ -195,4 +224,11 @@ bool MainWindow::confirmBuild(const QString &project, const QString &board, cons
     box.setDefaultButton(QMessageBox::Cancel);
     box.exec();
     return box.clickedButton() == build;
+}
+
+void MainWindow::showSetup()
+{
+    m_core->requestToolchainStatus();
+    m_setup->show();
+    m_setup->raise();
 }
