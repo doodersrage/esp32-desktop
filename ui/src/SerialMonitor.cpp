@@ -87,6 +87,11 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     connect(m_core, &CoreConnection::serialOpened, this, [this](const QString &path, int baud) {
         m_output->resetDecoder();
         m_output->appendNotice(tr("Connected to %1 at %2 baud.").arg(path).arg(baud));
+        // Linux raises DTR and RTS while opening a port, and the built-in USB of the
+        // S3, C3 and C6 resets the chip on that; say so, or the boot log looks like a crash.
+        const int i = m_port->findData(path);
+        if (i >= 0 && m_port->itemData(i, BridgeRole).toString() == u"usb-serial-jtag")
+            m_output->appendNotice(tr("Boards with built-in USB restart when their port is opened."));
         setOpen(true);
     });
     connect(m_core, &CoreConnection::serialData, m_output, &ConsoleView::appendBytes);
@@ -137,8 +142,10 @@ void SerialMonitor::setPorts(const QJsonArray &ports)
     const QSignalBlocker block(m_port);
     m_port->clear();
     for (const QJsonValue &v : ports) {
-        const QString path = v.toObject().value(u"path"_s).toString();
+        const QJsonObject p = v.toObject();
+        const QString path = p.value(u"path"_s).toString();
         m_port->addItem(path, path);
+        m_port->setItemData(m_port->count() - 1, p.value(u"bridge"_s).toString(), BridgeRole);
     }
     // Keep the open (or last chosen) port selected even if it just went away.
     if (!current.isEmpty()) {

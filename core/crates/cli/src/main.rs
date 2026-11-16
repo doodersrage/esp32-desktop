@@ -2,7 +2,6 @@
 
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -268,20 +267,38 @@ enum SimCmd {
     },
 }
 
+/// The process exit status.
+#[derive(Clone, Copy)]
+struct ExitCode(i32);
+
+impl ExitCode {
+    const SUCCESS: ExitCode = ExitCode(0);
+    const FAILURE: ExitCode = ExitCode(1);
+
+    fn from(code: u8) -> Self {
+        ExitCode(i32::from(code))
+    }
+}
+
 #[tokio::main]
-async fn main() -> ExitCode {
+async fn main() {
     // Exit quietly when stdout is a closed pipe (e.g. `| head`) instead of panicking.
     // SAFETY: setting a signal disposition to the default before any threads use it.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
-    match run(Cli::parse()).await {
+    let code = match run(Cli::parse()).await {
         Ok(code) => code,
         Err(e) => {
             eprintln!("error: {e:#}");
             ExitCode::FAILURE
         }
-    }
+    };
+    // Exit now rather than return: Tokio's stdin reader is a blocking thread that the
+    // runtime would wait on until stdin closes, so `serial monitor` and `sim run`
+    // would hang after Ctrl-C when stdin is still open.
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    std::process::exit(code.0);
 }
 
 async fn run(cli: Cli) -> Result<ExitCode> {

@@ -30,6 +30,9 @@ public:
     QPushButton *openButton() const { return m_open; }
 
 private:
+    // Item data role holding a port's USB bridge type from device.list.
+    static constexpr int BridgeRole = Qt::UserRole + 1;
+
     void setPorts(const QJsonArray &ports);
     void send();
     void setOpen(bool open);

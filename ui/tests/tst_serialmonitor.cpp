@@ -70,7 +70,8 @@ private:
                                   {u"protocol"_s, u"0.6.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
-                                  {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s}}}}});
+                                  {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
+                                                                      {u"bridge"_s, u"usb-serial-jtag"_s}}}}});
         } else if (m == u"serial.open") {
             opened << p.value(u"path"_s).toString() + u"@"_s + QString::number(p.value(u"baud"_s).toInt());
             // Output that beats the reply; the UI must still show it, in order.
@@ -118,6 +119,7 @@ private slots:
         QCOMPARE(fake.opened, QStringList{u"/dev/ttyUSB0@115200"_s});
         QTRY_VERIFY(mon->outputText().contains(u"café ok"_s));
         QVERIFY(mon->outputText().contains(u"ets Jul 29 2019\ncafé"_s)); // \r removed
+        QVERIFY(mon->outputText().contains(u"restart when their port is opened"_s));
 
         mon->input()->setText(u"SET wifi_ssid home"_s);
         QTest::keyClick(mon->input(), Qt::Key_Return);
