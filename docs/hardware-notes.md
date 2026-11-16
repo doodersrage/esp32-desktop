@@ -24,6 +24,18 @@ All through `esp32bench board ...`, with the USB-Serial-JTAG reset sequence and 
 
 The backup is kept at `~/esp/backups/c3-probeharbor-1.6.1-full.bin` on the owner's machine (sha256 `c01c1915…`).
 
+## Plasma check (2026-11-16)
+
+The owner ran the app on KDE Plasma (Wayland, Breeze dark), with the core from a dev build and the project library from a local site build (`ESP32BENCH_MANIFEST`, since the site's `desktop-manifest` branch is not deployed yet):
+
+- The window follows the dark theme; the docks, menus and status bar lay out as intended.
+- Start core connected; the Devices dock listed the C3 on `/dev/ttyACM0`.
+- Inspect showed the C3's chip, MAC, security state and partition table, matching the CLI.
+- The library listed all 54 projects, and Blink built for ESP32 with the real `arduino-cli` and core 3.3.12.
+- That build, debugged on lcgamboa's fork from the CLI with the Arduino core's GDB: a hardware breakpoint in `setup()` stopped at `blink.ino` line 4, and stepping and the call stack (`loopTask` in the core's `main.cpp`) worked.
+
+Seen while checking: there is no app icon yet (packaging), the Devices table shows a horizontal scrollbar when its columns are wider than the dock, and the core has to be started with the Start core button each time.
+
 ## Not yet tried on real hardware
 
 - `board erase`: needs the stub, which QEMU cannot run, and the session's permission policy blocked running it on the C3. Untested anywhere.
