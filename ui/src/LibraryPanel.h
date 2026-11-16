@@ -17,8 +17,9 @@ class LibraryPanel : public QWidget {
 
 public:
     enum Column { NameColumn, LevelColumn, TimeColumn, ChipsColumn, FirmwareColumn, ColumnCount };
-    // Item data role holding the project page URL.
+    // Item data roles: the project page URL and the project id.
     static constexpr int UrlRole = Qt::UserRole + 1;
+    static constexpr int IdRole = Qt::UserRole + 2;
 
     explicit LibraryPanel(CoreConnection *core, QWidget *parent = nullptr);
 
@@ -27,6 +28,10 @@ public:
     QTreeWidget *tree() const { return m_tree; }
     QLineEdit *filter() const { return m_filter; }
     QString statusText() const;
+
+signals:
+    // The user picked a project in the list.
+    void projectSelected(const QString &id);
 
 private:
     void applyFilter();

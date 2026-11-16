@@ -59,6 +59,8 @@ public:
     // library.refresh: fetch the library; libraryRefreshed reports the outcome, and a
     // successful refresh is followed by libraryListed.
     void refreshLibrary();
+    // library.get: one project with its boards, through projectLoaded.
+    void getProject(const QString &id);
 
     RpcClient *client() const { return m_client; }
 
@@ -68,6 +70,8 @@ signals:
     // The library.list result: available, source, version, generated, fetchedAt, projects.
     void libraryListed(const QJsonObject &library);
     void libraryRefreshed(bool ok, const QString &error);
+    // The library.get result: {project, boards}.
+    void projectLoaded(const QJsonObject &result);
     // A request failed. `method` is the RPC method name.
     void requestFailed(const QString &method, const QString &message);
 

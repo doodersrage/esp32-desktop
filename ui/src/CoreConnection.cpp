@@ -82,7 +82,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.3.0"_s},
+        {u"protocol"_s, u"0.4.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -232,4 +232,15 @@ void CoreConnection::finishLibraryRefresh(const QJsonObject &params)
     emit libraryRefreshed(ok, params.value(u"error"_s).toString());
     if (ok)
         listLibrary();
+}
+
+void CoreConnection::getProject(const QString &id)
+{
+    const QString method = u"library.get"_s;
+    m_client->call(method, {{u"id"_s, id}}, this, [this, method](const RpcReply &r) {
+        if (r.ok)
+            emit projectLoaded(r.result.toObject());
+        else
+            emit requestFailed(method, r.errorMessage);
+    });
 }

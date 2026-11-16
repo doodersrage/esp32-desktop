@@ -4,6 +4,7 @@
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
 #include "LibraryPanel.h"
+#include "ProjectView.h"
 #include "MainWindow.h"
 
 #include <QSignalSpy>
@@ -51,6 +52,11 @@ private slots:
         // No library cached yet, so the panel downloads it once by itself.
         QTRY_COMPARE_WITH_TIMEOUT(window.libraryPanel()->tree()->topLevelItemCount(), 2, 10000);
         QVERIFY(window.libraryPanel()->statusText().contains(u"Projects: 2"_s));
+        // Picking a project loads it through library.get.
+        window.libraryPanel()->tree()->setCurrentItem(window.libraryPanel()->tree()->topLevelItem(0));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.projectView()->title().isEmpty(), 5000);
+        QCOMPARE(window.projectView()->title(),
+                 window.libraryPanel()->tree()->topLevelItem(0)->text(LibraryPanel::NameColumn));
 
         const QString shot = qEnvironmentVariable("ESP32BENCH_SCREENSHOT");
         if (!shot.isEmpty())

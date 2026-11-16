@@ -4,7 +4,6 @@
 #include "Labels.h"
 
 #include <QDateTime>
-#include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
@@ -14,7 +13,6 @@
 #include <QLocale>
 #include <QToolButton>
 #include <QTreeWidget>
-#include <QUrl>
 #include <QVBoxLayout>
 
 using namespace Qt::StringLiterals;
@@ -70,11 +68,9 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     m_tree->header()->setStretchLastSection(false);
     for (int c = LevelColumn; c < ColumnCount; ++c)
         m_tree->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
-    connect(m_tree, &QTreeWidget::itemActivated, this, [](QTreeWidgetItem *item) {
-        // Until there is a project view in the app, open the project's page.
-        const QUrl url(item->data(NameColumn, UrlRole).toString());
-        if (url.scheme() == u"https")
-            QDesktopServices::openUrl(url);
+    connect(m_tree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
+        if (item)
+            emit projectSelected(item->data(NameColumn, IdRole).toString());
     });
 
     auto *top = new QHBoxLayout;
@@ -147,6 +143,7 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
         item->setText(NameColumn, p.value(u"name"_s).toString());
         item->setToolTip(NameColumn, p.value(u"summary"_s).toString());
         item->setData(NameColumn, UrlRole, p.value(u"url"_s).toString());
+        item->setData(NameColumn, IdRole, p.value(u"id"_s).toString());
 
         const QString level = p.value(u"level"_s).toString();
         item->setText(LevelColumn, level == u"Starter" ? tr("Starter")

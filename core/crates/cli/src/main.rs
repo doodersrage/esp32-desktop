@@ -56,6 +56,17 @@ enum LibraryCmd {
         #[arg(long)]
         source: Option<String>,
     },
+    /// Show one project: summary, parts and, for one board, wiring and code.
+    Show {
+        /// Project id, as in `library list`.
+        id: String,
+        /// Board to show wiring and code for. Default: the project's first board.
+        #[arg(long)]
+        board: Option<String>,
+        /// Print the project as JSON (same as `library.get`).
+        #[arg(long)]
+        json: bool,
+    },
     /// List the cached projects.
     List {
         /// Print JSON instead of a table.
@@ -248,6 +259,47 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 m.generated,
                 cache.path().display()
             );
+        }
+        Cmd::Library(LibraryCmd::Show { id, board, json }) => {
+            let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+            let Some(m) = cache.load().await? else {
+                bail!("no project library cached yet; run `esp32bench library refresh`");
+            };
+            let Some(p) = m.project(&id) else {
+                bail!("no project `{id}` in the library");
+            };
+            if json {
+                println!("{}", serde_json::to_string_pretty(p)?);
+                return Ok(ExitCode::SUCCESS);
+            }
+            let build = match &board {
+                Some(b) => p.builds.iter().find(|x| &x.board == b).with_context(|| {
+                    let have: Vec<&str> = p.builds.iter().map(|x| x.board.as_str()).collect();
+                    format!("`{id}` has no build for `{b}`; boards: {}", have.join(", "))
+                })?,
+                None => p.builds.first().context("project has no builds")?,
+            };
+            println!(
+                "{} ({}, {} min)\n{}\n{}\n",
+                p.name, p.level, p.minutes, p.summary, p.url
+            );
+            if !p.parts.is_empty() {
+                println!("Parts:");
+                for part in &p.parts {
+                    println!("  {} x {}", part.quantity, part.name);
+                }
+            }
+            if !p.libraries.is_empty() {
+                println!("Libraries: {}", p.libraries.join(", "));
+            }
+            println!("\nBoard {}:", build.board);
+            for w in &build.wiring {
+                println!("  {:<10} -> {:<14} {}", w.from, w.to, w.note);
+            }
+            match &build.code {
+                Some(code) => println!("\n{code}"),
+                None => println!("\nPrebuilt firmware; no sketch."),
+            }
         }
         Cmd::Library(LibraryCmd::List { json }) => {
             let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);

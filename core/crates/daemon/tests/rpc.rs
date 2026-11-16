@@ -194,7 +194,7 @@ async fn core_hello_round_trip() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
     let def = method_def("core.hello");
-    let params = json!({ "client": "test", "protocol": "0.3.0" });
+    let params = json!({ "client": "test", "protocol": "0.4.0" });
     assert_valid(&def["params"], &params, "core.hello params");
     let r = c.call("core.hello", params).await.unwrap();
     assert_valid(&def["result"], &r, "core.hello result");
@@ -340,4 +340,69 @@ async fn job_cancel_round_trip() {
     let job = c.call("library.refresh", json!({})).await.unwrap()["job"].clone();
     let r = c.call("job.cancel", json!({ "job": job })).await.unwrap();
     assert_valid(&method_def("job.cancel")["result"], &r, "job.cancel result");
+}
+
+#[test]
+fn library_get_uses_the_manifest_project_schema() {
+    let manifest: Value = serde_json::from_slice(
+        &std::fs::read(example_manifest().with_file_name("v1.schema.json")).unwrap(),
+    )
+    .unwrap();
+    let get = method_def("library.get");
+    assert_eq!(
+        get["result"]["properties"]["project"],
+        manifest["properties"]["projects"]["items"]
+    );
+    assert_eq!(
+        get["result"]["properties"]["boards"]["items"],
+        manifest["properties"]["boards"]["items"]
+    );
+}
+
+#[tokio::test]
+async fn library_get_round_trip() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    // Nothing cached yet.
+    match c.call("library.get", json!({ "id": "blink" })).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("expected not found, got {other:?}"),
+    }
+    c.call("library.refresh", json!({})).await.unwrap();
+    c.next_notification().await.unwrap();
+
+    let r = c
+        .call("library.get", json!({ "id": "blink" }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("library.get")["result"],
+        &r,
+        "library.get result",
+    );
+    assert_eq!(r["project"]["id"], "blink");
+    // Exactly the boards the project's builds use.
+    let mut used: Vec<&str> = r["project"]["builds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["board"].as_str().unwrap())
+        .collect();
+    let mut got: Vec<&str> = r["boards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["id"].as_str().unwrap())
+        .collect();
+    used.sort();
+    got.sort();
+    assert_eq!(used, got);
+
+    match c
+        .call("library.get", json!({ "id": "no-such-project" }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("expected not found, got {other:?}"),
+    }
 }

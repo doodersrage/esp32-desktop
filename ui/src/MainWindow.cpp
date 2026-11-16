@@ -3,6 +3,7 @@
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
 #include "LibraryPanel.h"
+#include "ProjectView.h"
 
 #include <QAction>
 #include <QApplication>
@@ -14,6 +15,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSettings>
+#include <QSplitter>
 #include <QStatusBar>
 
 using namespace Qt::StringLiterals;
@@ -29,8 +31,16 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     setWindowTitle(tr("ESP32 Bench"));
     setWindowIcon(QIcon::fromTheme(u"applications-electronics"_s));
 
-    m_library = new LibraryPanel(core, this);
-    setCentralWidget(m_library);
+    m_split = new QSplitter(Qt::Horizontal, this);
+    m_split->setObjectName(u"librarySplit"_s);
+    m_library = new LibraryPanel(core, m_split);
+    m_project = new ProjectView(core, m_split);
+    m_split->addWidget(m_library);
+    m_split->addWidget(m_project);
+    m_split->setStretchFactor(0, 1);
+    m_split->setStretchFactor(1, 1);
+    connect(m_library, &LibraryPanel::projectSelected, m_project, &ProjectView::showProject);
+    setCentralWidget(m_split);
 
     m_devicesDock->setObjectName(u"devicesDock"_s); // needed for saveState()
     m_devices = new DevicesPanel(core, m_devicesDock);
@@ -114,10 +124,11 @@ void MainWindow::restoreLayout()
     QSettings settings;
     const QByteArray geometry = settings.value(u"mainWindow/geometry"_s).toByteArray();
     if (geometry.isEmpty() || !restoreGeometry(geometry))
-        resize(1100, 700);
+        resize(1400, 820);
     const QByteArray state = settings.value(u"mainWindow/state"_s).toByteArray();
     if (state.isEmpty() || !restoreState(state))
-        resizeDocks({m_devicesDock}, {440}, Qt::Horizontal); // first start
+        resizeDocks({m_devicesDock}, {340}, Qt::Horizontal); // first start
+    m_split->restoreState(settings.value(u"mainWindow/librarySplit"_s).toByteArray());
 }
 
 void MainWindow::saveLayout()
@@ -125,6 +136,7 @@ void MainWindow::saveLayout()
     QSettings settings;
     settings.setValue(u"mainWindow/geometry"_s, saveGeometry());
     settings.setValue(u"mainWindow/state"_s, saveState());
+    settings.setValue(u"mainWindow/librarySplit"_s, m_split->saveState());
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

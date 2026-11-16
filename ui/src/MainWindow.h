@@ -5,6 +5,8 @@
 class CoreConnection;
 class DevicesPanel;
 class LibraryPanel;
+class ProjectView;
+class QSplitter;
 class QDockWidget;
 class QLabel;
 class QPushButton;
@@ -17,6 +19,7 @@ public:
 
     DevicesPanel *devicesPanel() const { return m_devices; }
     LibraryPanel *libraryPanel() const { return m_library; }
+    ProjectView *projectView() const { return m_project; }
     QString connectionText() const;
 
 protected:
@@ -32,6 +35,8 @@ private:
     CoreConnection *m_core;
     DevicesPanel *m_devices;
     LibraryPanel *m_library = nullptr;
+    ProjectView *m_project = nullptr;
+    QSplitter *m_split = nullptr;
     QDockWidget *m_devicesDock;
     QLabel *m_connection;
     QPushButton *m_startCore;

@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.3.0";
+pub const PROTOCOL: &str = "0.4.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -50,13 +50,17 @@ impl State {
 
 /// Every method the daemon serves. A test checks this against `schema/rpc/`.
 pub fn router(state: Arc<State>) -> Router {
-    let (s1, s2) = (state.clone(), state);
+    let (s1, s2, s3) = (state.clone(), state.clone(), state);
     Router::new()
         .method("core.hello", |p, _| async move { core_hello(p) })
         .method("job.cancel", |p, ctx| async move { job_cancel(p, ctx) })
         .method("library.list", move |p, _| {
             let s = s1.clone();
             async move { library_list(p, s).await }
+        })
+        .method("library.get", move |p, _| {
+            let s = s3.clone();
+            async move { library_get(p, s).await }
         })
         .method("library.refresh", move |p, ctx| {
             let s = s2.clone();
@@ -149,6 +153,39 @@ async fn library_list(params: Value, state: Arc<State>) -> Result<Value, RpcErro
         out["fetchedAt"] = json!(t);
     }
     Ok(out)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GetParams {
+    id: String,
+}
+
+async fn library_get(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: GetParams = parse_params(params)?;
+    let manifest = state
+        .library
+        .load()
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                "the project library has not been downloaded",
+            )
+        })?;
+    let project = manifest.project(&p.id).ok_or_else(|| {
+        RpcError::new(
+            code::NOT_FOUND,
+            format!("no project `{}` in the library", p.id),
+        )
+    })?;
+    let boards: Vec<_> = manifest
+        .boards
+        .iter()
+        .filter(|b| project.builds.iter().any(|x| x.board == b.id))
+        .collect();
+    Ok(json!({ "project": project, "boards": boards }))
 }
 
 fn library_refresh(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
