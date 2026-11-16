@@ -2,7 +2,7 @@
 target/
 
 # CMake / Qt
-build/
+/build/
 CMakeUserPresets.json
 CMakeLists.txt.user
 *.autosave
