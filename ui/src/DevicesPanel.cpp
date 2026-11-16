@@ -1,6 +1,7 @@
 #include "DevicesPanel.h"
 
 #include "CoreConnection.h"
+#include "Labels.h"
 
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -14,17 +15,6 @@
 using namespace Qt::StringLiterals;
 
 namespace {
-
-// Display names for esp32bench.dev chip ids.
-QString chipName(const QString &id)
-{
-    if (id == u"esp32") return u"ESP32"_s;
-    if (id == u"esp32s2") return u"ESP32-S2"_s;
-    if (id == u"esp32s3") return u"ESP32-S3"_s;
-    if (id == u"esp32c3") return u"ESP32-C3"_s;
-    if (id == u"esp32c6") return u"ESP32-C6"_s;
-    return id;
-}
 
 QString bridgeName(const QJsonValue &bridge)
 {
@@ -121,7 +111,7 @@ void DevicesPanel::showPorts(const QJsonArray &ports)
 
         QStringList chips;
         for (const QJsonValue &c : p.value(u"chips"_s).toArray())
-            chips << chipName(c.toString());
+            chips << Labels::chipName(c.toString());
         item->setText(ChipsColumn, chips.isEmpty() ? tr("Any") : chips.join(u", "_s));
         if (chips.isEmpty())
             item->setToolTip(ChipsColumn, tr("A USB to UART bridge does not tell which chip is behind it."));

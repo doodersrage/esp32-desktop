@@ -1,0 +1,35 @@
+{
+  "method": "job.cancel",
+  "description": "Cancel a running job this connection started. Cancelling a job that already finished does nothing.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job"
+    ],
+    "properties": {
+      "job": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "additionalProperties": false
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "errors": [
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "job": 4
+      },
+      "result": {}
+    }
+  ]
+}

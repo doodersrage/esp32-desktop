@@ -1,0 +1,152 @@
+{
+  "method": "library.list",
+  "description": "The project library as last fetched from esp32bench.dev, as summaries. Empty with available=false until the first library.refresh succeeds.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "available",
+      "source",
+      "projects"
+    ],
+    "properties": {
+      "available": {
+        "type": "boolean"
+      },
+      "source": {
+        "type": "string",
+        "description": "Where library.refresh fetches from."
+      },
+      "version": {
+        "type": "string",
+        "description": "Manifest version."
+      },
+      "generated": {
+        "type": "string",
+        "description": "When the site built the manifest."
+      },
+      "fetchedAt": {
+        "type": "integer",
+        "description": "When it was fetched, in seconds since the Unix epoch."
+      },
+      "projects": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "name",
+            "summary",
+            "level",
+            "minutes",
+            "tags",
+            "firmware",
+            "boards",
+            "chips",
+            "url"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "level": {
+              "type": "string"
+            },
+            "minutes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "firmware": {
+              "enum": [
+                "sketch",
+                "prebuilt"
+              ]
+            },
+            "boards": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Board ids, as in the manifest."
+            },
+            "chips": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Distinct chips of those boards."
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {},
+      "result": {
+        "available": false,
+        "source": "https://esp32bench.dev/desktop-manifest.json",
+        "projects": []
+      }
+    },
+    {
+      "params": {},
+      "result": {
+        "available": true,
+        "source": "https://esp32bench.dev/desktop-manifest.json",
+        "version": "1.0.0",
+        "generated": "2026-11-16T12:00:00.000Z",
+        "fetchedAt": 1794830400,
+        "projects": [
+          {
+            "id": "blink",
+            "name": "Blink and heartbeat",
+            "summary": "Blink the onboard LED and print a heartbeat.",
+            "level": "Starter",
+            "minutes": 5,
+            "tags": [
+              "no-parts",
+              "lights"
+            ],
+            "firmware": "sketch",
+            "boards": [
+              "esp32",
+              "esp32-doit"
+            ],
+            "chips": [
+              "esp32"
+            ],
+            "url": "https://esp32bench.dev/projects/blink"
+          }
+        ]
+      }
+    }
+  ]
+}

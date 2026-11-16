@@ -1,0 +1,510 @@
+{
+ "format": "esp32bench-project-manifest",
+ "version": "1.0.0",
+ "generated": "2026-11-16T12:00:00.000Z",
+ "site": "https://esp32bench.dev",
+ "licence": {
+  "code": "MIT",
+  "content": "CC-BY-4.0"
+ },
+ "boards": [
+  {
+   "id": "esp32",
+   "name": "ESP32-DevKitC V4, 38 pin",
+   "short": "ESP32",
+   "chip": "esp32",
+   "arduinoBoard": "ESP32 Dev Module"
+  },
+  {
+   "id": "esp32-doit",
+   "name": "ESP32 DevKit V1 (DOIT), 30 pin",
+   "short": "DOIT 30",
+   "chip": "esp32",
+   "arduinoBoard": "DOIT ESP32 DEVKIT V1 (or ESP32 Dev Module)",
+   "variantOf": "esp32",
+   "buildAs": "esp32"
+  },
+  {
+   "id": "esp32s3",
+   "name": "ESP32-S3-DevKitC-1, 44 pin",
+   "short": "S3",
+   "chip": "esp32s3",
+   "arduinoBoard": "ESP32S3 Dev Module"
+  },
+  {
+   "id": "esp32c3",
+   "name": "ESP32-C3-DevKitM-1, 30 pin",
+   "short": "C3",
+   "chip": "esp32c3",
+   "arduinoBoard": "ESP32C3 Dev Module"
+  },
+  {
+   "id": "esp32c3-supermini",
+   "name": "ESP32-C3 SuperMini",
+   "short": "C3 Mini",
+   "chip": "esp32c3",
+   "arduinoBoard": "Nologo ESP32C3 SuperMini (or ESP32C3 Dev Module with USB CDC On Boot enabled)",
+   "variantOf": "esp32c3"
+  },
+  {
+   "id": "esp32s2",
+   "name": "ESP32-S2-DevKitC-1, 44 pin",
+   "short": "S2",
+   "chip": "esp32s2",
+   "arduinoBoard": "ESP32S2 Dev Module"
+  },
+  {
+   "id": "esp32c6",
+   "name": "ESP32-C6-DevKitC-1, 32 pin",
+   "short": "C6",
+   "chip": "esp32c6",
+   "arduinoBoard": "ESP32C6 Dev Module"
+  },
+  {
+   "id": "xiao-esp32c3",
+   "name": "Seeed Studio XIAO ESP32C3",
+   "short": "XIAO C3",
+   "chip": "esp32c3",
+   "arduinoBoard": "XIAO_ESP32C3"
+  },
+  {
+   "id": "xiao-esp32s3",
+   "name": "Seeed Studio XIAO ESP32S3",
+   "short": "XIAO S3",
+   "chip": "esp32s3",
+   "arduinoBoard": "XIAO_ESP32S3"
+  },
+  {
+   "id": "esp32-cam",
+   "name": "AI-Thinker ESP32-CAM",
+   "short": "CAM",
+   "chip": "esp32",
+   "arduinoBoard": "AI Thinker ESP32-CAM"
+  }
+ ],
+ "projects": [
+  {
+   "id": "blink",
+   "name": "Blink and heartbeat",
+   "url": "https://esp32bench.dev/projects/blink",
+   "level": "Starter",
+   "minutes": 5,
+   "tags": [
+    "no-parts"
+   ],
+   "summary": "Toggle the LED on GPIO 2 and print a tick every second. The first thing to flash on any new board.",
+   "firmware": "sketch",
+   "libraries": [],
+   "baud": 115200,
+   "needs": [],
+   "parts": [
+    {
+     "quantity": 1,
+     "name": "ESP32 dev board",
+     "link": "https://www.amazon.com/dp/B08D5ZD528"
+    },
+    {
+     "quantity": 1,
+     "name": "LED and 220 \u03a9 resistor, only if your board has no LED on GPIO 2"
+    }
+   ],
+   "expect": {
+    "patterns": [
+     "tick \\d+ ms"
+    ],
+    "seconds": 8,
+    "needs": "none"
+   },
+   "builds": [
+    {
+     "board": "esp32",
+     "pins": [
+      "2"
+     ],
+     "wiring": [
+      {
+       "from": "LED anode, through 220 \u03a9",
+       "to": "GPIO 2",
+       "note": "Skip if your board has an onboard LED"
+      },
+      {
+       "from": "LED cathode",
+       "to": "GND",
+       "note": ""
+      }
+     ],
+     "code": "// Arduino sketch for esp32, with this board's pins filled in.\nvoid setup() {}\nvoid loop() {}\n",
+     "sample": [
+      "ets Jul 29 2019 12:21:46",
+      "rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)",
+      "tick 1000 ms",
+      "tick 2000 ms",
+      "tick 3000 ms",
+      "tick 4000 ms"
+     ]
+    },
+    {
+     "board": "esp32-doit",
+     "pins": [
+      "2"
+     ],
+     "wiring": [
+      {
+       "from": "LED anode, through 220 \u03a9",
+       "to": "GPIO 2",
+       "note": "Skip if your board has an onboard LED"
+      },
+      {
+       "from": "LED cathode",
+       "to": "GND",
+       "note": ""
+      }
+     ],
+     "code": "// Arduino sketch for esp32-doit, with this board's pins filled in.\nvoid setup() {}\nvoid loop() {}\n",
+     "sample": [
+      "ets Jul 29 2019 12:21:46",
+      "rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)",
+      "tick 1000 ms",
+      "tick 2000 ms",
+      "tick 3000 ms",
+      "tick 4000 ms"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "probeharbor-probe",
+   "name": "ProbeHarbor probe",
+   "url": "https://esp32bench.dev/projects/probeharbor-probe",
+   "level": "Starter",
+   "minutes": 15,
+   "tags": [
+    "probeharbor",
+    "sensors",
+    "wireless"
+   ],
+   "summary": "Prebuilt sensor firmware from the ProbeHarbor project. Flash it from this page, then it finds a temperature sensor by itself and posts a reading every minute.",
+   "firmware": "prebuilt",
+   "sourceUrl": "https://github.com/doodersrage/probeharbor/tree/main/firmware/probeharbor-probe",
+   "libraries": [],
+   "baud": 115200,
+   "needs": [
+    [
+     "ds18b20",
+     "dht22",
+     "i2c"
+    ]
+   ],
+   "parts": [
+    {
+     "quantity": 1,
+     "name": "ESP32 dev board",
+     "link": "https://www.amazon.com/dp/B08D5ZD528"
+    },
+    {
+     "quantity": 1,
+     "name": "or ESP32-S3-DevKitC-1",
+     "link": "https://www.adafruit.com/product/5336"
+    },
+    {
+     "quantity": 1,
+     "name": "or ESP32-C3-DevKitM-1",
+     "link": "https://www.adafruit.com/product/5337"
+    },
+    {
+     "quantity": 1,
+     "name": "DS18B20 waterproof probe, or a DHT22",
+     "link": "https://www.adafruit.com/product/381"
+    },
+    {
+     "quantity": 1,
+     "name": "4.7 k\u03a9 resistor, pull-up for the probe data line",
+     "link": "https://www.amazon.com/dp/B08QRZRRGB"
+    },
+    {
+     "quantity": 1,
+     "name": "Optional I2C sensor: SHT31",
+     "link": "https://www.adafruit.com/product/2857"
+    },
+    {
+     "quantity": 1,
+     "name": "Optional I2C sensor: BME280",
+     "link": "https://www.adafruit.com/product/2652"
+    },
+    {
+     "quantity": 1,
+     "name": "Optional I2C sensor: AHT20",
+     "link": "https://www.adafruit.com/product/4566"
+    },
+    {
+     "quantity": 1,
+     "name": "Optional door reed switch",
+     "link": "https://www.adafruit.com/product/375"
+    },
+    {
+     "quantity": 2,
+     "name": "Optional 100 k\u03a9 resistors, battery divider",
+     "link": "https://www.adafruit.com/product/2787"
+    }
+   ],
+   "notes": [
+    "Flashing writes a merged image at offset 0, which also erases saved Wi-Fi and the device key. Send settings again after every flash.",
+    "From firmware 1.5.0 the probe updates itself from ProbeHarbor, installing only updates signed with ProbeHarbor's key, and goes back to the old version if the new one cannot post. You only need to flash it once.",
+    "It also checks ProbeHarbor's certificate. If the check fails it prints TT tls: certificate not verified, keeps posting, and tries again a day later; ProbeHarbor's device page shows a warning meanwhile.",
+    "Firmware before 1.5.1 could crash when settings arrived twice, which the form below does if the probe is slow to answer. A crash report naming WiFiManager::shutdownConfigPortal() is this; 1.5.1 and later are fixed.",
+    "From firmware 1.5.1 a probe that crashed reports it once with its next reading, and ProbeHarbor's device page shows it under Last crash.",
+    "The ESP32-C3 SuperMini often cannot join Wi-Fi at full transmit power. From 1.5.1 the probe retries at low power and keeps using it on that board; place it near the access point.",
+    "TT post -5 means the reply was lost, not the reading. In testing the server had stored both readings that printed -5.",
+    "An I2C sensor that is found at boot but then prints TT sensor problem usually has a loose power or ground wire. That was the cause when it happened on the S3.",
+    "Hold BOOT for five seconds to erase Wi-Fi and the key. Feather boards have no button on GPIO 0, so resend settings instead.",
+    "On a Feather, probe data on GPIO 4 is the pad marked A5 and the door input on GPIO 26 is A0."
+   ],
+   "open": [
+    "Leak and battery inputs on any board",
+    "Setup portal and the five-second BOOT reset on the ESP32 and S3",
+    "DS18B20 on the S3 and C3, and any I2C sensor on the C3",
+    "UART port on the S3 and on a C3 DevKitM-1",
+    "A long unattended run on the S3"
+   ],
+   "verified": [
+    {
+     "board": "esp32",
+     "what": "Browser flash, USB settings, Wi-Fi and first reading with a DS18B20",
+     "when": "firmware 1.0.1"
+    },
+    {
+     "board": "esp32",
+     "what": "DHT22 on GPIO 4",
+     "when": "firmware 1.1.1"
+    },
+    {
+     "board": "esp32",
+     "what": "BME280 on I2C: temperature, humidity and pressure",
+     "when": "firmware 1.2.2"
+    },
+    {
+     "board": "esp32",
+     "what": "SHT31 on I2C",
+     "when": "firmware 1.2.3"
+    },
+    {
+     "board": "esp32",
+     "what": "Door reed switch, with a post on every change",
+     "when": "firmware 1.2.3, 2026-10-29"
+    },
+    {
+     "board": "esp32",
+     "what": "AHT20 on SDA 21 / SCL 22",
+     "when": "firmware 1.2.6, 2026-11-11"
+    },
+    {
+     "board": "esp32s3",
+     "what": "Flash, settings and Wi-Fi over the native USB port",
+     "when": "firmware 1.2.4, 2026-11-05"
+    },
+    {
+     "board": "esp32s3",
+     "what": "AHT20 on SDA 8 / SCL 9",
+     "when": "firmware 1.2.6, 2026-11-11"
+    },
+    {
+     "board": "esp32c3",
+     "what": "Native USB port, settings and Wi-Fi, DHT22 on GPIO 4",
+     "when": "firmware 1.2.5, 2026-11-06"
+    },
+    {
+     "board": "esp32",
+     "what": "Signed over-the-air update (a bad signature refused), watchdog, readings kept through a dropped connection, and the server certificate checked",
+     "when": "firmware 1.5.0, 2026-11-13"
+    },
+    {
+     "board": "esp32s3",
+     "what": "Signed over-the-air update with rollback, and the server certificate checked",
+     "when": "firmware 1.5.0, 2026-11-13"
+    },
+    {
+     "board": "esp32c3",
+     "what": "SuperMini: signed over-the-air update with rollback, watchdog, readings kept through dropped connections, crash reports, the server certificate checked, and the setup portal from a phone after the BOOT reset",
+     "when": "firmware 1.5.1, 2026-11-14"
+    },
+    {
+     "board": "esp32",
+     "what": "Crash reports, and settings sent twice no longer crash it; updated itself to 1.5.2 over the air",
+     "when": "firmware 1.5.2, 2026-11-15"
+    }
+   ],
+   "builds": [
+    {
+     "board": "esp32",
+     "pins": [
+      "3V3",
+      "GND",
+      "4",
+      "21",
+      "22",
+      "27",
+      "26",
+      "35"
+     ],
+     "wiring": [
+      {
+       "from": "Sensor VCC",
+       "to": "3V3",
+       "note": ""
+      },
+      {
+       "from": "Sensor GND",
+       "to": "GND",
+       "note": ""
+      },
+      {
+       "from": "DS18B20 or DHT22 data",
+       "to": "GPIO 4",
+       "note": "Up to four DS18B20s share the line"
+      },
+      {
+       "from": "4.7 k\u03a9 pull-up resistor",
+       "to": "GPIO 4 to 3V3",
+       "note": "Holds the data line high"
+      },
+      {
+       "from": "I2C sensor SDA",
+       "to": "GPIO 21",
+       "note": "SHT31, BME280 or AHT20, found at boot"
+      },
+      {
+       "from": "I2C sensor SCL",
+       "to": "GPIO 22",
+       "note": ""
+      },
+      {
+       "from": "Optional: leak contact, wire A",
+       "to": "GPIO 27",
+       "note": "Only read when enabled in setup"
+      },
+      {
+       "from": "Optional: leak contact, wire B",
+       "to": "GND",
+       "note": ""
+      },
+      {
+       "from": "Optional: door reed switch, wire A",
+       "to": "GPIO 26",
+       "note": "Only read when enabled in setup"
+      },
+      {
+       "from": "Optional: door reed switch, wire B",
+       "to": "GND",
+       "note": ""
+      },
+      {
+       "from": "Optional: battery + through 100 k\u03a9",
+       "to": "GPIO 35",
+       "note": "1:1 divider from a single Li-ion cell. Only read when enabled"
+      },
+      {
+       "from": "Optional: 100 k\u03a9 from GPIO 35",
+       "to": "GND",
+       "note": "Divider bottom: the pin sees half the battery voltage"
+      }
+     ],
+     "sample": [
+      "TT firmware 1.5.2",
+      "TT setup: send settings over USB, or join the ProbeHarbor-Setup Wi-Fi network",
+      "TT key saved",
+      "TT wifi joining",
+      "TT sensor: AHT20 on I2C (SDA 21, SCL 22)",
+      "TT wifi ok",
+      "TT tls: server certificate verified",
+      "TT post 200 probes=1"
+     ]
+    },
+    {
+     "board": "esp32-doit",
+     "pins": [
+      "3V3",
+      "GND",
+      "4",
+      "21",
+      "22",
+      "27",
+      "26",
+      "35"
+     ],
+     "wiring": [
+      {
+       "from": "Sensor VCC",
+       "to": "3V3",
+       "note": ""
+      },
+      {
+       "from": "Sensor GND",
+       "to": "GND",
+       "note": ""
+      },
+      {
+       "from": "DS18B20 or DHT22 data",
+       "to": "GPIO 4",
+       "note": "Up to four DS18B20s share the line"
+      },
+      {
+       "from": "4.7 k\u03a9 pull-up resistor",
+       "to": "GPIO 4 to 3V3",
+       "note": "Holds the data line high"
+      },
+      {
+       "from": "I2C sensor SDA",
+       "to": "GPIO 21",
+       "note": "SHT31, BME280 or AHT20, found at boot"
+      },
+      {
+       "from": "I2C sensor SCL",
+       "to": "GPIO 22",
+       "note": ""
+      },
+      {
+       "from": "Optional: leak contact, wire A",
+       "to": "GPIO 27",
+       "note": "Only read when enabled in setup"
+      },
+      {
+       "from": "Optional: leak contact, wire B",
+       "to": "GND",
+       "note": ""
+      },
+      {
+       "from": "Optional: door reed switch, wire A",
+       "to": "GPIO 26",
+       "note": "Only read when enabled in setup"
+      },
+      {
+       "from": "Optional: door reed switch, wire B",
+       "to": "GND",
+       "note": ""
+      },
+      {
+       "from": "Optional: battery + through 100 k\u03a9",
+       "to": "GPIO 35",
+       "note": "1:1 divider from a single Li-ion cell. Only read when enabled"
+      },
+      {
+       "from": "Optional: 100 k\u03a9 from GPIO 35",
+       "to": "GND",
+       "note": "Divider bottom: the pin sees half the battery voltage"
+      }
+     ],
+     "sample": [
+      "TT firmware 1.5.2",
+      "TT setup: send settings over USB, or join the ProbeHarbor-Setup Wi-Fi network",
+      "TT key saved",
+      "TT wifi joining",
+      "TT sensor: AHT20 on I2C (SDA 21, SCL 22)",
+      "TT wifi ok",
+      "TT tls: server certificate verified",
+      "TT post 200 probes=1"
+     ]
+    }
+   ]
+  }
+ ]
+}

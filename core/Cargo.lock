@@ -288,6 +288,7 @@ dependencies = [
  "anyhow",
  "clap",
  "esp32bench-device",
+ "esp32bench-library",
  "esp32bench-rpc",
  "esp32bench-sim",
  "libc",
@@ -301,6 +302,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "esp32bench-device",
+ "esp32bench-library",
  "esp32bench-rpc",
  "jsonschema",
  "libc",
@@ -321,6 +323,18 @@ dependencies = [
  "thiserror",
  "tokio",
  "udev",
+]
+
+[[package]]
+name = "esp32bench-library"
+version = "0.0.1"
+dependencies = [
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

@@ -37,16 +37,38 @@ fn assert_valid(schema: &Value, instance: &Value, what: &str) {
     );
 }
 
+/// State with a private library cache, fetching from `source`.
+fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
+    Arc::new(esp32bench_daemon::State::new(
+        esp32bench_library::Cache::new(dir.join("cache")),
+        source.to_string_lossy().into_owned(),
+    ))
+}
+
+fn example_manifest() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../schema/project-manifest/example.json")
+}
+
 /// The daemon's router on a temporary socket, through the same `bind` as the binary.
+/// Its library source is the schema's example manifest.
 async fn daemon() -> (tempfile::TempDir, PathBuf, esp32bench_daemon::InstanceLock) {
+    daemon_with_source(&example_manifest()).await
+}
+
+async fn daemon_with_source(
+    source: &Path,
+) -> (tempfile::TempDir, PathBuf, esp32bench_daemon::InstanceLock) {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("rt/core.sock");
     let (listener, lock) = esp32bench_daemon::bind(&sock).unwrap();
-    tokio::spawn(esp32bench_rpc::serve(
-        listener,
-        Arc::new(esp32bench_daemon::router()),
-    ));
+    let router = esp32bench_daemon::router(state(dir.path(), source));
+    tokio::spawn(esp32bench_rpc::serve(listener, Arc::new(router)));
     (dir, sock, lock)
+}
+
+fn router_names() -> Vec<String> {
+    let dir = tempfile::tempdir().unwrap();
+    esp32bench_daemon::router(state(dir.path(), &example_manifest())).names()
 }
 
 #[test]
@@ -63,7 +85,7 @@ fn served_methods_match_the_schema_index() {
         .map(|m| m.as_str().unwrap().to_owned())
         .collect();
     listed.sort();
-    assert_eq!(esp32bench_daemon::router().names(), listed);
+    assert_eq!(router_names(), listed);
     for m in &listed {
         assert_eq!(
             method_def(m)["method"],
@@ -172,7 +194,7 @@ async fn core_hello_round_trip() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
     let def = method_def("core.hello");
-    let params = json!({ "client": "test", "protocol": "0.2.0" });
+    let params = json!({ "client": "test", "protocol": "0.3.0" });
     assert_valid(&def["params"], &params, "core.hello params");
     let r = c.call("core.hello", params).await.unwrap();
     assert_valid(&def["result"], &r, "core.hello result");
@@ -228,4 +250,94 @@ fn socket_is_private() {
     let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode(&sock), 0o600);
     assert_eq!(mode(sock.parent().unwrap()), 0o700);
+}
+
+#[tokio::test]
+async fn library_refresh_then_list() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+
+    let empty = c.call("library.list", json!({})).await.unwrap();
+    assert_valid(
+        &method_def("library.list")["result"],
+        &empty,
+        "library.list before refresh",
+    );
+    assert_eq!(empty["available"], false);
+
+    let r = c.call("library.refresh", json!({})).await.unwrap();
+    assert_valid(
+        &method_def("library.refresh")["result"],
+        &r,
+        "library.refresh result",
+    );
+    let job = r["job"].clone();
+    let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(n["method"], "library.refreshed");
+    assert_valid(
+        &method_def("library.refreshed")["params"],
+        &n["params"],
+        "library.refreshed",
+    );
+    assert_eq!(n["params"]["subscription"], job);
+    assert_eq!(n["params"]["ok"], true);
+    assert_eq!(n["params"]["projects"], 2);
+
+    let full = c.call("library.list", json!({})).await.unwrap();
+    assert_valid(
+        &method_def("library.list")["result"],
+        &full,
+        "library.list after refresh",
+    );
+    assert_eq!(full["available"], true);
+    assert_eq!(full["projects"].as_array().unwrap().len(), 2);
+    assert!(full["fetchedAt"].as_u64().unwrap() > 0);
+}
+
+#[tokio::test]
+async fn failed_refresh_reports_and_keeps_the_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("site.json");
+    std::fs::copy(example_manifest(), &src).unwrap();
+    let (_d, sock, _lock) = daemon_with_source(&src).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+
+    c.call("library.refresh", json!({})).await.unwrap();
+    let ok = c.next_notification().await.unwrap();
+    assert_eq!(ok["params"]["ok"], true);
+
+    std::fs::write(&src, b"{\"format\": \"something else\"}").unwrap();
+    c.call("library.refresh", json!({})).await.unwrap();
+    let bad = c.next_notification().await.unwrap();
+    assert_valid(
+        &method_def("library.refreshed")["params"],
+        &bad["params"],
+        "failed refresh",
+    );
+    assert_eq!(bad["params"]["ok"], false);
+    assert!(
+        bad["params"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("not a project manifest")
+    );
+
+    let list = c.call("library.list", json!({})).await.unwrap();
+    assert_eq!(list["available"], true, "the good cache was lost");
+}
+
+#[tokio::test]
+async fn job_cancel_round_trip() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    match c.call("job.cancel", json!({ "job": 12345 })).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("expected not found, got {other:?}"),
+    }
+    let job = c.call("library.refresh", json!({})).await.unwrap()["job"].clone();
+    let r = c.call("job.cancel", json!({ "job": job })).await.unwrap();
+    assert_valid(&method_def("job.cancel")["result"], &r, "job.cancel result");
 }

@@ -40,7 +40,9 @@ async fn main() -> Result<()> {
         .with_context(|| format!("binding {}", socket.display()))?;
     eprintln!("esp32benchd: listening on {}", socket.display());
 
-    let router = Arc::new(esp32bench_daemon::router());
+    let state = esp32bench_daemon::State::from_env().context("setting up the library cache")?;
+    eprintln!("esp32benchd: project library from {}", state.library_source);
+    let router = Arc::new(esp32bench_daemon::router(Arc::new(state)));
     let mut term = signal(SignalKind::terminate())?;
     tokio::select! {
         r = esp32bench_rpc::serve(listener, router) => r.context("serving")?,

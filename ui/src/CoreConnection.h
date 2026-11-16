@@ -6,6 +6,8 @@
 #pragma once
 
 #include <QJsonArray>
+#include <QJsonObject>
+#include <QList>
 #include <QObject>
 #include <QString>
 
@@ -52,11 +54,20 @@ public:
     // a port appears or disappears, until the connection drops.
     void watchDevices();
 
+    // library.list: the cached project library through libraryListed.
+    void listLibrary();
+    // library.refresh: fetch the library; libraryRefreshed reports the outcome, and a
+    // successful refresh is followed by libraryListed.
+    void refreshLibrary();
+
     RpcClient *client() const { return m_client; }
 
 signals:
     void stateChanged(CoreConnection::State state);
     void devicesListed(const QJsonArray &ports);
+    // The library.list result: available, source, version, generated, fetchedAt, projects.
+    void libraryListed(const QJsonObject &library);
+    void libraryRefreshed(bool ok, const QString &error);
     // A request failed. `method` is the RPC method name.
     void requestFailed(const QString &method, const QString &message);
 
@@ -65,6 +76,7 @@ private:
     void tryConnect();
     void onSocketConnected();
     void onNotification(const QString &method, const QJsonObject &params);
+    void finishLibraryRefresh(const QJsonObject &params);
 
     RpcClient *m_client;
     QTimer *m_retry;
@@ -74,4 +86,8 @@ private:
     State m_state = State::Disconnected;
     qint64 m_startedCorePid = 0;
     qint64 m_devicesSubscription = 0; // 0 when not watching
+    qint64 m_libraryJob = 0;          // running library.refresh, -1 while starting, or 0
+    // library.refreshed events that arrived before library.refresh's reply told us
+    // our job id (docs/rpc.md allows that order).
+    QList<QJsonObject> m_earlyLibraryEvents;
 };

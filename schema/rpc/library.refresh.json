@@ -1,0 +1,36 @@
+{
+  "method": "library.refresh",
+  "description": "Fetch the project library from the core's configured source, check it and cache it. Returns a job at once; a library.refreshed event reports the outcome. A failed refresh keeps the previous cache.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "errors": [],
+  "events": [
+    "library.refreshed"
+  ],
+  "examples": [
+    {
+      "params": {},
+      "result": {
+        "job": 4
+      }
+    }
+  ]
+}

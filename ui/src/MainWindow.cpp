@@ -2,6 +2,7 @@
 
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
+#include "LibraryPanel.h"
 
 #include <QAction>
 #include <QApplication>
@@ -28,11 +29,8 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     setWindowTitle(tr("ESP32 Bench"));
     setWindowIcon(QIcon::fromTheme(u"applications-electronics"_s));
 
-    // The project library goes in the centre in a later step.
-    auto *placeholder = new QLabel(tr("Projects will appear here."), this);
-    placeholder->setAlignment(Qt::AlignCenter);
-    placeholder->setEnabled(false);
-    setCentralWidget(placeholder);
+    m_library = new LibraryPanel(core, this);
+    setCentralWidget(m_library);
 
     m_devicesDock->setObjectName(u"devicesDock"_s); // needed for saveState()
     m_devices = new DevicesPanel(core, m_devicesDock);

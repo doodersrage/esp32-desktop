@@ -1,0 +1,17 @@
+[package]
+name = "esp32bench-library"
+description = "The esp32bench.dev project library: fetch, check, cache and summarise the project manifest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+jsonschema.workspace = true
+tempfile.workspace = true

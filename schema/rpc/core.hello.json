@@ -5,27 +5,52 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "client": { "type": "string", "description": "Name and version of the caller, for logs." },
-      "protocol": { "type": "string", "description": "Protocol version the caller was written against." }
+      "client": {
+        "type": "string",
+        "description": "Name and version of the caller, for logs."
+      },
+      "protocol": {
+        "type": "string",
+        "description": "Protocol version the caller was written against."
+      }
     },
     "additionalProperties": false
   },
   "result": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
-    "required": ["name", "version", "protocol"],
+    "required": [
+      "name",
+      "version",
+      "protocol"
+    ],
     "properties": {
-      "name": { "const": "esp32benchd" },
-      "version": { "type": "string", "description": "Core version." },
-      "protocol": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+      "name": {
+        "const": "esp32benchd"
+      },
+      "version": {
+        "type": "string",
+        "description": "Core version."
+      },
+      "protocol": {
+        "type": "string",
+        "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+      }
     },
     "additionalProperties": false
   },
   "errors": [],
   "examples": [
     {
-      "params": { "client": "esp32bench-ui 0.0.1", "protocol": "0.2.0" },
-      "result": { "name": "esp32benchd", "version": "0.0.1", "protocol": "0.2.0" }
+      "params": {
+        "client": "esp32bench-ui 0.0.1",
+        "protocol": "0.3.0"
+      },
+      "result": {
+        "name": "esp32benchd",
+        "version": "0.0.1",
+        "protocol": "0.3.0"
+      }
     }
   ]
 }

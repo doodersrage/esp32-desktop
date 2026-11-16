@@ -32,6 +32,9 @@ enum Cmd {
     /// Find connected boards.
     #[command(subcommand)]
     Device(DeviceCmd),
+    /// The esp32bench.dev project library.
+    #[command(subcommand)]
+    Library(LibraryCmd),
     /// Call a method on a running esp32benchd and print the result as JSON.
     Rpc {
         /// Method name, e.g. `core.hello`.
@@ -42,6 +45,22 @@ enum Cmd {
         /// Daemon socket. Default: $XDG_RUNTIME_DIR/esp32bench/core.sock.
         #[arg(long)]
         socket: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum LibraryCmd {
+    /// Download the project library and cache it for offline use.
+    Refresh {
+        /// https URL or local file to fetch from. Default: $ESP32BENCH_MANIFEST or esp32bench.dev.
+        #[arg(long)]
+        source: Option<String>,
+    },
+    /// List the cached projects.
+    List {
+        /// Print JSON instead of a table.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -216,6 +235,49 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                     print_ports(&now, json, !json)?;
                     last = now;
                 }
+            }
+        }
+        Cmd::Library(LibraryCmd::Refresh { source }) => {
+            let source = source.unwrap_or_else(esp32bench_library::default_source);
+            let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+            let m = cache.refresh(&source).await?;
+            println!(
+                "{} projects (manifest {}, generated {}) cached in {}",
+                m.projects.len(),
+                m.version,
+                m.generated,
+                cache.path().display()
+            );
+        }
+        Cmd::Library(LibraryCmd::List { json }) => {
+            let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+            let Some(m) = cache.load().await? else {
+                bail!("no project library cached yet; run `esp32bench library refresh`");
+            };
+            let list = m.summaries();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&list)?);
+            } else {
+                for p in &list {
+                    println!(
+                        "{:<28} {:<13} {:>3} min  {:<9} {}",
+                        p.id,
+                        p.level,
+                        p.minutes,
+                        if p.firmware == esp32bench_library::Firmware::Sketch {
+                            "sketch"
+                        } else {
+                            "prebuilt"
+                        },
+                        p.chips.join(",")
+                    );
+                }
+                println!(
+                    "{} projects, manifest {} ({})",
+                    list.len(),
+                    m.version,
+                    m.generated
+                );
             }
         }
         Cmd::Rpc {

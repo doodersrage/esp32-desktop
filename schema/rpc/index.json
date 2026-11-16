@@ -1,13 +1,17 @@
 {
-  "protocol": "0.2.0",
+  "protocol": "0.3.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
     "core.hello",
     "core.unsubscribe",
     "device.list",
-    "device.watch"
+    "device.watch",
+    "job.cancel",
+    "library.list",
+    "library.refresh"
   ],
   "events": [
-    "device.changed"
+    "device.changed",
+    "library.refreshed"
   ]
 }

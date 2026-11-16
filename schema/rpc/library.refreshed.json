@@ -1,0 +1,53 @@
+{
+  "event": "library.refreshed",
+  "description": "The end of a library.refresh job. Sent once.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "subscription",
+      "ok"
+    ],
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The job id."
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "projects": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Number of projects, when ok."
+      },
+      "version": {
+        "type": "string",
+        "description": "Manifest version, when ok."
+      },
+      "error": {
+        "type": "string",
+        "description": "What went wrong, when not ok."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 4,
+        "ok": true,
+        "projects": 54,
+        "version": "1.0.0"
+      }
+    },
+    {
+      "params": {
+        "subscription": 4,
+        "ok": false,
+        "error": "download of https://esp32bench.dev/desktop-manifest.json failed: Could not resolve host"
+      }
+    }
+  ]
+}

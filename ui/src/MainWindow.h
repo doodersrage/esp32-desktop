@@ -4,6 +4,7 @@
 
 class CoreConnection;
 class DevicesPanel;
+class LibraryPanel;
 class QDockWidget;
 class QLabel;
 class QPushButton;
@@ -15,6 +16,7 @@ public:
     explicit MainWindow(CoreConnection *core, QWidget *parent = nullptr);
 
     DevicesPanel *devicesPanel() const { return m_devices; }
+    LibraryPanel *libraryPanel() const { return m_library; }
     QString connectionText() const;
 
 protected:
@@ -29,6 +31,7 @@ private:
 
     CoreConnection *m_core;
     DevicesPanel *m_devices;
+    LibraryPanel *m_library = nullptr;
     QDockWidget *m_devicesDock;
     QLabel *m_connection;
     QPushButton *m_startCore;

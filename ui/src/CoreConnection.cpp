@@ -29,7 +29,12 @@ CoreConnection::CoreConnection(QObject *parent)
     connect(m_client, &RpcClient::connected, this, &CoreConnection::onSocketConnected);
     connect(m_client, &RpcClient::notification, this, &CoreConnection::onNotification);
     connect(m_client, &RpcClient::disconnected, this, [this] {
-        m_devicesSubscription = 0; // the core drops subscriptions with the connection
+        m_devicesSubscription = 0; // the core drops subscriptions and jobs with the connection
+        m_earlyLibraryEvents.clear();
+        if (m_libraryJob != 0) {
+            m_libraryJob = 0;
+            emit libraryRefreshed(false, tr("The connection to the core was lost."));
+        }
         // After an incompatible handshake we hang up on purpose; stay in that state
         // instead of retrying the same core forever.
         if (m_state == State::Incompatible)
@@ -77,7 +82,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.2.0"_s},
+        {u"protocol"_s, u"0.3.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -174,6 +179,57 @@ void CoreConnection::watchDevices()
 void CoreConnection::onNotification(const QString &method, const QJsonObject &params)
 {
     const qint64 sub = params.value(u"subscription"_s).toInteger();
-    if (method == u"device.changed" && sub != 0 && sub == m_devicesSubscription)
+    if (sub == 0)
+        return;
+    if (method == u"device.changed" && sub == m_devicesSubscription) {
         emit devicesListed(params.value(u"ports"_s).toArray());
+    } else if (method == u"library.refreshed") {
+        if (sub == m_libraryJob)
+            finishLibraryRefresh(params);
+        else if (m_libraryJob == -1)
+            m_earlyLibraryEvents << params; // our job id is not known yet
+    }
+}
+
+void CoreConnection::listLibrary()
+{
+    const QString method = u"library.list"_s;
+    m_client->call(method, {}, this, [this, method](const RpcReply &r) {
+        if (r.ok)
+            emit libraryListed(r.result.toObject());
+        else
+            emit requestFailed(method, r.errorMessage);
+    });
+}
+
+void CoreConnection::refreshLibrary()
+{
+    if (m_libraryJob != 0)
+        return; // one at a time
+    const QString method = u"library.refresh"_s;
+    m_libraryJob = -1; // pending: set before the reply so a second click is ignored
+    m_client->call(method, {}, this, [this, method](const RpcReply &r) {
+        if (!r.ok) {
+            m_libraryJob = 0;
+            emit libraryRefreshed(false, r.errorMessage);
+            return;
+        }
+        m_libraryJob = r.result.toObject().value(u"job"_s).toInteger();
+        const auto early = std::exchange(m_earlyLibraryEvents, {});
+        for (const QJsonObject &e : early) {
+            if (e.value(u"subscription"_s).toInteger() == m_libraryJob) {
+                finishLibraryRefresh(e);
+                break;
+            }
+        }
+    });
+}
+
+void CoreConnection::finishLibraryRefresh(const QJsonObject &params)
+{
+    m_libraryJob = 0;
+    const bool ok = params.value(u"ok"_s).toBool();
+    emit libraryRefreshed(ok, params.value(u"error"_s).toString());
+    if (ok)
+        listLibrary();
 }
