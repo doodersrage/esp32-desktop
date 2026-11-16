@@ -6,7 +6,9 @@ The plan is in `docs/PLAN.md`. Read it before any design work. It is the source 
 
 ## Current state
 
-Phase 0 in progress. `core/` has two crates: `esp32d-sim` (QEMU session supervisor, QMP, UART, GDB probe, image checks, pinned QEMU install) and the `esp32d` CLI. Espressif's QEMU fork boots ESP-IDF v6.0.2 and esp32bench.dev firmware on ESP32, S3 and C3, with results in `docs/qemu-forks.md`. The boot tests in `core/crates/sim/tests/boot.rs` boot `tests/firmware/out/hello-<chip>.bin` (built by `tests/firmware/build.sh` with `IDF_PATH` at the pinned IDF) and skip if QEMU or the images are missing. Still to do in phase 0: the lcgamboa fork comparison.
+Phase 0 in progress; its checklist and exit criteria are in `docs/PHASE0.md`. `core/` has two crates: `esp32d-sim` (QEMU session supervisor, QMP, UART, GDB probe, image checks, pinned QEMU install) and the `esp32d` CLI. Espressif's QEMU fork boots ESP-IDF v6.0.2 and esp32bench.dev firmware on ESP32, S3 and C3, with results in `docs/qemu-forks.md`. The boot tests in `core/crates/sim/tests/boot.rs` boot `tests/firmware/out/hello-<chip>.bin` (built by `tests/firmware/build.sh` with `IDF_PATH` at the pinned IDF) and skip if QEMU or the images are missing. Still to do in phase 0: the lcgamboa fork comparison and the rest of the `docs/PHASE0.md` checklist.
+
+CI is in `.github/workflows/ci.yml`. It runs fmt, clippy and tests for the core; the UI job skips until `ui/CMakeLists.txt` exists. CI has no QEMU, so the boot tests skip there.
 
 The commands and paths below are the intended layout. If one does not exist yet, create it as described here; do not invent a different structure.
 

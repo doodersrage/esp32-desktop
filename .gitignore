@@ -1,4 +1,38 @@
-/core/target/
-/build/
-/tests/firmware/build/
-/tests/firmware/out/
+# Rust
+target/
+
+# CMake / Qt
+build/
+CMakeUserPresets.json
+CMakeLists.txt.user
+*.autosave
+
+# Arch packaging output
+packaging/**/src/
+packaging/**/pkg/
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
+
+# QEMU and firmware artifacts
+flash.bin
+qemu_flash.bin
+qemu_efuse.bin
+*.elf
+*.map
+tests/firmware/**/build/
+tests/firmware/**/sdkconfig.old
+tests/firmware/**/managed_components/
+
+# Editors and tools
+.vscode/
+.idea/
+.kdev4/
+*.kdev4
+*.swp
+*~
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Boot-test firmware output
+tests/firmware/out/
