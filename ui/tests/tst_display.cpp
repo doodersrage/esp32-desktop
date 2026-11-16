@@ -52,7 +52,7 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello")
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.13.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.14.0"_s}});
         else if (m == u"sim.start")
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false}, {u"engine"_s, u"lcgamboa"_s}});
         else
@@ -112,6 +112,13 @@ private slots:
         QVERIFY(panel.image().isNull());
         fake.frame(320, 240);
         QTRY_COMPARE(first.size(), 2);
+
+        // A run that never draws says so when it stops.
+        core.stopSim();
+        core.startSim(u"blink"_s, u"esp32"_s);
+        QTRY_VERIFY(core.isSimRunning());
+        core.stopSim();
+        QTRY_VERIFY(panel.statusText().contains(u"did not draw"_s));
     }
 };
 

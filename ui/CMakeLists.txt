@@ -18,6 +18,7 @@ add_library(esp32bench_ui STATIC
     src/CoreConnection.cpp src/CoreConnection.h
     src/DebugPanel.cpp src/DebugPanel.h
     src/DisplayPanel.cpp src/DisplayPanel.h
+    src/PinsPanel.cpp src/PinsPanel.h
     src/DevicesPanel.cpp src/DevicesPanel.h
     src/Labels.cpp src/Labels.h
     src/LibraryPanel.cpp src/LibraryPanel.h
@@ -40,7 +41,7 @@ qt_add_executable(esp32bench-gui src/main.cpp)
 target_link_libraries(esp32bench-gui PRIVATE esp32bench_ui)
 
 enable_testing()
-foreach(t tst_rpcclient tst_devicespanel tst_librarypanel tst_projectview tst_build tst_serialmonitor tst_setup tst_board tst_simulator tst_debugger tst_display tst_integration)
+foreach(t tst_rpcclient tst_devicespanel tst_librarypanel tst_projectview tst_build tst_serialmonitor tst_setup tst_board tst_simulator tst_debugger tst_display tst_pins tst_integration)
     qt_add_executable(${t} tests/${t}.cpp)
     target_link_libraries(${t} PRIVATE esp32bench_ui Qt6::Test)
     target_compile_definitions(${t} PRIVATE ESP32BENCH_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

@@ -38,6 +38,7 @@ CoreConnection::CoreConnection(QObject *parent)
         m_earlySimEvents.clear();
         if (m_simSub != 0) {
             m_simSub = 0;
+            m_simPins.clear();
             emit simStopped(tr("The connection to the core was lost."));
         }
         if (m_boardJob != 0) {
@@ -113,7 +114,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.13.0"_s},
+        {u"protocol"_s, u"0.14.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -219,7 +220,7 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
-    } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.exited"
+    } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.exited"
                || method.startsWith(u"debug.")) {
         if (sub == m_simSub)
             handleSimEvent(method, params);
@@ -546,6 +547,9 @@ void CoreConnection::startSim(const QString &project, const QString &board, bool
                        const QJsonObject o = r.result.toObject();
                        m_simSub = o.value(u"subscription"_s).toInteger();
                        m_debugging = o.value(u"debug"_s).toBool();
+                       m_simPins.clear();
+                       for (const QJsonValue &g : o.value(u"pins"_s).toArray())
+                           m_simPins << g.toInt();
                        emit simStarted(project, board, o.value(u"chip"_s).toString());
                        if (m_debugging)
                            emit debugStarted();
@@ -561,6 +565,10 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
 {
     if (method == u"sim.output") {
         emit simOutput(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        return;
+    }
+    if (method == u"sim.pins") {
+        emit simPinsChanged(params.value(u"pins"_s).toArray());
         return;
     }
     if (method == u"sim.frame") {
@@ -592,6 +600,7 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
         return;
     m_simSub = 0;
     m_debugging = false;
+    m_simPins.clear();
     emit simStopped(params.value(u"reason"_s).toString());
 }
 
@@ -601,6 +610,7 @@ void CoreConnection::stopSim()
         return;
     const qint64 sub = std::exchange(m_simSub, 0);
     m_debugging = false;
+    m_simPins.clear();
     m_client->call(u"core.unsubscribe"_s, {{u"subscription"_s, sub}}, this, [](const RpcReply &) {});
     emit simStopped(tr("Stopped."));
 }
@@ -677,4 +687,15 @@ void CoreConnection::debugInspect()
         const QJsonObject o = r.result.toObject();
         emit debugInspected(o.value(u"frames"_s).toArray(), o.value(u"registers"_s).toArray());
     });
+}
+
+void CoreConnection::setSimPin(int gpio, bool level)
+{
+    if (m_simSub <= 0 || !m_simPins.contains(gpio))
+        return;
+    m_client->call(u"sim.setPin"_s, {{u"subscription"_s, m_simSub}, {u"gpio"_s, gpio}, {u"level"_s, level}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok)
+                           emit requestFailed(u"sim.setPin"_s, r.errorMessage);
+                   });
 }

@@ -1,0 +1,57 @@
+{
+  "event": "sim.pins",
+  "description": "Pins of the simulation (sim.start's `pins`) that changed: the level the firmware drives, and whether the pin is an output. Batched: at most one event every 50 ms, with each changed pin's latest state, so fast toggling shows as its latest level. Outputs are reported for GPIO 0-31 only (a limit of the fork).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "pins"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "pins": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": [
+            "gpio"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "gpio": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 48
+            },
+            "level": {
+              "type": "boolean"
+            },
+            "output": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "pins": [
+          {
+            "gpio": 2,
+            "level": true,
+            "output": true
+          }
+        ]
+      }
+    }
+  ]
+}

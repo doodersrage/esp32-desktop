@@ -15,6 +15,7 @@ use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
 use tokio::time::Instant;
 
+use crate::gpio::GpioLink;
 use crate::qmp::Qmp;
 use crate::uart::Uart;
 use crate::{Chip, Error, image};
@@ -42,6 +43,10 @@ pub struct SessionConfig {
     /// Environment variables set for the QEMU process only, e.g. for a host program
     /// that wraps a QEMU library.
     pub env: Vec<(OsString, OsString)>,
+    /// GPIOs to bridge through `esp32bench-qemu-host` (lcgamboa's library build only):
+    /// the session passes them and a socket in its private directory to the host,
+    /// then connects [`Session::gpio`]. Empty for none.
+    pub bridge: Vec<u8>,
 }
 
 /// Files a session uses, all inside one private runtime directory.
@@ -49,6 +54,7 @@ pub struct SessionConfig {
 pub struct SessionPaths {
     pub dir: PathBuf,
     pub flash: PathBuf,
+    pub gpio: PathBuf,
     pub uart: PathBuf,
     pub qmp: PathBuf,
     pub stderr: PathBuf,
@@ -58,6 +64,7 @@ impl SessionPaths {
     pub fn in_dir(dir: PathBuf) -> Self {
         SessionPaths {
             flash: dir.join("flash.bin"),
+            gpio: dir.join("gpio.sock"),
             uart: dir.join("uart0.sock"),
             qmp: dir.join("qmp.sock"),
             stderr: dir.join("qemu.stderr"),
@@ -111,6 +118,8 @@ pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
 pub struct Session {
     child: Child,
     pub qmp: Qmp,
+    /// The pin link, when the session bridges GPIOs ([`SessionConfig::bridge`]).
+    pub gpio: Option<GpioLink>,
     pub uart: Uart,
     paths: SessionPaths,
     gdb: Option<SocketAddr>,
@@ -145,6 +154,11 @@ impl Session {
                 Ok(())
             });
         }
+        if !cfg.bridge.is_empty() {
+            let pins: Vec<String> = cfg.bridge.iter().map(u8::to_string).collect();
+            cmd.env("ESP32BENCH_GPIO_PINS", pins.join(","))
+                .env("ESP32BENCH_GPIO_SOCK", &paths.gpio);
+        }
         let mut child = cmd.spawn()?;
 
         let (qmp, uart) = match connect(&mut child, &paths, cfg.start_paused).await {
@@ -153,11 +167,22 @@ impl Session {
             Err(e) => return Err(exit_error(&mut child, &paths.stderr).await.unwrap_or(e)),
         };
 
+        // The host binds its socket before QEMU starts, so it is there by now.
+        let gpio = if cfg.bridge.is_empty() {
+            None
+        } else {
+            match GpioLink::connect(&paths.gpio, Duration::from_secs(2)).await {
+                Ok(g) => Some(g),
+                Err(e) => return Err(exit_error(&mut child, &paths.stderr).await.unwrap_or(e)),
+            }
+        };
+
         guard.disarm();
         Ok(Session {
             child,
             qmp,
             uart,
+            gpio,
             paths,
             gdb: cfg.gdb_port.map(|p| SocketAddr::from(([127, 0, 0, 1], p))),
         })
@@ -353,6 +378,7 @@ mod tests {
             machine: None,
             extra_args: Vec::new(),
             env: Vec::new(),
+            bridge: Vec::new(),
         }
     }
 

@@ -109,6 +109,10 @@ public:
     void resetSim();
     bool isSimRunning() const { return m_simSub > 0; }
     bool isDebugging() const { return m_simSub > 0 && m_debugging; }
+    // The running simulation's bridged GPIOs (sim.start's `pins`); empty when it has
+    // no pin access. setSimPin drives one of them.
+    QList<int> simPins() const { return m_simPins; }
+    void setSimPin(int gpio, bool level);
 
     // debug.*: on the simulator started with debug. Results come as signals.
     void debugBreak(const QString &location);
@@ -158,6 +162,8 @@ signals:
     void simOutput(const QByteArray &bytes);
     // A new picture on the simulator's virtual RGB panel (sim.frame).
     void simFrame(const QImage &image);
+    // sim.pins: pins that changed, each {gpio, level?, output?}.
+    void simPinsChanged(const QJsonArray &pins);
     void simStopped(const QString &reason);
 
     // Debugger.
@@ -208,6 +214,7 @@ private:
     QList<QPair<QString, QJsonObject>> m_earlyBoardEvents;
     qint64 m_simSub = 0; // running sim.start subscription, -1 while starting, or 0
     bool m_debugging = false;
+    QList<int> m_simPins;
     bool m_autoStart = false;
     bool m_autoStartTried = false;
     QList<QPair<QString, QJsonObject>> m_earlySimEvents;

@@ -254,6 +254,10 @@ struct SessionArgs {
     /// or espressif. Default: lcgamboa when it is built, as the app does.
     #[arg(long, conflicts_with = "qemu")]
     engine: Option<esp32bench_sim::Engine>,
+    /// GPIOs to bridge (lcgamboa's fork, ESP32 and C3): their changes print on stderr,
+    /// and a stdin line `:set <gpio> <0|1>` drives one. E.g. `--pins 2,4`.
+    #[arg(long, value_delimiter = ',')]
+    pins: Vec<u8>,
 }
 
 #[derive(Subcommand)]
@@ -660,8 +664,23 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             // Polling the panel is what lets firmware's draws finish (see sim::display).
             let mut display = esp32bench_sim::display::Display::new(&s.paths().dir.clone());
             let mut saved = 0u32;
+            let mut gpio = s.gpio.take();
             loop {
                 tokio::select! {
+                    ev = async {
+                        match gpio.as_mut() {
+                            Some(g) => g.next_event().await,
+                            None => std::future::pending().await,
+                        }
+                    } => match ev? {
+                        Some(esp32bench_sim::gpio::PinEvent::Level { gpio, level }) => {
+                            eprintln!("[gpio {gpio} = {}]", u8::from(level));
+                        }
+                        Some(esp32bench_sim::gpio::PinEvent::Direction { gpio, output }) => {
+                            eprintln!("[gpio {gpio} {}]", if output { "output" } else { "input" });
+                        }
+                        None => gpio = None,
+                    },
                     () = tokio::time::sleep(display.interval()) => {
                         if let Some(f) = display.poll(&mut s.qmp).await?
                             && let Some(dir) = &frames
@@ -679,7 +698,18 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         None => break,
                     },
                     line = stdin.next_line(), if stdin_open => match line? {
-                        Some(l) => s.uart.write(format!("{l}\r\n").as_bytes()).await?,
+                        Some(l) => match l.strip_prefix(":set ") {
+                            Some(cmd) => {
+                                let mut it = cmd.split_whitespace();
+                                let parsed = (it.next().and_then(|g| g.parse::<u8>().ok()), it.next());
+                                match (parsed, gpio.as_mut()) {
+                                    ((Some(g), Some(v @ ("0" | "1"))), Some(link)) => link.set(g, v == "1").await?,
+                                    (_, None) => eprintln!("no pins bridged; use --pins"),
+                                    _ => eprintln!("usage: :set <gpio> <0|1>"),
+                                }
+                            }
+                            None => s.uart.write(format!("{l}\r\n").as_bytes()).await?,
+                        },
                         None => stdin_open = false,
                     },
                     _ = tokio::signal::ctrl_c() => break,
@@ -870,11 +900,21 @@ async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
             machine: None,
             extra_args: Vec::new(),
             env: Vec::new(),
+            bridge: Vec::new(),
         },
         None => {
             let launch = esp32bench_sim::engine::launch(a.chip, a.engine)?;
             eprintln!("engine: {}", launch.engine.as_str());
-            launch.config(a.chip, a.image)
+            if !a.pins.is_empty() && !launch.hooks {
+                bail!(
+                    "--pins needs an ESP32 or ESP32-C3 on lcgamboa's QEMU: the S3 has no \
+                     pin hooks, and Espressif's QEMU has none at all (install the fork \
+                     with `esp32bench toolchain install qemu-lcgamboa`)"
+                );
+            }
+            let mut config = launch.config(a.chip, a.image);
+            config.bridge = a.pins;
+            config
         }
     };
     config.gdb_port = a.gdb;

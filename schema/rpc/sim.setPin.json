@@ -1,0 +1,48 @@
+{
+  "method": "sim.setPin",
+  "description": "Drive one of the simulation's pins (sim.start's `pins`) high or low, as a button or another part would. Only on lcgamboa's fork, through its library (ESP32 and C3).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "gpio",
+      "level"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "gpio": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 48
+      },
+      "level": {
+        "type": "boolean"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "errors": [
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "gpio": 4,
+        "level": true
+      },
+      "result": {}
+    }
+  ]
+}

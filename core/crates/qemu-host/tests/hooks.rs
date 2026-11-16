@@ -81,6 +81,8 @@ async fn start(
         machine: Some(machine.into()),
         extra_args: vec!["-L".into(), pc_bios.into()],
         env,
+        // These tests set the host's pins and socket themselves.
+        bridge: Vec::new(),
     };
     Some((Session::start(cfg).await.unwrap(), sock))
 }
@@ -275,4 +277,76 @@ async fn esp32_empty_bus_scans_empty() {
 #[tokio::test]
 async fn esp32c3_empty_bus_scans_empty() {
     empty_bus_scans_empty(Chip::Esp32c3).await;
+}
+
+/// The simulator's own pin link (`SessionConfig::bridge` and `Session::gpio`): the
+/// gpio firmware's GPIO 2 output is seen toggling, and driving GPIO 4 reaches it.
+async fn session_bridges_pins(chip: Chip) {
+    use esp32bench_sim::gpio::PinEvent;
+    let Some(build) = esp32bench_sim::lcgamboa::Build::find() else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let image = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../../tests/firmware/out/gpio-{chip}.bin"));
+    if !image.is_file() {
+        eprintln!("skipping {chip}: gpio firmware not built");
+        return;
+    }
+    let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
+    let launch = esp32bench_sim::engine::lcgamboa_launch(chip, &build, Some(&host)).unwrap();
+    assert!(launch.hooks);
+    let mut cfg = launch.config(chip, image);
+    cfg.bridge = vec![2, 4];
+    let mut s = Session::start(cfg).await.unwrap();
+    let mut gpio = s.gpio.take().expect("no pin link");
+    let mut events = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while !(events.contains(&PinEvent::Level {
+        gpio: 2,
+        level: true,
+    }) && events.contains(&PinEvent::Level {
+        gpio: 2,
+        level: false,
+    })) {
+        let ev = tokio::time::timeout_at(deadline, gpio.next_event())
+            .await
+            .expect("GPIO 2 did not toggle")
+            .unwrap()
+            .expect("host closed the link");
+        events.push(ev);
+    }
+    assert!(
+        events.contains(&PinEvent::Direction {
+            gpio: 2,
+            output: true
+        }),
+        "{events:?}"
+    );
+    // Drive the input and watch the firmware report it.
+    gpio.set(4, true).await.unwrap();
+    let found = s
+        .uart
+        .wait_for(b"esp32bench-gpio in 4=1", Duration::from_secs(10), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(found, WaitOutcome::Found);
+    gpio.set(4, false).await.unwrap();
+    let found = s
+        .uart
+        .wait_for(b"esp32bench-gpio in 4=0", Duration::from_secs(10), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(found, WaitOutcome::Found);
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn esp32_session_bridges_pins() {
+    session_bridges_pins(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn esp32c3_session_bridges_pins() {
+    session_bridges_pins(Chip::Esp32c3).await;
 }

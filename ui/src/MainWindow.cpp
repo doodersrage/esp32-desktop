@@ -11,6 +11,7 @@
 #include "SimulatorPanel.h"
 #include "DebugPanel.h"
 #include "DisplayPanel.h"
+#include "PinsPanel.h"
 
 #include <algorithm>
 
@@ -100,6 +101,19 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
         const int want = std::min(m_display->sizeHint().width(), width() / 2);
         if (m_displayDock->width() < want)
             resizeDocks({m_displayDock}, {want}, Qt::Horizontal);
+    });
+
+    // The project's pins, on the right with the display; shown when a simulation has
+    // pin access.
+    m_pinsDock = new QDockWidget(tr("Pins"), this);
+    m_pinsDock->setObjectName(u"pinsDock"_s);
+    m_pins = new PinsPanel(core, m_pinsDock);
+    m_pinsDock->setWidget(m_pins);
+    addDockWidget(Qt::RightDockWidgetArea, m_pinsDock);
+    m_pinsDock->hide();
+    connect(core, &CoreConnection::simStarted, this, [this] {
+        if (!m_core->simPins().isEmpty())
+            m_pinsDock->show();
     });
 
     m_debugDock = new QDockWidget(tr("Debugger"), this);
@@ -243,6 +257,7 @@ void MainWindow::buildMenus()
     view->addAction(m_simDock->toggleViewAction());
     view->addAction(m_debugDock->toggleViewAction());
     view->addAction(m_displayDock->toggleViewAction());
+    view->addAction(m_pinsDock->toggleViewAction());
 
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
     QAction *setup = tools->addAction(QIcon::fromTheme(u"configure"_s), tr("&Toolchain setup…"));

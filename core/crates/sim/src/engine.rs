@@ -55,6 +55,9 @@ pub struct Launch {
     pub machine: Option<String>,
     pub args: Vec<OsString>,
     pub env: Vec<(OsString, OsString)>,
+    /// Whether GPIOs can be bridged ([`SessionConfig::bridge`]): only through the host
+    /// with the fork's library, so not on the S3 or Espressif's QEMU.
+    pub hooks: bool,
 }
 
 impl Launch {
@@ -69,6 +72,7 @@ impl Launch {
             machine: self.machine.clone(),
             extra_args: self.args.clone(),
             env: self.env.clone(),
+            bridge: Vec::new(),
         }
     }
 }
@@ -100,6 +104,7 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
             machine,
             args,
             env: Vec::new(),
+            hooks: false,
         });
     }
     let host = host?;
@@ -112,6 +117,7 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
             "ESP32BENCH_QEMU_LIB".into(),
             build.library(chip.arch()).into(),
         )],
+        hooks: true,
     })
 }
 
@@ -129,6 +135,7 @@ pub fn launch(chip: Chip, want: Option<Engine>) -> Result<Launch, Error> {
             machine: None,
             args: Vec::new(),
             env: Vec::new(),
+            hooks: false,
         })
     };
     match want {
@@ -167,6 +174,7 @@ mod tests {
             assert!(Path::new(&l.env[0].1).ends_with(lib));
             // No socket or pins: nothing is attached.
             assert_eq!(l.env.len(), 1);
+            assert!(l.hooks);
         }
         assert_eq!(lcgamboa_launch(Chip::Esp32, &build(), None), None);
     }
@@ -177,6 +185,7 @@ mod tests {
         assert!(l.qemu.ends_with("src/build-exe/qemu-system-xtensa"));
         assert_eq!(l.machine.as_deref(), Some("esp32s3"));
         assert!(l.env.is_empty());
+        assert!(!l.hooks, "the fork has no GPIO hooks on the S3");
     }
 
     #[test]

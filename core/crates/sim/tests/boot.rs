@@ -54,6 +54,7 @@ fn setup(chip: Chip) -> Option<(SessionConfig, &'static [u8])> {
         machine: None,
         extra_args: Vec::new(),
         env: Vec::new(),
+        bridge: Vec::new(),
     };
     Some((cfg, marker))
 }
@@ -83,6 +84,7 @@ async fn lcgamboa_boot_reset_and_quit(chip: Chip) {
         machine: Some(esp32bench_sim::lcgamboa::machine(chip).to_owned()),
         extra_args: build.qemu_args(),
         env: Vec::new(),
+        bridge: Vec::new(),
     };
     boot_reset_and_quit_with(cfg, marker).await;
 }
@@ -171,6 +173,7 @@ async fn arduino_hello_boots() {
             machine: None,
             extra_args: Vec::new(),
             env: Vec::new(),
+            bridge: Vec::new(),
         };
         let mut s = Session::start(cfg).await.unwrap();
         let t = Duration::from_secs(30);

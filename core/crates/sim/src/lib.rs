@@ -8,6 +8,7 @@ pub mod display;
 pub mod engine;
 pub mod error;
 pub mod gdb;
+pub mod gpio;
 pub mod image;
 pub mod install;
 pub mod lcgamboa;

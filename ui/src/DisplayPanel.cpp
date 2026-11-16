@@ -36,8 +36,8 @@ DisplayPanel::DisplayPanel(CoreConnection *core, QWidget *parent)
         m_status->setText(tr("Waiting for the firmware to draw."));
     });
     connect(core, &CoreConnection::simStopped, this, [this] {
-        if (!m_image.isNull())
-            m_status->setText(tr("The simulator has stopped; this is its last picture."));
+        m_status->setText(m_image.isNull() ? tr("The simulator has stopped. This firmware did not draw on the virtual panel.")
+                                           : tr("The simulator has stopped; this is its last picture."));
     });
 }
 

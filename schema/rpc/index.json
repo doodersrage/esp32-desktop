@@ -1,5 +1,5 @@
 {
-  "protocol": "0.13.0",
+  "protocol": "0.14.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
     "board.erase",
@@ -22,6 +22,7 @@
     "serial.reset",
     "serial.write",
     "sim.reset",
+    "sim.setPin",
     "sim.start",
     "sim.write",
     "toolchain.install",
@@ -42,6 +43,7 @@
     "sim.exited",
     "sim.frame",
     "sim.output",
+    "sim.pins",
     "toolchain.finished",
     "toolchain.progress"
   ]

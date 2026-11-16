@@ -1526,6 +1526,106 @@ async fn sim_sends_the_virtual_panel() {
 }
 
 #[tokio::test]
+async fn sim_bridges_the_projects_pins() {
+    let Some(gpio_fw) = firmware("gpio-esp32.bin") else {
+        eprintln!("skipping: gpio firmware not built (tests/firmware/build.sh gpio)");
+        return;
+    };
+    let Ok(launch) = esp32bench_sim::engine::launch(esp32bench_sim::Chip::Esp32, None) else {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    };
+    // The example library, with Blink's ESP32 build using GPIO 2 and 4 (and GND, which
+    // is not a GPIO).
+    let dir = tempfile::tempdir().unwrap();
+    let mut manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(example_manifest()).unwrap()).unwrap();
+    for b in manifest["projects"][0]["builds"].as_array_mut().unwrap() {
+        if b["board"] == "esp32" {
+            b["pins"] = json!(["2", "4", "GND"]);
+        }
+    }
+    let source = dir.path().join("manifest.json");
+    std::fs::write(&source, manifest.to_string()).unwrap();
+    let (d, sock, _lock) = daemon_with_source(&source).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&gpio_fw, out.join("blink.ino.merged.bin")).unwrap();
+
+    let r = c
+        .call("sim.start", json!({ "project": "blink", "board": "esp32" }))
+        .await
+        .unwrap();
+    assert_valid(&method_def("sim.start")["result"], &r, "sim.start result");
+    let sub = r["subscription"].clone();
+    if !launch.hooks {
+        // Espressif's QEMU (the fork is not built): no pin access, and it says so.
+        assert_eq!(r["pins"], json!([]));
+        eprintln!("skipping the pin checks: no fork build here");
+        return;
+    }
+    assert_eq!(r["pins"], json!([2, 4]));
+
+    // GPIO 2 toggles: seen high and low, as an output.
+    let (mut high, mut low) = (false, false);
+    let mut text = String::new();
+    while !(high && low) {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(20), c.next_notification())
+            .await
+            .expect("GPIO 2 did not toggle")
+            .unwrap();
+        let method = n["method"].as_str().unwrap();
+        assert_valid(&method_def(method)["params"], &n["params"], method);
+        if method == "sim.output" {
+            text.push_str(n["params"]["text"].as_str().unwrap());
+        }
+        if method != "sim.pins" {
+            continue;
+        }
+        for pin in n["params"]["pins"].as_array().unwrap() {
+            if pin["gpio"] == 2 && pin["level"] == true {
+                high = true;
+            }
+            if pin["gpio"] == 2 && pin["level"] == false {
+                low = true;
+            }
+        }
+    }
+    // Drive GPIO 4; the firmware reports what it reads.
+    c.call(
+        "sim.setPin",
+        json!({ "subscription": sub, "gpio": 4, "level": true }),
+    )
+    .await
+    .unwrap();
+    while !text.contains("esp32bench-gpio in 4=1") {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+            .await
+            .unwrap_or_else(|_| panic!("firmware never read GPIO 4 high: {text}"))
+            .unwrap();
+        if n["method"] == "sim.output" {
+            text.push_str(n["params"]["text"].as_str().unwrap());
+        }
+    }
+    // Only the project's pins.
+    match c
+        .call(
+            "sim.setPin",
+            json!({ "subscription": sub, "gpio": 9, "level": true }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
+        other => panic!("drove a pin the project does not use: {other:?}"),
+    }
+    c.call("core.unsubscribe", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn sim_refuses_workbench_only_boards_and_missing_builds() {
     // The example library plus a C6 build of blink: C6 is not simulated.
     let dir = tempfile::tempdir().unwrap();

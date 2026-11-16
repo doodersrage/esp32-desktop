@@ -4,6 +4,7 @@
 #include "CoreConnection.h"
 #include "DebugPanel.h"
 #include "DisplayPanel.h"
+#include "PinsPanel.h"
 #include "DevicesPanel.h"
 #include "BuildPanel.h"
 #include "LibraryPanel.h"
@@ -86,6 +87,12 @@ private slots:
         const QString qemuBin = QDir::homePath()
             + u"/.local/share/esp32bench/qemu/esp-develop-9.2.2-20261109/xtensa/qemu/bin"_s;
         qputenv("ESP32BENCH_QEMU_DIR", qemuBin.toLocal8Bit());
+        // And at the user's lcgamboa build, if there is one: the simulator's default
+        // engine, the only one with pins. Without it the steps run on Espressif's QEMU.
+        const QString fork = QDir::homePath() + u"/.local/share/esp32bench/qemu/lcgamboa-885a6e7061"_s;
+        const bool haveFork = QFile::exists(fork + u"/installed"_s);
+        if (haveFork)
+            qputenv("ESP32BENCH_LCGAMBOA_DIR", fork.toLocal8Bit());
         qputenv("ESP32BENCH_ARDUINO_CLI", writeFakeArduinoCli(dir.path()).toLocal8Bit());
         qputenv("ESP32BENCH_MANIFEST",
                 QByteArray(ESP32BENCH_SOURCE_DIR "/../schema/project-manifest/example.json"));
@@ -187,6 +194,24 @@ private slots:
                 QTRY_VERIFY(!core.isSimRunning());
             } else {
                 qWarning("rgb firmware missing; display step skipped");
+            }
+
+            // The project's pins: the gpio firmware toggles GPIO 2 (Blink's pin), and the
+            // Pins dock shows it as an output going high and low.
+            const QString gpioFw = QStringLiteral(ESP32BENCH_SOURCE_DIR "/../tests/firmware/out/gpio-esp32.bin");
+            if (haveFork && QFile::exists(gpioFw)) {
+                QVERIFY(QFile::remove(image));
+                QVERIFY(QFile::copy(gpioFw, image));
+                window.buildPanel()->simulateButton()->click();
+                QTRY_VERIFY_WITH_TIMEOUT(window.pins()->row(2) != nullptr, 30000);
+                QVERIFY(window.pins()->isVisible());
+                QTRY_COMPARE_WITH_TIMEOUT(window.pins()->row(2)->text(PinsPanel::DirectionColumn), u"output"_s, 20000);
+                QTRY_COMPARE_WITH_TIMEOUT(window.pins()->row(2)->text(PinsPanel::LevelColumn), u"high"_s, 20000);
+                QTRY_COMPARE_WITH_TIMEOUT(window.pins()->row(2)->text(PinsPanel::LevelColumn), u"low"_s, 20000);
+                core.stopSim();
+                QTRY_VERIFY(!core.isSimRunning());
+            } else {
+                qWarning("lcgamboa's QEMU or the gpio firmware missing; pins step skipped");
             }
         } else {
             qWarning("hello firmware or QEMU missing; simulator step skipped");
