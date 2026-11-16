@@ -1,0 +1,52 @@
+{
+  "event": "sim.parts",
+  "description": "Virtual parts whose state changed: an LED lit or not, a button pressed or not. All parts once when the simulation starts, then changes, batched like sim.pins.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "parts"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "parts": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "on"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "parts": [
+          {
+            "id": "status-led",
+            "on": true
+          }
+        ]
+      }
+    }
+  ]
+}

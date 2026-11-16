@@ -505,6 +505,7 @@ dependencies = [
  "anyhow",
  "clap",
  "esp32bench-build",
+ "esp32bench-circuit",
  "esp32bench-debug",
  "esp32bench-device",
  "esp32bench-flash",
@@ -533,12 +534,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "esp32bench-circuit"
+version = "0.0.1"
+dependencies = [
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "esp32bench-daemon"
 version = "0.0.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
  "esp32bench-build",
+ "esp32bench-circuit",
  "esp32bench-debug",
  "esp32bench-device",
  "esp32bench-flash",

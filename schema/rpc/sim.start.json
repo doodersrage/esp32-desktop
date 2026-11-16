@@ -60,6 +60,10 @@
           "maximum": 48
         },
         "description": "GPIOs the project's build uses (from the library) that this simulation bridges: their changes come as sim.pins, and sim.setPin drives them. Empty where there is no pin access: the S3, and Espressif's QEMU."
+      },
+      "partsActive": {
+        "type": "boolean",
+        "description": "Whether the board's virtual parts (circuit.get) work in this simulation: there are some, and the simulation has pin access. Their pins are included in `pins`."
       }
     }
   },
@@ -72,6 +76,7 @@
     "sim.output",
     "sim.frame",
     "sim.pins",
+    "sim.parts",
     "sim.exited",
     "debug.stopped",
     "debug.running",
@@ -90,7 +95,8 @@
         "engine": "lcgamboa",
         "pins": [
           2
-        ]
+        ],
+        "partsActive": false
       }
     },
     {
@@ -106,7 +112,8 @@
         "engine": "lcgamboa",
         "pins": [
           2
-        ]
+        ],
+        "partsActive": false
       }
     }
   ]

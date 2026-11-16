@@ -46,6 +46,7 @@ fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
         dir.join("sketchbook"),
     );
     s.arduino_cli = Some(fake_arduino_cli(dir));
+    s.circuits_root = dir.join("circuits");
     Arc::new(s)
 }
 
@@ -1619,6 +1620,162 @@ async fn sim_bridges_the_projects_pins() {
     {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
         other => panic!("drove a pin the project does not use: {other:?}"),
+    }
+    c.call("core.unsubscribe", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn circuit_round_trip() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let r = c
+        .call(
+            "circuit.get",
+            json!({ "project": "blink", "board": "esp32" }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("circuit.get")["result"],
+        &r,
+        "circuit.get result",
+    );
+    assert_eq!(r["circuit"]["parts"], json!([]));
+    let circuit = json!({ "schemaVersion": "1.0.0", "parts": [
+        { "id": "led", "kind": "led", "pin": 2, "label": "Status LED" },
+        { "id": "go", "kind": "button", "pin": 4 }
+    ]});
+    let params = json!({ "project": "blink", "board": "esp32", "circuit": circuit });
+    assert_valid(
+        &method_def("circuit.set")["params"],
+        &params,
+        "circuit.set params",
+    );
+    c.call("circuit.set", params).await.unwrap();
+    let r = c
+        .call(
+            "circuit.get",
+            json!({ "project": "blink", "board": "esp32" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r["circuit"]["parts"][0]["label"], "Status LED");
+    assert_eq!(r["circuit"]["parts"][1]["kind"], "button");
+    // Checked before saving.
+    for bad in [
+        json!({ "project": "blink", "board": "esp32", "circuit": { "schemaVersion": "1.0.0", "parts": [
+            { "id": "a", "kind": "button", "pin": 4 }, { "id": "b", "kind": "button", "pin": 4 } ] } }),
+        json!({ "project": "../x", "board": "esp32", "circuit": { "schemaVersion": "1.0.0", "parts": [] } }),
+        json!({ "project": "blink", "board": "esp32", "circuit": { "schemaVersion": "1.0.0", "parts": [
+            { "id": "a", "kind": "motor", "pin": 4 } ] } }),
+    ] {
+        match c.call("circuit.set", bad.clone()).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS, "{bad}"),
+            other => panic!("saved a bad circuit {bad}: {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn sim_runs_the_boards_parts() {
+    let Some(gpio_fw) = firmware("gpio-esp32.bin") else {
+        eprintln!("skipping: gpio firmware not built (tests/firmware/build.sh gpio)");
+        return;
+    };
+    match esp32bench_sim::engine::launch(esp32bench_sim::Chip::Esp32, None) {
+        Ok(l) if l.hooks => {}
+        _ => {
+            eprintln!("skipping: needs lcgamboa's QEMU library");
+            return;
+        }
+    }
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&gpio_fw, out.join("blink.ino.merged.bin")).unwrap();
+    // An LED on the firmware's output, a button (to 3V3, so active high) on its input.
+    // GPIO 4 is not one of Blink's pins: the circuit adds it.
+    c.call(
+        "circuit.set",
+        json!({ "project": "blink", "board": "esp32", "circuit": {
+        "schemaVersion": "1.0.0", "parts": [
+            { "id": "led", "kind": "led", "pin": 2 },
+            { "id": "go", "kind": "button", "pin": 4 }
+        ] } }),
+    )
+    .await
+    .unwrap();
+    let r = c
+        .call("sim.start", json!({ "project": "blink", "board": "esp32" }))
+        .await
+        .unwrap();
+    assert_valid(&method_def("sim.start")["result"], &r, "sim.start result");
+    assert_eq!(r["pins"], json!([2, 4]));
+    assert_eq!(r["partsActive"], true);
+    let sub = r["subscription"].clone();
+
+    let mut text = String::new();
+    let mut led = Vec::new();
+    // Wait until the LED has been seen on and off.
+    while !(led.contains(&true) && led.contains(&false) && led.len() >= 3) {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(20), c.next_notification())
+            .await
+            .expect("the LED did not blink")
+            .unwrap();
+        let method = n["method"].as_str().unwrap();
+        assert_valid(&method_def(method)["params"], &n["params"], method);
+        match method {
+            "sim.output" => text.push_str(n["params"]["text"].as_str().unwrap()),
+            "sim.parts" => {
+                for p in n["params"]["parts"].as_array().unwrap() {
+                    if p["id"] == "led" {
+                        led.push(p["on"].as_bool().unwrap());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    // Released, the button holds GPIO 4 low; pressed, high.
+    assert!(text.contains("esp32bench-gpio in 4=0"), "{text}");
+    c.call(
+        "sim.press",
+        json!({ "subscription": sub, "part": "go", "pressed": true }),
+    )
+    .await
+    .unwrap();
+    let mut pressed_seen = false;
+    while !(text.contains("esp32bench-gpio in 4=1") && pressed_seen) {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+            .await
+            .unwrap_or_else(|_| panic!("the press did not reach the firmware: {text}"))
+            .unwrap();
+        match n["method"].as_str().unwrap() {
+            "sim.output" => text.push_str(n["params"]["text"].as_str().unwrap()),
+            "sim.parts" => {
+                pressed_seen |= n["params"]["parts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|p| p["id"] == "go" && p["on"] == true);
+            }
+            _ => {}
+        }
+    }
+    // Only buttons can be pressed.
+    match c
+        .call(
+            "sim.press",
+            json!({ "subscription": sub, "part": "led", "pressed": true }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
+        other => panic!("pressed an LED: {other:?}"),
     }
     c.call("core.unsubscribe", json!({ "subscription": sub }))
         .await

@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.14.0";
+pub const PROTOCOL: &str = "0.15.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -48,6 +48,8 @@ pub struct State {
     pub flash_consent: esp32bench_build::Consent<FlashPlan>,
     /// One board operation at a time.
     board_lock: tokio::sync::Mutex<()>,
+    /// Where circuits (virtual parts per project and board) are saved.
+    pub circuits_root: PathBuf,
     /// Running simulators by (connection, subscription), to send them commands.
     sims: std::sync::Mutex<HashMap<(u64, u64), tokio::sync::mpsc::UnboundedSender<SimCmd>>>,
 }
@@ -105,6 +107,9 @@ impl State {
                 .unwrap_or_else(|| PathBuf::from(".arduino15")),
             flash_consent: esp32bench_build::Consent::new(),
             sims: std::sync::Mutex::new(HashMap::new()),
+            circuits_root: esp32bench_sim::install::data_dir()
+                .map(|d| d.join("circuits"))
+                .unwrap_or_else(|_| PathBuf::from("esp32bench-circuits")),
             board_lock: tokio::sync::Mutex::new(()),
         }
     }
@@ -140,8 +145,9 @@ pub fn router(state: Arc<State>) -> Router {
         state.clone(),
         state.clone(),
         state.clone(),
-        state,
+        state.clone(),
     );
+    let (c1, c2, c3) = (state.clone(), state.clone(), state);
     Router::new()
         .method("sim.start", move |p, ctx| {
             let s = s13.clone();
@@ -158,6 +164,18 @@ pub fn router(state: Arc<State>) -> Router {
         .method("sim.setPin", move |p, ctx| {
             let s = d5.clone();
             async move { sim_set_pin(p, ctx, s).await }
+        })
+        .method("sim.press", move |p, ctx| {
+            let s = c1.clone();
+            async move { sim_press(p, ctx, s).await }
+        })
+        .method("circuit.get", move |p, _ctx| {
+            let s = c2.clone();
+            async move { circuit_get(p, s).await }
+        })
+        .method("circuit.set", move |p, _ctx| {
+            let s = c3.clone();
+            async move { circuit_set(p, s).await }
         })
         .method("debug.break", move |p, ctx| {
             let s = d1.clone();
@@ -494,6 +512,11 @@ fn toolchain_install(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
 enum SimCmd {
     Write(Vec<u8>),
     SetPin(u8, bool, tokio::sync::oneshot::Sender<Result<(), String>>),
+    Press(
+        String,
+        bool,
+        tokio::sync::oneshot::Sender<Result<(), String>>,
+    ),
     Reset(tokio::sync::oneshot::Sender<Result<(), String>>),
     Debug(
         DebugReq,
@@ -690,11 +713,23 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
     };
     // The GPIOs the project uses, from the library (never from the caller), bridged
     // when the engine has the fork's hooks (ESP32 and C3 on lcgamboa's library).
+    // And the pins of the parts placed on this board in the app.
+    let circuit = esp32bench_circuit::load(&state.circuits_root, &p.project, &p.board)
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
     let pins: Vec<u8> = if launch.hooks {
-        project_pins(&manifest, &p.project, &p.board)
+        let mut pins = project_pins(&manifest, &p.project, &p.board);
+        pins.extend(circuit.pins());
+        pins.sort_unstable();
+        pins.dedup();
+        pins
     } else {
         Vec::new()
     };
+    let mut parts = launch
+        .hooks
+        .then(|| esp32bench_circuit::Parts::new(&circuit));
+    // Whether the circuit's parts work in this simulation.
+    let launch_parts = launch.hooks && !circuit.parts.is_empty();
     let mut config = launch.config(chip, image);
     config.bridge = pins.clone();
     let bridged_pins = pins.clone();
@@ -730,6 +765,16 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             let mut display = Some(esp32bench_sim::display::Display::new(&session.paths().dir.clone()));
             let mut gpio = session.gpio.take();
             let bridged = bridged_pins;
+            // Released buttons hold their pins at the idle level from the start.
+            if let (Some(link), Some(ps)) = (gpio.as_mut(), parts.as_ref()) {
+                for (pin, level) in ps.idle_levels() {
+                    let _ = link.set(pin, level).await;
+                }
+            }
+            if let Some(ps) = parts.as_ref().filter(|ps| !ps.states().is_empty()) {
+                sub.send("sim.parts", json!({ "parts": ps.states() }));
+            }
+            let mut parts_changed: std::collections::BTreeMap<String, bool> = std::collections::BTreeMap::new();
             // gpio -> (level, output), and the pins changed since the last batch.
             let mut pin_state: std::collections::BTreeMap<u8, (Option<bool>, Option<bool>)> =
                 std::collections::BTreeMap::new();
@@ -766,16 +811,21 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                         }
                     } => match ev {
                         Ok(Some(ev)) => {
-                            let gpio_num = match ev {
+                            let (gpio_num, level, output) = match ev {
                                 esp32bench_sim::gpio::PinEvent::Level { gpio, level } => {
                                     pin_state.entry(gpio).or_default().0 = Some(level);
-                                    gpio
+                                    (gpio, Some(level), None)
                                 }
                                 esp32bench_sim::gpio::PinEvent::Direction { gpio, output } => {
                                     pin_state.entry(gpio).or_default().1 = Some(output);
-                                    gpio
+                                    (gpio, None, Some(output))
                                 }
                             };
+                            if let Some(ps) = parts.as_mut() {
+                                for s in ps.on_pin(gpio_num, level, output) {
+                                    parts_changed.insert(s.id, s.on);
+                                }
+                            }
                             if pin_changed.is_empty() {
                                 pin_flush = tokio::time::Instant::now() + PIN_BATCH;
                             }
@@ -784,7 +834,17 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                         // The host closed the link: no more pin events this session.
                         Ok(None) | Err(_) => gpio = None,
                     },
-                    () = tokio::time::sleep_until(pin_flush), if !pin_changed.is_empty() => {
+                    () = tokio::time::sleep_until(pin_flush), if !pin_changed.is_empty() || !parts_changed.is_empty() => {
+                        if !parts_changed.is_empty() {
+                            let changed: Vec<Value> = std::mem::take(&mut parts_changed)
+                                .into_iter()
+                                .map(|(id, on)| json!({ "id": id, "on": on }))
+                                .collect();
+                            sub.send("sim.parts", json!({ "parts": changed }));
+                        }
+                        if pin_changed.is_empty() {
+                            continue;
+                        }
                         let pins: Vec<Value> = std::mem::take(&mut pin_changed)
                             .into_iter()
                             .map(|g| {
@@ -828,6 +888,25 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                             let r = match gpio.as_mut().filter(|_| bridged.contains(&g)) {
                                 Some(link) => link.set(g, level).await.map_err(|e| e.to_string()),
                                 None => Err("this simulator has no pin access".into()),
+                            };
+                            let _ = done.send(r);
+                        }
+                        Some(SimCmd::Press(id, pressed, done)) => {
+                            let r = match (parts.as_mut(), gpio.as_mut()) {
+                                (Some(ps), Some(link)) => match ps.press(&id, pressed) {
+                                    Ok(((pin, level), state)) => {
+                                        let r = link.set(pin, level).await.map_err(|e| e.to_string());
+                                        if r.is_ok() {
+                                            if parts_changed.is_empty() && pin_changed.is_empty() {
+                                                pin_flush = tokio::time::Instant::now();
+                                            }
+                                            parts_changed.insert(state.id, state.on);
+                                        }
+                                        r
+                                    }
+                                    Err(e) => Err(e.to_string()),
+                                },
+                                _ => Err("this simulator has no pin access".into()),
                             };
                             let _ = done.send(r);
                         }
@@ -880,6 +959,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
         "debug": p.debug,
         "engine": engine,
         "pins": pins,
+        "partsActive": launch_parts,
     }))
 }
 
@@ -979,6 +1059,68 @@ async fn debug_control(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Val
 async fn debug_inspect(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: SerialRefParams = parse_params(params)?;
     debug_call(&state, &ctx, p.subscription, DebugReq::Inspect).await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CircuitRef {
+    project: String,
+    board: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CircuitSetParams {
+    project: String,
+    board: String,
+    circuit: esp32bench_circuit::Circuit,
+}
+
+fn check_ids(project: &str, board: &str) -> Result<(), RpcError> {
+    for id in [project, board] {
+        esp32bench_build::safe_id(id).map_err(|e| RpcError::invalid_params(e.to_string()))?;
+    }
+    Ok(())
+}
+
+async fn circuit_get(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: CircuitRef = parse_params(params)?;
+    check_ids(&p.project, &p.board)?;
+    let c = esp32bench_circuit::load(&state.circuits_root, &p.project, &p.board)
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    Ok(json!({ "circuit": c }))
+}
+
+async fn circuit_set(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: CircuitSetParams = parse_params(params)?;
+    check_ids(&p.project, &p.board)?;
+    p.circuit
+        .validate()
+        .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+    esp32bench_circuit::save(&state.circuits_root, &p.project, &p.board, &p.circuit)
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    Ok(json!({}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PressParams {
+    subscription: u64,
+    part: String,
+    pressed: bool,
+}
+
+async fn sim_press(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: PressParams = parse_params(params)?;
+    let (done, result) = tokio::sync::oneshot::channel();
+    sim_sender(&state, &ctx, p.subscription)?
+        .send(SimCmd::Press(p.part, p.pressed, done))
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?;
+    result
+        .await
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?
+        .map_err(|e| RpcError::new(code::FAILED, e))?;
+    Ok(json!({}))
 }
 
 #[derive(Deserialize)]

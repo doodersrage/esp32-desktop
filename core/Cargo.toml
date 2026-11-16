@@ -13,6 +13,7 @@ members = [
     "crates/toolchain",
     "crates/flash",
     "crates/debug",
+    "crates/circuit",
 ]
 
 [workspace.package]

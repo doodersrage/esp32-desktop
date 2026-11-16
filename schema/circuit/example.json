@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "parts": [
+    {
+      "id": "status-led",
+      "kind": "led",
+      "pin": 2,
+      "label": "Status LED"
+    },
+    {
+      "id": "boot",
+      "kind": "button",
+      "pin": 0,
+      "activeLow": true,
+      "label": "BOOT button"
+    }
+  ]
+}

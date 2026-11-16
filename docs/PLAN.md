@@ -1,6 +1,6 @@
 # Plan: Arch-native ESP32 workbench and simulator
 
-Last updated: 2026-11-16 (phases 1 to 3 feature complete, awaiting checks on real hardware and Plasma)
+Last updated: 2026-11-16 (phases 1 to 3 feature complete and checked on Plasma; phase 4 started; virtual part data decided)
 
 ## Summary
 
@@ -28,6 +28,7 @@ v1 is done when every esp32bench.dev library project builds and flashes from the
 | Getting QEMU | Build lcgamboa's fork from source at the pinned commit, as executables and as a library | The fork has no releases. The AUR package is stale (see Arch-specific notes). Espressif's prebuilt binaries stay as a test baseline until the core's setup step builds the fork. |
 | Toolchain | Detect an existing ESP-IDF and Arduino core, offer a managed install | The AUR `esp-idf` package is one supported source. |
 | Serial monitor | Plain text view (`QPlainTextEdit`) (decided 2026-11-16) | Line-based output needs no terminal emulation, and `qt6-base` already has it. |
+| Virtual part data | Placed in the app first, saved per project and board on this computer; the shared manifest may carry the same data later (decided 2026-11-16) | The library's wiring is free text, so parts need structured data from somewhere. Placing them in the app works for every project at once with no site change. The circuit file format is versioned in `schema/` and designed so the manifest can adopt it as an optional addition. |
 
 The cost of going native is that the esp32-bench Astro UI is not reused. The shared data schema still carries the library content over.
 

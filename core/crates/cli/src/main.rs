@@ -40,6 +40,10 @@ enum Cmd {
     /// Check and install the tools builds and the simulator need.
     #[command(subcommand)]
     Toolchain(ToolchainCmd),
+    /// Virtual parts placed on a project's board for the simulator (the same files the
+    /// app edits).
+    #[command(subcommand)]
+    Circuit(CircuitCmd),
     /// The esp32bench.dev project library.
     #[command(subcommand)]
     Library(LibraryCmd),
@@ -261,6 +265,105 @@ struct SessionArgs {
 }
 
 #[derive(Subcommand)]
+enum CircuitCmd {
+    /// List the parts on a project's board.
+    Show { project: String, board: String },
+    /// Add a part.
+    Add {
+        project: String,
+        board: String,
+        /// led or button.
+        kind: String,
+        /// Part id: lowercase letters, digits and dashes.
+        id: String,
+        #[arg(long)]
+        pin: u8,
+        /// Active when the pin is low (an LED to 3V3, a button to GND with a pull-up).
+        #[arg(long)]
+        active_low: bool,
+        #[arg(long, default_value = "")]
+        label: String,
+    },
+    /// Remove a part.
+    Remove {
+        project: String,
+        board: String,
+        id: String,
+    },
+}
+
+fn circuits_root() -> Result<PathBuf> {
+    Ok(esp32bench_sim::install::data_dir()?.join("circuits"))
+}
+
+fn circuit_command(cmd: CircuitCmd) -> Result<()> {
+    let root = circuits_root()?;
+    let ids = |project: &str, board: &str| -> Result<()> {
+        for id in [project, board] {
+            esp32bench_build::safe_id(id)?;
+        }
+        Ok(())
+    };
+    match cmd {
+        CircuitCmd::Show { project, board } => {
+            ids(&project, &board)?;
+            let c = esp32bench_circuit::load(&root, &project, &board)?;
+            if c.parts.is_empty() {
+                println!("no parts on {project} / {board}");
+            }
+            for p in &c.parts {
+                println!(
+                    "{:<16} {:<7} GPIO {:<3} {}{}",
+                    p.id,
+                    serde_json::to_value(p.kind)?.as_str().unwrap_or(""),
+                    p.pin,
+                    if p.active_low {
+                        "active low  "
+                    } else {
+                        "active high "
+                    },
+                    p.label
+                );
+            }
+        }
+        CircuitCmd::Add {
+            project,
+            board,
+            kind,
+            id,
+            pin,
+            active_low,
+            label,
+        } => {
+            ids(&project, &board)?;
+            let kind: esp32bench_circuit::Kind =
+                serde_json::from_value(serde_json::Value::String(kind.clone()))
+                    .with_context(|| format!("`{kind}` is not a part kind (led or button)"))?;
+            let mut c = esp32bench_circuit::load(&root, &project, &board)?;
+            c.parts.push(esp32bench_circuit::Part {
+                id,
+                kind,
+                pin,
+                active_low,
+                label,
+            });
+            esp32bench_circuit::save(&root, &project, &board, &c)?;
+        }
+        CircuitCmd::Remove { project, board, id } => {
+            ids(&project, &board)?;
+            let mut c = esp32bench_circuit::load(&root, &project, &board)?;
+            let before = c.parts.len();
+            c.parts.retain(|p| p.id != id);
+            if c.parts.len() == before {
+                bail!("no part `{id}` on {project} / {board}");
+            }
+            esp32bench_circuit::save(&root, &project, &board, &c)?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Subcommand)]
 enum SimCmd {
     /// Boot an image, stream UART0 to stdout and stdin lines to UART0, until QEMU exits or Ctrl-C.
     Run {
@@ -272,6 +375,11 @@ enum SimCmd {
         /// Save each new picture on QEMU's virtual RGB panel as frame-NNNN.ppm here.
         #[arg(long)]
         frames: Option<PathBuf>,
+        /// A circuit file (schema/circuit) whose parts to run: their pins are bridged,
+        /// part changes print on stderr, and stdin lines `:press <id>` and
+        /// `:release <id>` work buttons.
+        #[arg(long)]
+        circuit: Option<PathBuf>,
     },
     /// Boot an image and pass if a marker appears on UART0 before the timeout.
     BootTest {
@@ -558,6 +666,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 }
             }
         }
+        Cmd::Circuit(cmd) => circuit_command(cmd)?,
         Cmd::Board(cmd) => {
             // espflash blocks; it has the terminal to itself here.
             tokio::task::spawn_blocking(move || board_command(cmd)).await??;
@@ -631,10 +740,25 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
         Cmd::Sim(SimCmd::Run {
-            session,
+            mut session,
             paused,
             frames,
+            circuit,
         }) => {
+            let circuit = match &circuit {
+                Some(path) => {
+                    let c: esp32bench_circuit::Circuit =
+                        serde_json::from_slice(&std::fs::read(path)?)
+                            .with_context(|| format!("reading {}", path.display()))?;
+                    c.validate()?;
+                    session.pins.extend(c.pins());
+                    session.pins.sort_unstable();
+                    session.pins.dedup();
+                    Some(c)
+                }
+                None => None,
+            };
+            let mut parts = circuit.as_ref().map(esp32bench_circuit::Parts::new);
             if let Some(dir) = &frames {
                 std::fs::create_dir_all(dir)?;
             }
@@ -665,6 +789,11 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             let mut display = esp32bench_sim::display::Display::new(&s.paths().dir.clone());
             let mut saved = 0u32;
             let mut gpio = s.gpio.take();
+            if let (Some(link), Some(ps)) = (gpio.as_mut(), parts.as_ref()) {
+                for (pin, level) in ps.idle_levels() {
+                    link.set(pin, level).await?;
+                }
+            }
             loop {
                 tokio::select! {
                     ev = async {
@@ -675,9 +804,15 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                     } => match ev? {
                         Some(esp32bench_sim::gpio::PinEvent::Level { gpio, level }) => {
                             eprintln!("[gpio {gpio} = {}]", u8::from(level));
+                            for p in parts.as_mut().map(|ps| ps.on_pin(gpio, Some(level), None)).unwrap_or_default() {
+                                eprintln!("[{} {}]", p.id, if p.on { "on" } else { "off" });
+                            }
                         }
                         Some(esp32bench_sim::gpio::PinEvent::Direction { gpio, output }) => {
                             eprintln!("[gpio {gpio} {}]", if output { "output" } else { "input" });
+                            for p in parts.as_mut().map(|ps| ps.on_pin(gpio, None, Some(output))).unwrap_or_default() {
+                                eprintln!("[{} {}]", p.id, if p.on { "on" } else { "off" });
+                            }
                         }
                         None => gpio = None,
                     },
@@ -698,6 +833,22 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         None => break,
                     },
                     line = stdin.next_line(), if stdin_open => match line? {
+                        Some(l) if l.starts_with(":press ") || l.starts_with(":release ") => {
+                            let (pressed, id) = match l.strip_prefix(":press ") {
+                                Some(id) => (true, id.trim()),
+                                None => (false, l.trim_start_matches(":release ").trim()),
+                            };
+                            match (parts.as_mut(), gpio.as_mut()) {
+                                (Some(ps), Some(link)) => match ps.press(id, pressed) {
+                                    Ok(((pin, level), state)) => {
+                                        link.set(pin, level).await?;
+                                        eprintln!("[{} {}]", state.id, if state.on { "pressed" } else { "released" });
+                                    }
+                                    Err(e) => eprintln!("{e}"),
+                                },
+                                _ => eprintln!("no circuit; use --circuit"),
+                            }
+                        }
                         Some(l) => match l.strip_prefix(":set ") {
                             Some(cmd) => {
                                 let mut it = cmd.split_whitespace();

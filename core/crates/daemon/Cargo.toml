@@ -17,6 +17,7 @@ path = "src/lib.rs"
 anyhow.workspace = true
 base64.workspace = true
 esp32bench-build = { path = "../build" }
+esp32bench-circuit = { path = "../circuit" }
 esp32bench-debug = { path = "../debug" }
 esp32bench-device = { path = "../device" }
 esp32bench-flash = { path = "../flash" }
