@@ -48,6 +48,13 @@ public:
         });
     }
 
+    void picture(const QString &id, const QByteArray &pixels, int w, int h)
+    {
+        send({{u"jsonrpc"_s, u"2.0"_s}, {u"method"_s, u"sim.partPicture"_s},
+              {u"params"_s, QJsonObject{{u"subscription"_s, 5}, {u"id"_s, id}, {u"width"_s, w}, {u"height"_s, h},
+                                        {u"data"_s, QString::fromLatin1(pixels.toBase64())}}}});
+    }
+
     void parts(const QJsonArray &changed)
     {
         send({{u"jsonrpc"_s, u"2.0"_s}, {u"method"_s, u"sim.parts"_s},
@@ -74,6 +81,12 @@ private:
                       {QJsonObject{{u"name"_s, u"toggle"_s}, {u"type"_s, u"toggle"_s}, {u"label"_s, u"On"_s}}}, off),
                 model(u"rgb-led"_s, u"RGB LED"_s, u"rgb-led"_s, {u"red"_s, u"green"_s, u"blue"_s}, {},
                       QJsonObject{{u"red"_s, false}, {u"green"_s, false}, {u"blue"_s, false}}),
+                [&] {
+                    QJsonObject m = model(u"ssd1306"_s, u"SSD1306"_s, u"display"_s, {}, {}, off);
+                    m.insert(u"i2c"_s, QJsonObject{{u"addresses"_s, QJsonArray{60, 61}}});
+                    m.insert(u"display"_s, QJsonObject{{u"width"_s, 4}, {u"height"_s, 2}});
+                    return m;
+                }(),
             }}});
         } else if (m == u"circuit.get") {
             reply(id, QJsonObject{{u"circuit"_s, saved}});
@@ -125,8 +138,8 @@ private slots:
         core.start();
         QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
         // The kinds of part come from the core, one menu entry each.
-        QTRY_COMPARE(panel.modelIds(), (QStringList{u"led"_s, u"button"_s, u"switch"_s, u"rgb-led"_s}));
-        QCOMPARE(panel.addPartButton()->menu()->actions().size(), 4);
+        QTRY_COMPARE(panel.modelIds(), (QStringList{u"led"_s, u"button"_s, u"switch"_s, u"rgb-led"_s, u"ssd1306"_s}));
+        QCOMPARE(panel.addPartButton()->menu()->actions().size(), 5);
 
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"GND"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
@@ -147,12 +160,17 @@ private slots:
         QCOMPARE(partsOf(fake.saved, 2).value(u"id"_s).toString(), u"rgb-led-1"_s);
         panel.addPart(u"switch"_s, QJsonObject{{u"pin"_s, 5}}, {}, {});
         QTRY_COMPARE(panel.parts().size(), 4);
+        // An I2C part: no pins, a bus and an address.
+        panel.addPart(u"ssd1306"_s, {}, {}, {}, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 60}});
+        QTRY_COMPARE(panel.parts().size(), 5);
+        QCOMPARE(partsOf(fake.saved, 4).value(u"i2c"_s).toObject().value(u"address"_s).toInt(), 60);
+        QVERIFY(!partsOf(fake.saved, 4).contains(u"pins"_s));
 
         // A refusal from the core is shown, and nothing changes.
         fake.rejectNext = true;
         panel.addPart(u"switch"_s, 4, false, {});
         QTRY_VERIFY(panel.statusText().contains(u"would drive"_s));
-        QCOMPARE(panel.parts().size(), 4);
+        QCOMPARE(panel.parts().size(), 5);
 
         // Running: parts show the state the core reports.
         core.startSim(u"blink"_s, u"esp32"_s);
@@ -164,6 +182,12 @@ private slots:
                         {u"state"_s, QJsonObject{{u"red"_s, true}, {u"green"_s, false}, {u"blue"_s, true}}}}});
         QTRY_VERIFY(panel.isOn(u"led-1"_s));
         QCOMPARE(panel.partState(u"rgb-led-1"_s).value(u"blue"_s).toBool(), true);
+        // A display part shows its picture: 4 x 2, one pixel lit at (3, 1).
+        fake.picture(u"ssd1306-1"_s, QByteArray("\0\0\0\0\0\0\0\1", 8), 4, 2);
+        QTRY_VERIFY(!panel.partPicture(u"ssd1306-1"_s).isNull());
+        QCOMPARE(panel.partPicture(u"ssd1306-1"_s).size(), QSize(4, 2));
+        QVERIFY(qGray(panel.partPicture(u"ssd1306-1"_s).pixel(3, 1)) > 128);
+        QCOMPARE(qGray(panel.partPicture(u"ssd1306-1"_s).pixel(0, 0)), 0);
 
         // Holding the mouse on a button presses it.
         const QPoint at = panel.view()->mapFromScene(panel.partCentre(u"button-1"_s));
@@ -194,8 +218,9 @@ private slots:
         QTest::qWait(100);
         QCOMPARE(fake.controls.size(), 3);
 
+        QVERIFY(panel.partPicture(u"ssd1306-1"_s).isNull()); // cleared when the simulator stopped
         panel.removePart(u"rgb-led-1"_s);
-        QTRY_COMPARE(panel.parts().size(), 3);
+        QTRY_COMPARE(panel.parts().size(), 4);
     }
 };
 

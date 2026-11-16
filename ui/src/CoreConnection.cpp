@@ -221,7 +221,7 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
-    } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.parts"
+    } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.parts" || method == u"sim.partPicture"
                || method == u"sim.exited"
                || method.startsWith(u"debug.")) {
         if (sub == m_simSub)
@@ -568,6 +568,18 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
 {
     if (method == u"sim.output") {
         emit simOutput(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        return;
+    }
+    if (method == u"sim.partPicture") {
+        const int w = params.value(u"width"_s).toInt();
+        const int h = params.value(u"height"_s).toInt();
+        QByteArray px = QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1());
+        if (w <= 0 || h <= 0 || px.size() != qsizetype(w) * h)
+            return;
+        for (char &c : px)
+            c = c ? char(0xff) : char(0);
+        emit partPicture(params.value(u"id"_s).toString(),
+                         QImage(reinterpret_cast<const uchar *>(px.constData()), w, h, w, QImage::Format_Grayscale8).copy());
         return;
     }
     if (method == u"sim.parts") {

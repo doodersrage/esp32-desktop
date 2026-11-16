@@ -8,6 +8,7 @@
 #pragma once
 
 #include <QHash>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QPointF>
@@ -30,7 +31,8 @@ public:
     // Show (and load the circuit of) a project's board.
     void showBoard(const QString &project, const QString &board, const QJsonArray &pins);
     // Add a part of model `kind` and save: `pins` maps the model's pin names to GPIOs.
-    void addPart(const QString &kind, const QJsonObject &pins, const QJsonObject &props, const QString &label);
+    void addPart(const QString &kind, const QJsonObject &pins, const QJsonObject &props, const QString &label,
+                 const QJsonObject &i2c = {});
     // The same, for a one-pin model with an activeLow property.
     void addPart(const QString &kind, int pin, bool activeLow, const QString &label);
     void removePart(const QString &id);
@@ -41,6 +43,8 @@ public:
     QStringList modelIds() const { return m_modelOrder; }
     bool isOn(const QString &id) const;
     QJsonObject partState(const QString &id) const;
+    // A display part's latest picture (null until the simulation draws).
+    QImage partPicture(const QString &id) const;
     QGraphicsView *view() const { return m_view; }
     PartItem *item(const QString &id) const { return m_items.value(id); }
     // The middle of a part on the canvas, in scene coordinates.

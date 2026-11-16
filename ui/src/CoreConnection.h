@@ -178,6 +178,8 @@ signals:
     void simPinsChanged(const QJsonArray &pins);
     // sim.parts: parts whose state changed, each {id, on}.
     void simPartsChanged(const QJsonArray &parts);
+    // sim.partPicture: a display part's picture, lit pixels white on black.
+    void partPicture(const QString &id, const QImage &image);
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
     void modelsLoaded(const QJsonArray &models);
     void simStopped(const QString &reason);

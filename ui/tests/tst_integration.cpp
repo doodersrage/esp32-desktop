@@ -233,6 +233,27 @@ private slots:
             } else {
                 qWarning("lcgamboa's QEMU or the gpio firmware missing; pins step skipped");
             }
+
+            // An SSD1306 on I2C: placed through the Circuit dock, drawn on the canvas by
+            // the firmware through the real daemon and host.
+            const QString oledFw = QStringLiteral(ESP32BENCH_SOURCE_DIR "/../tests/firmware/out/ssd1306-esp32.bin");
+            if (haveFork && QFile::exists(oledFw)) {
+                CircuitPanel *circuit = window.circuit();
+                const qsizetype before = circuit->parts().size();
+                circuit->addPart(u"ssd1306"_s, {}, {}, u"OLED"_s, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 60}});
+                QTRY_COMPARE(circuit->parts().size(), before + 1);
+                QVERIFY(QFile::remove(image));
+                QVERIFY(QFile::copy(oledFw, image));
+                window.buildPanel()->simulateButton()->click();
+                QTRY_VERIFY_WITH_TIMEOUT(!circuit->partPicture(u"ssd1306-1"_s).isNull()
+                                             && qGray(circuit->partPicture(u"ssd1306-1"_s).pixel(64, 32)) > 128,
+                                         30000);
+                QCOMPARE(qGray(circuit->partPicture(u"ssd1306-1"_s).pixel(5, 3)), 255);   // top page
+                QCOMPARE(qGray(circuit->partPicture(u"ssd1306-1"_s).pixel(5, 40)), 0);
+                // Leave it running for the screenshot; it stops with the daemon.
+            } else {
+                qWarning("lcgamboa's QEMU or the ssd1306 firmware missing; display part step skipped");
+            }
         } else {
             qWarning("hello firmware or QEMU missing; simulator step skipped");
         }

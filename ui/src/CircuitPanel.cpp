@@ -3,6 +3,7 @@
 #include "CoreConnection.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -56,6 +57,8 @@ public:
             if (type == u"toggle" && m_toggle.isEmpty())
                 m_toggle = o.value(u"name"_s).toString();
         }
+        const QJsonObject display = model.value(u"display"_s).toObject();
+        m_display = QSize(display.value(u"width"_s).toInt(), display.value(u"height"_s).toInt());
         m_initial = model.value(u"state"_s).toObject();
         m_state = m_initial;
         setFlag(ItemIsSelectable);
@@ -72,9 +75,28 @@ public:
             update();
         }
     }
-    void reset() { setState(m_initial); }
+    void reset()
+    {
+        setState(m_initial);
+        setPicture({});
+    }
+    QImage picture() const { return m_picture; }
+    void setPicture(const QImage &image)
+    {
+        prepareGeometryChange();
+        m_picture = image;
+        update();
+    }
+    bool isDisplay() const { return m_look == u"display" && !m_display.isEmpty(); }
+    // A display is drawn twice its size, so single pixels read.
+    QRectF screen() const { return QRectF(4, 4, m_display.width() * 2, m_display.height() * 2); }
 
-    QRectF boundingRect() const override { return {-2, -2, PartSize + 160, PartSize + 4}; }
+    QRectF boundingRect() const override
+    {
+        if (isDisplay())
+            return QRectF(-2, -2, screen().width() + 12, screen().height() + 30);
+        return {-2, -2, PartSize + 160, PartSize + 4};
+    }
 
     void paint(QPainter *p, const QStyleOptionGraphicsItem *option, QWidget *widget) override
     {
@@ -82,6 +104,32 @@ public:
         const QPalette pal = widget ? widget->palette() : QPalette();
         const QRectF body(0, 0, PartSize, PartSize);
         p->setPen(QPen(pal.color(QPalette::Text), 1.5));
+        if (isDisplay()) {
+            // The module's frame, then the glass: black, lit pixels in OLED blue-white.
+            p->setBrush(QColor(0x1c, 0x2a, 0x3a));
+            p->drawRoundedRect(QRectF(0, 0, screen().width() + 8, screen().height() + 8), 4, 4);
+            p->fillRect(screen(), Qt::black);
+            if (!m_picture.isNull()) {
+                QImage lit(m_picture.size(), QImage::Format_ARGB32);
+                lit.fill(Qt::transparent);
+                for (int y = 0; y < m_picture.height(); ++y) {
+                    const uchar *row = m_picture.constScanLine(y);
+                    for (int x = 0; x < m_picture.width(); ++x)
+                        if (row[x])
+                            lit.setPixel(x, y, qRgb(0xa8, 0xe0, 0xff));
+                }
+                p->drawImage(screen(), lit); // scaled without smoothing: crisp pixels
+            }
+            if (option->state & QStyle::State_Selected) {
+                p->setPen(QPen(pal.color(QPalette::Highlight), 1, Qt::DashLine));
+                p->setBrush(Qt::NoBrush);
+                p->drawRect(boundingRect().adjusted(1, 1, -1, -24));
+            }
+            p->setPen(pal.color(QPalette::Text));
+            p->drawText(QRectF(0, screen().height() + 10, screen().width() + 8, 18), Qt::AlignLeft | Qt::AlignVCenter,
+                        m_label);
+            return;
+        }
         if (m_look == u"led") {
             p->setBrush(isOn() ? QColor(0xe5, 0x39, 0x35) : QColor(0x5a, 0x22, 0x22));
             p->drawEllipse(body);
@@ -142,6 +190,8 @@ private:
     QString m_id;
     QString m_look;
     QString m_label;
+    QSize m_display;
+    QImage m_picture;
     QString m_momentary;
     QString m_toggle;
     QJsonObject m_initial;
@@ -204,6 +254,10 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
                 i->setState(o.value(u"state"_s).toObject());
         }
     });
+    connect(core, &CoreConnection::partPicture, this, [this](const QString &id, const QImage &image) {
+        if (PartItem *i = m_items.value(id))
+            i->setPicture(image);
+    });
     connect(core, &CoreConnection::simStarted, this, [this] {
         resetStates();
         updateStatus();
@@ -243,6 +297,12 @@ QJsonObject CircuitPanel::partState(const QString &id) const
 {
     const PartItem *i = m_items.value(id);
     return i ? i->state() : QJsonObject();
+}
+
+QImage CircuitPanel::partPicture(const QString &id) const
+{
+    const PartItem *i = m_items.value(id);
+    return i ? i->picture() : QImage();
 }
 
 QPointF CircuitPanel::partCentre(const QString &id) const
@@ -363,11 +423,29 @@ void CircuitPanel::rebuildScene()
         m_scene->addEllipse(BoardWidth - 6, y - 4, 8, 8, QPen(pal.color(QPalette::Text)), QBrush(pal.color(QPalette::Text)));
     }
     QHash<int, int> partsOnRow; // to stack several parts on one row
+    qreal busY = height + 30;   // I2C parts go below the board, one under another
     for (const QJsonValue &v : parts()) {
         const QJsonObject o = v.toObject();
         const QString id = o.value(u"id"_s).toString();
         const QJsonObject model = m_models.value(o.value(u"kind"_s).toString());
         const QHash<QString, int> conn = connections(o, model);
+        if (conn.isEmpty() && o.contains(u"i2c"_s)) {
+            const QJsonObject i2c = o.value(u"i2c"_s).toObject();
+            const QString where = tr("I2C bus %1, address 0x%2")
+                                      .arg(i2c.value(u"bus"_s).toInt())
+                                      .arg(i2c.value(u"address"_s).toInt(), 2, 16, QLatin1Char('0'));
+            QString label = o.value(u"label"_s).toString();
+            label = label.isEmpty() ? tr("%1, %2").arg(id, where) : tr("%1, %2").arg(label, where);
+            auto *item = new PartItem(id, model, label, [this, id](const QString &control, const QJsonValue &value) {
+                m_core->controlPart(id, control, value);
+            });
+            item->setPos(0, busY);
+            item->setToolTip(where);
+            m_scene->addItem(item);
+            busY += item->boundingRect().height() + 16;
+            m_items.insert(id, item);
+            continue;
+        }
         // The part sits on the row of its first pin, in model order.
         int anchor = conn.isEmpty() ? (pins.isEmpty() ? 0 : pins.first()) : *std::min_element(conn.begin(), conn.end());
         for (const QJsonValue &n : model.value(u"pins"_s).toArray()) {
@@ -411,9 +489,12 @@ QString CircuitPanel::freeId(const QString &kind) const
     }
 }
 
-void CircuitPanel::addPart(const QString &kind, const QJsonObject &pins, const QJsonObject &props, const QString &label)
+void CircuitPanel::addPart(const QString &kind, const QJsonObject &pins, const QJsonObject &props, const QString &label,
+                           const QJsonObject &i2c)
 {
     QJsonObject part{{u"id"_s, freeId(kind)}, {u"kind"_s, kind}};
+    if (!i2c.isEmpty())
+        part.insert(u"i2c"_s, i2c);
     if (!pins.isEmpty())
         part.insert(u"pins"_s, pins);
     if (!props.isEmpty())
@@ -491,6 +572,19 @@ void CircuitPanel::addDialog(const QString &kind)
             };
         }
     }
+    QComboBox *address = nullptr;
+    QSpinBox *bus = nullptr;
+    const QJsonArray addresses = model.value(u"i2c"_s).toObject().value(u"addresses"_s).toArray();
+    if (!addresses.isEmpty()) {
+        bus = new QSpinBox(&dialog);
+        bus->setRange(0, 1);
+        bus->setToolTip(tr("Wire uses bus 0"));
+        form->addRow(tr("I2C bus:"), bus);
+        address = new QComboBox(&dialog);
+        for (const QJsonValue &a : addresses)
+            address->addItem(u"0x%1"_s.arg(a.toInt(), 2, 16, QLatin1Char('0')), a.toInt());
+        form->addRow(tr("Address:"), address);
+    }
     auto *labelEdit = new QLineEdit(&dialog);
     labelEdit->setMaxLength(40);
     labelEdit->setPlaceholderText(tr("Optional, e.g. Status LED"));
@@ -509,5 +603,8 @@ void CircuitPanel::addDialog(const QString &kind)
         const auto [key, value] = field();
         values.insert(key, value);
     }
-    addPart(kind, pins, values, labelEdit->text().trimmed());
+    QJsonObject i2c;
+    if (address)
+        i2c = {{u"bus"_s, bus->value()}, {u"address"_s, address->currentData().toInt()}};
+    addPart(kind, pins, values, labelEdit->text().trimmed(), i2c);
 }

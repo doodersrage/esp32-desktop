@@ -351,3 +351,67 @@ async fn esp32_session_bridges_pins() {
 async fn esp32c3_session_bridges_pins() {
     session_bridges_pins(Chip::Esp32c3).await;
 }
+
+/// The SSD1306 part model on a real I2C bus: tests/firmware/ssd1306 sends Adafruit's
+/// init sequence and a frame in 32-byte chunks, and the host's part draws it.
+async fn ssd1306_part_draws(chip: Chip) {
+    use esp32bench_sim::gpio::PinEvent;
+    let Some(build) = esp32bench_sim::lcgamboa::Build::find() else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let image = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../../tests/firmware/out/ssd1306-{chip}.bin"));
+    if !image.is_file() {
+        eprintln!("skipping {chip}: ssd1306 firmware not built");
+        return;
+    }
+    let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
+    let launch = esp32bench_sim::engine::lcgamboa_launch(chip, &build, Some(&host)).unwrap();
+    let mut cfg = launch.config(chip, image);
+    cfg.circuit = Some(
+        r#"{"schemaVersion":"1.1.0","parts":[{"id":"oled","kind":"ssd1306","i2c":{"bus":0,"address":60}}]}"#
+            .into(),
+    );
+    let mut s = Session::start(cfg).await.unwrap();
+    let mut link = s.gpio.take().expect("no link to the host");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    // Read UART0 all along: QEMU must not be left with output nobody takes.
+    let mut text = Vec::new();
+    let mut drawn = false;
+    while !(drawn && String::from_utf8_lossy(&text).contains("esp32bench-ssd1306 ready")) {
+        tokio::select! {
+            chunk = s.uart.read_chunk() => {
+                if let Ok(Some(c)) = chunk { text.extend_from_slice(&c) }
+            }
+            ev = link.next_event() => match ev.unwrap().expect("host closed the link") {
+                PinEvent::PartError { id, message } => panic!("{chip}: {id}: {message}"),
+                PinEvent::Picture { width, height, pixels, .. } => {
+                    assert_eq!((width, height), (128, 64));
+                    if pixels.iter().filter(|p| **p != 0).count() == 128 * 8 + 1 {
+                        let at = |x: usize, y: usize| pixels[y * 128 + x];
+                        assert!((0..128).all(|x| (0..8).all(|y| at(x, y) == 1)), "{chip}: top page");
+                        assert_eq!(at(64, 32), 1, "{chip}: the lone pixel");
+                        assert_eq!(at(64, 33), 0);
+                        drawn = true;
+                    }
+                }
+                _ => {}
+            },
+            () = tokio::time::sleep_until(deadline) => panic!(
+                "{chip}: drawn={drawn}; uart:\n{}", String::from_utf8_lossy(&text)
+            ),
+        }
+    }
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn esp32_ssd1306_part_draws() {
+    ssd1306_part_draws(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn esp32c3_ssd1306_part_draws() {
+    ssd1306_part_draws(Chip::Esp32c3).await;
+}
