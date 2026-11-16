@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "ssd1306",
+  "name": "SSD1306 OLED, 128 × 64",
+  "look": "display",
+  "i2c": { "addresses": [60, 61] },
+  "display": { "width": 128, "height": 64 },
+  "state": { "on": false },
+  "script": "ssd1306.rhai"
+}

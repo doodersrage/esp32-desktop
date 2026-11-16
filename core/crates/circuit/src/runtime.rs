@@ -13,6 +13,34 @@ const MAX_OPERATIONS: u64 = 200_000;
 /// A display picture is the largest value a script builds.
 const MAX_BLOB: usize = 128 * 1024;
 
+/// Display RAM in pages (each byte a column of 8 pixels, bit 0 on top, as SSD1306 and
+/// most monochrome controllers store it) to one byte per pixel, row by row. Done in
+/// Rust: it touches every pixel, too much for a script on every frame.
+/// `seg_remap` and `com_reverse` are the controller's flags: a module is wired so that
+/// with both set the picture is upright, so each one cleared mirrors it, as on hardware.
+fn pages_to_pixels(
+    ram: rhai::Blob,
+    width: i64,
+    height: i64,
+    seg_remap: bool,
+    com_reverse: bool,
+    invert: bool,
+    all_on: bool,
+) -> rhai::Blob {
+    let (w, h) = (width.clamp(1, 512) as usize, height.clamp(1, 512) as usize);
+    let mut out = vec![0u8; w * h];
+    for y in 0..h {
+        let sy = if com_reverse { y } else { h - 1 - y };
+        for x in 0..w {
+            let sx = if seg_remap { x } else { w - 1 - x };
+            let byte = ram.get((sy / 8) * w + sx).copied().unwrap_or(0);
+            let lit = all_on || (byte >> (sy % 8)) & 1 == 1;
+            out[y * w + x] = u8::from(lit != invert);
+        }
+    }
+    out
+}
+
 /// What running the parts asks for.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
@@ -116,6 +144,8 @@ impl Runtime {
                 });
             }
         });
+
+        engine.register_fn("pages_to_pixels", pages_to_pixels);
 
         let mut compiled: BTreeMap<String, Arc<AST>> = BTreeMap::new();
         let mut parts = Vec::new();
@@ -407,6 +437,75 @@ mod tests {
         );
         // An LED part has nothing to work.
         assert!(r.control("rgb", "press", Dynamic::from(true)).is_err());
+    }
+
+    /// Feed an I2C write transaction to the part at (0, 0x3c).
+    fn write(r: &mut Runtime, bytes: &[u8]) -> Vec<Effect> {
+        let mut e = r.i2c(0, 0x3c, I2cEvent::Start { read: false }).unwrap().1;
+        for &b in bytes {
+            let (ack, more) = r.i2c(0, 0x3c, I2cEvent::Write(b)).unwrap();
+            assert_eq!(ack, 0);
+            e.extend(more);
+        }
+        e.extend(r.i2c(0, 0x3c, I2cEvent::Stop).unwrap().1);
+        e
+    }
+
+    fn picture(effects: &[Effect]) -> Option<Vec<u8>> {
+        effects.iter().rev().find_map(|e| match e {
+            Effect::Picture { pixels, .. } => Some(pixels.clone()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn ssd1306_draws_what_adafruit_sends() {
+        let mut r = runtime(json!([
+            { "id": "oled", "kind": "ssd1306", "i2c": { "bus": 0, "address": 60 } }
+        ]));
+        assert!(r.has_i2c(0, 0x3c));
+        assert!(r.i2c(0, 0x3d, I2cEvent::Start { read: false }).is_none());
+        r.init();
+        // Adafruit_SSD1306::begin, abridged: off, horizontal mode, segment remap, COM
+        // scan reversed, on.
+        let e = write(&mut r, &[0x00, 0xAE, 0x20, 0x00, 0xA1, 0xC8, 0xAF]);
+        assert_eq!(state(&e, "oled"), Some(json!({ "on": true })));
+        // display(): window = whole screen, then data. First page: column 0 all lit,
+        // column 1 only its top pixel.
+        write(&mut r, &[0x00, 0x22, 0x00, 0x07, 0x21, 0x00, 0x7F]);
+        let mut data = vec![0x40, 0xFF, 0x01];
+        data.extend(std::iter::repeat_n(0u8, 1022));
+        let e = write(&mut r, &data);
+        let px = picture(&e).expect("no picture");
+        assert_eq!(px.len(), 128 * 64);
+        let at = |x: usize, y: usize| px[y * 128 + x];
+        assert_eq!((0..8).map(|y| at(0, y)).collect::<Vec<_>>(), [1; 8]);
+        assert_eq!((at(1, 0), at(1, 1)), (1, 0));
+        assert_eq!(at(0, 8), 0);
+        assert_eq!(px.iter().filter(|p| **p == 1).count(), 9);
+        // Invert, then display off: blank.
+        let e = write(&mut r, &[0x00, 0xA7]);
+        assert_eq!(
+            picture(&e).unwrap().iter().filter(|p| **p == 1).count(),
+            128 * 64 - 9
+        );
+        let e = write(&mut r, &[0x00, 0xAE]);
+        assert!(picture(&e).unwrap().iter().all(|p| *p == 0));
+    }
+
+    #[test]
+    fn ssd1306_page_mode_and_mirroring() {
+        let mut r = runtime(json!([
+            { "id": "oled", "kind": "ssd1306", "i2c": { "bus": 0, "address": 60 } }
+        ]));
+        r.init();
+        // Reset defaults (page mode, no remap): u8g2-style page 1, column 3.
+        write(&mut r, &[0x00, 0xAF, 0xB1, 0x03, 0x10]);
+        let e = write(&mut r, &[0x40, 0x01]);
+        let px = picture(&e).unwrap();
+        // Without A1/C8 the picture is mirrored both ways, as on a real module.
+        assert_eq!(px[(63 - 8) * 128 + (127 - 3)], 1);
+        assert_eq!(px.iter().filter(|p| **p == 1).count(), 1);
     }
 
     #[test]

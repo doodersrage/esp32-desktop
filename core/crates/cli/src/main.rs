@@ -449,7 +449,8 @@ enum SimCmd {
         /// Stay halted until a debugger continues the target.
         #[arg(long)]
         paused: bool,
-        /// Save each new picture on QEMU's virtual RGB panel as frame-NNNN.ppm here.
+        /// Save each new picture here: QEMU's virtual RGB panel as frame-NNNN.ppm, and
+        /// display parts (an SSD1306...) as <part>-NNNN.pgm.
         #[arg(long)]
         frames: Option<PathBuf>,
         /// A circuit file (schema/circuit) whose parts to run: their pins are bridged,
@@ -889,7 +890,18 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         }
                         Some(esp32bench_sim::gpio::PinEvent::Picture { id, width, height, pixels }) => {
                             let lit = pixels.iter().filter(|p| **p != 0).count();
-                            eprintln!("[{id} picture {width}x{height}, {lit} pixels lit]");
+                            match &frames {
+                                Some(dir) => {
+                                    // A part's picture as PGM: lit pixels white.
+                                    saved += 1;
+                                    let path = dir.join(format!("{id}-{saved:04}.pgm"));
+                                    let mut pgm = format!("P5\n{width} {height}\n255\n").into_bytes();
+                                    pgm.extend(pixels.iter().map(|p| if *p != 0 { 255u8 } else { 0 }));
+                                    std::fs::write(&path, pgm)?;
+                                    eprintln!("[{id} picture {width}x{height}, {lit} pixels lit: {}]", path.display());
+                                }
+                                None => eprintln!("[{id} picture {width}x{height}, {lit} pixels lit]"),
+                            }
                         }
                         None => gpio = None,
                     },

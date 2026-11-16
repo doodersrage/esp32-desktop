@@ -130,7 +130,7 @@ pub struct Model {
 }
 
 /// The models built into the program: (description, script).
-const BUILT_IN: [(&str, &str); 4] = [
+const BUILT_IN: [(&str, &str); 5] = [
     (
         include_str!("../models/led.json"),
         include_str!("../models/led.rhai"),
@@ -146,6 +146,10 @@ const BUILT_IN: [(&str, &str); 4] = [
     (
         include_str!("../models/rgb-led.json"),
         include_str!("../models/rgb-led.rhai"),
+    ),
+    (
+        include_str!("../models/ssd1306.json"),
+        include_str!("../models/ssd1306.rhai"),
     ),
 ];
 
