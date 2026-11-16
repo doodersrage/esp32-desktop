@@ -20,6 +20,7 @@ A native Linux desktop workbench and simulator for ESP32 boards, built for KDE P
 ## Documents
 
 - [docs/PLAN.md](docs/PLAN.md): the full plan, decisions, phases and risks.
+- [docs/PHASE0.md](docs/PHASE0.md): checklist and exit criteria for the QEMU spike.
 - [CLAUDE.md](CLAUDE.md): working rules for Claude Code in this repo.
 
 ## Licence

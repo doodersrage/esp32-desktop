@@ -6,7 +6,9 @@ The plan is in `docs/PLAN.md`. Read it before any design work. It is the source 
 
 ## Current state
 
-Planning only. The repo has no code yet. The next step is phase 0: a Rust CLI that boots a hello-world in QEMU.
+Planning only. The repo has no code yet. The next step is phase 0: a Rust CLI that boots a hello-world in QEMU. Its checklist and exit criteria are in `docs/PHASE0.md`.
+
+CI is in `.github/workflows/ci.yml`. Its jobs skip until `core/Cargo.toml` and `ui/CMakeLists.txt` exist.
 
 The commands and paths below are the intended layout. If one does not exist yet, create it as described here; do not invent a different structure.
 
