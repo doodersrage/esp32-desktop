@@ -1181,11 +1181,23 @@ async fn sim_wait_for(c: &mut Client, sub: &Value, marker: &str) {
     }
 }
 
+/// The engine sim.start should pick here: the fork once it is built (and the host
+/// binary sits next to the tests), else Espressif's QEMU.
+fn expected_engine() -> &'static str {
+    match esp32bench_sim::engine::launch(esp32bench_sim::Chip::Esp32, None) {
+        Ok(l) => l.engine.as_str(),
+        Err(_) => "espressif",
+    }
+}
+
 fn qemu_processes() -> usize {
     std::fs::read_dir("/proc")
         .unwrap()
         .filter_map(|e| std::fs::read_to_string(e.ok()?.path().join("cmdline")).ok())
-        .filter(|c| c.contains("qemu-system") && c.contains("esp32bench"))
+        .filter(|c| {
+            (c.contains("qemu-system") || c.contains("esp32bench-qemu-host"))
+                && c.contains("esp32bench")
+        })
         .count()
 }
 
@@ -1212,6 +1224,8 @@ async fn sim_runs_a_build_with_console_and_reset() {
         .unwrap();
     assert_valid(&method_def("sim.start")["result"], &r, "sim.start result");
     assert_eq!(r["chip"], "esp32");
+    assert_eq!(r["engine"], expected_engine());
+    eprintln!("engine: {}", r["engine"]);
     let sub = r["subscription"].clone();
     sim_wait_for(&mut c, &sub, "esp32bench-hello ready").await;
 
@@ -1303,6 +1317,8 @@ async fn sim_debugs_a_build_with_gdb() {
         .unwrap();
     assert_valid(&method_def("sim.start")["result"], &r, "sim.start result");
     assert_eq!(r["debug"], true);
+    assert_eq!(r["engine"], expected_engine());
+    eprintln!("engine: {}", r["engine"]);
     let sub = r["subscription"].clone();
     // Starts paused at the reset vector.
     debug_wait(&mut c, &sub, "debug.stopped").await;

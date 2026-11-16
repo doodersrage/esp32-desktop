@@ -4,6 +4,7 @@
 //! Espressif's QEMU fork. It does not model circuits.
 
 pub mod chip;
+pub mod engine;
 pub mod error;
 pub mod gdb;
 pub mod image;
@@ -15,5 +16,6 @@ pub mod session;
 pub mod uart;
 
 pub use chip::{Arch, Chip};
+pub use engine::{Engine, Launch};
 pub use error::Error;
 pub use session::{Session, SessionConfig};

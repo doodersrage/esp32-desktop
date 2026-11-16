@@ -250,10 +250,10 @@ struct SessionArgs {
     /// One extra QEMU argument, passed as-is. Repeat for more: `--qemu-arg=-nic --qemu-arg=user`.
     #[arg(long = "qemu-arg", allow_hyphen_values = true)]
     qemu_args: Vec<String>,
-    /// Run on lcgamboa's fork, as built by `toolchain install qemu-lcgamboa`, with its
-    /// machine for the chip.
+    /// QEMU to run on: lcgamboa (the fork `toolchain install qemu-lcgamboa` builds)
+    /// or espressif. Default: lcgamboa when it is built, as the app does.
     #[arg(long, conflicts_with = "qemu")]
-    lcgamboa: bool,
+    engine: Option<esp32bench_sim::Engine>,
 }
 
 #[derive(Subcommand)]
@@ -834,33 +834,33 @@ fn print_ports(ports: &[esp32bench_device::Port], json: bool, pretty: bool) -> R
 }
 
 async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
-    let mut extra_args: Vec<std::ffi::OsString> = Vec::new();
-    let mut machine = a.machine;
-    let qemu = if a.lcgamboa {
-        let build = esp32bench_sim::lcgamboa::Build::find().context(
-            "lcgamboa's QEMU is not built; run `esp32bench toolchain install qemu-lcgamboa`",
-        )?;
-        extra_args.extend(build.qemu_args());
-        machine.get_or_insert_with(|| esp32bench_sim::lcgamboa::machine(a.chip).to_owned());
-        build.executable(a.chip.arch())
-    } else {
-        match a.qemu {
-            Some(q) => q,
-            None => install::find_qemu(a.chip.arch())?,
+    let mut config = match a.qemu {
+        // An explicit binary: run it as given.
+        Some(qemu) => SessionConfig {
+            chip: a.chip,
+            qemu,
+            image: a.image,
+            gdb_port: None,
+            start_paused: false,
+            machine: None,
+            extra_args: Vec::new(),
+            env: Vec::new(),
+        },
+        None => {
+            let launch = esp32bench_sim::engine::launch(a.chip, a.engine)?;
+            eprintln!("engine: {}", launch.engine.as_str());
+            launch.config(a.chip, a.image)
         }
     };
-    extra_args.extend(a.qemu_args.into_iter().map(Into::into));
-    let s = Session::start(SessionConfig {
-        chip: a.chip,
-        qemu,
-        image: a.image,
-        gdb_port: a.gdb,
-        start_paused,
-        machine,
-        extra_args,
-        env: Vec::new(),
-    })
-    .await?;
+    config.gdb_port = a.gdb;
+    config.start_paused = start_paused;
+    if a.machine.is_some() {
+        config.machine = a.machine;
+    }
+    config
+        .extra_args
+        .extend(a.qemu_args.into_iter().map(Into::into));
+    let s = Session::start(config).await?;
     Ok(s)
 }
 

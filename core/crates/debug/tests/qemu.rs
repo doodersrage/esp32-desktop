@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use esp32bench_debug::{Event, Gdb, find_gdb};
+use esp32bench_sim::Engine;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 fn repo() -> PathBuf {
@@ -48,40 +49,47 @@ async fn breaks_in_app_main_and_steps(chip: esp32bench_sim::Chip, name: &str) {
     let data = std::env::var_os("HOME")
         .map(|h| PathBuf::from(h).join(".arduino15"))
         .unwrap_or_default();
-    let (Some(gdb), Ok(qemu)) = (
-        find_gdb(&data, name),
-        esp32bench_sim::install::find_qemu(chip.arch()),
-    ) else {
-        eprintln!("skipping: needs QEMU and the Arduino core's GDB");
+    let Some(gdb) = find_gdb(&data, name) else {
+        eprintln!("skipping: needs the Arduino core's GDB");
         return;
     };
     if !elf.is_file() || !image.is_file() {
         eprintln!("skipping: run tests/firmware/build.sh first");
         return;
     }
+    // On every engine installed here.
+    for engine in [Engine::Espressif, Engine::Lcgamboa] {
+        let Ok(launch) = esp32bench_sim::engine::launch(chip, Some(engine)) else {
+            eprintln!("skipping {name} on {}: not installed", engine.as_str());
+            continue;
+        };
+        eprintln!("{name} on {}", engine.as_str());
+        debug_session(launch, chip, &gdb, &elf, image.clone()).await;
+    }
+}
+
+async fn debug_session(
+    launch: esp32bench_sim::Launch,
+    chip: esp32bench_sim::Chip,
+    gdb: &Path,
+    elf: &Path,
+    image: PathBuf,
+) {
     let port = {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         l.local_addr().unwrap().port()
     };
-    let mut session = esp32bench_sim::Session::start(esp32bench_sim::SessionConfig {
-        chip,
-        qemu,
-        image,
-        gdb_port: Some(port),
-        start_paused: true,
-        machine: None,
-        extra_args: Vec::new(),
-        env: Vec::new(),
-    })
-    .await
-    .unwrap();
+    let mut config = launch.config(chip, image);
+    config.gdb_port = Some(port);
+    config.start_paused = true;
+    let mut session = esp32bench_sim::Session::start(config).await.unwrap();
     // Keep UART0 drained, as the daemon does; the task owns QEMU until the test ends.
     let qemu_task = tokio::spawn(async move {
         while let Ok(Some(b)) = session.uart.read_chunk().await {
             let _ = b;
         }
     });
-    let (mut g, mut rx) = Gdb::start(&gdb, &elf).await.unwrap();
+    let (mut g, mut rx) = Gdb::start(gdb, elf).await.unwrap();
     g.connect(port).await.unwrap();
     let bkpt = g.break_insert("app_main").await.unwrap();
     assert_eq!(bkpt["func"], "app_main");

@@ -100,6 +100,15 @@ Details that matter for phase 4:
 - The out-of-tree executables do not find the ESP32 ROMs by themselves: pass `-L src/pc-bios` (`Build::qemu_args`).
 - Machines: `esp32-picsimlab`, `esp32s3`, `esp32c3-picsimlab` (`lcgamboa::machine`). The hello firmware boots and survives reset on all three (`core/crates/sim/tests/boot.rs`), and the GPIO and I2C hooks tests pass against the installed library.
 
+### The simulator on the fork (2026-11-16)
+
+Simulations run on the fork once it is built (`core/crates/sim/src/engine.rs`), else on Espressif's QEMU:
+
+- ESP32 and C3 run through `esp32bench-qemu-host` with the library, with no pins bridged and no socket. The I2C buses then answer no address, as on a board with nothing attached: the `i2c-scan` firmware finds nothing (`hooks.rs`, `*_empty_bus_scans_empty`). For comparison, the fork's plain executables ACK every address, and Espressif's QEMU shows a TMP105 at 0x48 on the ESP32.
+- The S3 runs on the fork's executable (`esp32s3` machine); its scan also finds nothing.
+- Every session gets `-nic none`. Without any `-nic`, the `wifi-sta` firmware already failed to connect on both forks, but the default is now explicit; a network needs a consent decision first (open question below).
+- Console, reset and GDB (breakpoints, stepping, registers) pass on all three chips on both engines (`core/crates/debug/tests/qemu.rs`, the daemon's `sim_*` tests).
+
 ## Open questions
 
 - Should simulator boot tests stub out Wi-Fi, or should a project be marked as "no simulator" when it starts Wi-Fi at boot? lcgamboa's fork answers this for ESP32 and C3 only.

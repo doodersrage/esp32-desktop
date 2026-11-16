@@ -228,3 +228,51 @@ async fn esp32c3_i2c_device() {
     )
     .await;
 }
+
+/// The simulator's own launch (no pins, no socket, no devices): an I2C scan finds
+/// nothing, as on a board with nothing attached. The fork's plain executables would
+/// ACK every address, and Espressif's QEMU shows a TMP105 at 0x48 on the ESP32.
+async fn empty_bus_scans_empty(chip: Chip) {
+    let Some(build) = esp32bench_sim::lcgamboa::Build::find() else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let image = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../../tests/firmware/out/i2c-scan-{chip}.bin"));
+    if !image.is_file() {
+        eprintln!("skipping {chip}: i2c-scan not built");
+        return;
+    }
+    let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
+    let launch = esp32bench_sim::engine::lcgamboa_launch(chip, &build, Some(&host)).unwrap();
+    let mut s = Session::start(launch.config(chip, image)).await.unwrap();
+    let mut text = Vec::new();
+    let found = s
+        .uart
+        .wait_for(b"scan done count=", Duration::from_secs(30), |b| {
+            text.extend_from_slice(b)
+        })
+        .await
+        .unwrap();
+    assert_eq!(found, WaitOutcome::Found);
+    // The count follows the marker.
+    let rest = s
+        .uart
+        .wait_for(b"\n", Duration::from_secs(5), |b| text.extend_from_slice(b))
+        .await
+        .unwrap();
+    assert_eq!(rest, WaitOutcome::Found);
+    let text = String::from_utf8_lossy(&text);
+    assert!(text.contains("scan done count=0"), "{text}");
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn esp32_empty_bus_scans_empty() {
+    empty_bus_scans_empty(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn esp32c3_empty_bus_scans_empty() {
+    empty_bus_scans_empty(Chip::Esp32c3).await;
+}

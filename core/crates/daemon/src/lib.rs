@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.11.0";
+pub const PROTOCOL: &str = "0.12.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -639,8 +639,10 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             format!("the build of `{}` has no ELF file to debug", p.project),
         ));
     }
-    let qemu = esp32bench_sim::install::find_qemu(chip.arch())
+    // lcgamboa's fork when it is built, else Espressif's QEMU.
+    let launch = esp32bench_sim::engine::launch(chip, None)
         .map_err(|e| RpcError::new(code::UNAVAILABLE, e.to_string()))?;
+    let engine = launch.engine;
     // QEMU's GDB stub listens on loopback only; any free port will do.
     let gdb_port = if p.debug {
         let l = std::net::TcpListener::bind("127.0.0.1:0")
@@ -653,19 +655,13 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
     } else {
         None
     };
-    let mut session = esp32bench_sim::Session::start(esp32bench_sim::SessionConfig {
-        chip,
-        qemu,
-        image,
-        gdb_port,
-        // Debugging starts paused at the first instruction, for breakpoints in setup.
-        start_paused: p.debug,
-        machine: None,
-        extra_args: Vec::new(),
-        env: Vec::new(),
-    })
-    .await
-    .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    let mut config = launch.config(chip, image);
+    config.gdb_port = gdb_port;
+    // Debugging starts paused at the first instruction, for breakpoints in setup.
+    config.start_paused = p.debug;
+    let mut session = esp32bench_sim::Session::start(config)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
     let mut debugger = match gdb_port {
         Some(port) => Some(start_debugger(&state, &chip_id, &elf, port).await?),
         None => None,
@@ -755,7 +751,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             let _ = session.shutdown().await;
         }
     });
-    Ok(json!({ "subscription": id, "chip": chip, "debug": p.debug }))
+    Ok(json!({ "subscription": id, "chip": chip, "debug": p.debug, "engine": engine }))
 }
 
 fn sim_sender(

@@ -22,6 +22,8 @@ pub enum Error {
     NoDataDir,
     #[error("building lcgamboa's QEMU failed at \"{step}\": {detail}")]
     Build { step: String, detail: String },
+    #[error("{0}")]
+    EngineMissing(&'static str),
     #[error("download of {url} failed: {detail}")]
     Download { url: String, detail: String },
     #[error("checksum mismatch for {url}: expected {expected}, got {actual}")]

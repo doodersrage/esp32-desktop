@@ -76,6 +76,10 @@ pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
     push("none");
     push("-monitor");
     push("none");
+    // No network unless asked for: lcgamboa's fork models Wi-Fi, and downloaded
+    // firmware must not reach the network without consent (rule 4).
+    push("-nic");
+    push("none");
     push("-S");
 
     let mut drive = OsString::from("file=");
@@ -369,6 +373,8 @@ mod tests {
                 "none",
                 "-monitor",
                 "none",
+                "-nic",
+                "none",
                 "-S",
                 "-drive",
                 "file=/run/s/flash.bin,if=mtd,format=raw",
@@ -392,6 +398,14 @@ mod tests {
             args[args.len() - 2..],
             ["-nic", "user,model=esp32_wifi; rm -rf /"]
         );
+    }
+
+    #[test]
+    fn no_network_by_default() {
+        let paths = SessionPaths::in_dir("/tmp/x".into());
+        let args = qemu_args(&cfg(Chip::Esp32, None), &paths);
+        let i = args.iter().position(|a| a == "-nic").unwrap();
+        assert_eq!(args[i + 1], "none");
     }
 
     #[test]

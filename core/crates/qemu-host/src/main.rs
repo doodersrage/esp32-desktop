@@ -9,8 +9,10 @@
 //! Settings come from the environment:
 //!
 //! - `ESP32BENCH_QEMU_LIB`: path to `libqemu-xtensa.so` or `libqemu-riscv32.so`.
-//! - `ESP32BENCH_GPIO_PINS`: comma-separated GPIO numbers to bridge, e.g. `2,4`.
-//! - `ESP32BENCH_GPIO_SOCK`: Unix socket path to listen on for one client.
+//! - `ESP32BENCH_GPIO_PINS` (optional): comma-separated GPIO numbers to bridge, e.g. `2,4`.
+//! - `ESP32BENCH_GPIO_SOCK` (optional): Unix socket path to listen on for one client.
+//!   Without it nothing is bridged: a plain simulation with nothing attached, where
+//!   the I2C buses answer no address.
 //! - `ESP32BENCH_I2C_DEVICES` (optional): comma-separated `<bus>:<hex address>` pairs,
 //!   e.g. `0:3c`. Each is a 256-byte register device: the first byte written after a
 //!   start sets the register pointer, later bytes write registers, and reads return
@@ -204,8 +206,11 @@ fn env(name: &str) -> Result<std::ffi::OsString, String> {
 
 fn run() -> Result<c_int, String> {
     let lib = env("ESP32BENCH_QEMU_LIB")?;
-    let sock = env("ESP32BENCH_GPIO_SOCK")?;
-    let gpios = parse_pins(&env("ESP32BENCH_GPIO_PINS")?.to_string_lossy())?;
+    let sock = std::env::var_os("ESP32BENCH_GPIO_SOCK");
+    let gpios = match std::env::var_os("ESP32BENCH_GPIO_PINS") {
+        Some(p) => parse_pins(&p.to_string_lossy())?,
+        None => Vec::new(),
+    };
 
     let i2c = match std::env::var_os("ESP32BENCH_I2C_DEVICES") {
         Some(v) => parse_i2c(&v.to_string_lossy())?,
@@ -234,10 +239,12 @@ fn run() -> Result<c_int, String> {
         rmt_event: on_rmt_event,
     }));
 
-    let listener = UnixListener::bind(&sock).map_err(|e| format!("binding {sock:?}: {e}"))?;
-    let (tx, rx) = mpsc::channel::<String>();
-    let _ = EVENTS.set(tx);
-    start_bridge(listener, rx, qemu.set_pin, qemu.bql_lock, qemu.bql_unlock);
+    if let Some(sock) = &sock {
+        let listener = UnixListener::bind(sock).map_err(|e| format!("binding {sock:?}: {e}"))?;
+        let (tx, rx) = mpsc::channel::<String>();
+        let _ = EVENTS.set(tx);
+        start_bridge(listener, rx, qemu.set_pin, qemu.bql_lock, qemu.bql_unlock);
+    }
 
     // argv for qemu_init: our own argv, unchanged. The strings must stay valid.
     let args: Vec<CString> = std::env::args_os()
@@ -258,7 +265,9 @@ fn run() -> Result<c_int, String> {
         (qemu.cleanup)(status);
         status
     };
-    let _ = std::fs::remove_file(&sock);
+    if let Some(sock) = &sock {
+        let _ = std::fs::remove_file(sock);
+    }
     Ok(status)
 }
 

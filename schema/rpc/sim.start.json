@@ -1,6 +1,6 @@
 {
   "method": "sim.start",
-  "description": "Run the last build of a project for a board (build.start's output) in QEMU. Only ESP32, ESP32-S3 and ESP32-C3 boards are simulated; others are workbench-only and refused. Returns a subscription: sim.output carries UART0, sim.exited says when QEMU stopped. sim.write and sim.reset act on it; core.unsubscribe stops QEMU, as does closing the connection. With debug: true, QEMU starts paused with its GDB stub on loopback and the core attaches the Arduino core's GDB to the build's ELF; debug.* methods and debug.stopped, debug.running and debug.exited events then work on the same subscription. The simulator is firmware-level: no Wi-Fi radio, no attached parts.",
+  "description": "Run the last build of a project for a board (build.start's output) in QEMU: lcgamboa's fork when it is built (ESP32 and C3 through its library, so I2C buses answer no address), else Espressif's prebuilt QEMU. There is no network. Only ESP32, ESP32-S3 and ESP32-C3 boards are simulated; others are workbench-only and refused. Returns a subscription: sim.output carries UART0, sim.exited says when QEMU stopped. sim.write and sim.reset act on it; core.unsubscribe stops QEMU, as does closing the connection. With debug: true, QEMU starts paused with its GDB stub on loopback and the core attaches the Arduino core's GDB to the build's ELF; debug.* methods and debug.stopped, debug.running and debug.exited events then work on the same subscription. The simulator is firmware-level: no Wi-Fi radio, no attached parts.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -44,6 +44,13 @@
       },
       "debug": {
         "type": "boolean"
+      },
+      "engine": {
+        "enum": [
+          "lcgamboa",
+          "espressif"
+        ],
+        "description": "The QEMU it runs on: lcgamboa's fork once the setup step has built it, else Espressif's prebuilt QEMU."
       }
     }
   },
@@ -68,7 +75,8 @@
       "result": {
         "subscription": 5,
         "chip": "esp32",
-        "debug": false
+        "debug": false,
+        "engine": "lcgamboa"
       }
     },
     {
@@ -80,7 +88,8 @@
       "result": {
         "subscription": 6,
         "chip": "esp32",
-        "debug": true
+        "debug": true,
+        "engine": "lcgamboa"
       }
     }
   ]
