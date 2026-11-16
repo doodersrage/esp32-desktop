@@ -34,6 +34,7 @@
                 "esp32-core",
                 "qemu-xtensa",
                 "qemu-riscv32",
+                "qemu-lcgamboa",
                 "device-access"
               ]
             },
@@ -128,6 +129,15 @@
             "wanted": "esp-develop-9.2.2-20261109",
             "path": "/home/u/.local/share/esp32bench/qemu/esp-develop-9.2.2-20261109/riscv32/qemu/bin/qemu-system-riscv32",
             "installable": true
+          },
+          {
+            "id": "qemu-lcgamboa",
+            "name": "QEMU with GPIO and I2C (lcgamboa)",
+            "neededFor": "simulator",
+            "state": "missing",
+            "wanted": "885a6e7061",
+            "installable": true,
+            "hint": "Built from source on this computer: several minutes and about 2 GB of disk."
           }
         ]
       }

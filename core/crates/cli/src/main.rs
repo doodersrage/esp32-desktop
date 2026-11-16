@@ -250,6 +250,10 @@ struct SessionArgs {
     /// One extra QEMU argument, passed as-is. Repeat for more: `--qemu-arg=-nic --qemu-arg=user`.
     #[arg(long = "qemu-arg", allow_hyphen_values = true)]
     qemu_args: Vec<String>,
+    /// Run on lcgamboa's fork, as built by `toolchain install qemu-lcgamboa`, with its
+    /// machine for the chip.
+    #[arg(long, conflicts_with = "qemu")]
+    lcgamboa: bool,
 }
 
 #[derive(Subcommand)]
@@ -594,7 +598,12 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 ToolchainCmd::Install { component } => {
                     let id = esp32bench_toolchain::Id::parse(&component)
                         .with_context(|| format!("unknown component `{component}`"))?;
-                    esp32bench_toolchain::install(&env, id, |l| println!("{l}")).await?;
+                    // Ctrl-C must drop the install so its build stops too: build steps
+                    // run in their own process group, out of the terminal's reach.
+                    tokio::select! {
+                        r = esp32bench_toolchain::install(&env, id, |l| println!("{l}")) => r?,
+                        _ = tokio::signal::ctrl_c() => bail!("interrupted"),
+                    }
                 }
             }
         }
@@ -825,18 +834,30 @@ fn print_ports(ports: &[esp32bench_device::Port], json: bool, pretty: bool) -> R
 }
 
 async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
-    let qemu = match a.qemu {
-        Some(q) => q,
-        None => install::find_qemu(a.chip.arch())?,
+    let mut extra_args: Vec<std::ffi::OsString> = Vec::new();
+    let mut machine = a.machine;
+    let qemu = if a.lcgamboa {
+        let build = esp32bench_sim::lcgamboa::Build::find().context(
+            "lcgamboa's QEMU is not built; run `esp32bench toolchain install qemu-lcgamboa`",
+        )?;
+        extra_args.extend(build.qemu_args());
+        machine.get_or_insert_with(|| esp32bench_sim::lcgamboa::machine(a.chip).to_owned());
+        build.executable(a.chip.arch())
+    } else {
+        match a.qemu {
+            Some(q) => q,
+            None => install::find_qemu(a.chip.arch())?,
+        }
     };
+    extra_args.extend(a.qemu_args.into_iter().map(Into::into));
     let s = Session::start(SessionConfig {
         chip: a.chip,
         qemu,
         image: a.image,
         gdb_port: a.gdb,
         start_paused,
-        machine: a.machine,
-        extra_args: a.qemu_args.into_iter().map(Into::into).collect(),
+        machine,
+        extra_args,
         env: Vec::new(),
     })
     .await?;

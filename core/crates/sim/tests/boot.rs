@@ -62,6 +62,47 @@ async fn boot_reset_and_quit(chip: Chip) {
     let Some((cfg, marker)) = setup(chip) else {
         return;
     };
+    boot_reset_and_quit_with(cfg, marker).await;
+}
+
+/// The same on lcgamboa's fork, as `toolchain install qemu-lcgamboa` builds it.
+async fn lcgamboa_boot_reset_and_quit(chip: Chip) {
+    let Some(build) = esp32bench_sim::lcgamboa::Build::find() else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let Some((image, marker)) = image_for(chip) else {
+        return;
+    };
+    let cfg = SessionConfig {
+        chip,
+        qemu: build.executable(chip.arch()),
+        image,
+        gdb_port: None,
+        start_paused: false,
+        machine: Some(esp32bench_sim::lcgamboa::machine(chip).to_owned()),
+        extra_args: build.qemu_args(),
+        env: Vec::new(),
+    };
+    boot_reset_and_quit_with(cfg, marker).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32_boots() {
+    lcgamboa_boot_reset_and_quit(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32s3_boots() {
+    lcgamboa_boot_reset_and_quit(Chip::Esp32s3).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32c3_boots() {
+    lcgamboa_boot_reset_and_quit(Chip::Esp32c3).await;
+}
+
+async fn boot_reset_and_quit_with(cfg: SessionConfig, marker: &[u8]) {
     let dir = {
         let mut s = Session::start(cfg).await.unwrap();
         let dir = s.paths().dir.clone();

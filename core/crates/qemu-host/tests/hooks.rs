@@ -7,7 +7,8 @@
 //!
 //! Needs a library build of the fork (`build_libqemu-esp32.sh`) and the test
 //! firmware (`tests/firmware/build.sh gpio`, `... i2c-scan`). Set `ESP32BENCH_TEST_QEMU_LIB_XTENSA`
-//! and/or `ESP32BENCH_TEST_QEMU_LIB_RISCV32` to `<fork>/build/libqemu-*.so`; the ROMs
+//! and/or `ESP32BENCH_TEST_QEMU_LIB_RISCV32` to `<fork>/build/libqemu-*.so`, or build
+//! the fork with `esp32bench toolchain install qemu-lcgamboa`; the ROMs
 //! are taken from `<fork>/pc-bios`. Without them the test is skipped.
 
 use std::ffi::OsString;
@@ -29,8 +30,13 @@ async fn start(
     project: &str,
     extra_env: &[(&str, &str)],
 ) -> Option<(Session, PathBuf)> {
-    let Some(lib) = std::env::var_os(lib_var).map(PathBuf::from) else {
-        eprintln!("skipping {project} on {chip}: {lib_var} not set");
+    // The variable wins; otherwise the build `esp32bench toolchain install
+    // qemu-lcgamboa` made.
+    let Some(lib) = std::env::var_os(lib_var)
+        .map(PathBuf::from)
+        .or_else(|| esp32bench_sim::lcgamboa::Build::find().map(|b| b.library(chip.arch())))
+    else {
+        eprintln!("skipping {project} on {chip}: {lib_var} not set and the fork is not built");
         return None;
     };
     let image = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

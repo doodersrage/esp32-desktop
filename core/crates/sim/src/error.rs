@@ -20,6 +20,8 @@ pub enum Error {
     QemuNotInstalled { arch: Arch, path: PathBuf },
     #[error("no home or data directory: set XDG_DATA_HOME or HOME")]
     NoDataDir,
+    #[error("building lcgamboa's QEMU failed at \"{step}\": {detail}")]
+    Build { step: String, detail: String },
     #[error("download of {url} failed: {detail}")]
     Download { url: String, detail: String },
     #[error("checksum mismatch for {url}: expected {expected}, got {actual}")]

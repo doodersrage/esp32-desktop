@@ -850,6 +850,7 @@ async fn toolchain_status_matches_schema() {
             "esp32-core",
             "qemu-xtensa",
             "qemu-riscv32",
+            "qemu-lcgamboa",
             "device-access"
         ]
     );

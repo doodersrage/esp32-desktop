@@ -8,6 +8,7 @@ pub mod error;
 pub mod gdb;
 pub mod image;
 pub mod install;
+pub mod lcgamboa;
 pub mod pin;
 pub mod qmp;
 pub mod session;

@@ -15,6 +15,7 @@
           "esp32-core",
           "qemu-xtensa",
           "qemu-riscv32",
+          "qemu-lcgamboa",
           "device-access"
         ]
       }

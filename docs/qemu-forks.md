@@ -92,6 +92,14 @@ Details that matter for phase 4:
 - One catch-all device per bus answers every address, so the host decides for the whole bus. On ESP32 bus 0, NACKing 0x48 hides the fork's built-in TMP105.
 - In the plain executables the I2C callback is a no-op that ACKs everything, so a firmware scan finds all 112 addresses and reads return 0. Use the library build whenever a project uses I2C.
 
+### Building it in the app (2026-11-16)
+
+`esp32bench toolchain install qemu-lcgamboa` (the setup dialog's Install button) builds the pinned commit without root into `~/.local/share/esp32bench/qemu/lcgamboa-885a6e7061/`: a shallow fetch of the commit, the executables out of tree in `src/build-exe/`, then the fork's `build_libqemu-esp32.sh` for the libraries in `src/build/`. An `installed` marker naming the commit is written last; the build runs in a staging directory, and a failed or cancelled build removes it. About 1.9 GB on disk, 90 seconds on a 16-thread machine.
+
+- Before building it checks for git, make, gcc, pkg-config, ninja, python, perl, glib2, pixman, libgcrypt and libslirp, and shows the `pacman` command for anything missing.
+- The out-of-tree executables do not find the ESP32 ROMs by themselves: pass `-L src/pc-bios` (`Build::qemu_args`).
+- Machines: `esp32-picsimlab`, `esp32s3`, `esp32c3-picsimlab` (`lcgamboa::machine`). The hello firmware boots and survives reset on all three (`core/crates/sim/tests/boot.rs`), and the GPIO and I2C hooks tests pass against the installed library.
+
 ## Open questions
 
 - Should simulator boot tests stub out Wi-Fi, or should a project be marked as "no simulator" when it starts Wi-Fi at boot? lcgamboa's fork answers this for ESP32 and C3 only.

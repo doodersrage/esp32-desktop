@@ -119,7 +119,7 @@ async fn reports_installed_core() {
     let s = status(&env(dir.path(), Some(cli))).await;
     let ids: Vec<Id> = s.iter().map(|c| c.id).collect();
     assert_eq!(ids, Id::ALL);
-    assert_eq!(s[4].needed_for, "hardware");
+    assert_eq!(s[5].needed_for, "hardware");
 
     assert_eq!(s[0].state, State::Installed);
     assert_eq!(s[0].version.as_deref(), Some("1.5.1"));
@@ -280,4 +280,30 @@ fn write_script(path: &std::path::Path, content: impl AsRef<[u8]>) {
         .write_all(content.as_ref())
         .unwrap();
     assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn lcgamboa_status_says_what_building_needs() {
+    use esp32bench_sim::lcgamboa::{Build, Requirement};
+    let c = esp32bench_toolchain::lcgamboa_status(None, &[]);
+    assert_eq!(c.state, State::Missing);
+    assert!(c.installable);
+    assert!(c.hint.unwrap().contains("2 GB"));
+
+    let missing = [Requirement {
+        what: "ninja",
+        package: "ninja",
+    }];
+    let c = esp32bench_toolchain::lcgamboa_status(None, &missing);
+    assert!(!c.installable);
+    assert!(c.hint.unwrap().contains("sudo pacman -S --needed ninja"));
+
+    let built = Build { root: "/x".into() };
+    let c = esp32bench_toolchain::lcgamboa_status(Some(built), &missing);
+    assert_eq!(c.state, State::Installed);
+    assert_eq!(
+        c.version.as_deref(),
+        Some(esp32bench_sim::lcgamboa::short_commit())
+    );
+    assert_eq!(c.hint, None);
 }

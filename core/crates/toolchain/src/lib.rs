@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use esp32bench_build::{Stream, Toolchain};
-use esp32bench_sim::{Arch, install, pin};
+use esp32bench_sim::{Arch, install, lcgamboa, pin};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::process::Command;
@@ -29,15 +29,17 @@ pub enum Id {
     Esp32Core,
     QemuXtensa,
     QemuRiscv32,
+    QemuLcgamboa,
     DeviceAccess,
 }
 
 impl Id {
-    pub const ALL: [Id; 5] = [
+    pub const ALL: [Id; 6] = [
         Id::ArduinoCli,
         Id::Esp32Core,
         Id::QemuXtensa,
         Id::QemuRiscv32,
+        Id::QemuLcgamboa,
         Id::DeviceAccess,
     ];
 
@@ -51,6 +53,7 @@ impl Id {
             Id::Esp32Core => "esp32-core",
             Id::QemuXtensa => "qemu-xtensa",
             Id::QemuRiscv32 => "qemu-riscv32",
+            Id::QemuLcgamboa => "qemu-lcgamboa",
             Id::DeviceAccess => "device-access",
         }
     }
@@ -308,11 +311,49 @@ pub async fn status(env: &Env) -> Vec<Component> {
         });
     }
 
+    out.push(lcgamboa_status(
+        lcgamboa::Build::find(),
+        &lcgamboa::missing_requirements().await,
+    ));
+
     let rule = UDEV_DIRS
         .iter()
         .any(|d| Path::new(d).join(UDEV_RULE).is_file());
     out.push(board_access(rule, in_group("uucp")));
     out
+}
+
+/// lcgamboa's fork, built from source: what is missing to build it, if it is not built.
+pub fn lcgamboa_status(
+    build: Option<lcgamboa::Build>,
+    missing: &[lcgamboa::Requirement],
+) -> Component {
+    let hint = match (&build, lcgamboa::install_hint(missing)) {
+        (Some(_), _) => None,
+        (None, Some(cmd)) => Some(format!(
+            "Building it needs tools that are not installed. Install them with: {cmd}"
+        )),
+        (None, None) => Some(
+            "Built from source on this computer: several minutes and about 2 GB of disk."
+                .to_owned(),
+        ),
+    };
+    Component {
+        id: Id::QemuLcgamboa,
+        name: "QEMU with GPIO and I2C (lcgamboa)",
+        needed_for: "simulator",
+        state: if build.is_some() {
+            State::Installed
+        } else {
+            State::Missing
+        },
+        version: build.as_ref().map(|_| lcgamboa::short_commit().to_owned()),
+        wanted: Some(lcgamboa::short_commit().to_owned()),
+        path: build.map(|b| b.root),
+        download_bytes: None,
+        installable: missing.is_empty(),
+        hint,
+    }
 }
 
 /// The installed version of esp32:esp32 from `arduino-cli core list --format json`.
@@ -424,6 +465,16 @@ pub async fn install(env: &Env, id: Id, mut log: impl FnMut(String)) -> Result<(
                     .map_err(|e| InstallError::Failed(e.to_string()))?;
             }
             Ok(())
+        }
+        Id::QemuLcgamboa => {
+            log(format!(
+                "Building lcgamboa's QEMU {} from source. This takes several minutes.",
+                lcgamboa::short_commit()
+            ));
+            lcgamboa::build(log)
+                .await
+                .map(|_| ())
+                .map_err(|e| InstallError::Failed(e.to_string()))
         }
         Id::QemuXtensa | Id::QemuRiscv32 => {
             let arch = if id == Id::QemuXtensa {
