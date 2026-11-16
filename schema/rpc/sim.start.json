@@ -1,6 +1,6 @@
 {
   "method": "sim.start",
-  "description": "Run the last build of a project for a board (build.start's output) in QEMU: lcgamboa's fork when it is built (ESP32 and C3 through its library, so I2C buses answer no address), else Espressif's prebuilt QEMU. There is no network. Only ESP32, ESP32-S3 and ESP32-C3 boards are simulated; others are workbench-only and refused. Returns a subscription: sim.output carries UART0, sim.exited says when QEMU stopped. sim.write and sim.reset act on it; core.unsubscribe stops QEMU, as does closing the connection. With debug: true, QEMU starts paused with its GDB stub on loopback and the core attaches the Arduino core's GDB to the build's ELF; debug.* methods and debug.stopped, debug.running and debug.exited events then work on the same subscription. The simulator is firmware-level: no Wi-Fi radio, no attached parts.",
+  "description": "Run the last build of a project for a board (build.start's output) in QEMU: lcgamboa's fork when it is built (ESP32 and C3 through its library, so I2C buses answer no address), else Espressif's prebuilt QEMU. There is no network. Only ESP32, ESP32-S3 and ESP32-C3 boards are simulated; others are workbench-only and refused. Returns a subscription: sim.output carries UART0, sim.frame the virtual RGB panel once firmware draws on it, sim.exited says when QEMU stopped. sim.write and sim.reset act on it; core.unsubscribe stops QEMU, as does closing the connection. With debug: true, QEMU starts paused with its GDB stub on loopback and the core attaches the Arduino core's GDB to the build's ELF; debug.* methods and debug.stopped, debug.running and debug.exited events then work on the same subscription. The simulator is firmware-level: no Wi-Fi radio, no attached parts.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -61,6 +61,7 @@
   ],
   "events": [
     "sim.output",
+    "sim.frame",
     "sim.exited",
     "debug.stopped",
     "debug.running",

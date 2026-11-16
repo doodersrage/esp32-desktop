@@ -109,6 +109,16 @@ Simulations run on the fork once it is built (`core/crates/sim/src/engine.rs`), 
 - Every session gets `-nic none`. Without any `-nic`, the `wifi-sta` firmware already failed to connect on both forks, but the default is now explicit; a network needs a consent decision first (open question below).
 - Console, reset and GDB (breakpoints, stepping, registers) pass on all three chips on both engines (`core/crates/debug/tests/qemu.rs`, the daemon's `sim_*` tests).
 
+### The virtual display (2026-11-16)
+
+Both forks have Espressif's virtual RGB panel (`hw/display/esp_rgb.c`), which firmware draws on with the `esp_lcd_qemu_rgb` component (pinned at 1.0.2 in `tests/firmware/rgb`). Findings:
+
+- **The panel needs a display refresh.** The driver's draw call spins until the device marks the update done, and the device does that only when a display refreshes it. With `-display none` nothing does, so the first draw hangs and the task watchdog fires. QMP `screendump` refreshes it, so the core polls every session with `screendump` (every 40 ms while the picture changes, 100 ms otherwise; about 1 ms each at 320x240). The same poll gives the picture.
+- **An unconfigured panel is 800x600 in one colour.** Frames are reported only once the picture differs from that, so firmware without a display shows nothing.
+- **The fork's library build had no display:** its script disables pixman, so QEMU stubs out display surfaces and has no `screendump`. Patch 0001 enables it.
+- **`esp32-picsimlab` did not read "QEMU"** at APB_CTRL + 0x78, which the driver checks, so it refused the panel ("not available on real hardware"). The fork's `esp32` machine sets it by adding the date register's memory region a second time, which is the assertion that makes that machine abort. Patch 0002 gives the register its own region.
+- With both patches the `rgb` test firmware draws and updates on all three chips on both forks (`core/crates/sim/tests/display.rs`).
+
 ## Open questions
 
 - Should simulator boot tests stub out Wi-Fi, or should a project be marked as "no simulator" when it starts Wi-Fi at boot? lcgamboa's fork answers this for ESP32 and C3 only.

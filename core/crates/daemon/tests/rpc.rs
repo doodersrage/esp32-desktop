@@ -601,28 +601,20 @@ async fn build_refuses_prebuilt_and_unknown_projects() {
 /// A pty pair: the master fd (the "board") and the slave path (the "port").
 fn pty() -> (std::os::fd::OwnedFd, PathBuf) {
     use std::os::fd::FromRawFd;
-    let (mut master, mut slave) = (-1, -1);
+    // posix_openpt with O_CLOEXEC, not openpty: openpty's descriptors are inheritable
+    // until a later fcntl, and a QEMU spawned by a parallel test in that window keeps
+    // the master open, so dropping it here would no longer hang up the port. The
+    // slave is never opened here; the code under test opens it by path.
+    // SAFETY: plain libc calls on the fd posix_openpt returns, with a large enough
+    // name buffer for ptsname_r.
+    let master = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC) };
+    assert!(master >= 0, "posix_openpt failed");
     let mut name = [0 as libc::c_char; 128];
-    // SAFETY: openpty with valid out-pointers and a large enough name buffer.
-    let r = unsafe {
-        libc::openpty(
-            &mut master,
-            &mut slave,
-            name.as_mut_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-        )
-    };
-    assert_eq!(r, 0);
-    // Close-on-exec: otherwise QEMU processes that parallel tests spawn inherit the
-    // master, and dropping it here no longer hangs up the port.
-    // SAFETY: fcntl on fds openpty just returned.
     unsafe {
-        libc::fcntl(master, libc::F_SETFD, libc::FD_CLOEXEC);
-        libc::fcntl(slave, libc::F_SETFD, libc::FD_CLOEXEC);
+        assert_eq!(libc::grantpt(master), 0);
+        assert_eq!(libc::unlockpt(master), 0);
+        assert_eq!(libc::ptsname_r(master, name.as_mut_ptr(), name.len()), 0);
     }
-    // SAFETY: fresh fds from openpty; the slave is reopened by path.
-    unsafe { libc::close(slave) };
     let path = unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }
         .to_string_lossy()
         .into_owned();
@@ -1475,6 +1467,62 @@ async fn debug_needs_a_debug_session() {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
         other => panic!("debug on no simulator: {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn sim_sends_the_virtual_panel() {
+    let Some(rgb) = firmware("rgb-esp32.bin") else {
+        eprintln!("skipping: rgb firmware not built (tests/firmware/build.sh rgb)");
+        return;
+    };
+    if esp32bench_sim::engine::launch(esp32bench_sim::Chip::Esp32, None).is_err() {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    }
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&rgb, out.join("blink.ino.merged.bin")).unwrap();
+    let r = c
+        .call("sim.start", json!({ "project": "blink", "board": "esp32" }))
+        .await
+        .unwrap();
+    let sub = r["subscription"].clone();
+    use base64::Engine;
+    // Wait for the full four-quadrant picture.
+    loop {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(30), c.next_notification())
+            .await
+            .expect("no picture with all four quadrants")
+            .unwrap();
+        let method = n["method"].as_str().unwrap();
+        assert_valid(&method_def(method)["params"], &n["params"], method);
+        assert_eq!(n["params"]["subscription"], sub);
+        if method != "sim.frame" {
+            continue;
+        }
+        let p = &n["params"];
+        let (w, h) = (p["width"].as_u64().unwrap(), p["height"].as_u64().unwrap());
+        assert_eq!((w, h), (320, 240));
+        let rgb = base64::engine::general_purpose::STANDARD
+            .decode(p["data"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(rgb.len() as u64, w * h * 3);
+        let px = |x: u64, y: u64| {
+            let i = usize::try_from((y * w + x) * 3).unwrap();
+            [rgb[i], rgb[i + 1], rgb[i + 2]]
+        };
+        if px(250, 200) == [255, 255, 255] {
+            assert_eq!(px(250, 10), [0, 255, 0]);
+            assert_eq!(px(10, 200), [0, 0, 255]);
+            break;
+        }
+    }
+    c.call("core.unsubscribe", json!({ "subscription": sub }))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

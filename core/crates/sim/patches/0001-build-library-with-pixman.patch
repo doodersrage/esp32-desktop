@@ -1,0 +1,23 @@
+build_libqemu-esp32.sh: build the library with pixman
+
+The script disables every optional QEMU feature before enabling the few it
+needs. That includes pixman, without which QEMU stubs out display
+surfaces: the virtual RGB panel (esp_rgb) shows nothing and QMP has no
+screendump. Enable it.
+
+Applied by esp32bench (core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu
+at 885a6e7061fb70fac78a074a719423810bc19a17.
+
+diff --git a/build_libqemu-esp32.sh b/build_libqemu-esp32.sh
+index 8d51e51..969e6bb 100755
+--- a/build_libqemu-esp32.sh
++++ b/build_libqemu-esp32.sh
+@@ -18,7 +18,7 @@ flags="$(./configure --help | perl -ne 'print if s/^  ([a-z][\w-]*) .*/\1/' | ta
+ ${2:-.}/configure --target-list=$target --extra-cflags=-fPIC --disable-slirp $flags --enable-tcg \
+ 	--enable-system --disable-werror --disable-alsa  \
+         --enable-debug --enable-debug-info \
+-        --enable-gcrypt --enable-slirp 
++        --enable-gcrypt --enable-slirp --enable-pixman 
+ 	#--enable-gtk
+ 
+ make clean >/dev/null

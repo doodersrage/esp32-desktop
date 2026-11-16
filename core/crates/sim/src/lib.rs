@@ -4,6 +4,7 @@
 //! Espressif's QEMU fork. It does not model circuits.
 
 pub mod chip;
+pub mod display;
 pub mod engine;
 pub mod error;
 pub mod gdb;

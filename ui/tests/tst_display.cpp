@@ -1,0 +1,119 @@
+// DisplayPanel and CoreConnection's sim.frame handling against a fake core.
+
+#include "CoreConnection.h"
+#include "DisplayPanel.h"
+
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QPointer>
+#include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QTest>
+
+using namespace Qt::StringLiterals;
+
+class FakeCore : public QObject {
+    Q_OBJECT
+public:
+    explicit FakeCore(const QString &path)
+        : m_server(new QLocalServer(this))
+    {
+        QLocalServer::removeServer(path);
+        QVERIFY(m_server->listen(path));
+        connect(m_server, &QLocalServer::newConnection, this, [this] {
+            m_sock = m_server->nextPendingConnection();
+            connect(m_sock, &QLocalSocket::readyRead, m_sock, [this] {
+                while (m_sock->canReadLine())
+                    handle(QJsonDocument::fromJson(m_sock->readLine()).object());
+            });
+        });
+    }
+
+    // A width x height picture: the left half red, the right half blue.
+    void frame(int w, int h, const QString &format = u"rgb888"_s, int dropBytes = 0)
+    {
+        QByteArray rgb;
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x)
+                rgb += x < w / 2 ? QByteArray("\xff\x00\x00", 3) : QByteArray("\x00\x00\xff", 3);
+        rgb.chop(dropBytes);
+        send({{u"jsonrpc"_s, u"2.0"_s}, {u"method"_s, u"sim.frame"_s},
+              {u"params"_s, QJsonObject{{u"subscription"_s, 5}, {u"width"_s, w}, {u"height"_s, h},
+                                        {u"format"_s, format}, {u"data"_s, QString::fromLatin1(rgb.toBase64())}}}});
+    }
+
+private:
+    void send(const QJsonObject &o) { m_sock->write(QJsonDocument(o).toJson(QJsonDocument::Compact) + '\n'); }
+    void reply(const QJsonValue &id, const QJsonValue &r) { send({{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id}, {u"result"_s, r}}); }
+    void handle(const QJsonObject &req)
+    {
+        const QJsonValue id = req.value(u"id"_s);
+        const QString m = req.value(u"method"_s).toString();
+        if (m == u"core.hello")
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.13.0"_s}});
+        else if (m == u"sim.start")
+            reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false}, {u"engine"_s, u"lcgamboa"_s}});
+        else
+            reply(id, QJsonObject{});
+    }
+    QLocalServer *m_server;
+    QPointer<QLocalSocket> m_sock;
+};
+
+class TestDisplay : public QObject {
+    Q_OBJECT
+
+private:
+    QTemporaryDir m_dir;
+    QString path() const { return m_dir.filePath(u"core.sock"_s); }
+
+private slots:
+    void showsFramesSharplyAndOnlyFromItsSimulator()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        DisplayPanel panel(&core);
+        panel.resize(700, 600);
+        panel.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&panel));
+        QSignalSpy first(&panel, &DisplayPanel::firstFrame);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QVERIFY(panel.image().isNull());
+
+        core.startSim(u"blink"_s, u"esp32"_s);
+        QTRY_VERIFY(core.isSimRunning());
+        fake.frame(320, 240);
+        QTRY_COMPARE(panel.image().size(), QSize(320, 240));
+        QCOMPARE(panel.image().pixelColor(10, 10), QColor(255, 0, 0));
+        QCOMPARE(panel.image().pixelColor(300, 200), QColor(0, 0, 255));
+        QVERIFY(panel.statusText().contains(u"320"_s));
+        QCOMPARE(first.size(), 1);
+        // Room for twice the size: scaled by a whole number.
+        QCOMPARE(panel.scale(), 2);
+
+        // Bad frames are ignored rather than drawn wrong.
+        fake.frame(4, 4, u"rgb565"_s);
+        fake.frame(4, 4, u"rgb888"_s, 3);
+        fake.frame(160, 120);
+        QTRY_COMPARE(panel.image().size(), QSize(160, 120));
+        QCOMPARE(first.size(), 1); // still the same session
+
+        core.stopSim();
+        QTRY_VERIFY(panel.statusText().contains(u"stopped"_s));
+        QCOMPARE(panel.image().size(), QSize(160, 120)); // the last picture stays
+
+        // A new session starts clean and announces its first picture again.
+        core.startSim(u"blink"_s, u"esp32"_s);
+        QTRY_VERIFY(core.isSimRunning());
+        QVERIFY(panel.image().isNull());
+        fake.frame(320, 240);
+        QTRY_COMPARE(first.size(), 2);
+    }
+};
+
+QTEST_MAIN(TestDisplay)
+#include "tst_display.moc"

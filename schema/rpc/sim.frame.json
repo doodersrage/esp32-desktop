@@ -1,0 +1,52 @@
+{
+  "event": "sim.frame",
+  "description": "A new picture on QEMU's virtual RGB panel, the display firmware draws on with Espressif's esp_lcd_qemu_rgb driver. Sent only once the firmware has set the panel up, and then only when the picture changes (at most 25 a second). Real display parts (SSD1306, ST7789...) are not drawn here.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "width",
+      "height",
+      "format",
+      "data"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "width": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 2048
+      },
+      "height": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 2048
+      },
+      "format": {
+        "const": "rgb888",
+        "description": "3 bytes per pixel, red, green, blue; rows top to bottom with no padding."
+      },
+      "data": {
+        "type": "string",
+        "contentEncoding": "base64",
+        "description": "width * height * 3 bytes."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "width": 2,
+        "height": 1,
+        "format": "rgb888",
+        "data": "/wAAAP8A"
+      }
+    }
+  ]
+}

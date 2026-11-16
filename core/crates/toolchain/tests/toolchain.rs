@@ -285,7 +285,7 @@ fn write_script(path: &std::path::Path, content: impl AsRef<[u8]>) {
 #[test]
 fn lcgamboa_status_says_what_building_needs() {
     use esp32bench_sim::lcgamboa::{Build, Requirement};
-    let c = esp32bench_toolchain::lcgamboa_status(None, &[]);
+    let c = esp32bench_toolchain::lcgamboa_status(None, false, &[]);
     assert_eq!(c.state, State::Missing);
     assert!(c.installable);
     assert!(c.hint.unwrap().contains("2 GB"));
@@ -294,16 +294,21 @@ fn lcgamboa_status_says_what_building_needs() {
         what: "ninja",
         package: "ninja",
     }];
-    let c = esp32bench_toolchain::lcgamboa_status(None, &missing);
+    let c = esp32bench_toolchain::lcgamboa_status(None, false, &missing);
     assert!(!c.installable);
     assert!(c.hint.unwrap().contains("sudo pacman -S --needed ninja"));
 
     let built = Build { root: "/x".into() };
-    let c = esp32bench_toolchain::lcgamboa_status(Some(built), &missing);
+    let c = esp32bench_toolchain::lcgamboa_status(Some(built), false, &missing);
     assert_eq!(c.state, State::Installed);
     assert_eq!(
         c.version.as_deref(),
         Some(esp32bench_sim::lcgamboa::short_commit())
     );
     assert_eq!(c.hint, None);
+
+    let c = esp32bench_toolchain::lcgamboa_status(None, true, &[]);
+    assert_eq!(c.state, State::OtherVersion);
+    assert!(c.installable);
+    assert!(c.hint.unwrap().contains("older build"));
 }

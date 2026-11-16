@@ -1,6 +1,6 @@
 # Plan: Arch-native ESP32 workbench and simulator
 
-Last updated: 2026-11-15 (phase 0 done: fork and licence decided)
+Last updated: 2026-11-16 (phases 1 to 3 feature complete, awaiting checks on real hardware and Plasma)
 
 ## Summary
 
@@ -53,11 +53,13 @@ The simulator is firmware-level, not circuit-level. It runs on lcgamboa's fork o
 - **Chips:** ESP32 (on the fork's `esp32-picsimlab` machine; its plain `esp32` machine aborts at start-up), ESP32-S3 and ESP32-C3 (`esp32c3-picsimlab`).
 - **Firmware:** ESP-IDF v6.0.2 and ESP32 Arduino core 3.3.12 builds boot on all three. Older IDF 4.4 builds (Arduino core 2.x) fail flash init on S3 and C3.
 - **Console, reset and debugging:** UART0 in and out over a socket, QMP reset, and GDB breakpoints and stepping work on all three chips.
-- **Wi-Fi:** station and soft-AP on ESP32 and C3, against hard-coded open networks. Not on S3. Emulated networking gives guest firmware network access, so it needs consent and defaults to `restrict=on`.
+- **Wi-Fi:** station and soft-AP on ESP32 and C3, against hard-coded open networks. Not on S3. Emulated networking gives guest firmware network access, so it needs consent; until that exists, every session runs with `-nic none`.
 - **GPIO and I2C:** through the library build and a per-session host process, on ESP32 and C3 only. GPIO outputs are reported for GPIO 0–31 only. I2C answers are synchronous, so part models run inside the host process.
 - **S3:** boots, console and GDB only. No Wi-Fi, GPIO or I2C hooks, so no virtual parts.
 - **eFuses:** blank unless an eFuse image is supplied (the MAC reads as zeros). C3 Wi-Fi needs one.
-- **Unverified:** BLE, ADC (`qemu_picsimlab_set_apin` exists), SPI and RMT hooks, the framebuffer, and secure boot or flash encryption.
+- **Display:** QEMU's virtual RGB panel (firmware using Espressif's `esp_lcd_qemu_rgb`) shows in the app on all three chips, read through QMP `screendump`. Real display parts (SSD1306, ST7789...) are not modelled; that is phase 4 work.
+- **Patches:** the fork is built with two esp32bench patches (`core/crates/sim/patches/`): pixman in the library build, and the "QEMU" signature register on `esp32-picsimlab`, both for the display.
+- **Unverified:** BLE, ADC (`qemu_picsimlab_set_apin` exists), SPI and RMT hooks, and secure boot or flash encryption.
 - **Arch dependencies:** `libgcrypt glib2 pixman libslirp`, all in the official repos.
 
 ## Architecture
@@ -93,14 +95,14 @@ A Rust core process does the work and a Qt 6 UI shows it, talking over a local s
 
 ## Phases
 
-Phases 0 to 3 and 5 total about 33 weeks, roughly 8 months, at about 14 hours a week (11 weeks full-time). A usable workbench release lands after phase 2, about 21 weeks in. Phase 4 is open-ended. Phase 0 took about 4 hours, not 3 weeks, because prebuilt QEMU and an existing fork did most of the work; the later estimates are left as they are, since that says little about UI and hardware work.
+Phases 0 to 3 and 5 total about 33 weeks, roughly 8 months, at about 14 hours a week (11 weeks full-time). A usable workbench release lands after phase 2, about 21 weeks in. Phase 4 is open-ended. Phase 0 took about 4 hours, not 3 weeks, because prebuilt QEMU and an existing fork did most of the work. Phases 1 to 3 reached feature complete in two days of sessions (2026-11-15 and 16) against 27 estimated weeks; phases 4 and 5 will be rescaled once those phases pass their checks on Plasma and hardware and are marked done.
 
 | Phase | Deliverable | Rough effort at ~14 h/week |
 | --- | --- | --- |
 | 0. Spike (done 2026-11-15) | Run a hello-world in QEMU from a Rust CLI: launch, UART over socket, QMP reset, GDB attach. Run the same test against lcgamboa's fork with a current IDF build, write down each fork's peripheral gaps, and pick one. | 3 weeks; actual about 4 hours |
-| 1. Shell | Core daemon with its JSON-RPC API, and a Qt app with the project library imported from esp32-bench data, board detection, the serial monitor, arduino-cli builds and a first-run toolchain setup. | 12 weeks |
-| 2. Real hardware | Flash, erase, partition table and eFuse summary. Ship a udev rule and handle the `uucp` group. | 6 weeks |
-| 3. Simulator v1 | Build and pin lcgamboa's fork in the setup step (executables and library). Build, flash image, run in QEMU, with console, reset, GDB panel and embedded framebuffer. | 9 weeks |
+| 1. Shell (feature complete 2026-11-16; awaiting a Plasma check) | Core daemon with its JSON-RPC API, and a Qt app with the project library imported from esp32-bench data, board detection, the serial monitor, arduino-cli builds and a first-run toolchain setup. | 12 weeks |
+| 2. Real hardware (feature complete 2026-11-16; board operations checked on an ESP32-C3, erase and UART-bridge boards not yet) | Flash, erase, partition table and eFuse summary. Ship a udev rule and handle the `uucp` group. | 6 weeks |
+| 3. Simulator v1 (feature complete 2026-11-16; awaiting a Plasma check) | Build and pin lcgamboa's fork in the setup step (executables and library). Build, flash image, run in QEMU, with console, reset, GDB panel and embedded framebuffer. | 9 weeks |
 | 4. Virtual parts | LEDs, buttons and I2C sensors on a QGraphicsScene pin diagram, for ESP32 and C3, driven through the fork's library hooks. | 12+ weeks, open-ended |
 | 5. Packaging | PKGBUILD (`-git` and `-bin`) building both the Rust core and the Qt UI, desktop entry, optional deps declared, AUR submission. | 3 weeks |
 

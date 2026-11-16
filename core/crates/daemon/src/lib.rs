@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.12.0";
+pub const PROTOCOL: &str = "0.13.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -683,8 +683,33 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
         async move {
             let _entry = entry;
             use base64::Engine;
+            // The virtual RGB panel: polling it is what lets firmware's draws finish,
+            // so it runs for the whole session; frames go out only once it is in use.
+            let mut display = Some(esp32bench_sim::display::Display::new(&session.paths().dir.clone()));
             loop {
+                let wait = display.as_ref().map(esp32bench_sim::display::Display::interval);
                 tokio::select! {
+                    () = async {
+                        match wait {
+                            Some(w) => tokio::time::sleep(w).await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        let Some(d) = display.as_mut() else { continue };
+                        match d.poll(&mut session.qmp).await {
+                            Ok(Some(frame)) => {
+                                sub.send("sim.frame", json!({
+                                    "width": frame.width,
+                                    "height": frame.height,
+                                    "format": "rgb888",
+                                    "data": base64::engine::general_purpose::STANDARD.encode(&frame.rgb),
+                                }));
+                            }
+                            Ok(None) => {}
+                            // A QEMU without screendump: stop asking.
+                            Err(_) => display = None,
+                        }
+                    }
                     chunk = session.uart.read_chunk() => match chunk {
                         Ok(Some(bytes)) => {
                             let sent = sub.send("sim.output", json!({

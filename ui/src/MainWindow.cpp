@@ -10,6 +10,9 @@
 #include "SetupDialog.h"
 #include "SimulatorPanel.h"
 #include "DebugPanel.h"
+#include "DisplayPanel.h"
+
+#include <algorithm>
 
 #include <QAction>
 #include <QApplication>
@@ -80,6 +83,23 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     connect(core, &CoreConnection::simStarted, this, [this] {
         m_simDock->show();
         m_simDock->raise();
+    });
+
+    // The virtual RGB panel, on the right where the board would sit; it appears when
+    // firmware first draws on it.
+    m_displayDock = new QDockWidget(tr("Display"), this);
+    m_displayDock->setObjectName(u"displayDock"_s);
+    m_display = new DisplayPanel(core, m_displayDock);
+    m_displayDock->setWidget(m_display);
+    addDockWidget(Qt::RightDockWidgetArea, m_displayDock);
+    m_displayDock->hide();
+    connect(m_display, &DisplayPanel::firstFrame, this, [this] {
+        m_displayDock->show();
+        m_displayDock->raise();
+        // Wide enough for the picture at its own size, if the window allows.
+        const int want = std::min(m_display->sizeHint().width(), width() / 2);
+        if (m_displayDock->width() < want)
+            resizeDocks({m_displayDock}, {want}, Qt::Horizontal);
     });
 
     m_debugDock = new QDockWidget(tr("Debugger"), this);
@@ -211,6 +231,7 @@ void MainWindow::buildMenus()
     view->addAction(m_serialDock->toggleViewAction());
     view->addAction(m_simDock->toggleViewAction());
     view->addAction(m_debugDock->toggleViewAction());
+    view->addAction(m_displayDock->toggleViewAction());
 
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
     QAction *setup = tools->addAction(QIcon::fromTheme(u"configure"_s), tr("&Toolchain setup…"));

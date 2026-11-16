@@ -24,6 +24,8 @@ pub enum Error {
     Build { step: String, detail: String },
     #[error("{0}")]
     EngineMissing(&'static str),
+    #[error("QEMU's screendump was not a picture this program reads")]
+    BadScreendump,
     #[error("download of {url} failed: {detail}")]
     Download { url: String, detail: String },
     #[error("checksum mismatch for {url}: expected {expected}, got {actual}")]

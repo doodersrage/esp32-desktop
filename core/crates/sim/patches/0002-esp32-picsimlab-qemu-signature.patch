@@ -1,0 +1,36 @@
+esp32-picsimlab: make the "QEMU" signature register readable
+
+esp_lcd_qemu_rgb (the driver for QEMU's virtual RGB panel) checks that
+APB_CTRL + 0x78 reads "QEMU" (0x51454d55). The fork's esp32 machine sets
+it, but esp32-picsimlab does not, so firmware cannot open the panel on
+it. Give the register its own 4-byte RAM region; esp32.c reuses the
+date register's region, which trips QEMU's "subregion already has a
+container" assertion.
+
+Applied by esp32bench (core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu
+at 885a6e7061fb70fac78a074a719423810bc19a17. Same licence as the file
+it changes: GPL-2.0-or-later.
+
+diff --git a/hw/xtensa/esp32_picsimlab.c b/hw/xtensa/esp32_picsimlab.c
+index d8a199d..da5b133 100644
+--- a/hw/xtensa/esp32_picsimlab.c
++++ b/hw/xtensa/esp32_picsimlab.c
+@@ -784,6 +784,18 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
+     uint32_t apb_ctrl_date_reg_val = 0x16042000 | 0x80000000;  /* MSB indicates ECO3 silicon revision */
+     cpu_physical_memory_write(apb_ctrl_date_reg, &apb_ctrl_date_reg_val, 4);
+ 
++    /* The register before it (unused on real hardware) reads "QEMU", as on the esp32
++     * machine, so esp_lcd_qemu_rgb finds the virtual RGB panel. It gets its own
++     * region: esp32.c adds apbctrl_mem a second time, which is what makes that
++     * machine abort at start-up.
++     */
++    const hwaddr apb_ctrl_emu_reg = DR_REG_APB_CTRL_BASE + 0x78;
++    MemoryRegion *apbctrl_emu_mem = g_new(MemoryRegion, 1);
++    memory_region_init_ram(apbctrl_emu_mem, NULL, "esp32.apbctrl_emu_reg", 4 /* bytes */, &error_fatal);
++    memory_region_add_subregion(sys_mem, apb_ctrl_emu_reg, apbctrl_emu_mem);
++    const uint32_t apb_ctrl_emu_val = 0x51454d55; /* "QEMU" */
++    cpu_physical_memory_write(apb_ctrl_emu_reg, &apb_ctrl_emu_val, 4);
++
+     qemu_register_reset((QEMUResetHandler*) esp32_soc_reset, dev);
+ 
+ //PICSimLab gpio map

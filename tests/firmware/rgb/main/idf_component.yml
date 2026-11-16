@@ -1,0 +1,4 @@
+# Pinned (tests pin versions, CLAUDE.md rule 8). Apache-2.0; used only in this test
+# firmware, never in the app.
+dependencies:
+  espressif/esp_lcd_qemu_rgb: "==1.0.2"

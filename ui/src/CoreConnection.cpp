@@ -107,7 +107,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.12.0"_s},
+        {u"protocol"_s, u"0.13.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -213,7 +213,8 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
-    } else if (method == u"sim.output" || method == u"sim.exited" || method.startsWith(u"debug.")) {
+    } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.exited"
+               || method.startsWith(u"debug.")) {
         if (sub == m_simSub)
             handleSimEvent(method, params);
         else if (m_simSub == -1)
@@ -554,6 +555,17 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
 {
     if (method == u"sim.output") {
         emit simOutput(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        return;
+    }
+    if (method == u"sim.frame") {
+        const int w = params.value(u"width"_s).toInt();
+        const int h = params.value(u"height"_s).toInt();
+        const QByteArray rgb = QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1());
+        if (params.value(u"format"_s).toString() != u"rgb888" || w <= 0 || h <= 0
+            || rgb.size() != qsizetype(w) * h * 3)
+            return;
+        // Copy: the QImage must not point into the temporary byte array.
+        emit simFrame(QImage(reinterpret_cast<const uchar *>(rgb.constData()), w, h, w * 3, QImage::Format_RGB888).copy());
         return;
     }
     if (method == u"debug.stopped") {

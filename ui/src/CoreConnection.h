@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QList>
@@ -150,6 +151,8 @@ signals:
     // Simulator.
     void simStarted(const QString &project, const QString &board, const QString &chip);
     void simOutput(const QByteArray &bytes);
+    // A new picture on the simulator's virtual RGB panel (sim.frame).
+    void simFrame(const QImage &image);
     void simStopped(const QString &reason);
 
     // Debugger.

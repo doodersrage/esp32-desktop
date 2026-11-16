@@ -9,29 +9,20 @@ use esp32bench_serial::{Error, Event, Port};
 
 /// A pty pair: the master fd (the "board") and the path of the slave (the "port").
 fn pty() -> (OwnedFd, PathBuf) {
-    let mut master = -1;
-    let mut slave = -1;
+    // posix_openpt with O_CLOEXEC, not openpty: openpty's descriptors are inheritable
+    // until a later fcntl, and a QEMU spawned by a parallel test in that window keeps
+    // the master open, so dropping it here would no longer hang up the port. The
+    // slave is never opened here; the code under test opens it by path.
+    // SAFETY: plain libc calls on the fd posix_openpt returns, with a large enough
+    // name buffer for ptsname_r.
+    let master = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC) };
+    assert!(master >= 0, "posix_openpt failed");
     let mut name = [0 as libc::c_char; 128];
-    // SAFETY: openpty with valid out-pointers and a large enough name buffer.
-    let r = unsafe {
-        libc::openpty(
-            &mut master,
-            &mut slave,
-            name.as_mut_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-        )
-    };
-    assert_eq!(r, 0, "openpty failed");
-    // Close-on-exec: otherwise QEMU processes that parallel tests spawn inherit the
-    // master, and dropping it here no longer hangs up the port.
-    // SAFETY: fcntl on fds openpty just returned.
     unsafe {
-        libc::fcntl(master, libc::F_SETFD, libc::FD_CLOEXEC);
-        libc::fcntl(slave, libc::F_SETFD, libc::FD_CLOEXEC);
+        assert_eq!(libc::grantpt(master), 0);
+        assert_eq!(libc::unlockpt(master), 0);
+        assert_eq!(libc::ptsname_r(master, name.as_mut_ptr(), name.len()), 0);
     }
-    // SAFETY: openpty returned two fresh fds we now own; the slave is reopened by path.
-    unsafe { libc::close(slave) };
     let path = unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }
         .to_string_lossy()
         .into_owned();

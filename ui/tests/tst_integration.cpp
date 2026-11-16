@@ -3,6 +3,7 @@
 
 #include "CoreConnection.h"
 #include "DebugPanel.h"
+#include "DisplayPanel.h"
 #include "DevicesPanel.h"
 #include "BuildPanel.h"
 #include "LibraryPanel.h"
@@ -166,6 +167,24 @@ private slots:
                 QTRY_VERIFY(!core.isSimRunning());
             } else {
                 qWarning("hello ELF or GDB missing; debugger step skipped");
+            }
+
+            // Firmware that draws on QEMU's virtual RGB panel: the Display dock opens
+            // with its picture (red, green, blue and white quadrants).
+            const QString rgb = QStringLiteral(ESP32BENCH_SOURCE_DIR "/../tests/firmware/out/rgb-esp32.bin");
+            if (QFile::exists(rgb)) {
+                QVERIFY(QFile::remove(image));
+                QVERIFY(QFile::copy(rgb, image));
+                window.buildPanel()->simulateButton()->click();
+                QTRY_VERIFY_WITH_TIMEOUT(window.display()->image().size() == QSize(320, 240)
+                                             && window.display()->image().pixelColor(250, 200) == QColor(Qt::white),
+                                         30000);
+                QVERIFY(window.display()->isVisible());
+                QCOMPARE(window.display()->image().pixelColor(250, 10), QColor(0, 255, 0));
+                core.stopSim();
+                QTRY_VERIFY(!core.isSimRunning());
+            } else {
+                qWarning("rgb firmware missing; display step skipped");
             }
         } else {
             qWarning("hello firmware or QEMU missing; simulator step skipped");

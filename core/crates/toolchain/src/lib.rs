@@ -311,8 +311,10 @@ pub async fn status(env: &Env) -> Vec<Component> {
         });
     }
 
+    let outdated = lcgamboa::root().is_ok_and(|r| lcgamboa::Build::outdated_at(&r));
     out.push(lcgamboa_status(
         lcgamboa::Build::find(),
+        outdated,
         &lcgamboa::missing_requirements().await,
     ));
 
@@ -326,10 +328,14 @@ pub async fn status(env: &Env) -> Vec<Component> {
 /// lcgamboa's fork, built from source: what is missing to build it, if it is not built.
 pub fn lcgamboa_status(
     build: Option<lcgamboa::Build>,
+    outdated: bool,
     missing: &[lcgamboa::Requirement],
 ) -> Component {
     let hint = match (&build, lcgamboa::install_hint(missing)) {
         (Some(_), _) => None,
+        (None, None) if outdated => {
+            Some("An older build is installed; rebuild it (several minutes).".to_owned())
+        }
         (None, Some(cmd)) => Some(format!(
             "Building it needs tools that are not installed. Install them with: {cmd}"
         )),
@@ -342,10 +348,10 @@ pub fn lcgamboa_status(
         id: Id::QemuLcgamboa,
         name: "QEMU with GPIO and I2C (lcgamboa)",
         needed_for: "simulator",
-        state: if build.is_some() {
-            State::Installed
-        } else {
-            State::Missing
+        state: match (&build, outdated) {
+            (Some(_), _) => State::Installed,
+            (None, true) => State::OtherVersion,
+            (None, false) => State::Missing,
         },
         version: build.as_ref().map(|_| lcgamboa::short_commit().to_owned()),
         wanted: Some(lcgamboa::short_commit().to_owned()),

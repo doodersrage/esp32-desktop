@@ -23,6 +23,28 @@ pub const COMMIT: &str = "885a6e7061fb70fac78a074a719423810bc19a17";
 pub const REPO: &str = "https://github.com/lcgamboa/qemu.git";
 pub const DIR_ENV: &str = "ESP32BENCH_LCGAMBOA_DIR";
 const MARKER: &str = "installed";
+/// Bumped whenever the build steps change, so older builds are rebuilt.
+/// 2: the library is built with pixman, for the virtual RGB panel and screendump.
+/// 3: patches as files (PATCHES); esp32-picsimlab reads "QEMU" for the RGB driver.
+pub const RECIPE: u32 = 3;
+
+/// Changes esp32bench makes to the pinned commit, in order. Each file says what and
+/// why. Kept in `core/crates/sim/patches/` and built into the program, so an installed
+/// app can build the fork without the repo.
+pub const PATCHES: [(&str, &str); 2] = [
+    (
+        "0001.patch",
+        include_str!("../patches/0001-build-library-with-pixman.patch"),
+    ),
+    (
+        "0002.patch",
+        include_str!("../patches/0002-esp32-picsimlab-qemu-signature.patch"),
+    ),
+];
+
+fn marker_text() -> String {
+    format!("{COMMIT}\nrecipe {RECIPE}\n")
+}
 const TARGETS: &str = "xtensa-softmmu,riscv32-softmmu";
 
 /// The short form shown to people.
@@ -50,9 +72,14 @@ impl Build {
     /// The build under `root`, if it finished (the marker names the pinned commit).
     pub fn at(root: &Path) -> Option<Build> {
         let marker = std::fs::read_to_string(root.join(MARKER)).ok()?;
-        (marker.trim() == COMMIT).then(|| Build {
+        (marker == marker_text()).then(|| Build {
             root: root.to_owned(),
         })
+    }
+
+    /// Whether `root` holds a finished build from another commit or an older recipe.
+    pub fn outdated_at(root: &Path) -> bool {
+        root.join(MARKER).is_file() && Build::at(root).is_none()
     }
 
     /// The installed build, if any.
@@ -212,6 +239,18 @@ pub fn steps(jobs: usize) -> Vec<Step> {
             ],
             "src",
         ),
+        // Our patches (PATCHES), written next to src/ before the build.
+        s(
+            "Applying esp32bench's patches",
+            "git",
+            &[
+                "apply",
+                "--verbose",
+                "../patches/0001.patch",
+                "../patches/0002.patch",
+            ],
+            "src",
+        ),
         s(
             "Creating the executables' build directory",
             "mkdir",
@@ -351,7 +390,10 @@ pub async fn build(mut log: impl FnMut(String)) -> Result<Build, Error> {
     if staging.exists() {
         tokio::fs::remove_dir_all(&staging).await?;
     }
-    tokio::fs::create_dir_all(&staging).await?;
+    tokio::fs::create_dir_all(staging.join("patches")).await?;
+    for (name, text) in PATCHES {
+        tokio::fs::write(staging.join("patches").join(name), text).await?;
+    }
     // A failed or cancelled build removes its staging directory (most of 2 GB).
     let mut cleanup = RemoveOnDrop(Some(staging.clone()));
     let jobs = std::thread::available_parallelism().map_or(2, |n| n.get());
@@ -371,7 +413,7 @@ pub async fn build(mut log: impl FnMut(String)) -> Result<Build, Error> {
             }
         }
     }
-    tokio::fs::write(staging.join(MARKER), format!("{COMMIT}\n")).await?;
+    tokio::fs::write(staging.join(MARKER), marker_text()).await?;
     if root.exists() {
         tokio::fs::remove_dir_all(&root).await?;
     }
@@ -396,6 +438,8 @@ mod tests {
         std::fs::write(dir.path().join(MARKER), "0123456789abcdef\n").unwrap();
         assert_eq!(Build::at(dir.path()), None, "another commit");
         std::fs::write(dir.path().join(MARKER), format!("{COMMIT}\n")).unwrap();
+        assert_eq!(Build::at(dir.path()), None, "an older recipe");
+        std::fs::write(dir.path().join(MARKER), marker_text()).unwrap();
         let b = Build::at(dir.path()).unwrap();
         assert!(
             b.executable(Arch::Xtensa)
@@ -422,6 +466,16 @@ mod tests {
                 .any(|s| s.program == "make" && s.args == ["-j8"])
         );
         assert_eq!(steps.last().unwrap().args, ["build_libqemu-esp32.sh"]);
+        let apply = steps
+            .iter()
+            .find(|s| s.args.first().is_some_and(|a| a == "apply"))
+            .unwrap();
+        for (name, _) in PATCHES {
+            assert!(
+                apply.args.iter().any(|a| a.ends_with(name)),
+                "{name} not applied"
+            );
+        }
         assert_eq!(COMMIT.len(), 40);
     }
 

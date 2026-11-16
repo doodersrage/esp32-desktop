@@ -265,6 +265,9 @@ enum SimCmd {
         /// Stay halted until a debugger continues the target.
         #[arg(long)]
         paused: bool,
+        /// Save each new picture on QEMU's virtual RGB panel as frame-NNNN.ppm here.
+        #[arg(long)]
+        frames: Option<PathBuf>,
     },
     /// Boot an image and pass if a marker appears on UART0 before the timeout.
     BootTest {
@@ -623,7 +626,14 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             let result = client.call(&method, params).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
-        Cmd::Sim(SimCmd::Run { session, paused }) => {
+        Cmd::Sim(SimCmd::Run {
+            session,
+            paused,
+            frames,
+        }) => {
+            if let Some(dir) = &frames {
+                std::fs::create_dir_all(dir)?;
+            }
             if paused && session.gdb.is_none() {
                 bail!("--paused needs --gdb, or nothing can resume the target");
             }
@@ -647,8 +657,23 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             // Lines typed on stdin go to UART0 RX, ending in CR LF like a serial terminal.
             let mut stdin = BufReader::new(tokio::io::stdin()).lines();
             let mut stdin_open = true;
+            // Polling the panel is what lets firmware's draws finish (see sim::display).
+            let mut display = esp32bench_sim::display::Display::new(&s.paths().dir.clone());
+            let mut saved = 0u32;
             loop {
                 tokio::select! {
+                    () = tokio::time::sleep(display.interval()) => {
+                        if let Some(f) = display.poll(&mut s.qmp).await?
+                            && let Some(dir) = &frames
+                        {
+                            saved += 1;
+                            let path = dir.join(format!("frame-{saved:04}.ppm"));
+                            let mut ppm = format!("P6\n{} {}\n255\n", f.width, f.height).into_bytes();
+                            ppm.extend_from_slice(&f.rgb);
+                            std::fs::write(&path, ppm)?;
+                            eprintln!("saved {}", path.display());
+                        }
+                    }
                     chunk = s.uart.read_chunk() => match chunk? {
                         Some(bytes) => { out.write_all(&bytes)?; out.flush()?; }
                         None => break,
