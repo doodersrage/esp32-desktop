@@ -78,9 +78,9 @@ If neither fork boots current IDF and Arduino builds on all three chips, stop an
 
 Follow the `update-plan` skill. In short:
 
-- [ ] Fill in both tables above and commit this file.
-- [ ] Record the fork choice in "Key decisions" in `docs/PLAN.md` and move it to "settled" in `CLAUDE.md`.
-- [ ] Set the GPL version, add the `LICENSE` file, and update the README.
-- [ ] Rewrite phase 4 in the plan to match the chosen fork.
-- [ ] Correct anything in `.claude/skills/qemu-esp32/SKILL.md` that turned out wrong, and remove its "verify" notes.
-- [ ] Note actual hours spent next to the phase 0 estimate.
+- [x] Fill in both tables above and commit this file.
+- [x] Record the fork choice in "Key decisions" in `docs/PLAN.md` and move it to "settled" in `CLAUDE.md`. *lcgamboa's fork.*
+- [x] Set the GPL version, add the `LICENSE` file, and update the README. *GPLv2-or-later.*
+- [x] Rewrite phase 4 in the plan to match the chosen fork.
+- [x] Correct anything in `.claude/skills/qemu-esp32/SKILL.md` that turned out wrong, and remove its "verify" notes.
+- [x] Note actual hours spent next to the phase 0 estimate. *About 4 hours, 2026-11-15.*

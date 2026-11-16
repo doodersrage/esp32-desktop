@@ -6,7 +6,7 @@ The plan is in `docs/PLAN.md`. Read it before any design work. It is the source 
 
 ## Current state
 
-Phase 0 in progress; its checklist and exit criteria are in `docs/PHASE0.md`. `core/` has three crates: `esp32bench-sim` (QEMU session supervisor, QMP, UART, GDB probe, image checks, pinned QEMU install), the `esp32bench` CLI, and `esp32bench-qemu-host` (spike: runs lcgamboa's QEMU library, bridges its GPIO hooks to a socket and models I2C devices). Espressif's QEMU fork boots ESP-IDF v6.0.2 and esp32bench.dev firmware on ESP32, S3 and C3, with results in `docs/qemu-forks.md`. The boot tests in `core/crates/sim/tests/boot.rs` boot `tests/firmware/out/hello-<chip>.bin` (built by `tests/firmware/build.sh` with `IDF_PATH` at the pinned IDF) and skip if QEMU or the images are missing. Both forks have been compared as separate processes (`docs/PHASE0.md` has the table). Every row of the `docs/PHASE0.md` checklist has a result. Still open in phase 0: the fork decision itself and the licence that follows from it.
+Phase 0 is done (2026-11-15); the next step is phase 1, the core daemon with its JSON-RPC API and the first Qt shell. Phase 0's results are in `docs/PHASE0.md` and `docs/qemu-forks.md`. `core/` has three crates: `esp32bench-sim` (QEMU session supervisor, QMP, UART, GDB probe, image checks, pinned QEMU install), the `esp32bench` CLI, and `esp32bench-qemu-host` (runs lcgamboa's QEMU library, bridges GPIO to a socket and models I2C devices). The boot tests in `core/crates/sim/tests/boot.rs` boot images from `tests/firmware/out/` (built by `tests/firmware/build.sh`) and skip if QEMU or the images are missing; `core/crates/qemu-host/tests/hooks.rs` needs `ESP32BENCH_TEST_QEMU_LIB_{XTENSA,RISCV32}` pointing at a library build of the fork. The pinned QEMU install (`esp32bench qemu install`) is still Espressif's prebuilt build; switching it to the chosen fork is phase 3 work.
 
 CI is in `.github/workflows/ci.yml`. It runs fmt, clippy and tests for the core; the UI job skips until `ui/CMakeLists.txt` exists. CI has no QEMU, so the boot tests skip there.
 
@@ -43,13 +43,13 @@ Do not reopen these without the owner asking. Each has its reasoning in `docs/PL
 - Rust core in a separate process. The UI never links Rust code.
 - JSON-RPC over a Unix socket between UI and core.
 - `arduino-cli` and `idf.py` are both first-class build systems.
-- GPL licence. Version is picked at the end of phase 0.
+- GPLv2-or-later. QEMU is GPLv2, so GPLv3 is ruled out.
+- lcgamboa's QEMU fork for the simulator, pinned to a commit and built from source. GPIO and I2C go through its library build in a per-session host process.
+- The app name is `esp32bench` (CLI, crates, data and runtime directories, `ESP32BENCH_*` variables). The repo stays `esp32-desktop`.
 - Arch Linux and Plasma are the only supported platform for v1.
 
 ## Decisions that are open
 
-- Which QEMU fork: Espressif's or lcgamboa's. Phase 0 decides.
-- GPLv2-or-later or GPLv3. Follows from the fork choice.
 - QTermWidget or a plain text view for the serial monitor.
 
 When work resolves one of these, update `docs/PLAN.md` in the same change.

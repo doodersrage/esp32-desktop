@@ -2,7 +2,7 @@
 
 A native Linux desktop workbench and simulator for ESP32 boards, built for KDE Plasma on Arch Linux. It is the desktop companion to [esp32bench.dev](https://esp32bench.dev/).
 
-**Status:** planning. No code yet. Phase 0 (the QEMU spike) is next.
+**Status:** phase 0 (the QEMU spike) is done: a Rust CLI boots ESP-IDF and Arduino firmware in QEMU on ESP32, S3 and C3, and lcgamboa's QEMU fork was chosen. Phase 1 (the core daemon and the first Qt shell) is next.
 
 ## What it will do
 
@@ -14,7 +14,7 @@ A native Linux desktop workbench and simulator for ESP32 boards, built for KDE P
 
 - **UI:** Qt 6 Widgets in C++.
 - **Core:** a Rust daemon and CLI. The UI talks to it with JSON-RPC over a Unix socket.
-- **Simulation:** Espressif's QEMU fork or lcgamboa's fork of it, to be chosen in phase 0.
+- **Simulation:** [lcgamboa's QEMU fork](https://github.com/lcgamboa/qemu), which adds Wi-Fi and GPIO and I2C hooks to Espressif's QEMU.
 - **Packaging:** a PKGBUILD for the AUR.
 
 ## Documents
@@ -25,4 +25,4 @@ A native Linux desktop workbench and simulator for ESP32 boards, built for KDE P
 
 ## Licence
 
-GPL. The exact version (GPLv2-or-later or GPLv3) is chosen at the end of phase 0, because it depends on which QEMU fork the project links. A `LICENSE` file is added then.
+GPLv2-or-later. See [LICENSE](LICENSE) for the GPLv2 text. The simulator loads lcgamboa's QEMU library, and QEMU is GPLv2, so the project cannot move to GPLv3-only.

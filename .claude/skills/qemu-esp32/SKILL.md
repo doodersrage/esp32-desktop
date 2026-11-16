@@ -5,7 +5,7 @@ description: Run or debug ESP32 firmware in QEMU for this project. Use when boot
 
 # Running ESP32 firmware in QEMU
 
-This project drives QEMU as a child process. The commands below are the starting point for phase 0. Anything marked "verify" has not yet been confirmed against the pinned QEMU build; confirm it and update this file when you do.
+This project drives QEMU as a child process. The simulator uses lcgamboa's fork (decided in phase 0); Espressif's prebuilt build is still what `esp32bench qemu install` fetches, as a baseline. Everything below was confirmed in phase 0 unless it says otherwise.
 
 ## 1. Get QEMU
 
@@ -42,7 +42,7 @@ esptool.py --chip esp32 merge_bin --fill-flash-size 4MB -o flash.bin @flash_args
 
 Flash mode must be DIO or DOUT. QIO and QOUT do not boot in QEMU.
 
-For Arduino builds, merge the bootloader, partition and app binaries that `arduino-cli compile --output-dir` produces, at the offsets for that chip (verify the offsets per chip).
+For Arduino builds, ESP32 Arduino core 3.x already writes `<sketch>.ino.merged.bin`, padded to the flash size (see `tests/firmware/build.sh`). Build with `FlashMode=dio`.
 
 ## 4. Launch
 

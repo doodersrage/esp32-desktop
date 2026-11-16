@@ -3,6 +3,7 @@ name = "esp32bench"
 description = "Command-line interface to the esp32-desktop core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

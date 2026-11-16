@@ -5,8 +5,8 @@ members = ["crates/sim", "crates/cli", "crates/qemu-host"]
 [workspace.package]
 version = "0.0.1"
 edition = "2024"
+license = "GPL-2.0-or-later"
 publish = false
-# Licence: GPL, version chosen at the end of phase 0 (see docs/PLAN.md).
 
 [workspace.dependencies]
 anyhow = "1"
