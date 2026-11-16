@@ -33,6 +33,12 @@ pub struct SessionConfig {
     pub gdb_port: Option<u16>,
     /// Stay halted after start, for example to attach a debugger before the first instruction.
     pub start_paused: bool,
+    /// Use this `-machine` value instead of the chip's default, e.g. `esp32-picsimlab`
+    /// on lcgamboa's fork.
+    pub machine: Option<String>,
+    /// Further QEMU arguments, appended as-is. Each element is one argument; nothing is
+    /// passed through a shell.
+    pub extra_args: Vec<OsString>,
 }
 
 /// Files a session uses, all inside one private runtime directory.
@@ -62,7 +68,7 @@ pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
     let mut args: Vec<OsString> = Vec::new();
     let mut push = |s: &str| args.push(s.into());
     push("-machine");
-    push(cfg.chip.machine());
+    push(cfg.machine.as_deref().unwrap_or(cfg.chip.machine()));
     push("-display");
     push("none");
     push("-monitor");
@@ -91,6 +97,7 @@ pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
         args.push("-gdb".into());
         args.push(format!("tcp:127.0.0.1:{port}").into());
     }
+    args.extend(cfg.extra_args.iter().cloned());
     args
 }
 
@@ -132,13 +139,11 @@ impl Session {
         }
         let mut child = cmd.spawn()?;
 
-        let qmp_stream = connect_when_ready(&mut child, &paths.qmp, &paths.stderr).await?;
-        let mut qmp = Qmp::handshake(qmp_stream).await?;
-        let uart_stream = connect_when_ready(&mut child, &paths.uart, &paths.stderr).await?;
-        let uart = Uart::new(uart_stream);
-        if !cfg.start_paused {
-            qmp.execute("cont", None).await?;
-        }
+        let (qmp, uart) = match connect(&mut child, &paths, cfg.start_paused).await {
+            Ok(c) => c,
+            // A socket error during start-up usually means QEMU died; report why.
+            Err(e) => return Err(exit_error(&mut child, &paths.stderr).await.unwrap_or(e)),
+        };
 
         guard.disarm();
         Ok(Session {
@@ -254,6 +259,35 @@ fn session_owner(name: &str) -> Option<u32> {
     pid.parse().ok()
 }
 
+/// Connect QMP and UART0, then let the CPU run unless the session starts paused.
+async fn connect(
+    child: &mut Child,
+    paths: &SessionPaths,
+    start_paused: bool,
+) -> Result<(Qmp, Uart), Error> {
+    let qmp_stream = connect_when_ready(child, &paths.qmp, &paths.stderr).await?;
+    let mut qmp = Qmp::handshake(qmp_stream).await?;
+    let uart_stream = connect_when_ready(child, &paths.uart, &paths.stderr).await?;
+    let uart = Uart::new(uart_stream);
+    if !start_paused {
+        qmp.execute("cont", None).await?;
+    }
+    Ok((qmp, uart))
+}
+
+/// If QEMU has exited or exits within a moment, an error carrying its status and stderr.
+async fn exit_error(child: &mut Child, stderr: &Path) -> Option<Error> {
+    let status = tokio::time::timeout(Duration::from_millis(500), child.wait())
+        .await
+        .ok()?
+        .ok()?;
+    let stderr = std::fs::read(stderr).unwrap_or_default();
+    Some(Error::QemuExited {
+        status: status.to_string(),
+        stderr: String::from_utf8_lossy(&stderr).trim().to_owned(),
+    })
+}
+
 /// Retry connecting to a socket QEMU is about to create, failing fast if QEMU exits.
 async fn connect_when_ready(
     child: &mut Child,
@@ -262,12 +296,10 @@ async fn connect_when_ready(
 ) -> Result<UnixStream, Error> {
     let deadline = Instant::now() + READY_TIMEOUT;
     loop {
-        if let Some(status) = child.try_wait()? {
-            let stderr = std::fs::read(stderr).unwrap_or_default();
-            return Err(Error::QemuExited {
-                status: status.to_string(),
-                stderr: String::from_utf8_lossy(&stderr).trim().to_owned(),
-            });
+        if child.try_wait()?.is_some()
+            && let Some(e) = exit_error(child, stderr).await
+        {
+            return Err(e);
         }
         if let Ok(s) = UnixStream::connect(sock).await {
             return Ok(s);
@@ -290,6 +322,8 @@ mod tests {
             image: "/img.bin".into(),
             gdb_port: gdb,
             start_paused: false,
+            machine: None,
+            extra_args: Vec::new(),
         }
     }
 
@@ -322,11 +356,50 @@ mod tests {
     }
 
     #[test]
+    fn machine_override_and_extra_args_are_passed_verbatim() {
+        let paths = SessionPaths::in_dir("/run/s".into());
+        let mut c = cfg(Chip::Esp32, None);
+        c.machine = Some("esp32-picsimlab".into());
+        c.extra_args = vec!["-nic".into(), "user,model=esp32_wifi; rm -rf /".into()];
+        let args = strs(qemu_args(&c, &paths));
+        assert_eq!(args[1], "esp32-picsimlab");
+        assert_eq!(
+            args[args.len() - 2..],
+            ["-nic", "user,model=esp32_wifi; rm -rf /"]
+        );
+    }
+
+    #[test]
     fn gdb_stub_binds_loopback_only() {
         let paths = SessionPaths::in_dir("/run/s".into());
         let args = strs(qemu_args(&cfg(Chip::Esp32, Some(3333)), &paths));
         let i = args.iter().position(|a| a == "-gdb").unwrap();
         assert_eq!(args[i + 1], "tcp:127.0.0.1:3333");
+    }
+
+    #[tokio::test]
+    async fn reports_qemu_stderr_when_it_dies_at_start() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("fake-qemu");
+        std::fs::write(&fake, "#!/bin/sh\necho 'Assertion failed' >&2\nexit 3\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let image = dir.path().join("flash.bin");
+        let mut data = vec![0xFF; 8192];
+        data[0x1000..0x1004].copy_from_slice(&[0xE9, 3, 2, 0x20]);
+        std::fs::write(&image, data).unwrap();
+
+        let mut c = cfg(Chip::Esp32, None);
+        c.qemu = fake;
+        c.image = image;
+        match Session::start(c).await {
+            Err(Error::QemuExited { status, stderr }) => {
+                assert!(status.contains('3'), "status: {status}");
+                assert_eq!(stderr, "Assertion failed");
+            }
+            Err(e) => panic!("expected QemuExited, got {e}"),
+            Ok(_) => panic!("expected QemuExited, got a session"),
+        }
     }
 
     #[test]

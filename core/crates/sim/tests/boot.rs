@@ -48,6 +48,8 @@ fn setup(chip: Chip) -> Option<(SessionConfig, &'static [u8])> {
         image,
         gdb_port: None,
         start_paused: false,
+        machine: None,
+        extra_args: Vec::new(),
     };
     Some((cfg, marker))
 }

@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use esp32d_sim::uart::WaitOutcome;
 use esp32d_sim::{Arch, Chip, Session, SessionConfig, gdb, image, install, pin};
 
@@ -52,25 +52,40 @@ enum ImageCmd {
     },
 }
 
+/// Options shared by every command that starts a simulator session.
+#[derive(Args)]
+struct SessionArgs {
+    #[arg(long)]
+    chip: Chip,
+    image: PathBuf,
+    /// Open a GDB stub on 127.0.0.1 at this port.
+    #[arg(long)]
+    gdb: Option<u16>,
+    /// QEMU binary to run instead of the pinned install (e.g. a build of another fork).
+    #[arg(long)]
+    qemu: Option<PathBuf>,
+    /// QEMU machine instead of the chip's default (e.g. `esp32-picsimlab`).
+    #[arg(long)]
+    machine: Option<String>,
+    /// One extra QEMU argument, passed as-is. Repeat for more: `--qemu-arg=-nic --qemu-arg=user`.
+    #[arg(long = "qemu-arg", allow_hyphen_values = true)]
+    qemu_args: Vec<String>,
+}
+
 #[derive(Subcommand)]
 enum SimCmd {
     /// Boot an image and stream UART0 to stdout until QEMU exits or Ctrl-C.
     Run {
-        #[arg(long)]
-        chip: Chip,
-        image: PathBuf,
-        /// Open a GDB stub on 127.0.0.1 at this port.
-        #[arg(long)]
-        gdb: Option<u16>,
+        #[command(flatten)]
+        session: SessionArgs,
         /// Stay halted until a debugger continues the target.
-        #[arg(long, requires = "gdb")]
+        #[arg(long)]
         paused: bool,
     },
     /// Boot an image and pass if a marker appears on UART0 before the timeout.
     BootTest {
-        #[arg(long)]
-        chip: Chip,
-        image: PathBuf,
+        #[command(flatten)]
+        session: SessionArgs,
         /// Text that must appear on UART0. The ROM prints `rst:0x` on every chip.
         #[arg(long, default_value = "rst:0x")]
         expect: String,
@@ -80,9 +95,6 @@ enum SimCmd {
         /// After the marker, reset over QMP and require the marker again.
         #[arg(long)]
         reset: bool,
-        /// Before boot, check the GDB stub on this port answers.
-        #[arg(long)]
-        gdb: Option<u16>,
         /// Do not echo UART output.
         #[arg(long, short)]
         quiet: bool,
@@ -142,13 +154,11 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 );
             }
         }
-        Cmd::Sim(SimCmd::Run {
-            chip,
-            image,
-            gdb,
-            paused,
-        }) => {
-            let mut s = start(chip, image, gdb, paused).await?;
+        Cmd::Sim(SimCmd::Run { session, paused }) => {
+            if paused && session.gdb.is_none() {
+                bail!("--paused needs --gdb, or nothing can resume the target");
+            }
+            let mut s = start(session, paused).await?;
             if let Some(addr) = s.gdb_addr() {
                 eprintln!("GDB stub on {addr}");
             }
@@ -165,57 +175,46 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             s.shutdown().await?;
         }
         Cmd::Sim(SimCmd::BootTest {
-            chip,
-            image,
+            session,
             expect,
             timeout,
             reset,
-            gdb,
             quiet,
         }) => {
-            return boot_test(
-                chip,
-                image,
-                expect,
-                Duration::from_secs(timeout),
-                reset,
-                gdb,
-                quiet,
-            )
-            .await;
+            return boot_test(session, expect, Duration::from_secs(timeout), reset, quiet).await;
         }
     }
     Ok(ExitCode::SUCCESS)
 }
 
-async fn start(
-    chip: Chip,
-    image: PathBuf,
-    gdb_port: Option<u16>,
-    start_paused: bool,
-) -> Result<Session> {
-    let qemu = install::find_qemu(chip.arch())?;
+async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
+    let qemu = match a.qemu {
+        Some(q) => q,
+        None => install::find_qemu(a.chip.arch())?,
+    };
     let s = Session::start(SessionConfig {
-        chip,
+        chip: a.chip,
         qemu,
-        image,
-        gdb_port,
+        image: a.image,
+        gdb_port: a.gdb,
         start_paused,
+        machine: a.machine,
+        extra_args: a.qemu_args.into_iter().map(Into::into).collect(),
     })
     .await?;
     Ok(s)
 }
 
 async fn boot_test(
-    chip: Chip,
-    image: PathBuf,
+    session: SessionArgs,
     expect: String,
     timeout: Duration,
     reset: bool,
-    gdb_port: Option<u16>,
     quiet: bool,
 ) -> Result<ExitCode> {
-    let mut s = start(chip, image, gdb_port, gdb_port.is_some()).await?;
+    // With a GDB port, start halted so the stub is probed before the first instruction.
+    let paused = session.gdb.is_some();
+    let mut s = start(session, paused).await?;
     if let Some(addr) = s.gdb_addr() {
         let reply = gdb::probe(addr, Duration::from_secs(5)).await?;
         eprintln!("[boot-test] GDB stub at {addr} answered `{reply}`");
