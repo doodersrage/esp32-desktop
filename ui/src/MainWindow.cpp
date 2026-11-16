@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "BoardInfoDialog.h"
 #include "BuildPanel.h"
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
@@ -14,6 +15,7 @@
 #include <QDockWidget>
 #include <QIcon>
 #include <QJsonArray>
+#include <QLocale>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -75,6 +77,59 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
             [this](const QString &project, const QString &board, const QString &token, const QJsonObject &plan) {
                 if (confirmBuild(project, board, plan))
                     m_core->startBuild(project, board, token);
+            });
+
+    m_boardInfo = new BoardInfoDialog(this);
+    // Flashing needs the port to itself; close the monitor and reopen it after.
+    connect(m_buildPanel, &BuildPanel::flashRequested, this,
+            [this](const QString &port, const QString &project, const QString &board) {
+                freePort(port);
+                m_core->flashBuild(port, project, board);
+            });
+    connect(core, &CoreConnection::boardConsentRequired, this,
+            [this](const QString &port, const QString &project, const QString &board, const QString &token,
+                   const QJsonObject &plan) {
+                if (confirmFlash(port, plan))
+                    m_core->flashBuild(port, project, board, token);
+                else
+                    m_reopenSerial.clear();
+            });
+    connect(m_devices, &DevicesPanel::inspectRequested, this, [this](const QString &port) {
+        freePort(port);
+        statusBar()->showMessage(tr("Reading the board on %1…").arg(port));
+        m_core->inspectBoard(port);
+    });
+    connect(m_devices, &DevicesPanel::eraseRequested, this, [this](const QString &port) {
+        if (confirmErase(port)) {
+            freePort(port);
+            statusBar()->showMessage(tr("Erasing the board on %1…").arg(port));
+            m_core->eraseBoard(port);
+        }
+    });
+    connect(core, &CoreConnection::boardStarted, this, [this](const QString &, const QString &port) {
+        m_lastBoardPort = port;
+    });
+    connect(core, &CoreConnection::boardFinished, this,
+            [this](const QString &op, bool ok, const QString &error, const QJsonObject &result) {
+                if (op == u"inspect" && ok) {
+                    statusBar()->clearMessage();
+                    m_boardInfo->showResult(m_lastBoardPort, result);
+                    m_boardInfo->show();
+                    m_boardInfo->raise();
+                } else if (!ok) {
+                    statusBar()->showMessage(tr("Board operation failed: %1").arg(error), 10000);
+                } else if (op == u"erase") {
+                    statusBar()->showMessage(tr("Flash erased."), 10000);
+                }
+                // After flashing, show what the new firmware prints.
+                if (op == u"flash" && ok) {
+                    m_serialDock->show();
+                    m_serialDock->raise();
+                    m_serial->openPort(m_lastBoardPort);
+                    m_reopenSerial.clear();
+                } else if (!m_reopenSerial.isEmpty()) {
+                    m_serial->openPort(std::exchange(m_reopenSerial, {}));
+                }
             });
 
     m_setup = new SetupDialog(core, this);
@@ -231,4 +286,42 @@ void MainWindow::showSetup()
     m_core->requestToolchainStatus();
     m_setup->show();
     m_setup->raise();
+}
+
+bool MainWindow::confirmFlash(const QString &port, const QJsonObject &plan)
+{
+    QMessageBox box(QMessageBox::Warning, tr("Flash a downloaded project?"),
+                    tr("“%1” for %2 came from esp32bench.dev. Flashing it to %3 replaces the firmware "
+                       "on that board and runs this code on it.")
+                        .arg(plan.value(u"project"_s).toString(), plan.value(u"board"_s).toString(), port),
+                    QMessageBox::Cancel, this);
+    box.setInformativeText(tr("%1 will be written. Saved settings past the image are kept.")
+                               .arg(QLocale().formattedDataSize(plan.value(u"bytes"_s).toInteger())));
+    box.setDetailedText(tr("Image SHA-256: %1").arg(plan.value(u"imageSha256"_s).toString()));
+    QPushButton *flash = box.addButton(tr("Flash"), QMessageBox::AcceptRole);
+    box.setDefaultButton(QMessageBox::Cancel);
+    box.exec();
+    return box.clickedButton() == flash;
+}
+
+bool MainWindow::confirmErase(const QString &port)
+{
+    QMessageBox box(QMessageBox::Warning, tr("Erase the whole flash?"),
+                    tr("Everything on the board at %1 is erased: firmware, saved settings and files. "
+                       "This cannot be undone.")
+                        .arg(port),
+                    QMessageBox::Cancel, this);
+    QPushButton *erase = box.addButton(tr("Erase"), QMessageBox::DestructiveRole);
+    box.setDefaultButton(QMessageBox::Cancel);
+    box.exec();
+    return box.clickedButton() == erase;
+}
+
+void MainWindow::freePort(const QString &port)
+{
+    // Board operations need the port to themselves; the monitor comes back afterwards.
+    if (m_core->isSerialOpen()) {
+        m_reopenSerial = port;
+        m_core->closeSerial();
+    }
 }

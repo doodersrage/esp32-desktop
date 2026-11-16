@@ -8,6 +8,7 @@
 #include <QIcon>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMenu>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -50,7 +51,23 @@ DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
     m_tree->setRootIsDecorated(false);
     m_tree->setUniformRowHeights(true);
     m_tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    m_tree->setToolTip(tr("Double-click a port to open it in the serial monitor"));
+    m_tree->setToolTip(tr("Double-click a port to open it in the serial monitor; right-click for more"));
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tree, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QTreeWidgetItem *item = m_tree->itemAt(pos);
+        if (!item)
+            return;
+        const QString path = item->text(PortColumn);
+        QMenu menu(this);
+        menu.addAction(QIcon::fromTheme(u"utilities-terminal"_s), tr("Open in serial monitor"), this,
+                       [this, path] { emit portActivated(path); });
+        menu.addAction(QIcon::fromTheme(u"document-properties"_s), tr("Inspect board…"), this,
+                       [this, path] { emit inspectRequested(path); });
+        menu.addSeparator();
+        menu.addAction(QIcon::fromTheme(u"edit-delete"_s), tr("Erase flash…"), this,
+                       [this, path] { emit eraseRequested(path); });
+        menu.exec(m_tree->viewport()->mapToGlobal(pos));
+    });
     connect(m_tree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item) {
         emit portActivated(item->text(PortColumn));
     });

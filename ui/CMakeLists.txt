@@ -12,6 +12,7 @@ qt_standard_project_setup()
 # Everything except main() goes in a library so the tests can link it.
 add_library(esp32bench_ui STATIC
     src/RpcClient.cpp src/RpcClient.h
+    src/BoardInfoDialog.cpp src/BoardInfoDialog.h
     src/BuildPanel.cpp src/BuildPanel.h
     src/CoreConnection.cpp src/CoreConnection.h
     src/DevicesPanel.cpp src/DevicesPanel.h
@@ -35,7 +36,7 @@ qt_add_executable(esp32bench-gui src/main.cpp)
 target_link_libraries(esp32bench-gui PRIVATE esp32bench_ui)
 
 enable_testing()
-foreach(t tst_rpcclient tst_devicespanel tst_librarypanel tst_projectview tst_build tst_serialmonitor tst_setup tst_integration)
+foreach(t tst_rpcclient tst_devicespanel tst_librarypanel tst_projectview tst_build tst_serialmonitor tst_setup tst_board tst_integration)
     qt_add_executable(${t} tests/${t}.cpp)
     target_link_libraries(${t} PRIVATE esp32bench_ui Qt6::Test)
     target_compile_definitions(${t} PRIVATE ESP32BENCH_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

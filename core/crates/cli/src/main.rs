@@ -35,6 +35,9 @@ enum Cmd {
     /// Talk to a board over its serial port.
     #[command(subcommand)]
     Serial(SerialCmd),
+    /// Inspect, flash and erase a real board through its ROM bootloader.
+    #[command(subcommand)]
+    Board(BoardCmd),
     /// Check and install the tools builds and the simulator need.
     #[command(subcommand)]
     Toolchain(ToolchainCmd),
@@ -90,6 +93,56 @@ enum LibraryCmd {
         /// Print JSON instead of a table.
         #[arg(long)]
         json: bool,
+    },
+}
+
+/// How to reach a board's bootloader.
+#[derive(Args)]
+struct BoardConn {
+    /// Serial port, e.g. /dev/ttyACM0 (see `device list`).
+    port: PathBuf,
+    /// Do not reset into the bootloader: the board is already in download mode.
+    #[arg(long)]
+    no_reset: bool,
+    /// Use the ROM loader only, without espflash's faster RAM stub.
+    #[arg(long)]
+    no_stub: bool,
+}
+
+impl BoardConn {
+    fn options(&self) -> esp32bench_flash::Options {
+        esp32bench_flash::Options {
+            port: self.port.clone(),
+            reset: if self.no_reset {
+                esp32bench_flash::Reset::None
+            } else {
+                esp32bench_flash::Reset::Auto
+            },
+            use_stub: !self.no_stub,
+        }
+    }
+}
+
+#[derive(Subcommand)]
+enum BoardCmd {
+    /// Show the chip, its security eFuses and the partition table.
+    Inspect {
+        #[command(flatten)]
+        conn: BoardConn,
+    },
+    /// Write a merged flash image from offset 0, leaving flash past it alone.
+    Flash {
+        #[command(flatten)]
+        conn: BoardConn,
+        image: PathBuf,
+    },
+    /// Erase the whole flash, saved settings included.
+    Erase {
+        #[command(flatten)]
+        conn: BoardConn,
+        /// Required: erasing cannot be undone.
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -463,6 +516,10 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 }
             }
         }
+        Cmd::Board(cmd) => {
+            // espflash blocks; it has the terminal to itself here.
+            tokio::task::spawn_blocking(move || board_command(cmd)).await??;
+        }
         Cmd::Toolchain(cmd) => {
             let env = esp32bench_toolchain::Env {
                 arduino_cli: None,
@@ -564,6 +621,100 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn board_command(cmd: BoardCmd) -> Result<()> {
+    match cmd {
+        BoardCmd::Inspect { conn } => {
+            let mut b = esp32bench_flash::Board::connect(&conn.options())?;
+            let info = b.info()?;
+            println!(
+                "chip      {} {}",
+                info.chip,
+                info.revision.as_deref().unwrap_or("")
+            );
+            println!("crystal   {} MHz", info.crystal_mhz);
+            println!("flash     {} MiB", info.flash_bytes / (1024 * 1024));
+            println!("features  {}", info.features.join(", "));
+            if let Some(mac) = &info.mac {
+                println!("mac       {mac}");
+            }
+            match &info.security {
+                Some(s) => println!(
+                    "security  secure boot {}, flash encryption {}, secure download {}",
+                    on_off(s.secure_boot),
+                    on_off(s.flash_encryption),
+                    on_off(s.secure_download)
+                ),
+                None => println!("security  not reported by this chip's ROM"),
+            }
+            let scratch = std::env::temp_dir();
+            match b.partitions(&scratch) {
+                Ok(parts) => {
+                    println!("\npartitions at 0x8000:");
+                    for p in parts {
+                        println!(
+                            "  {:<12} {:<4} {:<9} 0x{:06x}  {:>6} KiB{}",
+                            p.label,
+                            p.kind,
+                            p.subtype,
+                            p.offset,
+                            p.size / 1024,
+                            if p.encrypted { "  encrypted" } else { "" }
+                        );
+                    }
+                }
+                Err(e) => println!("\npartitions: {e}"),
+            }
+            b.run()?;
+        }
+        BoardCmd::Flash { conn, image } => {
+            let data =
+                std::fs::read(&image).with_context(|| format!("reading {}", image.display()))?;
+            let mut b = esp32bench_flash::Board::connect(&conn.options())?;
+            let info = b.info()?;
+            if let Some(chip) = esp32bench_flash::image_chip(&data)
+                && chip != info.chip
+            {
+                bail!(
+                    "the board is an {}, but {} is for {chip}",
+                    info.chip,
+                    image.display()
+                );
+            }
+            let part = esp32bench_flash::trim_erased_tail(&data);
+            eprintln!(
+                "writing {} bytes to {} ({})",
+                part.len(),
+                conn.port.display(),
+                info.chip
+            );
+            b.write(0, part, &mut |p| {
+                if let esp32bench_flash::Progress::Writing { written, total, .. } = p {
+                    eprint!("\r{:>3}%", written * 100 / total.max(1));
+                }
+            })?;
+            eprintln!("\rdone, resetting the board");
+            b.run()?;
+        }
+        BoardCmd::Erase { conn, yes } => {
+            if !yes {
+                bail!(
+                    "erasing removes everything on the board, settings included; pass --yes to do it"
+                );
+            }
+            let mut b = esp32bench_flash::Board::connect(&conn.options())?;
+            eprintln!("erasing {}", conn.port.display());
+            b.erase_all()?;
+            b.run()?;
+            eprintln!("done");
+        }
+    }
+    Ok(())
+}
+
+fn on_off(b: bool) -> &'static str {
+    if b { "on" } else { "off" }
 }
 
 /// Print ports as a table, or as one JSON object (`{"ports": [...]}`) on one line.

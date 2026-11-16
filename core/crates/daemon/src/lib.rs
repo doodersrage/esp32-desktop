@@ -10,12 +10,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use esp32bench_rpc::{Ctx, Router, RpcError, code, parse_params};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.7.0";
+pub const PROTOCOL: &str = "0.8.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -44,6 +44,21 @@ pub struct State {
     pub serial_allow: Option<Vec<PathBuf>>,
     /// Arduino's data directory (~/.arduino15), for package index files.
     pub arduino_data: PathBuf,
+    /// Consent tokens handed out for flashing downloaded projects (rule 4).
+    pub flash_consent: esp32bench_build::Consent<FlashPlan>,
+    /// One board operation at a time.
+    board_lock: tokio::sync::Mutex<()>,
+}
+
+/// What board.flash will write, shown to the user before it runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlashPlan {
+    pub project: String,
+    pub board: String,
+    pub port: PathBuf,
+    pub image_sha256: String,
+    pub bytes: usize,
 }
 
 type SharedPort = Arc<std::sync::Mutex<esp32bench_serial::Port>>;
@@ -86,6 +101,8 @@ impl State {
             serial_allow: None,
             arduino_data: esp32bench_toolchain::Env::default_arduino_data()
                 .unwrap_or_else(|| PathBuf::from(".arduino15")),
+            flash_consent: esp32bench_build::Consent::new(),
+            board_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -112,8 +129,21 @@ impl State {
 pub fn router(state: Arc<State>) -> Router {
     let (s1, s2, s3, s4) = (state.clone(), state.clone(), state.clone(), state.clone());
     let (s5, s6, s7) = (state.clone(), state.clone(), state.clone());
-    let (s8, s9) = (state.clone(), state);
+    let (s8, s9) = (state.clone(), state.clone());
+    let (s10, s11, s12) = (state.clone(), state.clone(), state);
     Router::new()
+        .method("board.inspect", move |p, ctx| {
+            let s = s10.clone();
+            async move { board_inspect(p, ctx, s).await }
+        })
+        .method("board.flash", move |p, ctx| {
+            let s = s11.clone();
+            async move { board_flash(p, ctx, s).await }
+        })
+        .method("board.erase", move |p, ctx| {
+            let s = s12.clone();
+            async move { board_erase(p, ctx, s).await }
+        })
         .method("toolchain.status", move |p, _| {
             let s = s8.clone();
             async move { toolchain_status(p, s).await }
@@ -437,6 +467,302 @@ struct SerialRefParams {
     subscription: u64,
 }
 
+/// Port paths are untrusted: only use something device.list reports as a serial
+/// port, never an arbitrary file or device node.
+async fn check_port(state: &State, path: &Path) -> Result<(), RpcError> {
+    let allowed = match &state.serial_allow {
+        Some(list) => list.iter().any(|p| p == path),
+        None => list_ports(true)
+            .await?
+            .iter()
+            .any(|x| Path::new(&x.path) == path),
+    };
+    if allowed {
+        Ok(())
+    } else {
+        Err(RpcError::new(
+            code::NOT_FOUND,
+            format!(
+                "{} is not a serial port this machine reports",
+                path.display()
+            ),
+        ))
+    }
+}
+
+#[derive(Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "lowercase")]
+enum ResetParam {
+    #[default]
+    Auto,
+    None,
+}
+
+impl ResetParam {
+    fn reset(self) -> esp32bench_flash::Reset {
+        match self {
+            ResetParam::Auto => esp32bench_flash::Reset::Auto,
+            ResetParam::None => esp32bench_flash::Reset::None,
+        }
+    }
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BoardParams {
+    port: PathBuf,
+    #[serde(default)]
+    reset: ResetParam,
+    #[serde(default = "yes")]
+    stub: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EraseParams {
+    port: PathBuf,
+    #[serde(default)]
+    reset: ResetParam,
+    #[serde(default = "yes")]
+    stub: bool,
+    confirm: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FlashParams {
+    port: PathBuf,
+    #[serde(default)]
+    reset: ResetParam,
+    #[serde(default = "yes")]
+    stub: bool,
+    project: String,
+    board: String,
+    #[serde(default)]
+    consent: Option<String>,
+}
+
+fn board_options(port: &Path, reset: ResetParam, stub: bool) -> esp32bench_flash::Options {
+    esp32bench_flash::Options {
+        port: port.to_owned(),
+        reset: reset.reset(),
+        use_stub: stub,
+    }
+}
+
+/// What a board job does once connected.
+enum BoardOp {
+    Inspect { scratch: PathBuf },
+    Flash { image: Vec<u8>, chip: String },
+    Erase,
+}
+
+/// Sets a flag when dropped: the job's task was aborted (job.cancel or disconnect).
+struct SetOnDrop(Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for SetOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Run `op` on a blocking thread, reporting stages as board.progress and the outcome
+/// as board.finished. espflash cannot be interrupted mid-operation, so job.cancel
+/// takes effect between steps, never in the middle of a write.
+fn board_job(ctx: &Ctx, state: Arc<State>, opts: esp32bench_flash::Options, op: BoardOp) -> u64 {
+    ctx.subscribe(move |sub| {
+        let sub = Arc::new(sub);
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = SetOnDrop(cancelled.clone());
+        async move {
+            let _flag = flag;
+            let _one_at_a_time = state.board_lock.lock().await;
+            let thread_sub = sub.clone();
+            let r = tokio::task::spawn_blocking(move || {
+                run_board_op(&opts, op, &cancelled, &thread_sub)
+            })
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()));
+            let event = match r {
+                Ok(mut done) => {
+                    done["ok"] = json!(true);
+                    done
+                }
+                Err(e) => json!({ "ok": false, "error": e }),
+            };
+            sub.send("board.finished", event);
+        }
+    })
+}
+
+fn run_board_op(
+    opts: &esp32bench_flash::Options,
+    op: BoardOp,
+    cancelled: &std::sync::atomic::AtomicBool,
+    sub: &esp32bench_rpc::Subscription,
+) -> Result<Value, String> {
+    let stage = |name: &str| {
+        sub.send("board.progress", json!({ "stage": name }));
+    };
+    let check = || {
+        if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+            Err("cancelled".to_owned())
+        } else {
+            Ok(())
+        }
+    };
+    stage("connecting");
+    let mut board = esp32bench_flash::Board::connect(opts).map_err(|e| e.to_string())?;
+    check()?;
+    let mut out = json!({});
+    match op {
+        BoardOp::Inspect { scratch } => {
+            stage("reading");
+            let info = board.info().map_err(|e| e.to_string())?;
+            out["info"] = json!(info);
+            std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
+            // An erased board has no table; report the chip anyway.
+            if let Ok(parts) = board.partitions(&scratch) {
+                out["partitions"] = json!(parts);
+            }
+        }
+        BoardOp::Flash { image, chip } => {
+            stage("reading");
+            let info = board.info().map_err(|e| e.to_string())?;
+            if info.chip != chip {
+                return Err(format!(
+                    "the board is an {}, but this build is for {chip}",
+                    info.chip
+                ));
+            }
+            check()?;
+            let data = esp32bench_flash::trim_erased_tail(&image);
+            board
+                .write(0, data, &mut |p| match p {
+                    esp32bench_flash::Progress::Writing { written, total, .. } => {
+                        sub.send(
+                            "board.progress",
+                            json!({ "stage": "writing", "written": written, "total": total }),
+                        );
+                    }
+                    esp32bench_flash::Progress::Verifying => {
+                        sub.send("board.progress", json!({ "stage": "verifying" }));
+                    }
+                })
+                .map_err(|e| e.to_string())?;
+            out["written"] = json!(data.len());
+        }
+        BoardOp::Erase => {
+            // The erase commands exist only in espflash's stub, not in the ROM.
+            if !opts.use_stub {
+                return Err("erasing needs espflash's stub loader, which this connection does not use (QEMU cannot run it)".to_owned());
+            }
+            stage("erasing");
+            board.erase_all().map_err(|e| e.to_string())?;
+        }
+    }
+    stage("resetting");
+    board.run().map_err(|e| e.to_string())?;
+    Ok(out)
+}
+
+async fn board_inspect(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: BoardParams = parse_params(params)?;
+    check_port(&state, &p.port).await?;
+    let scratch = state.builds_root.join(".scratch");
+    let opts = board_options(&p.port, p.reset, p.stub);
+    let job = board_job(&ctx, state, opts, BoardOp::Inspect { scratch });
+    Ok(json!({ "job": job }))
+}
+
+async fn board_erase(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: EraseParams = parse_params(params)?;
+    if !p.confirm {
+        return Err(RpcError::invalid_params("erasing needs confirm: true"));
+    }
+    check_port(&state, &p.port).await?;
+    let opts = board_options(&p.port, p.reset, p.stub);
+    let job = board_job(&ctx, state, opts, BoardOp::Erase);
+    Ok(json!({ "job": job }))
+}
+
+async fn board_flash(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    use sha2::{Digest, Sha256};
+    let p: FlashParams = parse_params(params)?;
+    check_port(&state, &p.port).await?;
+    for id in [&p.project, &p.board] {
+        esp32bench_build::safe_id(id).map_err(|e| RpcError::invalid_params(e.to_string()))?;
+    }
+    // The chip the build is for comes from the library, not from the caller.
+    let manifest = state
+        .library
+        .load()
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                "the project library has not been downloaded",
+            )
+        })?;
+    let chip = manifest
+        .boards
+        .iter()
+        .find(|b| b.id == p.board)
+        .map(|b| b.chip.clone())
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                format!("no board `{}` in the library", p.board),
+            )
+        })?;
+    let image_path = state
+        .builds_root
+        .join(&p.project)
+        .join(&p.board)
+        .join("out")
+        .join(format!("{}.ino.merged.bin", p.project));
+    let image = tokio::fs::read(&image_path).await.map_err(|_| {
+        RpcError::new(
+            code::NOT_FOUND,
+            format!("`{}` has not been built for `{}` yet", p.project, p.board),
+        )
+    })?;
+    let plan = FlashPlan {
+        project: p.project.clone(),
+        board: p.board.clone(),
+        port: p.port.clone(),
+        image_sha256: Sha256::digest(&image)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect(),
+        bytes: esp32bench_flash::trim_erased_tail(&image).len(),
+    };
+    // Flashing downloaded firmware runs it; ask first (rule 4).
+    let granted = p
+        .consent
+        .as_deref()
+        .is_some_and(|t| state.flash_consent.redeem(t, &plan));
+    if !granted {
+        let token = state
+            .flash_consent
+            .issue(&plan)
+            .map_err(|e| RpcError::internal(e.to_string()))?;
+        return Err(RpcError::new(
+            code::CONSENT_REQUIRED,
+            "this project was downloaded; ask the user before flashing it",
+        )
+        .with_data(json!({ "token": token, "plan": plan })));
+    }
+    let opts = board_options(&p.port, p.reset, p.stub);
+    let job = board_job(&ctx, state, opts, BoardOp::Flash { image, chip });
+    Ok(json!({ "job": job }))
+}
+
 fn serial_error(e: esp32bench_serial::Error) -> RpcError {
     use esp32bench_serial::Error as E;
     let code = match &e {
@@ -450,24 +776,7 @@ fn serial_error(e: esp32bench_serial::Error) -> RpcError {
 
 async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: SerialOpenParams = parse_params(params)?;
-    // The path is untrusted: only open something device.list reports as a serial
-    // port, never an arbitrary file or device node.
-    let allowed = match &state.serial_allow {
-        Some(list) => list.contains(&p.path),
-        None => list_ports(true)
-            .await?
-            .iter()
-            .any(|x| Path::new(&x.path) == p.path),
-    };
-    if !allowed {
-        return Err(RpcError::new(
-            code::NOT_FOUND,
-            format!(
-                "{} is not a serial port this machine reports",
-                p.path.display()
-            ),
-        ));
-    }
+    check_port(&state, &p.path).await?;
     let (port, mut rx) = {
         let path = p.path.clone();
         tokio::task::spawn_blocking(move || esp32bench_serial::Port::open(&path, p.baud))

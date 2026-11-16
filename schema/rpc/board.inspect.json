@@ -1,0 +1,60 @@
+{
+  "method": "board.inspect",
+  "description": "Connect to a board's ROM bootloader and report the chip, its eFuse security state and the partition table. A job: board.progress, then board.finished with `info` and `partitions`. The board is reset back into its firmware afterwards when reset is auto.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "port"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "port": {
+        "type": "string",
+        "description": "A path from device.list."
+      },
+      "reset": {
+        "enum": [
+          "auto",
+          "none"
+        ],
+        "description": "How to enter the bootloader. auto (default): the USB sequence for USB-Serial-JTAG boards, DTR/RTS otherwise. none: the chip is already in download mode."
+      },
+      "stub": {
+        "type": "boolean",
+        "description": "Use espflash's RAM stub (faster). Default true; the ROM loader alone also works."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "errors": [
+    -32000
+  ],
+  "events": [
+    "board.progress",
+    "board.finished"
+  ],
+  "examples": [
+    {
+      "params": {
+        "port": "/dev/ttyACM0"
+      },
+      "result": {
+        "job": 2
+      }
+    }
+  ]
+}

@@ -34,6 +34,11 @@ CoreConnection::CoreConnection(QObject *parent)
         m_earlyBuildEvents.clear();
         m_earlySerialEvents.clear();
         m_earlyInstallEvents.clear();
+        m_earlyBoardEvents.clear();
+        if (m_boardJob != 0) {
+            m_boardJob = 0;
+            emit boardFinished(m_boardOperation, false, tr("The connection to the core was lost."), {});
+        }
         if (m_installJob != 0) {
             m_installJob = 0;
             emit toolchainInstallFinished(false, tr("The connection to the core was lost."));
@@ -97,7 +102,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.7.0"_s},
+        {u"protocol"_s, u"0.8.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -203,6 +208,11 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
+    } else if (method == u"board.progress" || method == u"board.finished") {
+        if (sub == m_boardJob)
+            handleBoardEvent(method, params);
+        else if (m_boardJob == -1)
+            m_earlyBoardEvents.append({method, params}); // our job id is not known yet
     } else if (method == u"toolchain.progress" || method == u"toolchain.finished") {
         if (sub == m_installJob)
             handleInstallEvent(method, params);
@@ -436,4 +446,68 @@ void CoreConnection::handleInstallEvent(const QString &method, const QJsonObject
     }
     m_installJob = 0;
     emit toolchainInstallFinished(params.value(u"ok"_s).toBool(), params.value(u"error"_s).toString());
+}
+
+void CoreConnection::startBoardJob(const QString &operation, const QString &method, const QJsonObject &params,
+                                   std::function<bool(const RpcReply &)> onRefused)
+{
+    if (m_boardJob != 0)
+        return; // one board job at a time
+    m_boardJob = -1;
+    m_boardOperation = operation;
+    const QString port = params.value(u"port"_s).toString();
+    m_client->call(method, params, this, [this, operation, port, onRefused](const RpcReply &r) {
+        if (!r.ok) {
+            m_boardJob = 0;
+            m_earlyBoardEvents.clear();
+            if (!onRefused || !onRefused(r))
+                emit boardFinished(operation, false, r.errorMessage, {});
+            return;
+        }
+        m_boardJob = r.result.toObject().value(u"job"_s).toInteger();
+        emit boardStarted(operation, port);
+        const auto early = std::exchange(m_earlyBoardEvents, {});
+        for (const auto &[m, p] : early) {
+            if (m_boardJob > 0 && p.value(u"subscription"_s).toInteger() == m_boardJob)
+                handleBoardEvent(m, p);
+        }
+    });
+}
+
+void CoreConnection::handleBoardEvent(const QString &method, const QJsonObject &params)
+{
+    if (method == u"board.progress") {
+        emit boardProgress(params.value(u"stage"_s).toString(), params.value(u"written"_s).toInteger(),
+                           params.value(u"total"_s).toInteger());
+        return;
+    }
+    m_boardJob = 0;
+    emit boardFinished(m_boardOperation, params.value(u"ok"_s).toBool(), params.value(u"error"_s).toString(),
+                       params);
+}
+
+void CoreConnection::inspectBoard(const QString &port)
+{
+    startBoardJob(u"inspect"_s, u"board.inspect"_s, {{u"port"_s, port}});
+}
+
+void CoreConnection::eraseBoard(const QString &port)
+{
+    startBoardJob(u"erase"_s, u"board.erase"_s, {{u"port"_s, port}, {u"confirm"_s, true}});
+}
+
+void CoreConnection::flashBuild(const QString &port, const QString &project, const QString &board,
+                                const QString &consent)
+{
+    QJsonObject params{{u"port"_s, port}, {u"project"_s, project}, {u"board"_s, board}};
+    if (!consent.isEmpty())
+        params[u"consent"_s] = consent;
+    startBoardJob(u"flash"_s, u"board.flash"_s, params, [this, port, project, board](const RpcReply &r) {
+        const QJsonObject data = r.errorData.toObject();
+        if (r.errorCode != ConsentRequired || !data.contains(u"token"_s))
+            return false;
+        emit boardConsentRequired(port, project, board, data.value(u"token"_s).toString(),
+                                  data.value(u"plan"_s).toObject());
+        return true;
+    });
 }

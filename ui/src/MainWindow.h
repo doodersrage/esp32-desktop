@@ -4,6 +4,7 @@
 #include <QMainWindow>
 
 class CoreConnection;
+class BoardInfoDialog;
 class BuildPanel;
 class DevicesPanel;
 class LibraryPanel;
@@ -33,6 +34,10 @@ public:
     // Ask the user whether to build a downloaded project. Returns true to build.
     // Virtual so tests can answer without a modal dialog.
     virtual bool confirmBuild(const QString &project, const QString &board, const QJsonObject &plan);
+    // Same for flashing a downloaded project, and for erasing a board.
+    virtual bool confirmFlash(const QString &port, const QJsonObject &plan);
+    virtual bool confirmErase(const QString &port);
+    BoardInfoDialog *boardInfo() const { return m_boardInfo; }
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -42,6 +47,7 @@ private:
     void showConnectionState();
     void startCore();
     void restoreLayout();
+    void freePort(const QString &port);
     void saveLayout();
 
     CoreConnection *m_core;
@@ -55,6 +61,10 @@ private:
     QDockWidget *m_serialDock = nullptr;
     SerialMonitor *m_serial = nullptr;
     SetupDialog *m_setup = nullptr;
+    BoardInfoDialog *m_boardInfo = nullptr;
+    // A serial monitor closed to free the port for flashing, reopened afterwards.
+    QString m_reopenSerial;
+    QString m_lastBoardPort;
     QLabel *m_connection;
     QPushButton *m_startCore;
 };

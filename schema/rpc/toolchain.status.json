@@ -1,6 +1,6 @@
 {
   "method": "toolchain.status",
-  "description": "What the app needs installed and whether it is: arduino-cli and the pinned ESP32 Arduino core for builds, and the pinned QEMU for the simulator. Never touches the network.",
+  "description": "What the app needs and whether it is there: arduino-cli and the pinned ESP32 Arduino core for builds, the pinned QEMU for the simulator, and access to boards' serial ports (the esp32bench udev rule or the uucp group) for hardware. Never touches the network.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -33,7 +33,8 @@
                 "arduino-cli",
                 "esp32-core",
                 "qemu-xtensa",
-                "qemu-riscv32"
+                "qemu-riscv32",
+                "device-access"
               ]
             },
             "name": {
@@ -42,7 +43,8 @@
             "neededFor": {
               "enum": [
                 "build",
-                "simulator"
+                "simulator",
+                "hardware"
               ]
             },
             "state": {

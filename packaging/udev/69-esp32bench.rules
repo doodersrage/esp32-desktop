@@ -1,0 +1,28 @@
+# esp32bench: let the logged-in user reach ESP32 boards without root.
+#
+# Serial ports of the USB bridges esp32bench recognises, and the USB-JTAG unit built
+# into the S3, C3 and C6 (for on-chip debugging). Access is granted to the user at
+# the seat (uaccess) and to the uucp group, never to everyone (no 0666).
+# Installed to /usr/lib/udev/rules.d/. Numbered below 73-seat-late.rules, which is
+# where uaccess tags take effect.
+
+# Espressif native USB: USB-Serial-JTAG (303a:1001) and TinyUSB CDC ports.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", TAG+="uaccess", GROUP="uucp", MODE="0660"
+SUBSYSTEM=="usb", ATTR{idVendor}=="303a", ATTR{idProduct}=="1001", TAG+="uaccess", GROUP="uucp", MODE="0660"
+
+# Silicon Labs CP210x
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", TAG+="uaccess", GROUP="uucp", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea70", TAG+="uaccess", GROUP="uucp", MODE="0660"
+
+# WCH CH340 and CH9102
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", TAG+="uaccess", GROUP="uucp", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="5523", TAG+="uaccess", GROUP="uucp", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", TAG+="uaccess", GROUP="uucp", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", TAG+="uaccess", GROUP="uucp", MODE="0660"
+
+# FTDI
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", TAG+="uaccess", GROUP="uucp", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", TAG+="uaccess", GROUP="uucp", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6011", TAG+="uaccess", GROUP="uucp", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6014", TAG+="uaccess", GROUP="uucp", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", TAG+="uaccess", GROUP="uucp", MODE="0660"

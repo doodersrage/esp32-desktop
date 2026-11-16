@@ -30,6 +30,9 @@ public slots:
 signals:
     // The user double-clicked a port (to open it in the serial monitor).
     void portActivated(const QString &path);
+    // From the port's context menu.
+    void inspectRequested(const QString &path);
+    void eraseRequested(const QString &path);
 
 private:
     void showMessage(const QString &text);

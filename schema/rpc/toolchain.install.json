@@ -14,7 +14,8 @@
           "arduino-cli",
           "esp32-core",
           "qemu-xtensa",
-          "qemu-riscv32"
+          "qemu-riscv32",
+          "device-access"
         ]
       }
     }

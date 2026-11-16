@@ -1,0 +1,144 @@
+{
+  "method": "board.flash",
+  "description": "Write the last build of a project for one board (build.start's output) to a board, from offset 0, leaving flash past the image alone. Refuses if the connected chip is not the one the build is for. Like build.start it needs consent (rule 4): without a valid token it fails with -32002 and data {token, plan}. A job: board.progress events with bytes written, then board.finished.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "port",
+      "project",
+      "board"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "port": {
+        "type": "string",
+        "description": "A path from device.list."
+      },
+      "reset": {
+        "enum": [
+          "auto",
+          "none"
+        ],
+        "description": "How to enter the bootloader. auto (default): the USB sequence for USB-Serial-JTAG boards, DTR/RTS otherwise. none: the chip is already in download mode."
+      },
+      "stub": {
+        "type": "boolean",
+        "description": "Use espflash's RAM stub (faster). Default true; the ROM loader alone also works."
+      },
+      "project": {
+        "type": "string"
+      },
+      "board": {
+        "type": "string"
+      },
+      "consent": {
+        "type": "string",
+        "description": "Token from an earlier -32002 error, after the user agreed."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "errors": [
+    -32000,
+    -32002,
+    -32005
+  ],
+  "errorData": {
+    "-32002": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": [
+        "token",
+        "plan"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project",
+            "board",
+            "port",
+            "imageSha256",
+            "bytes"
+          ],
+          "properties": {
+            "project": {
+              "type": "string"
+            },
+            "board": {
+              "type": "string"
+            },
+            "port": {
+              "type": "string"
+            },
+            "imageSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "bytes": {
+              "type": "integer",
+              "description": "Bytes that will be written, from offset 0."
+            }
+          }
+        }
+      }
+    }
+  },
+  "errorExamples": [
+    {
+      "params": {
+        "port": "/dev/ttyACM0",
+        "project": "blink",
+        "board": "esp32"
+      },
+      "code": -32002,
+      "data": {
+        "token": "0123456789abcdef0123456789abcdef",
+        "plan": {
+          "project": "blink",
+          "board": "esp32",
+          "port": "/dev/ttyACM0",
+          "imageSha256": "abababababababababababababababababababababababababababababababab",
+          "bytes": 290816
+        }
+      }
+    }
+  ],
+  "events": [
+    "board.progress",
+    "board.finished"
+  ],
+  "examples": [
+    {
+      "params": {
+        "port": "/dev/ttyACM0",
+        "project": "blink",
+        "board": "esp32",
+        "consent": "0123456789abcdef0123456789abcdef"
+      },
+      "result": {
+        "job": 3
+      }
+    }
+  ]
+}

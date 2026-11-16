@@ -29,14 +29,16 @@ pub enum Id {
     Esp32Core,
     QemuXtensa,
     QemuRiscv32,
+    DeviceAccess,
 }
 
 impl Id {
-    pub const ALL: [Id; 4] = [
+    pub const ALL: [Id; 5] = [
         Id::ArduinoCli,
         Id::Esp32Core,
         Id::QemuXtensa,
         Id::QemuRiscv32,
+        Id::DeviceAccess,
     ];
 
     pub fn parse(s: &str) -> Option<Id> {
@@ -49,6 +51,7 @@ impl Id {
             Id::Esp32Core => "esp32-core",
             Id::QemuXtensa => "qemu-xtensa",
             Id::QemuRiscv32 => "qemu-riscv32",
+            Id::DeviceAccess => "device-access",
         }
     }
 }
@@ -99,6 +102,61 @@ pub struct Env {
     pub arduino_data: PathBuf,
     /// Private sketchbook for builds (ARDUINO_DIRECTORIES_USER).
     pub sketchbook: PathBuf,
+}
+
+/// The udev rule file the package installs (packaging/udev/).
+pub const UDEV_RULE: &str = "69-esp32bench.rules";
+/// Where udev looks for it.
+pub const UDEV_DIRS: [&str; 2] = ["/usr/lib/udev/rules.d", "/etc/udev/rules.d"];
+
+/// Whether this user can reach boards without root: the esp32bench udev rule is
+/// installed (seat access), or the user is in the uucp group that owns serial ports.
+pub fn board_access(rule_installed: bool, in_uucp: bool) -> Component {
+    let ok = rule_installed || in_uucp;
+    Component {
+        id: Id::DeviceAccess,
+        name: "Board access",
+        needed_for: "hardware",
+        state: if ok { State::Installed } else { State::Missing },
+        version: None,
+        wanted: None,
+        path: None,
+        download_bytes: None,
+        installable: false,
+        hint: (!ok).then(|| {
+            "Install the esp32bench package, which ships a udev rule, or join the uucp group: \
+             sudo usermod -aG uucp $USER, then log out and in again."
+                .to_owned()
+        }),
+    }
+}
+
+/// Whether the current user is a member of `group` (primary or supplementary).
+pub fn in_group(group: &str) -> bool {
+    let Ok(name) = std::ffi::CString::new(group) else {
+        return false;
+    };
+    // SAFETY: getgrnam returns NULL or a pointer to static storage, read at once.
+    let gid = unsafe {
+        let g = libc::getgrnam(name.as_ptr());
+        if g.is_null() {
+            return false;
+        }
+        (*g).gr_gid
+    };
+    // SAFETY: getegid has no preconditions.
+    if unsafe { libc::getegid() } == gid {
+        return true;
+    }
+    // SAFETY: getgroups(0, NULL) returns the count; then fill a buffer that size.
+    let n = unsafe { libc::getgroups(0, std::ptr::null_mut()) };
+    if n <= 0 {
+        return false;
+    }
+    let mut groups = vec![0 as libc::gid_t; n as usize];
+    // SAFETY: the buffer holds `n` entries.
+    let n = unsafe { libc::getgroups(n, groups.as_mut_ptr()) };
+    n > 0 && groups[..n as usize].contains(&gid)
 }
 
 impl Env {
@@ -249,6 +307,11 @@ pub async fn status(env: &Env) -> Vec<Component> {
             hint: None,
         });
     }
+
+    let rule = UDEV_DIRS
+        .iter()
+        .any(|d| Path::new(d).join(UDEV_RULE).is_file());
+    out.push(board_access(rule, in_group("uucp")));
     out
 }
 
@@ -336,7 +399,8 @@ impl std::error::Error for InstallError {}
 /// Install `id`, reporting progress lines to `log`. Dropping the future cancels it.
 pub async fn install(env: &Env, id: Id, mut log: impl FnMut(String)) -> Result<(), InstallError> {
     match id {
-        Id::ArduinoCli => Err(InstallError::NotInstallable(id)),
+        // Both need root (a system package; a udev rule or group change).
+        Id::ArduinoCli | Id::DeviceAccess => Err(InstallError::NotInstallable(id)),
         Id::Esp32Core => {
             let tools = env
                 .toolchain()

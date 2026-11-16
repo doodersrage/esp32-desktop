@@ -121,13 +121,14 @@ async fn reports_installed_core() {
     let s = status(&env(dir.path(), Some(cli))).await;
     let ids: Vec<Id> = s.iter().map(|c| c.id).collect();
     assert_eq!(ids, Id::ALL);
+    assert_eq!(s[4].needed_for, "hardware");
 
     assert_eq!(s[0].state, State::Installed);
     assert_eq!(s[0].version.as_deref(), Some("1.5.1"));
     assert_eq!(s[1].state, State::Installed);
     assert_eq!(s[1].download_bytes, None);
     // QEMU depends on this machine; check only that it is described honestly.
-    for q in &s[2..] {
+    for q in &s[2..4] {
         assert_eq!(q.needed_for, "simulator");
         assert!(q.installable);
         assert_eq!(q.state == State::Installed, q.download_bytes.is_none());
@@ -237,4 +238,30 @@ async fn a_failing_arduino_cli_is_broken_not_missing() {
         "told to install something already installed"
     );
     assert!(!s[1].installable);
+}
+
+#[test]
+fn board_access_needs_the_rule_or_the_group() {
+    use esp32bench_toolchain::board_access;
+    assert_eq!(board_access(true, false).state, State::Installed);
+    assert_eq!(board_access(false, true).state, State::Installed);
+    let none = board_access(false, false);
+    assert_eq!(none.state, State::Missing);
+    assert!(!none.installable, "needs root, so the app never does it");
+    assert!(none.hint.unwrap().contains("usermod -aG uucp"));
+}
+
+#[test]
+fn group_membership_matches_id() {
+    let out = std::process::Command::new("id")
+        .arg("-nG")
+        .output()
+        .unwrap();
+    let groups = String::from_utf8_lossy(&out.stdout).to_string();
+    let first = groups.split_whitespace().next().unwrap();
+    assert!(
+        esp32bench_toolchain::in_group(first),
+        "not in my own group {first}"
+    );
+    assert!(!esp32bench_toolchain::in_group("no-such-group-esp32bench"));
 }

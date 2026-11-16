@@ -74,22 +74,40 @@ pub enum Access {
 
 const ESPRESSIF_VID: u16 = 0x303a;
 
+/// USB devices esp32bench recognises: vendor, product (None for any), bridge and the
+/// chips it could be. packaging/udev/69-esp32bench.rules must grant access to every
+/// entry; a test keeps the two in step.
+pub const KNOWN_USB: &[(u16, Option<u16>, Bridge, &[&str])] = &[
+    (0x10c4, Some(0xea60), Bridge::Cp210x, &[]),
+    (0x10c4, Some(0xea70), Bridge::Cp210x, &[]),
+    (0x1a86, Some(0x7523), Bridge::Ch340, &[]),
+    (0x1a86, Some(0x5523), Bridge::Ch340, &[]),
+    (0x1a86, Some(0x55d3), Bridge::Ch9102, &[]),
+    (0x1a86, Some(0x55d4), Bridge::Ch9102, &[]),
+    (0x0403, Some(0x6001), Bridge::Ftdi, &[]),
+    (0x0403, Some(0x6010), Bridge::Ftdi, &[]),
+    (0x0403, Some(0x6011), Bridge::Ftdi, &[]),
+    (0x0403, Some(0x6014), Bridge::Ftdi, &[]),
+    (0x0403, Some(0x6015), Bridge::Ftdi, &[]),
+    // USB-Serial-JTAG, built into S3, C3 and C6 (and H2/C5, which the site does not list).
+    (
+        ESPRESSIF_VID,
+        Some(0x1001),
+        Bridge::UsbSerialJtag,
+        &["esp32s3", "esp32c3", "esp32c6"],
+    ),
+    // Any other Espressif PID is the chip's USB OTG peripheral, which only S2 and S3 have.
+    (ESPRESSIF_VID, None, Bridge::UsbCdc, &["esp32s2", "esp32s3"]),
+];
+
 /// What a USB VID:PID says about the board: the bridge type and the possible chips.
 pub fn classify(vid: u16, pid: u16) -> (Option<Bridge>, Vec<&'static str>) {
-    match (vid, pid) {
-        (0x10c4, 0xea60 | 0xea70) => (Some(Bridge::Cp210x), vec![]),
-        (0x1a86, 0x7523 | 0x5523) => (Some(Bridge::Ch340), vec![]),
-        (0x1a86, 0x55d3 | 0x55d4) => (Some(Bridge::Ch9102), vec![]),
-        (0x0403, 0x6001 | 0x6010 | 0x6011 | 0x6014 | 0x6015) => (Some(Bridge::Ftdi), vec![]),
-        // USB-Serial-JTAG, built into S3, C3 and C6 (and H2/C5, which the site does not list).
-        (ESPRESSIF_VID, 0x1001) => (
-            Some(Bridge::UsbSerialJtag),
-            vec!["esp32s3", "esp32c3", "esp32c6"],
-        ),
-        // Any other Espressif PID is the chip's USB OTG peripheral, which only S2 and S3 have.
-        (ESPRESSIF_VID, _) => (Some(Bridge::UsbCdc), vec!["esp32s2", "esp32s3"]),
-        _ => (None, vec![]),
-    }
+    KNOWN_USB
+        .iter()
+        .find(|(v, p, _, _)| *v == vid && p.is_none_or(|p| p == pid))
+        .map_or((None, vec![]), |(_, _, b, chips)| {
+            (Some(*b), chips.to_vec())
+        })
 }
 
 /// Whether this user may open `path` for reading and writing.

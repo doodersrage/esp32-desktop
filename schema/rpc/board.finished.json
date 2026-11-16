@@ -1,0 +1,162 @@
+{
+  "event": "board.finished",
+  "description": "The end of a board job. Sent once, unless it was cancelled before writing began.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "ok"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "error": {
+        "type": "string"
+      },
+      "info": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "chip",
+          "crystalMhz",
+          "flashBytes",
+          "features"
+        ],
+        "properties": {
+          "chip": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "crystalMhz": {
+            "type": "integer"
+          },
+          "flashBytes": {
+            "type": "integer"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mac": {
+            "type": "string"
+          },
+          "security": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "secureBoot",
+              "flashEncryption",
+              "secureDownload"
+            ],
+            "properties": {
+              "secureBoot": {
+                "type": "boolean"
+              },
+              "flashEncryption": {
+                "type": "boolean"
+              },
+              "secureDownload": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "partitions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label",
+            "type",
+            "subtype",
+            "offset",
+            "size",
+            "encrypted"
+          ],
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "subtype": {
+              "type": "string"
+            },
+            "offset": {
+              "type": "integer"
+            },
+            "size": {
+              "type": "integer"
+            },
+            "encrypted": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "written": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 2,
+        "ok": true,
+        "info": {
+          "chip": "esp32",
+          "revision": "v3.1",
+          "crystalMhz": 40,
+          "flashBytes": 4194304,
+          "features": [
+            "Wi-Fi",
+            "BT",
+            "Dual Core"
+          ],
+          "mac": "24:6f:28:00:11:22"
+        },
+        "partitions": [
+          {
+            "label": "nvs",
+            "type": "data",
+            "subtype": "nvs",
+            "offset": 36864,
+            "size": 20480,
+            "encrypted": false
+          },
+          {
+            "label": "app0",
+            "type": "app",
+            "subtype": "ota_0",
+            "offset": 65536,
+            "size": 1310720,
+            "encrypted": false
+          }
+        ]
+      }
+    },
+    {
+      "params": {
+        "subscription": 3,
+        "ok": false,
+        "error": "the board is an esp32c3, but this build is for esp32s3"
+      }
+    }
+  ]
+}

@@ -11,8 +11,11 @@
 #include <QObject>
 #include <QString>
 
+#include <functional>
+
 class QTimer;
 class RpcClient;
+struct RpcReply;
 
 class CoreConnection : public QObject {
     Q_OBJECT
@@ -83,6 +86,15 @@ public:
     void installComponent(const QString &component);
     bool isInstalling() const { return m_installJob != 0; }
 
+    // board.inspect / board.flash / board.erase: one board job at a time, reporting
+    // through boardProgress and boardFinished. board.flash asks for consent first
+    // (boardConsentRequired); call flashBuild again with the token if the user agrees.
+    void inspectBoard(const QString &port);
+    void flashBuild(const QString &port, const QString &project, const QString &board,
+                    const QString &consent = {});
+    void eraseBoard(const QString &port);
+    bool isBoardBusy() const { return m_boardJob != 0; }
+
     // Error code the core uses when consent is missing (docs/rpc.md).
     static constexpr int ConsentRequired = -32002;
 
@@ -111,6 +123,13 @@ signals:
     void toolchainStatus(const QJsonArray &components);
     void toolchainProgress(const QString &line);
     void toolchainInstallFinished(bool ok, const QString &error);
+    // Boards. `operation` is "inspect", "flash" or "erase".
+    void boardConsentRequired(const QString &port, const QString &project, const QString &board,
+                              const QString &token, const QJsonObject &plan);
+    void boardStarted(const QString &operation, const QString &port);
+    void boardProgress(const QString &stage, qint64 written, qint64 total);
+    // `result` has `info`, `partitions` and `written` where the job produced them.
+    void boardFinished(const QString &operation, bool ok, const QString &error, const QJsonObject &result);
     // A request failed. `method` is the RPC method name.
     void requestFailed(const QString &method, const QString &message);
 
@@ -123,6 +142,9 @@ private:
     void handleBuildEvent(const QString &method, const QJsonObject &params);
     void handleSerialEvent(const QString &method, const QJsonObject &params);
     void handleInstallEvent(const QString &method, const QJsonObject &params);
+    void startBoardJob(const QString &operation, const QString &method, const QJsonObject &params,
+                       std::function<bool(const RpcReply &)> onRefused = {});
+    void handleBoardEvent(const QString &method, const QJsonObject &params);
 
     RpcClient *m_client;
     QTimer *m_retry;
@@ -142,4 +164,7 @@ private:
     QList<QPair<QString, QJsonObject>> m_earlySerialEvents;
     qint64 m_installJob = 0; // running toolchain.install job, -1 while starting, or 0
     QList<QPair<QString, QJsonObject>> m_earlyInstallEvents;
+    qint64 m_boardJob = 0; // running board job, -1 while starting, or 0
+    QString m_boardOperation;
+    QList<QPair<QString, QJsonObject>> m_earlyBoardEvents;
 };

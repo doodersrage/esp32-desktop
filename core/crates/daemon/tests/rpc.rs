@@ -223,7 +223,7 @@ async fn core_hello_round_trip() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
     let def = method_def("core.hello");
-    let params = json!({ "client": "test", "protocol": "0.7.0" });
+    let params = json!({ "client": "test", "protocol": "0.8.0" });
     assert_valid(&def["params"], &params, "core.hello params");
     let r = c.call("core.hello", params).await.unwrap();
     assert_valid(&def["result"], &r, "core.hello result");
@@ -832,7 +832,13 @@ async fn toolchain_status_matches_schema() {
         .collect();
     assert_eq!(
         ids,
-        ["arduino-cli", "esp32-core", "qemu-xtensa", "qemu-riscv32"]
+        [
+            "arduino-cli",
+            "esp32-core",
+            "qemu-xtensa",
+            "qemu-riscv32",
+            "device-access"
+        ]
     );
 }
 
@@ -880,4 +886,267 @@ async fn toolchain_install_runs_as_a_job() {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
         other => panic!("expected invalid params, got {other:?}"),
     }
+}
+
+/// QEMU in download mode with its UART on a pty, for board.* tests. Killed on drop.
+struct DownloadModeQemu {
+    child: std::process::Child,
+    pty: PathBuf,
+}
+
+impl Drop for DownloadModeQemu {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// Start `chip` (esp32 or esp32c3) in download mode over `flash`, or None without QEMU.
+fn download_mode_qemu(chip: &str, flash: &Path, log: &Path) -> Option<DownloadModeQemu> {
+    let (arch, strap) = match chip {
+        "esp32" => (
+            esp32bench_sim::Arch::Xtensa,
+            "driver=esp32.gpio,property=strap_mode,value=0x0f",
+        ),
+        _ => (
+            esp32bench_sim::Arch::Riscv32,
+            "driver=esp32c3.gpio,property=strap_mode,value=0x02",
+        ),
+    };
+    let qemu = esp32bench_sim::install::find_qemu(arch).ok()?;
+    let out = std::fs::File::create(log).unwrap();
+    let mut drive = std::ffi::OsString::from("file=");
+    drive.push(flash);
+    drive.push(",if=mtd,format=raw");
+    let child = std::process::Command::new(qemu)
+        .args(["-machine", chip, "-display", "none", "-monitor", "none"])
+        .arg("-drive")
+        .arg(drive)
+        .args(["-global", strap, "-serial", "pty"])
+        .stdout(out.try_clone().unwrap())
+        .stderr(out)
+        .spawn()
+        .unwrap();
+    let mut q = DownloadModeQemu {
+        child,
+        pty: PathBuf::new(),
+    };
+    for _ in 0..100 {
+        let text = std::fs::read_to_string(log).unwrap_or_default();
+        if let Some(i) = text.find("/dev/pts/") {
+            q.pty = PathBuf::from(
+                text[i..]
+                    .chars()
+                    .take_while(|c| !c.is_whitespace() && *c != ')')
+                    .collect::<String>(),
+            );
+            return Some(q);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    panic!("QEMU did not report its pty");
+}
+
+fn firmware(name: &str) -> Option<PathBuf> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/firmware/out")
+        .join(name);
+    p.is_file().then_some(p)
+}
+
+/// Wait for a board job's events until board.finished; check each against its schema.
+async fn board_events(c: &mut Client, job: &Value) -> (Vec<Value>, Value) {
+    let mut progress = Vec::new();
+    loop {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(120), c.next_notification())
+            .await
+            .expect("board job timed out")
+            .unwrap();
+        let event = n["method"].as_str().unwrap();
+        assert_valid(&method_def(event)["params"], &n["params"], event);
+        assert_eq!(&n["params"]["subscription"], job);
+        if event == "board.finished" {
+            return (progress, n["params"].clone());
+        }
+        progress.push(n["params"].clone());
+    }
+}
+
+/// Params that reach QEMU: no reset lines on a pty, and the ROM loader (no stub).
+fn qemu_params(pty: &Path, extra: Value) -> Value {
+    let mut p = json!({ "port": pty, "reset": "none", "stub": false });
+    p.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    p
+}
+
+#[tokio::test]
+async fn board_inspect_reads_chip_and_partitions_from_qemu() {
+    let Some(hello) = firmware("hello-esp32.bin") else {
+        eprintln!("skipping: hello firmware not built");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let flash = dir.path().join("flash.bin");
+    std::fs::copy(hello, &flash).unwrap();
+    let Some(q) = download_mode_qemu("esp32", &flash, &dir.path().join("q.log")) else {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    };
+    let (_d, sock, _lock) = serial_daemon(&q.pty).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let r = c
+        .call("board.inspect", qemu_params(&q.pty, json!({})))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("board.inspect")["result"],
+        &r,
+        "board.inspect result",
+    );
+    let (progress, done) = board_events(&mut c, &r["job"]).await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(done["info"]["chip"], "esp32");
+    assert!(
+        done["partitions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["subtype"] == "factory")
+    );
+    assert_eq!(progress[0]["stage"], "connecting");
+}
+
+#[tokio::test]
+async fn board_flash_needs_consent_and_writes_the_build() {
+    let (Some(hello), Some(gpio)) = (firmware("hello-esp32.bin"), firmware("gpio-esp32.bin"))
+    else {
+        eprintln!("skipping: test firmware not built");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let flash = dir.path().join("flash.bin");
+    std::fs::copy(hello, &flash).unwrap();
+    let Some(q) = download_mode_qemu("esp32", &flash, &dir.path().join("q.log")) else {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    };
+    let (d, sock, _lock) = serial_daemon(&q.pty).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    // Pretend the gpio firmware is the last build of blink for esp32.
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&gpio, out.join("blink.ino.merged.bin")).unwrap();
+
+    let params = qemu_params(&q.pty, json!({ "project": "blink", "board": "esp32" }));
+    let token = match c.call("board.flash", params.clone()).await {
+        Err(ClientError::Rpc(e)) => {
+            assert_eq!(e.code, code::CONSENT_REQUIRED);
+            let data = e.data.unwrap();
+            assert_valid(
+                &method_def("board.flash")["errorData"]["-32002"],
+                &data,
+                "flash consent",
+            );
+            data["token"].as_str().unwrap().to_owned()
+        }
+        other => panic!("flashed without consent: {other:?}"),
+    };
+    let mut with_token = params.clone();
+    with_token["consent"] = json!(token);
+    let r = c.call("board.flash", with_token).await.unwrap();
+    let (progress, done) = board_events(&mut c, &r["job"]).await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert!(progress.iter().any(|p| p["stage"] == "writing"));
+    let written = done["written"].as_u64().unwrap() as usize;
+    drop(q); // let QEMU flush the flash file
+    let image = std::fs::read(&gpio).unwrap();
+    let on_disk = std::fs::read(&flash).unwrap();
+    assert_eq!(
+        &on_disk[..written],
+        &image[..written],
+        "the build did not reach the flash"
+    );
+}
+
+#[tokio::test]
+async fn board_flash_refuses_a_build_for_another_chip() {
+    let (Some(c3), Some(gpio)) = (firmware("hello-esp32c3.bin"), firmware("gpio-esp32.bin")) else {
+        eprintln!("skipping: test firmware not built");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let flash = dir.path().join("flash.bin");
+    std::fs::copy(c3, &flash).unwrap();
+    let Some(q) = download_mode_qemu("esp32c3", &flash, &dir.path().join("q.log")) else {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    };
+    let (d, sock, _lock) = serial_daemon(&q.pty).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&gpio, out.join("blink.ino.merged.bin")).unwrap();
+    let params = qemu_params(&q.pty, json!({ "project": "blink", "board": "esp32" }));
+    let token = match c.call("board.flash", params.clone()).await {
+        Err(ClientError::Rpc(e)) => e.data.unwrap()["token"].as_str().unwrap().to_owned(),
+        other => panic!("expected consent required, got {other:?}"),
+    };
+    let mut with_token = params;
+    with_token["consent"] = json!(token);
+    let r = c.call("board.flash", with_token).await.unwrap();
+    let (_, done) = board_events(&mut c, &r["job"]).await;
+    assert_eq!(done["ok"], false);
+    assert!(
+        done["error"].as_str().unwrap().contains("esp32c3"),
+        "{done}"
+    );
+}
+
+#[tokio::test]
+async fn board_erase_needs_confirmation_and_the_stub() {
+    let Some(hello) = firmware("hello-esp32.bin") else {
+        eprintln!("skipping: hello firmware not built");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let flash = dir.path().join("flash.bin");
+    std::fs::copy(hello, &flash).unwrap();
+    let Some(q) = download_mode_qemu("esp32", &flash, &dir.path().join("q.log")) else {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    };
+    let (_d, sock, _lock) = serial_daemon(&q.pty).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    match c
+        .call(
+            "board.erase",
+            qemu_params(&q.pty, json!({ "confirm": false })),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("erased without confirmation: {other:?}"),
+    }
+    // Erasing is a stub-only command; QEMU cannot run the stub, so it must fail
+    // cleanly and quickly rather than hang. (Real boards use the stub by default.)
+    let r = c
+        .call(
+            "board.erase",
+            qemu_params(&q.pty, json!({ "confirm": true })),
+        )
+        .await
+        .unwrap();
+    let (_, done) = board_events(&mut c, &r["job"]).await;
+    assert_eq!(done["ok"], false);
+    assert!(done["error"].as_str().unwrap().contains("stub"), "{done}");
+    drop(q);
+    assert_eq!(
+        std::fs::read(&flash).unwrap()[0x1000],
+        0xE9,
+        "flash was changed"
+    );
 }

@@ -1,0 +1,53 @@
+{
+  "event": "board.progress",
+  "description": "A step of a board.inspect, board.flash or board.erase job.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "stage"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "stage": {
+        "enum": [
+          "connecting",
+          "reading",
+          "erasing",
+          "writing",
+          "verifying",
+          "resetting"
+        ]
+      },
+      "written": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "total": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "stage": "connecting"
+      }
+    },
+    {
+      "params": {
+        "subscription": 3,
+        "stage": "writing",
+        "written": 65536,
+        "total": 290816
+      }
+    }
+  ]
+}

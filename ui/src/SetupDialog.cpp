@@ -27,7 +27,8 @@ SetupDialog::SetupDialog(CoreConnection *core, QWidget *parent)
     resize(860, 460);
 
     auto *intro = new QLabel(tr("Builds need arduino-cli and the ESP32 Arduino core. The simulator needs "
-                                "QEMU. Versions are pinned, so builds match what was tested."),
+                                "QEMU. Flashing and the serial monitor need access to boards' serial ports. "
+                                "Versions are pinned, so builds match what was tested."),
                              this);
     intro->setWordWrap(true);
     m_summary->setWordWrap(true);
@@ -94,7 +95,10 @@ void SetupDialog::showStatus(const QJsonArray &components)
 
         auto *item = new QTreeWidgetItem(m_tree);
         item->setText(NameColumn, name);
-        item->setText(NeededForColumn, forBuild ? tr("Building") : tr("Simulator"));
+        const QString neededFor = c.value(u"neededFor"_s).toString();
+        item->setText(NeededForColumn, forBuild                       ? tr("Building")
+                                       : neededFor == u"hardware" ? tr("Boards")
+                                                                  : tr("Simulator"));
         item->setText(StateColumn, installed                  ? tr("Installed")
                                    : state == u"other-version" ? tr("Different version")
                                    : state == u"broken"        ? tr("Not working")

@@ -83,7 +83,8 @@ pub struct Plan {
     pub install: Vec<String>,
 }
 
-fn safe_id(id: &str) -> Result<(), Error> {
+/// Ids from downloaded data become path components; allow only `[a-z0-9-]`.
+pub fn safe_id(id: &str) -> Result<(), Error> {
     let ok = !id.is_empty()
         && id.len() <= 64
         && id
@@ -171,18 +172,25 @@ pub fn plan(manifest: &Manifest, project: &str, board: &str) -> Result<(Plan, St
 
 /// Single-use permission to run one exact plan, issued after the user has seen it
 /// (rule 4: nothing downloaded runs without consent). Tokens expire.
-#[derive(Default)]
-pub struct Consent {
-    grants: Mutex<HashMap<String, (Plan, Instant)>>,
+pub struct Consent<P = Plan> {
+    grants: Mutex<HashMap<String, (P, Instant)>>,
 }
 
-impl Consent {
+impl<P> Default for Consent<P> {
+    fn default() -> Self {
+        Consent {
+            grants: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl<P: Clone + PartialEq> Consent<P> {
     pub fn new() -> Self {
         Self::default()
     }
 
     /// A token the user can give back to run `plan`.
-    pub fn issue(&self, plan: &Plan) -> Result<String, Error> {
+    pub fn issue(&self, plan: &P) -> Result<String, Error> {
         let token = random_token()?;
         let mut g = self.grants.lock().unwrap_or_else(|p| p.into_inner());
         g.retain(|_, (_, at)| at.elapsed() < CONSENT_LIFETIME);
@@ -192,7 +200,7 @@ impl Consent {
 
     /// True if `token` was issued for exactly `plan` and has not expired. The token is
     /// used up either way.
-    pub fn redeem(&self, token: &str, plan: &Plan) -> bool {
+    pub fn redeem(&self, token: &str, plan: &P) -> bool {
         let mut g = self.grants.lock().unwrap_or_else(|p| p.into_inner());
         match g.remove(token) {
             Some((granted, at)) => &granted == plan && at.elapsed() < CONSENT_LIFETIME,

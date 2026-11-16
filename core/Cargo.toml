@@ -11,6 +11,7 @@ members = [
     "crates/build",
     "crates/serial",
     "crates/toolchain",
+    "crates/flash",
 ]
 
 [workspace.package]
