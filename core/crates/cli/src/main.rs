@@ -56,6 +56,15 @@ enum DeviceCmd {
         #[arg(long)]
         json: bool,
     },
+    /// List serial ports, then print the list again each time one appears or disappears.
+    Watch {
+        /// Include ports that are not USB.
+        #[arg(long)]
+        all: bool,
+        /// Print one JSON object per line instead of a table.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -188,41 +197,24 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             }
         }
         Cmd::Device(DeviceCmd::List { all, json }) => {
-            let ports = esp32bench_device::list(all)?;
-            if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&serde_json::json!({ "ports": ports }))?
-                );
-            } else if ports.is_empty() {
-                println!("no serial ports found");
-            } else {
-                for p in &ports {
-                    let ids = p
-                        .usb
-                        .as_ref()
-                        .map(|u| format!("{:04x}:{:04x}", u.vid, u.pid))
-                        .unwrap_or_else(|| "-".into());
-                    let bridge = p
-                        .bridge
-                        .and_then(|b| serde_json::to_value(b).ok())
-                        .and_then(|v| v.as_str().map(str::to_owned))
-                        .unwrap_or_else(|| "unknown".into());
-                    let chips = if p.chips.is_empty() {
-                        "any".to_owned()
-                    } else {
-                        p.chips.join(",")
-                    };
-                    let access = match p.access {
-                        esp32bench_device::Access::Ok => "",
-                        esp32bench_device::Access::Denied => {
-                            "  (no access: check the udev rule and uucp group)"
-                        }
-                    };
-                    println!(
-                        "{:<16} {ids:<10} {bridge:<16} chips: {chips}{access}",
-                        p.path
-                    );
+            print_ports(&esp32bench_device::list(all)?, json, true)?;
+        }
+        Cmd::Device(DeviceCmd::Watch { all, json }) => {
+            let mut monitor = esp32bench_device::Monitor::new()?;
+            let mut last = esp32bench_device::list(all)?;
+            print_ports(&last, json, !json)?;
+            loop {
+                tokio::select! {
+                    r = monitor.changed() => r?,
+                    _ = tokio::signal::ctrl_c() => break,
+                }
+                let now = esp32bench_device::list(all)?;
+                if now != last {
+                    if !json {
+                        println!("--");
+                    }
+                    print_ports(&now, json, !json)?;
+                    last = now;
                 }
             }
         }
@@ -280,6 +272,50 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Print ports as a table, or as one JSON object (`{"ports": [...]}`) on one line.
+fn print_ports(ports: &[esp32bench_device::Port], json: bool, pretty: bool) -> Result<()> {
+    if json {
+        let v = serde_json::json!({ "ports": ports });
+        if pretty {
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        } else {
+            println!("{}", serde_json::to_string(&v)?);
+        }
+        return Ok(());
+    }
+    if ports.is_empty() {
+        println!("no serial ports found");
+    }
+    for p in ports {
+        let ids = p
+            .usb
+            .as_ref()
+            .map(|u| format!("{:04x}:{:04x}", u.vid, u.pid))
+            .unwrap_or_else(|| "-".into());
+        let bridge = p
+            .bridge
+            .and_then(|b| serde_json::to_value(b).ok())
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "unknown".into());
+        let chips = if p.chips.is_empty() {
+            "any".to_owned()
+        } else {
+            p.chips.join(",")
+        };
+        let access = match p.access {
+            esp32bench_device::Access::Ok => "",
+            esp32bench_device::Access::Denied => {
+                "  (no access: check the udev rule and uucp group)"
+            }
+        };
+        println!(
+            "{:<16} {ids:<10} {bridge:<16} chips: {chips}{access}",
+            p.path
+        );
+    }
+    Ok(())
 }
 
 async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {

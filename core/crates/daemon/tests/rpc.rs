@@ -97,12 +97,82 @@ fn every_example_matches_its_schema() {
     }
 }
 
+#[test]
+fn every_event_example_matches_its_schema() {
+    let events = index()["events"].as_array().cloned().unwrap_or_default();
+    assert!(!events.is_empty());
+    for e in &events {
+        let e = e.as_str().unwrap();
+        let def = method_def(e);
+        assert_eq!(def["event"], e, "{e}.json names another event");
+        for (i, ex) in def["examples"].as_array().unwrap().iter().enumerate() {
+            assert_valid(&def["params"], &ex["params"], &format!("{e} example {i}"));
+        }
+    }
+    // Every event a method announces is defined.
+    for m in index()["methods"].as_array().unwrap() {
+        for e in method_def(m.as_str().unwrap())["events"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+        {
+            assert!(events.contains(&e), "{m} announces undefined event {e}");
+        }
+    }
+}
+
+#[test]
+fn port_schemas_are_identical_everywhere() {
+    let list = &method_def("device.list")["result"]["properties"]["ports"];
+    assert_eq!(
+        &method_def("device.watch")["result"]["properties"]["ports"],
+        list
+    );
+    assert_eq!(
+        &method_def("device.changed")["params"]["properties"]["ports"],
+        list
+    );
+}
+
+#[tokio::test]
+async fn device_watch_and_unsubscribe_round_trip() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let r = c.call("device.watch", json!({})).await.unwrap();
+    assert_valid(
+        &method_def("device.watch")["result"],
+        &r,
+        "device.watch result",
+    );
+    let id = r["subscription"].as_u64().unwrap();
+
+    let r = c
+        .call("core.unsubscribe", json!({ "subscription": id }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("core.unsubscribe")["result"],
+        &r,
+        "core.unsubscribe result",
+    );
+    // A second unsubscribe, or an id from nowhere, is "not found".
+    for bad in [id, 999] {
+        match c
+            .call("core.unsubscribe", json!({ "subscription": bad }))
+            .await
+        {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+            other => panic!("expected not found, got {other:?}"),
+        }
+    }
+}
+
 #[tokio::test]
 async fn core_hello_round_trip() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
     let def = method_def("core.hello");
-    let params = json!({ "client": "test", "protocol": "0.1.0" });
+    let params = json!({ "client": "test", "protocol": "0.2.0" });
     assert_valid(&def["params"], &params, "core.hello params");
     let r = c.call("core.hello", params).await.unwrap();
     assert_valid(&def["result"], &r, "core.hello result");

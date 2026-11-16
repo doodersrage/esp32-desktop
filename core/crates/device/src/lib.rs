@@ -14,6 +14,8 @@ use serde::Serialize;
 pub enum Error {
     #[error("listing serial ports failed: {0}")]
     List(String),
+    #[error("watching for device changes failed: {0}")]
+    Monitor(String),
 }
 
 /// One serial port, as reported by `device.list` (see `schema/rpc/device.list.json`).
@@ -147,9 +149,128 @@ fn from_info(path: String, ty: serialport::SerialPortType) -> Port {
     }
 }
 
+/// Waits for serial ports to appear or disappear, using a udev monitor on the `tty`
+/// subsystem. libudev handles are not thread-safe, so the monitor lives on its own
+/// thread and signals changes over a channel; that thread ends within half a second
+/// of the `Monitor` being dropped.
+pub struct Monitor {
+    rx: tokio::sync::mpsc::UnboundedReceiver<()>,
+}
+
+/// How long to wait for a burst of udev events (one plug-in sends several) to settle.
+const SETTLE: std::time::Duration = std::time::Duration::from_millis(300);
+/// How often the monitor thread checks whether anyone is still listening.
+const POLL_MS: libc::c_int = 500;
+
+impl Monitor {
+    pub fn new() -> Result<Self, Error> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<(), String>>();
+        std::thread::Builder::new()
+            .name("udev-monitor".into())
+            .spawn(move || monitor_thread(tx, ready_tx))
+            .map_err(|e| Error::Monitor(e.to_string()))?;
+        match ready_rx.recv() {
+            Ok(Ok(())) => Ok(Monitor { rx }),
+            Ok(Err(e)) => Err(Error::Monitor(e)),
+            Err(_) => Err(Error::Monitor("monitor thread exited".into())),
+        }
+    }
+
+    /// Wait until a serial port is added or removed, then until the burst of events
+    /// settles. The caller re-lists the ports afterwards.
+    pub async fn changed(&mut self) -> Result<(), Error> {
+        if self.rx.recv().await.is_none() {
+            return Err(Error::Monitor("monitor thread exited".into()));
+        }
+        tokio::time::sleep(SETTLE).await;
+        while self.rx.try_recv().is_ok() {}
+        Ok(())
+    }
+}
+
+fn monitor_thread(
+    tx: tokio::sync::mpsc::UnboundedSender<()>,
+    ready: std::sync::mpsc::Sender<Result<(), String>>,
+) {
+    use std::os::fd::AsRawFd;
+
+    let socket = match udev::MonitorBuilder::new()
+        .and_then(|b| b.match_subsystem("tty"))
+        .and_then(|b| b.listen())
+    {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = ready.send(Err(e.to_string()));
+            return;
+        }
+    };
+    let _ = ready.send(Ok(()));
+
+    let mut pfd = libc::pollfd {
+        fd: socket.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    while !tx.is_closed() {
+        pfd.revents = 0;
+        // SAFETY: poll on one valid pollfd that lives on this stack frame.
+        let n = unsafe { libc::poll(&mut pfd, 1, POLL_MS) };
+        if n < 0 {
+            if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return;
+        }
+        if n == 0 {
+            continue;
+        }
+        // The socket is non-blocking; read every queued event.
+        let relevant = socket
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.event_type(),
+                    udev::EventType::Add | udev::EventType::Remove
+                )
+            })
+            .count()
+            > 0;
+        if relevant && tx.send(()).is_err() {
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn monitor_threads() -> usize {
+        std::fs::read_dir("/proc/self/task")
+            .unwrap()
+            .filter_map(|t| std::fs::read_to_string(t.ok()?.path().join("comm")).ok())
+            .filter(|name| name.trim() == "udev-monitor")
+            .count()
+    }
+
+    #[tokio::test]
+    async fn monitor_waits_quietly_and_its_thread_ends_on_drop() {
+        // Plugging a board in is a manual check; here, nothing changes.
+        let mut m = Monitor::new().unwrap();
+        assert_eq!(monitor_threads(), 1);
+        let r = tokio::time::timeout(std::time::Duration::from_millis(200), m.changed()).await;
+        assert!(r.is_err(), "reported a change with nothing plugged in");
+
+        drop(m);
+        for _ in 0..30 {
+            if monitor_threads() == 0 {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        panic!("udev monitor thread still running after drop");
+    }
 
     #[test]
     fn classifies_common_bridges_without_guessing_the_chip() {

@@ -27,7 +27,9 @@ CoreConnection::CoreConnection(QObject *parent)
     connect(m_retry, &QTimer::timeout, this, &CoreConnection::tryConnect);
 
     connect(m_client, &RpcClient::connected, this, &CoreConnection::onSocketConnected);
+    connect(m_client, &RpcClient::notification, this, &CoreConnection::onNotification);
     connect(m_client, &RpcClient::disconnected, this, [this] {
+        m_devicesSubscription = 0; // the core drops subscriptions with the connection
         // After an incompatible handshake we hang up on purpose; stay in that state
         // instead of retrying the same core forever.
         if (m_state == State::Incompatible)
@@ -75,7 +77,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.1.0"_s},
+        {u"protocol"_s, u"0.2.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -153,4 +155,25 @@ void CoreConnection::listDevices(bool includeNonUsb)
         else
             emit requestFailed(method, r.errorMessage);
     });
+}
+
+void CoreConnection::watchDevices()
+{
+    const QString method = u"device.watch"_s;
+    m_client->call(method, {}, this, [this, method](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(method, r.errorMessage);
+            return;
+        }
+        const QJsonObject o = r.result.toObject();
+        m_devicesSubscription = o.value(u"subscription"_s).toInteger();
+        emit devicesListed(o.value(u"ports"_s).toArray());
+    });
+}
+
+void CoreConnection::onNotification(const QString &method, const QJsonObject &params)
+{
+    const qint64 sub = params.value(u"subscription"_s).toInteger();
+    if (method == u"device.changed" && sub != 0 && sub == m_devicesSubscription)
+        emit devicesListed(params.value(u"ports"_s).toArray());
 }

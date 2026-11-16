@@ -76,8 +76,9 @@ DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
             });
     connect(m_core, &CoreConnection::stateChanged, this, [this](CoreConnection::State s) {
         updateEnabled();
+        // Subscribe once per connection; later changes arrive by themselves.
         if (s == CoreConnection::State::Connected)
-            refresh();
+            m_core->watchDevices();
     });
     updateEnabled();
 }

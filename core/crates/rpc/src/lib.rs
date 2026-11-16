@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -93,6 +94,49 @@ pub fn parse_params<T: DeserializeOwned>(params: Value) -> Result<T, RpcError> {
 #[derive(Clone)]
 pub struct Ctx {
     outbox: mpsc::UnboundedSender<Value>,
+    subs: Arc<Subscriptions>,
+}
+
+/// The connection's live subscriptions: id to the task producing its events.
+#[derive(Default)]
+struct Subscriptions {
+    next: AtomicU64,
+    tasks: Mutex<HashMap<u64, tokio::task::AbortHandle>>,
+}
+
+impl Subscriptions {
+    fn abort_all(&self) {
+        let tasks = match self.tasks.lock() {
+            Ok(mut t) => std::mem::take(&mut *t),
+            Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
+        };
+        for (_, t) in tasks {
+            t.abort();
+        }
+    }
+}
+
+/// Handle given to a subscription's task for sending its events.
+pub struct Subscription {
+    id: u64,
+    outbox: mpsc::UnboundedSender<Value>,
+}
+
+impl Subscription {
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Send an event. `params` must be an object; the subscription id is added to it.
+    /// Returns false once the client is gone.
+    pub fn send(&self, method: &str, mut params: Value) -> bool {
+        if let Some(o) = params.as_object_mut() {
+            o.insert("subscription".into(), json!(self.id));
+        }
+        self.outbox
+            .send(json!({ "jsonrpc": "2.0", "method": method, "params": params }))
+            .is_ok()
+    }
 }
 
 impl Ctx {
@@ -108,6 +152,44 @@ impl Ctx {
     /// True once the client has disconnected; long-running work should stop.
     pub fn is_closed(&self) -> bool {
         self.outbox.is_closed()
+    }
+
+    /// Start a subscription: `task` runs until it returns, the client unsubscribes, or
+    /// the connection closes, whichever comes first. Returns the subscription id.
+    pub fn subscribe<F, Fut>(&self, task: F) -> u64
+    where
+        F: FnOnce(Subscription) -> Fut,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let id = self.subs.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let sub = Subscription {
+            id,
+            outbox: self.outbox.clone(),
+        };
+        let handle = tokio::spawn(task(sub)).abort_handle();
+        match self.subs.tasks.lock() {
+            Ok(mut t) => {
+                t.insert(id, handle);
+            }
+            // A poisoned map means a bug elsewhere; do not leave the task running.
+            Err(_) => handle.abort(),
+        }
+        id
+    }
+
+    /// Stop a subscription. Returns false if this connection has no such id.
+    pub fn unsubscribe(&self, id: u64) -> bool {
+        let handle = match self.subs.tasks.lock() {
+            Ok(mut t) => t.remove(&id),
+            Err(_) => None,
+        };
+        match handle {
+            Some(h) => {
+                h.abort();
+                true
+            }
+            None => false,
+        }
     }
 }
 
@@ -244,7 +326,11 @@ pub async fn serve_connection(stream: UnixStream, router: Arc<Router>) -> std::i
     });
 
     let mut reader = BufReader::new(r);
-    let ctx = Ctx { outbox: tx.clone() };
+    let subs = Arc::new(Subscriptions::default());
+    let ctx = Ctx {
+        outbox: tx.clone(),
+        subs: subs.clone(),
+    };
     let result = loop {
         let line = match read_line(&mut reader).await {
             Ok(Some(l)) => l,
@@ -280,6 +366,9 @@ pub async fn serve_connection(stream: UnixStream, router: Arc<Router>) -> std::i
             }
         });
     };
+    // Stop this connection's subscriptions: nobody is listening any more, and their
+    // senders would otherwise keep the writer alive.
+    subs.abort_all();
     // Dropping our senders lets the writer finish once in-flight handlers are done.
     drop(ctx);
     drop(tx);
@@ -372,6 +461,23 @@ impl Client {
         }
     }
 
+    /// Wait for the next notification (one already received first).
+    pub async fn next_notification(&mut self) -> Result<Value, ClientError> {
+        if !self.notifications.is_empty() {
+            return Ok(self.notifications.remove(0));
+        }
+        loop {
+            let Some(line) = read_line(&mut self.reader).await? else {
+                return Err(ClientError::Protocol("connection closed".into()));
+            };
+            let msg: Value =
+                serde_json::from_slice(&line).map_err(|e| ClientError::Protocol(e.to_string()))?;
+            if msg.get("id").is_none() && msg.get("method").is_some() {
+                return Ok(msg);
+            }
+        }
+    }
+
     /// Notifications received so far, oldest first. Draining clears them.
     pub fn drain_notifications(&mut self) -> Vec<Value> {
         std::mem::take(&mut self.notifications)
@@ -397,6 +503,109 @@ mod tests {
                 ctx.notify("test.event", json!({ "subscription": 1, "n": 7 }));
                 Ok(json!(null))
             })
+    }
+
+    /// Decrements a counter when dropped, to observe when a subscription task ends.
+    struct Live(Arc<std::sync::atomic::AtomicUsize>);
+    impl Live {
+        fn new(c: &Arc<std::sync::atomic::AtomicUsize>) -> Self {
+            c.fetch_add(1, Ordering::SeqCst);
+            Live(c.clone())
+        }
+    }
+    impl Drop for Live {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    /// A router whose `test.ticks` starts a subscription sending a tick every 20 ms.
+    fn ticks_router(live: Arc<std::sync::atomic::AtomicUsize>) -> Router {
+        Router::new()
+            .method("test.ticks", move |_, ctx: Ctx| {
+                let live = live.clone();
+                async move {
+                    let id = ctx.subscribe(|sub| async move {
+                        let _live = Live::new(&live);
+                        for n in 0u64.. {
+                            if !sub.send("test.tick", json!({ "n": n })) {
+                                break;
+                            }
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                        }
+                    });
+                    Ok(json!({ "subscription": id }))
+                }
+            })
+            .method("test.unsubscribe", |p, ctx: Ctx| async move {
+                Ok(json!(
+                    ctx.unsubscribe(p["subscription"].as_u64().unwrap_or(0))
+                ))
+            })
+    }
+
+    async fn serve_router(router: Router) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("core.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        tokio::spawn(serve(listener, Arc::new(router)));
+        (dir, path)
+    }
+
+    #[tokio::test]
+    async fn subscriptions_stream_until_unsubscribed() {
+        let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (_d, path) = serve_router(ticks_router(live.clone())).await;
+        let mut c = Client::connect(&path).await.unwrap();
+        let id = c.call("test.ticks", json!({})).await.unwrap()["subscription"]
+            .as_u64()
+            .unwrap();
+        for _ in 0..3 {
+            let n = tokio::time::timeout(Duration::from_secs(2), c.next_notification())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(n["method"], "test.tick");
+            assert_eq!(n["params"]["subscription"], id);
+        }
+        assert_eq!(
+            c.call("test.unsubscribe", json!({ "subscription": id }))
+                .await
+                .unwrap(),
+            true
+        );
+        // Unknown or already-stopped ids are refused.
+        assert_eq!(
+            c.call("test.unsubscribe", json!({ "subscription": id }))
+                .await
+                .unwrap(),
+            false
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            live.load(Ordering::SeqCst),
+            0,
+            "task still running after unsubscribe"
+        );
+    }
+
+    #[tokio::test]
+    async fn subscriptions_stop_when_the_client_disconnects() {
+        let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (_d, path) = serve_router(ticks_router(live.clone())).await;
+        let mut c = Client::connect(&path).await.unwrap();
+        c.call("test.ticks", json!({})).await.unwrap();
+        c.call("test.ticks", json!({})).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(live.load(Ordering::SeqCst), 2);
+        drop(c);
+        for _ in 0..100 {
+            if live.load(Ordering::SeqCst) == 0 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("subscription tasks still running after the client left");
     }
 
     /// A server on a real Unix socket in a temp dir, and the socket path.

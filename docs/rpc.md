@@ -38,6 +38,8 @@ Standard JSON-RPC codes for protocol problems, and application codes from -32000
 
 - **Subscriptions:** a method that starts a stream returns `{"subscription": <id>}`. Events for it are notifications that carry that id. `core.unsubscribe {"subscription": id}` ends it.
 - **Ownership:** subscriptions and jobs belong to the connection that created them. When the connection closes, the core unsubscribes them and stops work nobody else is watching. This is how a crashed UI does not leave QEMU or a build running.
+- **Order:** a subscription's first event can, rarely, arrive before the response that created it, because both are queued from different tasks. Clients ignore events for subscription ids they do not know yet. Streams are designed so that this is harmless: `device.watch` waits 300 ms for udev events to settle before sending anything, and its events carry full state.
+- **Full state, not diffs,** where the state is small: `device.changed` carries the whole port list, so a client that misses an event is still correct after the next one.
 - **Jobs:** work that can take longer than a second returns `{"job": <id>}` at once, reports progress as events, and accepts `job.cancel {"job": id}`.
 
 ## Versioning

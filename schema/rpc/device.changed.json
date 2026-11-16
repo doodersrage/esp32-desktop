@@ -1,0 +1,153 @@
+{
+  "event": "device.changed",
+  "description": "Sent on a device.watch subscription when the set of serial ports changes. Carries the full new list, not a difference.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "ports"
+    ],
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "ports": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "path",
+            "kind",
+            "bridge",
+            "chips",
+            "access"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Device node, e.g. /dev/ttyUSB0."
+            },
+            "kind": {
+              "enum": [
+                "usb",
+                "pci",
+                "bluetooth",
+                "other"
+              ]
+            },
+            "usb": {
+              "type": "object",
+              "required": [
+                "vid",
+                "pid"
+              ],
+              "properties": {
+                "vid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                "serial": {
+                  "type": "string"
+                },
+                "manufacturer": {
+                  "type": "string"
+                },
+                "product": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "bridge": {
+              "description": "What the USB device is. null when unknown.",
+              "enum": [
+                "cp210x",
+                "ch340",
+                "ch9102",
+                "ftdi",
+                "usb-serial-jtag",
+                "usb-cdc",
+                null
+              ]
+            },
+            "chips": {
+              "description": "Chips this port could belong to, as esp32bench.dev chip ids. Empty when the USB IDs do not say.",
+              "type": "array",
+              "items": {
+                "enum": [
+                  "esp32",
+                  "esp32s2",
+                  "esp32s3",
+                  "esp32c3",
+                  "esp32c6"
+                ]
+              }
+            },
+            "access": {
+              "description": "Whether this user can open the port. 'denied' usually means the udev rule or the uucp group is missing.",
+              "enum": [
+                "ok",
+                "denied"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 1,
+        "ports": []
+      }
+    },
+    {
+      "params": {
+        "subscription": 1,
+        "ports": [
+          {
+            "path": "/dev/ttyACM0",
+            "kind": "usb",
+            "usb": {
+              "vid": 12346,
+              "pid": 4097,
+              "serial": "F4:12:FA:00:11:22",
+              "manufacturer": "Espressif",
+              "product": "USB JTAG/serial debug unit"
+            },
+            "bridge": "usb-serial-jtag",
+            "chips": [
+              "esp32s3",
+              "esp32c3",
+              "esp32c6"
+            ],
+            "access": "ok"
+          },
+          {
+            "path": "/dev/ttyUSB0",
+            "kind": "usb",
+            "usb": {
+              "vid": 4292,
+              "pid": 60000,
+              "product": "CP2102N USB to UART Bridge Controller"
+            },
+            "bridge": "cp210x",
+            "chips": [],
+            "access": "denied"
+          }
+        ]
+      }
+    }
+  ]
+}

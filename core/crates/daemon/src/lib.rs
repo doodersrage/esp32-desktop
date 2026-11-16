@@ -7,13 +7,13 @@ use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use esp32bench_rpc::{Router, RpcError, code, parse_params};
+use esp32bench_rpc::{Ctx, Router, RpcError, code, parse_params};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.1.0";
+pub const PROTOCOL: &str = "0.2.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -21,7 +21,13 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn router() -> Router {
     Router::new()
         .method("core.hello", |p, _| async move { core_hello(p) })
+        .method("core.unsubscribe", |p, ctx| async move {
+            core_unsubscribe(p, ctx)
+        })
         .method("device.list", |p, _| async move { device_list(p).await })
+        .method("device.watch", |p, ctx| async move {
+            device_watch(p, ctx).await
+        })
 }
 
 #[derive(Deserialize)]
@@ -42,19 +48,66 @@ fn core_hello(params: Value) -> Result<Value, RpcError> {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct UnsubscribeParams {
+    subscription: u64,
+}
+
+fn core_unsubscribe(params: Value, ctx: Ctx) -> Result<Value, RpcError> {
+    let p: UnsubscribeParams = parse_params(params)?;
+    if ctx.unsubscribe(p.subscription) {
+        Ok(json!({}))
+    } else {
+        Err(RpcError::new(
+            code::NOT_FOUND,
+            format!("no subscription {} on this connection", p.subscription),
+        ))
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DeviceListParams {
     #[serde(default)]
     all: bool,
 }
 
-async fn device_list(params: Value) -> Result<Value, RpcError> {
-    let p: DeviceListParams = parse_params(params)?;
-    // udev enumeration blocks; keep it off the async workers.
-    let ports = tokio::task::spawn_blocking(move || esp32bench_device::list(p.all))
+/// List ports off the async workers; udev enumeration blocks.
+async fn list_ports(all: bool) -> Result<Vec<esp32bench_device::Port>, RpcError> {
+    tokio::task::spawn_blocking(move || esp32bench_device::list(all))
         .await
         .map_err(|e| RpcError::internal(e.to_string()))?
-        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
-    Ok(json!({ "ports": ports }))
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))
+}
+
+async fn device_list(params: Value) -> Result<Value, RpcError> {
+    let p: DeviceListParams = parse_params(params)?;
+    Ok(json!({ "ports": list_ports(p.all).await? }))
+}
+
+async fn device_watch(params: Value, ctx: Ctx) -> Result<Value, RpcError> {
+    let p: DeviceListParams = parse_params(params)?;
+    // Start monitoring before listing, so a change in between is not missed.
+    let mut monitor = esp32bench_device::Monitor::new()
+        .map_err(|e| RpcError::new(code::UNAVAILABLE, e.to_string()))?;
+    let ports = list_ports(p.all).await?;
+    let mut last = ports.clone();
+    let id = ctx.subscribe(move |sub| async move {
+        // Events go out only after the monitor's settle delay (300 ms), so in
+        // practice the client has the subscription id before the first one arrives.
+        while monitor.changed().await.is_ok() {
+            let Ok(now) = list_ports(p.all).await else {
+                continue;
+            };
+            if now == last {
+                continue;
+            }
+            if !sub.send("device.changed", json!({ "ports": now })) {
+                break;
+            }
+            last = now;
+        }
+    });
+    Ok(json!({ "subscription": id, "ports": ports }))
 }
 
 /// Holds the daemon's lock file; the lock is released when this is dropped.

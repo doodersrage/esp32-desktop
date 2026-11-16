@@ -46,8 +46,11 @@ public:
     // Process id of the core this object last started, or 0.
     qint64 startedCorePid() const { return m_startedCorePid; }
 
-    // device.list
+    // device.list: one answer through devicesListed.
     void listDevices(bool includeNonUsb = false);
+    // device.watch: the current list now, and again through devicesListed every time
+    // a port appears or disappears, until the connection drops.
+    void watchDevices();
 
     RpcClient *client() const { return m_client; }
 
@@ -61,6 +64,7 @@ private:
     void setState(State s);
     void tryConnect();
     void onSocketConnected();
+    void onNotification(const QString &method, const QJsonObject &params);
 
     RpcClient *m_client;
     QTimer *m_retry;
@@ -69,4 +73,5 @@ private:
     QString m_lastError;
     State m_state = State::Disconnected;
     qint64 m_startedCorePid = 0;
+    qint64 m_devicesSubscription = 0; // 0 when not watching
 };

@@ -1,0 +1,35 @@
+{
+  "method": "core.unsubscribe",
+  "description": "Stop a subscription this connection started. Closing the connection stops all of them.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "additionalProperties": false
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "errors": [
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 1
+      },
+      "result": {}
+    }
+  ]
+}

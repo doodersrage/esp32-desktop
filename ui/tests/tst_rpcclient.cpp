@@ -3,6 +3,7 @@
 #include "CoreConnection.h"
 #include "RpcClient.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocalServer>
@@ -211,6 +212,45 @@ private slots:
         conn.start();
         QTRY_COMPARE(conn.state(), CoreConnection::State::Incompatible);
         QVERIFY(conn.lastError().contains(u"1.0.0"_s));
+    }
+
+    void watchDevicesFollowsItsSubscription()
+    {
+        FakeCore core(path(), [](const QJsonObject &req) -> QList<QJsonObject> {
+            const QString m = req.value(u"method"_s).toString();
+            if (m == u"core.hello")
+                return {result(req, QJsonObject{{u"name"_s, u"esp32benchd"_s},
+                                                {u"version"_s, u"0.0.1"_s},
+                                                {u"protocol"_s, u"0.2.0"_s}})};
+            if (m == u"device.watch") {
+                const QJsonArray ports{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s}}};
+                auto changed = [](int sub, const QString &path) {
+                    return QJsonObject{
+                        {u"jsonrpc"_s, u"2.0"_s},
+                        {u"method"_s, u"device.changed"_s},
+                        {u"params"_s, QJsonObject{{u"subscription"_s, sub},
+                                                  {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, path}}}}}}};
+                };
+                // The answer, then an event for another subscription (ignored), then
+                // one for this subscription.
+                return {result(req, QJsonObject{{u"subscription"_s, 5}, {u"ports"_s, ports}}),
+                        changed(6, u"/dev/other"_s), changed(5, u"/dev/ttyACM0"_s)};
+            }
+            return {error(req, -32601, u"unknown"_s)};
+        });
+        CoreConnection conn;
+        conn.setSocketPath(path());
+        QSignalSpy listed(&conn, &CoreConnection::devicesListed);
+        conn.start();
+        QTRY_COMPARE(conn.state(), CoreConnection::State::Connected);
+        conn.watchDevices();
+        QTRY_COMPARE(listed.size(), 2);
+        QTest::qWait(100);
+        QCOMPARE(listed.size(), 2); // the event for subscription 6 was ignored
+        auto first = listed.at(0).at(0).toJsonArray();
+        auto second = listed.at(1).at(0).toJsonArray();
+        QCOMPARE(first.at(0).toObject().value(u"path"_s).toString(), u"/dev/ttyUSB0"_s);
+        QCOMPARE(second.at(0).toObject().value(u"path"_s).toString(), u"/dev/ttyACM0"_s);
     }
 
     void staysDisconnectedWithoutCore()
