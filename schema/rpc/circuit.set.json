@@ -1,6 +1,6 @@
 {
   "method": "circuit.set",
-  "description": "Save the virtual parts for a project's board, replacing what was there. Checked first: unique ids, real GPIOs, at most 32 parts, no two buttons on one pin. A running simulation keeps the parts it started with.",
+  "description": "Save the virtual parts for a project's board, replacing what was there. Checked first against each part's model (circuit.models): unique ids, every pin connected to a real GPIO, known properties, I2C addresses the model allows, no two parts driving one pin, at most 32 parts. Saved as circuit 1.1; 1.0 files are still read. A running simulation keeps the parts it started with.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -18,7 +18,7 @@
         "type": "string"
       },
       "circuit": {
-        "description": "Virtual parts placed on one project's board for the simulator. Version 1.x. Saved by the desktop app per project and board; designed so the project manifest can carry the same data later. Pins are GPIO numbers. Firmware-level: an LED is lit when its pin drives it; no electrical behaviour is modelled.",
+        "description": "Virtual parts placed on one project's board for the simulator. Version 1.x; 1.1 adds models beyond LED and button, several pins per part, I2C placement and properties, and still reads 1.0 files (`pin`, `activeLow`). Saved by the desktop app per project and board; designed so the project manifest can carry the same data later. Pins are GPIO numbers. Firmware-level: an LED is lit when its pin drives it; no electrical behaviour is modelled.",
         "type": "object",
         "required": [
           "schemaVersion",
@@ -37,8 +37,7 @@
               "type": "object",
               "required": [
                 "id",
-                "kind",
-                "pin"
+                "kind"
               ],
               "additionalProperties": false,
               "properties": {
@@ -48,26 +47,57 @@
                   "description": "Unique within the circuit."
                 },
                 "kind": {
-                  "enum": [
-                    "led",
-                    "button"
-                  ],
-                  "description": "led: lit while its pin is an output at its active level. button: drives its pin to its active level while pressed, and to the other level otherwise (a pull-up or pull-down)."
+                  "type": "string",
+                  "pattern": "^[a-z0-9-]{1,32}$",
+                  "description": "A part model's id: led, button, switch, rgb-led, ... (schema/part-model)."
                 },
                 "pin": {
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 48,
-                  "description": "GPIO number."
+                  "description": "The GPIO, for a model with one pin."
                 },
                 "activeLow": {
                   "type": "boolean",
                   "default": false,
-                  "description": "Active when the pin is low: an LED wired to 3V3, or a button to GND with a pull-up (INPUT_PULLUP)."
+                  "description": "Circuit 1.0's shorthand for props.activeLow. Still read; not written by 1.1."
                 },
                 "label": {
                   "type": "string",
                   "maxLength": 40
+                },
+                "pins": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 48
+                  },
+                  "description": "GPIOs by the model's pin names."
+                },
+                "i2c": {
+                  "type": "object",
+                  "required": [
+                    "bus",
+                    "address"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "bus": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "address": {
+                      "type": "integer",
+                      "minimum": 8,
+                      "maximum": 119
+                    }
+                  }
+                },
+                "props": {
+                  "type": "object",
+                  "description": "Values for the model's properties."
                 }
               }
             }
@@ -92,7 +122,7 @@
         "project": "blink",
         "board": "esp32",
         "circuit": {
-          "schemaVersion": "1.0.0",
+          "schemaVersion": "1.1.0",
           "parts": [
             {
               "id": "status-led",
@@ -104,8 +134,24 @@
               "id": "boot",
               "kind": "button",
               "pin": 0,
-              "activeLow": true,
+              "props": {
+                "activeLow": true
+              },
               "label": "BOOT button"
+            },
+            {
+              "id": "mood",
+              "kind": "rgb-led",
+              "pins": {
+                "red": 25,
+                "green": 26,
+                "blue": 27
+              }
+            },
+            {
+              "id": "mode",
+              "kind": "switch",
+              "pin": 4
             }
           ]
         }

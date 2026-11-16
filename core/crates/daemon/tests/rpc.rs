@@ -1742,12 +1742,13 @@ async fn sim_runs_the_boards_parts() {
     }
     // Released, the button holds GPIO 4 low; pressed, high.
     assert!(text.contains("esp32bench-gpio in 4=0"), "{text}");
-    c.call(
-        "sim.press",
-        json!({ "subscription": sub, "part": "go", "pressed": true }),
-    )
-    .await
-    .unwrap();
+    let press = json!({ "subscription": sub, "part": "go", "control": "press", "value": true });
+    assert_valid(
+        &method_def("sim.control")["params"],
+        &press,
+        "sim.control params",
+    );
+    c.call("sim.control", press).await.unwrap();
     let mut pressed_seen = false;
     while !(text.contains("esp32bench-gpio in 4=1") && pressed_seen) {
         let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
@@ -1766,16 +1767,40 @@ async fn sim_runs_the_boards_parts() {
             _ => {}
         }
     }
-    // Only buttons can be pressed.
+    // An LED has nothing to press: the part reports the refusal as its error.
+    c.call(
+        "sim.control",
+        json!({ "subscription": sub, "part": "led", "control": "press", "value": true }),
+    )
+    .await
+    .unwrap();
+    loop {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+            .await
+            .expect("no error for pressing an LED")
+            .unwrap();
+        let method = n["method"].as_str().unwrap();
+        assert_valid(&method_def(method)["params"], &n["params"], method);
+        if method == "sim.parts"
+            && n["params"]["parts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p["id"] == "led" && p["error"].is_string())
+        {
+            break;
+        }
+    }
+    // Values are booleans or numbers, nothing else.
     match c
         .call(
-            "sim.press",
-            json!({ "subscription": sub, "part": "led", "pressed": true }),
+            "sim.control",
+            json!({ "subscription": sub, "part": "go", "control": "press", "value": "yes" }),
         )
         .await
     {
-        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
-        other => panic!("pressed an LED: {other:?}"),
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("took a string value: {other:?}"),
     }
     c.call("core.unsubscribe", json!({ "subscription": sub }))
         .await

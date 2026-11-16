@@ -5,6 +5,7 @@
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
@@ -12,13 +13,14 @@
 #include <QGraphicsView>
 #include <QHBoxLayout>
 #include <QIcon>
-#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPainter>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStyleOptionGraphicsItem>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -33,29 +35,44 @@ constexpr qreal PartX = 170;
 constexpr qreal PartSize = 30;
 }
 
-// One part on the canvas. Colours are the canvas's own (rule: hard-coded colours only
-// on the canvas): an LED is red when lit. Text follows the system palette.
+// One part on the canvas, drawn by its model's look from the state the core reports.
+// Colours of lit parts are the canvas's own (rule: hard-coded colours only on the
+// canvas); everything else follows the system palette.
 class PartItem : public QGraphicsItem {
 public:
-    PartItem(const QString &id, const QString &kind, const QString &label, std::function<void(bool)> press)
+    // `control(name, value)` works one of the part's controls.
+    PartItem(const QString &id, const QJsonObject &model, const QString &label,
+             std::function<void(const QString &, const QJsonValue &)> control)
         : m_id(id)
-        , m_kind(kind)
+        , m_look(model.value(u"look"_s).toString())
         , m_label(label)
-        , m_press(std::move(press))
+        , m_control(std::move(control))
     {
+        for (const QJsonValue &c : model.value(u"controls"_s).toArray()) {
+            const QJsonObject o = c.toObject();
+            const QString type = o.value(u"type"_s).toString();
+            if (type == u"momentary" && m_momentary.isEmpty())
+                m_momentary = o.value(u"name"_s).toString();
+            if (type == u"toggle" && m_toggle.isEmpty())
+                m_toggle = o.value(u"name"_s).toString();
+        }
+        m_initial = model.value(u"state"_s).toObject();
+        m_state = m_initial;
         setFlag(ItemIsSelectable);
         setAcceptedMouseButtons(Qt::LeftButton);
     }
 
     QString id() const { return m_id; }
-    bool isOn() const { return m_on; }
-    void setOn(bool on)
+    QJsonObject state() const { return m_state; }
+    bool isOn() const { return m_state.value(u"on"_s).toBool(); }
+    void setState(const QJsonObject &state)
     {
-        if (on != m_on) {
-            m_on = on;
+        if (state != m_state) {
+            m_state = state;
             update();
         }
     }
+    void reset() { setState(m_initial); }
 
     QRectF boundingRect() const override { return {-2, -2, PartSize + 160, PartSize + 4}; }
 
@@ -64,21 +81,37 @@ public:
         p->setRenderHint(QPainter::Antialiasing);
         const QPalette pal = widget ? widget->palette() : QPalette();
         const QRectF body(0, 0, PartSize, PartSize);
-        if (m_kind == u"led") {
-            p->setPen(QPen(pal.color(QPalette::Text), 1.5));
-            p->setBrush(m_on ? QColor(0xe5, 0x39, 0x35) : QColor(0x5a, 0x22, 0x22));
+        p->setPen(QPen(pal.color(QPalette::Text), 1.5));
+        if (m_look == u"led") {
+            p->setBrush(isOn() ? QColor(0xe5, 0x39, 0x35) : QColor(0x5a, 0x22, 0x22));
             p->drawEllipse(body);
-            if (m_on) { // a glow, so lit reads at a glance
+            if (isOn()) { // a glow, so lit reads at a glance
                 p->setPen(Qt::NoPen);
                 p->setBrush(QColor(0xff, 0x8a, 0x80, 120));
                 p->drawEllipse(body.adjusted(6, 6, -6, -6));
             }
-        } else {
-            p->setPen(QPen(pal.color(QPalette::Text), 1.5));
-            p->setBrush(pal.color(m_on ? QPalette::Highlight : QPalette::Button));
+        } else if (m_look == u"rgb-led") {
+            const bool r = m_state.value(u"red"_s).toBool();
+            const bool g = m_state.value(u"green"_s).toBool();
+            const bool b = m_state.value(u"blue"_s).toBool();
+            const QColor lit(r ? 0xff : 0x30, g ? 0xe0 : 0x30, b ? 0xff : 0x30);
+            p->setBrush((r || g || b) ? lit : QColor(0x3a, 0x3a, 0x3a));
+            p->drawEllipse(body);
+        } else if (m_look == u"switch") {
+            const QRectF track(0, PartSize / 4, PartSize, PartSize / 2);
+            p->setBrush(pal.color(isOn() ? QPalette::Highlight : QPalette::Button));
+            p->drawRoundedRect(track, PartSize / 4, PartSize / 4);
+            p->setBrush(pal.color(QPalette::Base));
+            const qreal knob = PartSize / 2;
+            p->drawEllipse(QRectF(isOn() ? PartSize - knob : 0, PartSize / 4, knob, knob));
+        } else if (m_look == u"button") {
+            p->setBrush(pal.color(isOn() ? QPalette::Highlight : QPalette::Button));
             p->drawRoundedRect(body, 6, 6);
-            p->setBrush(pal.color(m_on ? QPalette::HighlightedText : QPalette::Mid));
+            p->setBrush(pal.color(isOn() ? QPalette::HighlightedText : QPalette::Mid));
             p->drawEllipse(body.adjusted(8, 8, -8, -8));
+        } else {
+            p->setBrush(pal.color(QPalette::Button));
+            p->drawRect(body);
         }
         if (option->state & QStyle::State_Selected) {
             p->setPen(QPen(pal.color(QPalette::Highlight), 1, Qt::DashLine));
@@ -93,30 +126,34 @@ protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override
     {
         QGraphicsItem::mousePressEvent(event);
-        if (m_kind == u"button")
-            m_press(true);
+        if (!m_momentary.isEmpty())
+            m_control(m_momentary, true);
+        else if (!m_toggle.isEmpty())
+            m_control(m_toggle, !isOn());
     }
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override
     {
         QGraphicsItem::mouseReleaseEvent(event);
-        if (m_kind == u"button")
-            m_press(false);
+        if (!m_momentary.isEmpty())
+            m_control(m_momentary, false);
     }
 
 private:
     QString m_id;
-    QString m_kind;
+    QString m_look;
     QString m_label;
-    std::function<void(bool)> m_press;
-    bool m_on = false;
+    QString m_momentary;
+    QString m_toggle;
+    QJsonObject m_initial;
+    QJsonObject m_state;
+    std::function<void(const QString &, const QJsonValue &)> m_control;
 };
 
 CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     : QWidget(parent)
     , m_core(core)
     , m_status(new QLabel(this))
-    , m_addLed(new QPushButton(QIcon::fromTheme(u"list-add"_s), tr("Add LED"), this))
-    , m_addButton(new QPushButton(QIcon::fromTheme(u"list-add"_s), tr("Add button"), this))
+    , m_add(new QToolButton(this))
     , m_remove(new QPushButton(QIcon::fromTheme(u"list-remove"_s), tr("Remove"), this))
     , m_scene(new QGraphicsScene(this))
     , m_view(new QGraphicsView(m_scene, this))
@@ -124,11 +161,13 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     m_status->setWordWrap(true);
     m_view->setRenderHint(QPainter::Antialiasing);
     m_view->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    m_addLed->setToolTip(tr("Add an LED on one of the board's pins"));
-    m_addButton->setToolTip(tr("Add a push button; hold the mouse on it to press it while the simulator runs"));
+    m_add->setText(tr("Add part"));
+    m_add->setIcon(QIcon::fromTheme(u"list-add"_s));
+    m_add->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_add->setPopupMode(QToolButton::InstantPopup);
+    m_add->setMenu(new QMenu(m_add));
+    m_add->setToolTip(tr("Place a part on the board's pins"));
     m_remove->setToolTip(tr("Remove the selected part"));
-    connect(m_addLed, &QPushButton::clicked, this, [this] { addDialog(u"led"_s); });
-    connect(m_addButton, &QPushButton::clicked, this, [this] { addDialog(u"button"_s); });
     connect(m_remove, &QPushButton::clicked, this, [this] {
         for (QGraphicsItem *i : m_scene->selectedItems()) {
             if (auto *part = dynamic_cast<PartItem *>(i)) {
@@ -143,8 +182,7 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
             [this] { m_remove->setEnabled(!m_scene->selectedItems().isEmpty()); });
 
     auto *tools = new QHBoxLayout;
-    tools->addWidget(m_addLed);
-    tools->addWidget(m_addButton);
+    tools->addWidget(m_add);
     tools->addWidget(m_remove);
     tools->addStretch(1);
     auto *layout = new QVBoxLayout(this);
@@ -153,19 +191,25 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     layout->addWidget(m_view, 1);
 
     connect(core, &CoreConnection::circuitLoaded, this, &CircuitPanel::circuitLoaded);
+    connect(core, &CoreConnection::modelsLoaded, this, &CircuitPanel::modelsLoaded);
     connect(core, &CoreConnection::simPartsChanged, this, [this](const QJsonArray &parts) {
         for (const QJsonValue &v : parts) {
             const QJsonObject o = v.toObject();
-            if (PartItem *i = m_items.value(o.value(u"id"_s).toString()))
-                i->setOn(o.value(u"on"_s).toBool());
+            const QString id = o.value(u"id"_s).toString();
+            if (o.contains(u"error"_s)) {
+                m_status->setText(tr("%1: %2").arg(id, o.value(u"error"_s).toString()));
+                continue;
+            }
+            if (PartItem *i = m_items.value(id))
+                i->setState(o.value(u"state"_s).toObject());
         }
     });
     connect(core, &CoreConnection::simStarted, this, [this] {
-        setAllOff();
+        resetStates();
         updateStatus();
     });
     connect(core, &CoreConnection::simStopped, this, [this] {
-        setAllOff();
+        resetStates();
         updateStatus();
     });
     connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
@@ -173,12 +217,14 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
             m_status->setText(tr("Could not save the parts: %1").arg(message));
     });
     connect(core, &CoreConnection::stateChanged, this, [this] {
-        if (m_core->state() == CoreConnection::State::Connected && !m_project.isEmpty())
+        if (m_core->state() != CoreConnection::State::Connected)
+            return;
+        m_core->loadModels();
+        if (!m_project.isEmpty())
             m_core->loadCircuit(m_project, m_board);
     });
     m_remove->setEnabled(false);
-    m_addLed->setEnabled(false);
-    m_addButton->setEnabled(false);
+    m_add->setEnabled(false);
     m_status->setText(tr("Select a project to place virtual parts on its board."));
 }
 
@@ -193,10 +239,34 @@ bool CircuitPanel::isOn(const QString &id) const
     return i && i->isOn();
 }
 
+QJsonObject CircuitPanel::partState(const QString &id) const
+{
+    const PartItem *i = m_items.value(id);
+    return i ? i->state() : QJsonObject();
+}
+
 QPointF CircuitPanel::partCentre(const QString &id) const
 {
     const PartItem *i = m_items.value(id);
     return i ? i->mapToScene(QPointF(PartSize / 2, PartSize / 2)) : QPointF();
+}
+
+void CircuitPanel::modelsLoaded(const QJsonArray &models)
+{
+    m_models.clear();
+    m_modelOrder.clear();
+    QMenu *menu = m_add->menu();
+    menu->clear();
+    for (const QJsonValue &v : models) {
+        const QJsonObject m = v.toObject();
+        const QString id = m.value(u"id"_s).toString();
+        m_models.insert(id, m);
+        m_modelOrder << id;
+        // Model names come from the core's model files.
+        menu->addAction(m.value(u"name"_s).toString(), this, [this, id] { addDialog(id); });
+    }
+    m_add->setEnabled(!m_project.isEmpty() && !m_models.isEmpty());
+    rebuildScene();
 }
 
 void CircuitPanel::showBoard(const QString &project, const QString &board, const QJsonArray &pins)
@@ -212,8 +282,7 @@ void CircuitPanel::showBoard(const QString &project, const QString &board, const
     }
     m_circuit = {};
     rebuildScene();
-    m_addLed->setEnabled(true);
-    m_addButton->setEnabled(true);
+    m_add->setEnabled(!m_models.isEmpty());
     if (m_core->state() == CoreConnection::State::Connected)
         m_core->loadCircuit(project, board);
 }
@@ -232,10 +301,11 @@ void CircuitPanel::updateStatus()
     if (m_project.isEmpty())
         return;
     if (parts().isEmpty()) {
-        m_status->setText(tr("No parts on this board yet. Add an LED or a button on one of its pins."));
+        m_status->setText(tr("No parts on this board yet. Add an LED, a button or another part on its pins."));
     } else if (m_core->isSimRunning()) {
         m_status->setText(m_core->simPartsActive()
-                              ? tr("Running: LEDs follow the firmware; hold the mouse on a button to press it.")
+                              ? tr("Running: parts follow the firmware. Hold the mouse on a button to press it; "
+                                   "click a switch to flip it.")
                               : tr("These parts do not work in this simulation: it has no pin access "
                                    "(ESP32-S3, or lcgamboa's QEMU not installed)."));
     } else {
@@ -243,10 +313,23 @@ void CircuitPanel::updateStatus()
     }
 }
 
-void CircuitPanel::setAllOff()
+void CircuitPanel::resetStates()
 {
     for (PartItem *i : std::as_const(m_items))
-        i->setOn(false);
+        i->reset();
+}
+
+// A part's GPIO connections: `pins`, or the one-pin shorthand `pin`.
+static QHash<QString, int> connections(const QJsonObject &part, const QJsonObject &model)
+{
+    QHash<QString, int> out;
+    const QJsonObject pins = part.value(u"pins"_s).toObject();
+    for (auto it = pins.begin(); it != pins.end(); ++it)
+        out.insert(it.key(), it.value().toInt());
+    const QJsonArray names = model.value(u"pins"_s).toArray();
+    if (part.contains(u"pin"_s) && names.size() == 1)
+        out.insert(names.first().toString(), part.value(u"pin"_s).toInt());
+    return out;
 }
 
 void CircuitPanel::rebuildScene()
@@ -258,51 +341,59 @@ void CircuitPanel::rebuildScene()
     // Board pins: the project's own, then any others parts use.
     QList<int> pins = m_projectPins;
     for (const QJsonValue &v : parts()) {
-        const int gpio = v.toObject().value(u"pin"_s).toInt();
-        if (!pins.contains(gpio))
-            pins << gpio;
+        const QJsonObject part = v.toObject();
+        for (int gpio : connections(part, m_models.value(part.value(u"kind"_s).toString())))
+            if (!pins.contains(gpio))
+                pins << gpio;
     }
     std::sort(pins.begin(), pins.end());
     const QPalette pal = palette();
     const qreal height = std::max<qreal>(1, pins.size()) * RowHeight + 20;
-    auto *board = m_scene->addRect(0, 0, BoardWidth, height, QPen(pal.color(QPalette::Text)),
-                                   QBrush(pal.color(QPalette::AlternateBase)));
+    m_scene->addRect(0, 0, BoardWidth, height, QPen(pal.color(QPalette::Text)), QBrush(pal.color(QPalette::AlternateBase)));
     auto *title = m_scene->addSimpleText(m_board);
     title->setBrush(pal.color(QPalette::Text));
     title->setPos(8, -24);
-    Q_UNUSED(board);
+    const auto rowY = [&](int gpio) { return 10 + pins.indexOf(gpio) * RowHeight + RowHeight / 2; };
 
-    QHash<int, int> partsOnPin; // to stack several parts on one pin
-    for (int row = 0; row < pins.size(); ++row) {
-        const qreal y = 10 + row * RowHeight + RowHeight / 2;
-        auto *label = m_scene->addSimpleText(tr("GPIO %1").arg(pins[row]));
+    for (int gpio : pins) {
+        const qreal y = rowY(gpio);
+        auto *label = m_scene->addSimpleText(tr("GPIO %1").arg(gpio));
         label->setBrush(pal.color(QPalette::Text));
         label->setPos(BoardWidth - 62, y - 9);
-        m_scene->addEllipse(BoardWidth - 6, y - 4, 8, 8, QPen(pal.color(QPalette::Text)),
-                            QBrush(pal.color(QPalette::Text)));
+        m_scene->addEllipse(BoardWidth - 6, y - 4, 8, 8, QPen(pal.color(QPalette::Text)), QBrush(pal.color(QPalette::Text)));
     }
+    QHash<int, int> partsOnRow; // to stack several parts on one row
     for (const QJsonValue &v : parts()) {
         const QJsonObject o = v.toObject();
         const QString id = o.value(u"id"_s).toString();
-        const QString kind = o.value(u"kind"_s).toString();
-        const int gpio = o.value(u"pin"_s).toInt();
-        const int row = int(pins.indexOf(gpio));
-        const int stack = partsOnPin[gpio]++;
-        const qreal y = 10 + row * RowHeight + RowHeight / 2;
+        const QJsonObject model = m_models.value(o.value(u"kind"_s).toString());
+        const QHash<QString, int> conn = connections(o, model);
+        // The part sits on the row of its first pin, in model order.
+        int anchor = conn.isEmpty() ? (pins.isEmpty() ? 0 : pins.first()) : *std::min_element(conn.begin(), conn.end());
+        for (const QJsonValue &n : model.value(u"pins"_s).toArray()) {
+            if (conn.contains(n.toString())) {
+                anchor = conn.value(n.toString());
+                break;
+            }
+        }
+        const int stack = partsOnRow[anchor]++;
+        const qreal y = rowY(anchor);
         QString label = o.value(u"label"_s).toString();
         if (label.isEmpty())
             label = id; // ids already say what they are: led-1, button-2
-        if (o.value(u"activeLow"_s).toBool())
-            label = tr("%1 (active low)").arg(label);
-        auto *item = new PartItem(id, kind, label, [this, id](bool pressed) {
-            m_core->pressPart(id, pressed);
+        auto *item = new PartItem(id, model, label, [this, id](const QString &control, const QJsonValue &value) {
+            m_core->controlPart(id, control, value);
         });
         const qreal x = PartX + stack * 200;
         item->setPos(x, y - PartSize / 2);
         m_scene->addItem(item);
-        m_scene->addLine(BoardWidth + 2, y, x, y, QPen(pal.color(QPalette::Mid), 2));
-        item->setToolTip(kind == u"button" ? tr("GPIO %1. Hold the mouse here to press it.").arg(gpio)
-                                           : tr("GPIO %1").arg(gpio));
+        // A wire from each connected pin to the part.
+        QStringList where;
+        for (auto it = conn.begin(); it != conn.end(); ++it) {
+            m_scene->addLine(BoardWidth + 2, rowY(it.value()), x, y, QPen(pal.color(QPalette::Mid), 2));
+            where << (conn.size() == 1 ? tr("GPIO %1").arg(it.value()) : tr("%1: GPIO %2").arg(it.key()).arg(it.value()));
+        }
+        item->setToolTip(where.join(u", "_s));
         m_items.insert(id, item);
     }
     m_scene->setSceneRect(m_scene->itemsBoundingRect().adjusted(-10, -10, 10, 10));
@@ -320,17 +411,28 @@ QString CircuitPanel::freeId(const QString &kind) const
     }
 }
 
-void CircuitPanel::addPart(const QString &kind, int pin, bool activeLow, const QString &label)
+void CircuitPanel::addPart(const QString &kind, const QJsonObject &pins, const QJsonObject &props, const QString &label)
 {
-    QJsonObject part{{u"id"_s, freeId(kind)}, {u"kind"_s, kind}, {u"pin"_s, pin}, {u"activeLow"_s, activeLow}};
+    QJsonObject part{{u"id"_s, freeId(kind)}, {u"kind"_s, kind}};
+    if (!pins.isEmpty())
+        part.insert(u"pins"_s, pins);
+    if (!props.isEmpty())
+        part.insert(u"props"_s, props);
     if (!label.isEmpty())
         part.insert(u"label"_s, label);
     QJsonArray list = parts();
     list.append(part);
     QJsonObject c = m_circuit;
-    c.insert(u"schemaVersion"_s, c.value(u"schemaVersion"_s).toString(u"1.0.0"_s));
+    c.insert(u"schemaVersion"_s, u"1.1.0"_s);
     c.insert(u"parts"_s, list);
     m_core->saveCircuit(m_project, m_board, c);
+}
+
+void CircuitPanel::addPart(const QString &kind, int pin, bool activeLow, const QString &label)
+{
+    const QJsonArray names = m_models.value(kind).value(u"pins"_s).toArray();
+    const QString pinName = names.isEmpty() ? u"pin"_s : names.first().toString();
+    addPart(kind, QJsonObject{{pinName, pin}}, QJsonObject{{u"activeLow"_s, activeLow}}, label);
 }
 
 void CircuitPanel::removePart(const QString &id)
@@ -341,35 +443,71 @@ void CircuitPanel::removePart(const QString &id)
             list.append(v);
     }
     QJsonObject c = m_circuit;
-    c.insert(u"schemaVersion"_s, c.value(u"schemaVersion"_s).toString(u"1.0.0"_s));
+    c.insert(u"schemaVersion"_s, u"1.1.0"_s);
     c.insert(u"parts"_s, list);
     m_core->saveCircuit(m_project, m_board, c);
 }
 
+// A dialog built from the model: a GPIO for each pin, a field for each property.
 void CircuitPanel::addDialog(const QString &kind)
 {
+    const QJsonObject model = m_models.value(kind);
     QDialog dialog(this);
-    dialog.setWindowTitle(kind == u"led" ? tr("Add an LED") : tr("Add a button"));
-    auto *pin = new QSpinBox(&dialog);
-    pin->setRange(0, 48);
-    pin->setPrefix(tr("GPIO "));
-    if (!m_projectPins.isEmpty())
-        pin->setValue(m_projectPins.first());
-    auto *activeLow = new QCheckBox(kind == u"led" ? tr("Wired to 3V3 (lit when the pin is low)")
-                                                    : tr("Wired to GND with a pull-up (reads low when pressed)"),
-                                    &dialog);
-    activeLow->setChecked(kind == u"button"); // INPUT_PULLUP is the usual button wiring
-    auto *label = new QLineEdit(&dialog);
-    label->setMaxLength(40);
-    label->setPlaceholderText(tr("Optional, e.g. Status LED"));
+    dialog.setWindowTitle(tr("Add %1").arg(model.value(u"name"_s).toString()));
+    auto *form = new QFormLayout(&dialog);
+    QList<QPair<QString, QSpinBox *>> pinBoxes;
+    int next = 0;
+    for (const QJsonValue &v : model.value(u"pins"_s).toArray()) {
+        auto *box = new QSpinBox(&dialog);
+        box->setRange(0, 48);
+        box->setPrefix(tr("GPIO "));
+        if (next < m_projectPins.size())
+            box->setValue(m_projectPins.at(next++));
+        const QString name = v.toString();
+        form->addRow(model.value(u"pins"_s).toArray().size() == 1 ? tr("Pin:") : tr("%1 pin:").arg(name), box);
+        pinBoxes << qMakePair(name, box);
+    }
+    QList<std::function<QPair<QString, QJsonValue>()>> propFields;
+    const QJsonObject props = model.value(u"props"_s).toObject();
+    for (auto it = props.begin(); it != props.end(); ++it) {
+        const QJsonObject p = it.value().toObject();
+        const QString key = it.key();
+        const QString type = p.value(u"type"_s).toString();
+        const QString label = p.value(u"label"_s).toString();
+        if (type == u"bool") {
+            auto *box = new QCheckBox(label, &dialog);
+            // Buttons are usually wired to GND with INPUT_PULLUP.
+            box->setChecked(kind == u"button" && key == u"activeLow" ? true : p.value(u"default"_s).toBool());
+            form->addRow(QString(), box);
+            propFields << [key, box] { return qMakePair(key, QJsonValue(box->isChecked())); };
+        } else {
+            auto *box = new QDoubleSpinBox(&dialog);
+            box->setDecimals(type == u"int" ? 0 : 2);
+            box->setRange(p.value(u"min"_s).toDouble(-1e9), p.value(u"max"_s).toDouble(1e9));
+            box->setValue(p.value(u"default"_s).toDouble());
+            form->addRow(label, box);
+            propFields << [key, box, type] {
+                return qMakePair(key, type == u"int" ? QJsonValue(qRound(box->value())) : QJsonValue(box->value()));
+            };
+        }
+    }
+    auto *labelEdit = new QLineEdit(&dialog);
+    labelEdit->setMaxLength(40);
+    labelEdit->setPlaceholderText(tr("Optional, e.g. Status LED"));
+    form->addRow(tr("Label:"), labelEdit);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    auto *form = new QFormLayout(&dialog);
-    form->addRow(tr("Pin:"), pin);
-    form->addRow(QString(), activeLow);
-    form->addRow(tr("Label:"), label);
     form->addRow(buttons);
-    if (dialog.exec() == QDialog::Accepted)
-        addPart(kind, pin->value(), activeLow->isChecked(), label->text().trimmed());
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    QJsonObject pins;
+    for (const auto &[name, box] : std::as_const(pinBoxes))
+        pins.insert(name, box->value());
+    QJsonObject values;
+    for (const auto &field : std::as_const(propFields)) {
+        const auto [key, value] = field();
+        values.insert(key, value);
+    }
+    addPart(kind, pins, values, labelEdit->text().trimmed());
 }

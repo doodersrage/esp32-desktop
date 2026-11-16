@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "parts": [
     {
       "id": "status-led",
@@ -11,8 +11,24 @@
       "id": "boot",
       "kind": "button",
       "pin": 0,
-      "activeLow": true,
+      "props": {
+        "activeLow": true
+      },
       "label": "BOOT button"
+    },
+    {
+      "id": "mood",
+      "kind": "rgb-led",
+      "pins": {
+        "red": 25,
+        "green": 26,
+        "blue": 27
+      }
+    },
+    {
+      "id": "mode",
+      "kind": "switch",
+      "pin": 4
     }
   ]
 }

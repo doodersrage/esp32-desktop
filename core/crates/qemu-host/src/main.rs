@@ -13,6 +13,8 @@
 //! - `ESP32BENCH_GPIO_SOCK` (optional): Unix socket path to listen on for one client.
 //!   Without it nothing is bridged: a plain simulation with nothing attached, where
 //!   the I2C buses answer no address.
+//! - `ESP32BENCH_CIRCUIT` (optional): a circuit file (schema/circuit) whose virtual
+//!   parts run here (docs/parts.md). Its pins must be among the bridged ones.
 //! - `ESP32BENCH_I2C_DEVICES` (optional): comma-separated `<bus>:<hex address>` pairs,
 //!   e.g. `0:3c`. Each is a 256-byte register device: the first byte written after a
 //!   start sets the register pointer, later bytes write registers, and reads return
@@ -24,7 +26,11 @@
 //! - host to client: `out <gpio> <0|1>` when the firmware drives a pin,
 //!   `dir <gpio> <value>` when a pin's direction changes, and
 //!   `i2c <bus> <addr> <ack|nack>` when the firmware starts a transfer.
-//! - client to host: `set <gpio> <0|1>` to drive an input pin.
+//!   With a circuit: `part <id> <state as JSON>`, `picture <id> <width> <height>
+//!   <base64, one byte per pixel>` (at most 20 a second per part) and
+//!   `parterror <id> <message>`.
+//! - client to host: `set <gpio> <0|1>` to drive an input pin, and with a circuit
+//!   `control <id> <name> <value as JSON>` to work a part.
 
 use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_int, c_void};
@@ -66,8 +72,19 @@ struct Qemu {
     bql_unlock: UnlockFn,
 }
 
-/// Pin events from QEMU's threads to the socket writer.
-static EVENTS: OnceLock<Sender<String>> = OnceLock::new();
+/// Messages to the bridge's worker thread: lines from QEMU's callbacks, and effects
+/// of I2C parts (which run on QEMU's thread and must not drive pins from there).
+enum Msg {
+    Qemu(String),
+    Client(String),
+    Effects(Vec<esp32bench_circuit::Effect>),
+    Connected,
+}
+
+/// Pin events from QEMU's threads to the bridge worker.
+static EVENTS: OnceLock<Sender<Msg>> = OnceLock::new();
+/// The circuit's parts, when there is a circuit.
+static PARTS: OnceLock<Mutex<esp32bench_circuit::Runtime>> = OnceLock::new();
 /// Host pin index (1-based, as in the pin map) to GPIO number.
 static GPIOS: OnceLock<Vec<i16>> = OnceLock::new();
 
@@ -78,8 +95,14 @@ fn gpio_for(index: c_int) -> Option<i16> {
 
 fn emit(line: String) {
     if let Some(tx) = EVENTS.get() {
-        let _ = tx.send(line);
+        let _ = tx.send(Msg::Qemu(line));
     }
+}
+
+fn parts_lock() -> Option<std::sync::MutexGuard<'static, esp32bench_circuit::Runtime>> {
+    PARTS
+        .get()
+        .map(|m| m.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
 }
 
 extern "C" fn on_write_pin(pin: c_int, value: c_int) {
@@ -155,6 +178,34 @@ impl I2cDevice {
 static I2C: OnceLock<Mutex<HashMap<(u8, u8), I2cDevice>>> = OnceLock::new();
 
 extern "C" fn on_i2c_event(id: u8, addr: u8, event: u16) -> c_int {
+    // A circuit part at this address answers first.
+    if let Some(mut parts) = parts_lock()
+        && parts.has_i2c(id, addr)
+    {
+        use esp32bench_circuit::I2cEvent;
+        let ev = match event & 0xff {
+            I2C_START_RECV => I2cEvent::Start { read: true },
+            I2C_START_SEND | I2C_START_SEND_ASYNC => I2cEvent::Start { read: false },
+            I2C_WRITE_BYTE => I2cEvent::Write((event >> 8) as u8),
+            I2C_READ_BYTE => I2cEvent::Read,
+            _ => I2cEvent::Stop, // FINISH, NACK
+        };
+        if let Some((answer, effects)) = parts.i2c(id, addr, ev) {
+            drop(parts);
+            if matches!(ev, I2cEvent::Start { .. }) {
+                emit(format!(
+                    "i2c {id} {addr:#04x} {}",
+                    if answer == 0 { "ack" } else { "nack" }
+                ));
+            }
+            if !effects.is_empty()
+                && let Some(tx) = EVENTS.get()
+            {
+                let _ = tx.send(Msg::Effects(effects));
+            }
+            return answer;
+        }
+    }
     let Some(devices) = I2C.get() else {
         return 1;
     };
@@ -220,6 +271,14 @@ fn run() -> Result<c_int, String> {
         i2c.into_iter().map(|k| (k, I2cDevice::new())).collect(),
     ));
 
+    if let Some(path) = std::env::var_os("ESP32BENCH_CIRCUIT") {
+        let data = std::fs::read(&path).map_err(|e| format!("reading {path:?}: {e}"))?;
+        let circuit: esp32bench_circuit::Circuit =
+            serde_json::from_slice(&data).map_err(|e| format!("{path:?}: {e}"))?;
+        let runtime = esp32bench_circuit::Runtime::new(&circuit).map_err(|e| e.to_string())?;
+        let _ = PARTS.set(Mutex::new(runtime));
+    }
+
     let qemu = load(&lib)?;
 
     // The pin map is read during machine set-up, so it must outlive qemu_init.
@@ -241,9 +300,16 @@ fn run() -> Result<c_int, String> {
 
     if let Some(sock) = &sock {
         let listener = UnixListener::bind(sock).map_err(|e| format!("binding {sock:?}: {e}"))?;
-        let (tx, rx) = mpsc::channel::<String>();
-        let _ = EVENTS.set(tx);
-        start_bridge(listener, rx, qemu.set_pin, qemu.bql_lock, qemu.bql_unlock);
+        let (tx, rx) = mpsc::channel::<Msg>();
+        let _ = EVENTS.set(tx.clone());
+        start_bridge(
+            listener,
+            tx,
+            rx,
+            qemu.set_pin,
+            qemu.bql_lock,
+            qemu.bql_unlock,
+        );
     }
 
     // argv for qemu_init: our own argv, unchanged. The strings must stay valid.
@@ -302,10 +368,12 @@ fn parse_i2c(s: &str) -> Result<Vec<(u8, u8)>, String> {
         .collect()
 }
 
-/// Accept one client; send it pin events and apply its `set` commands.
+/// Accept one client; send it pin events and apply its `set` commands. With a
+/// circuit, also run the parts' pin and control hooks and apply their effects.
 fn start_bridge(
     listener: UnixListener,
-    rx: mpsc::Receiver<String>,
+    tx: Sender<Msg>,
+    rx: mpsc::Receiver<Msg>,
     set_pin: SetPinFn,
     bql_lock: LockFn,
     bql_unlock: UnlockFn,
@@ -317,45 +385,206 @@ fn start_bridge(
         let Ok(reader) = stream.try_clone() else {
             return;
         };
+        // Client lines go to the worker, in order with QEMU's.
+        let client_tx = tx.clone();
         std::thread::spawn(move || {
-            let mut out = stream;
-            for line in rx {
-                if writeln!(out, "{line}").is_err() {
+            for line in BufReader::new(reader).lines() {
+                let Ok(line) = line else { break };
+                if client_tx.send(Msg::Client(line)).is_err() {
                     break;
                 }
             }
         });
-        for line in BufReader::new(reader).lines() {
-            let Ok(line) = line else { break };
-            let mut parts = line.split_whitespace();
-            let (Some("set"), Some(gpio), Some(level)) = (parts.next(), parts.next(), parts.next())
-            else {
-                eprintln!("esp32bench-qemu-host: ignoring `{line}`");
-                continue;
-            };
-            let Some(index) = gpio
-                .parse::<i16>()
-                .ok()
-                .and_then(|g| GPIOS.get()?.iter().position(|x| *x == g))
-            else {
-                eprintln!("esp32bench-qemu-host: GPIO {gpio} is not bridged");
-                continue;
-            };
-            let level = c_int::from(level != "0");
-            // Pin map indices are 1-based. qemu_picsimlab_set_pin does not take the
-            // big QEMU lock itself, so take it here; this thread is not a QEMU thread.
-            let Ok(index) = c_int::try_from(index + 1) else {
-                continue;
-            };
-            // SAFETY: these are the library's own functions, called with the lock held
-            // around the IRQ change as QEMU requires for non-QEMU threads.
-            unsafe {
-                bql_lock(c"esp32bench-qemu-host".as_ptr(), 0);
-                set_pin(index, level);
-                bql_unlock();
+        let _ = tx.send(Msg::Connected);
+        let mut worker = Worker {
+            out: stream,
+            set_pin,
+            bql_lock,
+            bql_unlock,
+            pictures: HashMap::new(),
+        };
+        loop {
+            match rx.recv_timeout(std::time::Duration::from_millis(PICTURE_MS)) {
+                Ok(msg) => {
+                    if !worker.handle(msg) {
+                        break;
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
+            worker.flush_pictures(false);
         }
     });
+}
+
+/// Pictures go out at most this often per part.
+const PICTURE_MS: u64 = 50;
+
+/// The latest picture of a part, and when one last went out.
+struct PendingPicture {
+    line: Option<String>,
+    sent: std::time::Instant,
+}
+
+struct Worker {
+    out: std::os::unix::net::UnixStream,
+    set_pin: SetPinFn,
+    bql_lock: LockFn,
+    bql_unlock: UnlockFn,
+    pictures: HashMap<String, PendingPicture>,
+}
+
+impl Worker {
+    fn send(&mut self, line: &str) -> bool {
+        writeln!(self.out, "{line}").is_ok()
+    }
+
+    /// Drive a bridged GPIO as an input. This is not a QEMU thread, so take the lock:
+    /// qemu_picsimlab_set_pin does not.
+    fn drive(&self, gpio: i16, level: bool) {
+        let Some(index) = GPIOS.get().and_then(|g| g.iter().position(|x| *x == gpio)) else {
+            eprintln!("esp32bench-qemu-host: GPIO {gpio} is not bridged");
+            return;
+        };
+        // Pin map indices are 1-based.
+        let Ok(index) = c_int::try_from(index + 1) else {
+            return;
+        };
+        // SAFETY: these are the library's own functions, called with the lock held
+        // around the IRQ change as QEMU requires for non-QEMU threads.
+        unsafe {
+            (self.bql_lock)(c"esp32bench-qemu-host".as_ptr(), 0);
+            (self.set_pin)(index, c_int::from(level));
+            (self.bql_unlock)();
+        }
+    }
+
+    fn apply(&mut self, effects: Vec<esp32bench_circuit::Effect>) -> bool {
+        use base64::Engine;
+        use esp32bench_circuit::Effect;
+        for e in effects {
+            let ok = match e {
+                Effect::Drive { gpio, level } => {
+                    self.drive(i16::from(gpio), level);
+                    true
+                }
+                Effect::State { id, state } => self.send(&format!("part {id} {state}")),
+                Effect::Picture {
+                    id,
+                    width,
+                    height,
+                    pixels,
+                } => {
+                    let line = format!(
+                        "picture {id} {width} {height} {}",
+                        base64::engine::general_purpose::STANDARD.encode(&pixels)
+                    );
+                    let p = self.pictures.entry(id).or_insert(PendingPicture {
+                        line: None,
+                        sent: std::time::Instant::now() - std::time::Duration::from_secs(1),
+                    });
+                    p.line = Some(line);
+                    true
+                }
+                Effect::Error { id, message } => {
+                    let message = message.replace('\n', " ");
+                    self.send(&format!("parterror {id} {message}"))
+                }
+            };
+            if !ok {
+                return false;
+            }
+        }
+        self.flush_pictures(false);
+        true
+    }
+
+    /// Send pictures whose part has not sent one for PICTURE_MS (all, if `all`).
+    fn flush_pictures(&mut self, all: bool) {
+        let now = std::time::Instant::now();
+        let mut due = Vec::new();
+        for p in self.pictures.values_mut() {
+            if p.line.is_some()
+                && (all || now.duration_since(p.sent).as_millis() >= u128::from(PICTURE_MS))
+            {
+                p.sent = now;
+                due.extend(p.line.take());
+            }
+        }
+        for line in due {
+            self.send(&line);
+        }
+    }
+
+    /// Returns false when the client has gone.
+    fn handle(&mut self, msg: Msg) -> bool {
+        match msg {
+            Msg::Connected => {
+                // The machine exists by now (the core connects once QEMU is up): set
+                // the parts' starting levels and report their states.
+                let effects = parts_lock().map(|mut p| {
+                    let mut e = p.states();
+                    e.extend(p.init());
+                    e
+                });
+                effects.is_none_or(|e| self.apply(e))
+            }
+            Msg::Qemu(line) => {
+                if !self.send(&line) {
+                    return false;
+                }
+                let mut it = line.split_whitespace();
+                let (kind, gpio, value) = (it.next(), it.next(), it.next());
+                let (Some(gpio), Some(value)) = (gpio.and_then(|g| g.parse::<u8>().ok()), value)
+                else {
+                    return true;
+                };
+                let v = value == "1";
+                let effects = match kind {
+                    Some("out") => parts_lock().map(|mut p| p.pin(gpio, Some(v), None)),
+                    Some("dir") => parts_lock().map(|mut p| p.pin(gpio, None, Some(v))),
+                    _ => None,
+                };
+                effects.is_none_or(|e| self.apply(e))
+            }
+            Msg::Effects(e) => self.apply(e),
+            Msg::Client(line) => {
+                let mut it = line.splitn(4, ' ');
+                match (it.next(), it.next(), it.next(), it.next()) {
+                    (Some("set"), Some(gpio), Some(level), None) => {
+                        match gpio.parse::<i16>() {
+                            Ok(g) => self.drive(g, level != "0"),
+                            Err(_) => eprintln!("esp32bench-qemu-host: ignoring `{line}`"),
+                        }
+                        true
+                    }
+                    (Some("control"), Some(id), Some(name), Some(value)) => {
+                        let value: rhai::Dynamic =
+                            match serde_json::from_str::<serde_json::Value>(value) {
+                                Ok(serde_json::Value::Bool(b)) => b.into(),
+                                Ok(serde_json::Value::Number(n)) => {
+                                    n.as_f64().unwrap_or(0.0).into()
+                                }
+                                _ => {
+                                    return self.send(&format!("parterror {id} bad control value"));
+                                }
+                            };
+                        let r = parts_lock().map(|mut p| p.control(id, name, value));
+                        match r {
+                            Some(Ok(e)) => self.apply(e),
+                            Some(Err(e)) => self.send(&format!("parterror {id} {e}")),
+                            None => self.send(&format!("parterror {id} there is no circuit")),
+                        }
+                    }
+                    _ => {
+                        eprintln!("esp32bench-qemu-host: ignoring `{line}`");
+                        true
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// dlopen the library and resolve the functions we use.

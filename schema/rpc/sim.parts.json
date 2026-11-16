@@ -1,6 +1,6 @@
 {
   "event": "sim.parts",
-  "description": "Virtual parts whose state changed: an LED lit or not, a button pressed or not. All parts once when the simulation starts, then changes, batched like sim.pins.",
+  "description": "Parts whose state changed: each part's whole state as its model defines it (an LED's on, an RGB LED's red, green and blue, ...), with `on` repeated at the top for parts that have it; or the part's `error` when its script failed or a control was refused. Every part once when the simulation starts, then changes, batched like sim.pins.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -20,8 +20,7 @@
         "items": {
           "type": "object",
           "required": [
-            "id",
-            "on"
+            "id"
           ],
           "additionalProperties": false,
           "properties": {
@@ -30,6 +29,12 @@
             },
             "on": {
               "type": "boolean"
+            },
+            "state": {
+              "type": "object"
+            },
+            "error": {
+              "type": "string"
             }
           }
         }
@@ -43,7 +48,18 @@
         "parts": [
           {
             "id": "status-led",
-            "on": true
+            "on": true,
+            "state": {
+              "on": true
+            }
+          },
+          {
+            "id": "mood",
+            "state": {
+              "red": true,
+              "green": false,
+              "blue": true
+            }
           }
         ]
       }

@@ -83,6 +83,7 @@ async fn start(
         env,
         // These tests set the host's pins and socket themselves.
         bridge: Vec::new(),
+        circuit: None,
     };
     Some((Session::start(cfg).await.unwrap(), sock))
 }

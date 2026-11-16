@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "button",
+  "name": "Push button",
+  "look": "button",
+  "pins": ["pin"],
+  "props": {
+    "activeLow": { "type": "bool", "default": false, "label": "Wired to GND with a pull-up (reads low when pressed)" }
+  },
+  "controls": [ { "name": "press", "type": "momentary", "label": "Press" } ],
+  "state": { "on": false },
+  "script": "button.rhai"
+}

@@ -73,6 +73,7 @@ impl Launch {
             extra_args: self.args.clone(),
             env: self.env.clone(),
             bridge: Vec::new(),
+            circuit: None,
         }
     }
 }

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "rgb-led",
+  "name": "RGB LED",
+  "look": "rgb-led",
+  "pins": ["red", "green", "blue"],
+  "props": {
+    "commonAnode": { "type": "bool", "default": false, "label": "Common anode (each colour lit when its pin is low)" }
+  },
+  "state": { "red": false, "green": false, "blue": false },
+  "script": "rgb-led.rhai"
+}

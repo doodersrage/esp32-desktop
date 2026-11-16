@@ -115,8 +115,11 @@ public:
     void setSimPin(int gpio, bool level);
     // Whether the running simulation's virtual parts work (sim.start's partsActive).
     bool simPartsActive() const { return m_simSub > 0 && m_simPartsActive; }
-    // sim.press: press or release a button part.
-    void pressPart(const QString &id, bool pressed);
+    // sim.control: work a part's control (a button's press, a switch's toggle, a
+    // slider's number).
+    void controlPart(const QString &id, const QString &control, const QJsonValue &value);
+    // circuit.models: the kinds of part, through modelsLoaded.
+    void loadModels();
 
     // circuit.get / circuit.set: the virtual parts on a project's board. Both answer
     // with circuitLoaded (set with what was saved).
@@ -176,6 +179,7 @@ signals:
     // sim.parts: parts whose state changed, each {id, on}.
     void simPartsChanged(const QJsonArray &parts);
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
+    void modelsLoaded(const QJsonArray &models);
     void simStopped(const QString &reason);
 
     // Debugger.

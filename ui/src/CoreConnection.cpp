@@ -115,7 +115,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.15.0"_s},
+        {u"protocol"_s, u"0.16.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -709,15 +709,27 @@ void CoreConnection::setSimPin(int gpio, bool level)
                    });
 }
 
-void CoreConnection::pressPart(const QString &id, bool pressed)
+void CoreConnection::controlPart(const QString &id, const QString &control, const QJsonValue &value)
 {
     if (!simPartsActive())
         return;
-    m_client->call(u"sim.press"_s, {{u"subscription"_s, m_simSub}, {u"part"_s, id}, {u"pressed"_s, pressed}}, this,
-                   [this](const RpcReply &r) {
+    m_client->call(u"sim.control"_s,
+                   {{u"subscription"_s, m_simSub}, {u"part"_s, id}, {u"control"_s, control}, {u"value"_s, value}},
+                   this, [this](const RpcReply &r) {
                        if (!r.ok)
-                           emit requestFailed(u"sim.press"_s, r.errorMessage);
+                           emit requestFailed(u"sim.control"_s, r.errorMessage);
                    });
+}
+
+void CoreConnection::loadModels()
+{
+    m_client->call(u"circuit.models"_s, QJsonObject{}, this, [this](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"circuit.models"_s, r.errorMessage);
+            return;
+        }
+        emit modelsLoaded(r.result.toObject().value(u"models"_s).toArray());
+    });
 }
 
 void CoreConnection::loadCircuit(const QString &project, const QString &board)

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "led",
+  "name": "LED",
+  "look": "led",
+  "pins": ["anode"],
+  "props": {
+    "activeLow": { "type": "bool", "default": false, "label": "Wired to 3V3 (lit when the pin is low)" }
+  },
+  "state": { "on": false },
+  "script": "led.rhai"
+}

@@ -7,7 +7,11 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64.workspace = true
+esp32bench-circuit = { path = "../circuit" }
 libc.workspace = true
+rhai = { version = "1.27", features = ["sync", "serde"] }
+serde_json.workspace = true
 
 [dev-dependencies]
 esp32bench-sim = { path = "../sim" }

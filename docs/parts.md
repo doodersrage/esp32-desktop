@@ -9,7 +9,7 @@ A part model is a data file plus a small script, so a new part needs no change t
 - `<model>.json`: the model's description (schema `schema/part-model/v1.schema.json`): its name, the pins it connects to, whether it sits on an I2C bus, the properties a person sets when placing it, the controls they can work while it runs, and the state the app shows.
 - `<model>.rhai`: what it does, in [Rhai](https://rhai.rs), a small scripting language embedded in Rust. Scripts are sandboxed: no files, no network, no processes, and limits on operations and memory per call.
 
-The models that ship with the app are built into the program (`core/crates/circuit/models/`). Loading models from elsewhere would need the consent rules that apply to downloaded projects, so it is not offered.
+The models that ship with the app are built into the program (`core/crates/circuit/models/`): `led`, `button`, `switch` and `rgb-led` so far. `esp32bench circuit models` lists them, and `circuit.models` serves them to the app. Loading models from elsewhere would need the consent rules that apply to downloaded projects, so it is not offered.
 
 A circuit (`schema/circuit/`) places parts: each refers to a model, connects its pins to GPIOs (or sits on an I2C bus at an address), and sets its properties.
 
@@ -23,7 +23,15 @@ All of a simulation's parts run in `esp32bench-qemu-host`, the per-session proce
 
 ## Script hooks
 
-Every hook is optional. `props` holds the part's properties and `state` its state; both persist between calls.
+Every hook is optional. Inside a hook, `this.props` holds the part's properties and `this.state` its state; both persist between calls, and a changed `this.state` goes to the app as a whole. Example, the LED:
+
+```rhai
+fn pin(name, level, output) {
+    this.state.on = output && level != this.props.activeLow;
+}
+```
+
+Each call may run at most 200,000 operations; a script that fails reports the error as the part's state and keeps running for the next event.
 
 | Hook | When |
 | --- | --- |

@@ -26,6 +26,8 @@ pub enum Error {
     EngineMissing(&'static str),
     #[error("QEMU's screendump was not a picture this program reads")]
     BadScreendump,
+    #[error("{0}")]
+    Gpio(String),
     #[error("download of {url} failed: {detail}")]
     Download { url: String, detail: String },
     #[error("checksum mismatch for {url}: expected {expected}, got {actual}")]

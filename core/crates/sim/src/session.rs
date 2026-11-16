@@ -47,6 +47,9 @@ pub struct SessionConfig {
     /// the session passes them and a socket in its private directory to the host,
     /// then connects [`Session::gpio`]. Empty for none.
     pub bridge: Vec<u8>,
+    /// A circuit (schema/circuit, as JSON) whose parts the host runs. Its pins must be
+    /// in `bridge`. Needs lcgamboa's library build, like `bridge`.
+    pub circuit: Option<String>,
 }
 
 /// Files a session uses, all inside one private runtime directory.
@@ -154,10 +157,16 @@ impl Session {
                 Ok(())
             });
         }
-        if !cfg.bridge.is_empty() {
+        let linked = !cfg.bridge.is_empty() || cfg.circuit.is_some();
+        if linked {
             let pins: Vec<String> = cfg.bridge.iter().map(u8::to_string).collect();
             cmd.env("ESP32BENCH_GPIO_PINS", pins.join(","))
                 .env("ESP32BENCH_GPIO_SOCK", &paths.gpio);
+        }
+        if let Some(circuit) = &cfg.circuit {
+            let file = paths.dir.join("circuit.json");
+            tokio::fs::write(&file, circuit).await?;
+            cmd.env("ESP32BENCH_CIRCUIT", &file);
         }
         let mut child = cmd.spawn()?;
 
@@ -168,7 +177,7 @@ impl Session {
         };
 
         // The host binds its socket before QEMU starts, so it is there by now.
-        let gpio = if cfg.bridge.is_empty() {
+        let gpio = if !linked {
             None
         } else {
             match GpioLink::connect(&paths.gpio, Duration::from_secs(2)).await {
@@ -379,6 +388,7 @@ mod tests {
             extra_args: Vec::new(),
             env: Vec::new(),
             bridge: Vec::new(),
+            circuit: None,
         }
     }
 

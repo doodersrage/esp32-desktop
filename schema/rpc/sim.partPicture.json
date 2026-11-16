@@ -1,0 +1,51 @@
+{
+  "event": "sim.partPicture",
+  "description": "A display part's picture (a model with `display`, such as an SSD1306): one byte per pixel, 0 off and 1 on, rows top to bottom. At most 20 a second per part.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "id",
+      "width",
+      "height",
+      "data"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "id": {
+        "type": "string"
+      },
+      "width": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 512
+      },
+      "height": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 512
+      },
+      "data": {
+        "type": "string",
+        "contentEncoding": "base64",
+        "description": "width * height bytes."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "id": "oled",
+        "width": 2,
+        "height": 1,
+        "data": "AAE="
+      }
+    }
+  ]
+}

@@ -24,6 +24,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QTreeWidget>
+#include <QToolButton>
 
 #include <csignal>
 
@@ -204,7 +205,7 @@ private slots:
                 // Parts on Blink's board, saved through the core: an LED on the
                 // firmware's output, and a button (to 3V3) on its input.
                 CircuitPanel *circuit = window.circuit();
-                QTRY_VERIFY(circuit->addLedButton()->isEnabled()); // the board is selected
+                QTRY_VERIFY(circuit->addPartButton()->isEnabled()); // the board is selected and models loaded
                 circuit->addPart(u"led"_s, 2, false, u"Status"_s);
                 QTRY_COMPARE(circuit->parts().size(), 1);
                 circuit->addPart(u"button"_s, 4, false, {});
@@ -221,10 +222,10 @@ private slots:
                 QVERIFY(core.simPartsActive());
                 QTRY_VERIFY_WITH_TIMEOUT(circuit->isOn(u"led-1"_s), 20000);
                 QTRY_VERIFY_WITH_TIMEOUT(!circuit->isOn(u"led-1"_s), 20000);
-                core.pressPart(u"button-1"_s, true);
+                core.controlPart(u"button-1"_s, u"press"_s, true);
                 QTRY_VERIFY_WITH_TIMEOUT(window.simulator()->outputText().contains(u"esp32bench-gpio in 4=1"_s), 10000);
                 QTRY_VERIFY(circuit->isOn(u"button-1"_s));
-                core.pressPart(u"button-1"_s, false);
+                core.controlPart(u"button-1"_s, u"press"_s, false);
                 QTRY_VERIFY(!circuit->isOn(u"button-1"_s));
                 QTRY_VERIFY_WITH_TIMEOUT(window.circuit()->isOn(u"led-1"_s), 20000); // for the screenshot
                 core.stopSim();

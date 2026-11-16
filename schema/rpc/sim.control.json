@@ -1,0 +1,57 @@
+{
+  "method": "sim.control",
+  "description": "Work a control of one of the simulation's parts (circuit.models lists each model's controls): a button's press (true while held, then false), a switch's toggle (true or false), a sensor's slider (a number). The part's script decides what it does; a control the part does not have comes back as the part's error in sim.parts.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "part",
+      "control",
+      "value"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "part": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,32}$"
+      },
+      "control": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_]{1,32}$"
+      },
+      "value": {
+        "type": [
+          "boolean",
+          "number"
+        ]
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "part": "boot",
+        "control": "press",
+        "value": true
+      },
+      "result": {}
+    }
+  ]
+}

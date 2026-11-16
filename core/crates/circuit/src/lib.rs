@@ -1,18 +1,27 @@
 //! Virtual parts on a simulated board.
 //!
-//! A circuit is the parts placed on one project's board, saved on this computer
-//! (`schema/circuit/v1.schema.json`). The format is versioned so the shared project
-//! manifest can carry the same data later. [`Parts`] is what the parts do while a
-//! simulation runs: it turns pin changes into part states and part actions into pin
-//! levels. It is firmware-level: an LED is lit when its pin drives it, with no
-//! current, voltage or timing modelled.
+//! - [`Circuit`]: the parts placed on one project's board, saved on this computer
+//!   (`schema/circuit/v1.schema.json`), versioned so the shared project manifest can
+//!   carry the same data later.
+//! - [`Model`]: what a kind of part is, as data (`schema/part-model/`); the models that
+//!   ship with the program are in `models/`, each a JSON description and a Rhai script.
+//! - [`Runtime`]: runs a circuit's parts during a simulation (in
+//!   `esp32bench-qemu-host`): pin changes, controls and I2C go in, pin drives, states
+//!   and pictures come out. See docs/parts.md.
+//!
+//! Parts are firmware-level: an LED is lit when its pin drives it, with no current,
+//! voltage or timing modelled.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: &str = "1.0.0";
+mod runtime;
+pub use runtime::{Effect, I2cEvent, Runtime};
+
+/// The circuit format this program writes. It reads every 1.x.
+pub const SCHEMA_VERSION: &str = "1.1.0";
 pub const MAX_PARTS: usize = 32;
 pub const MAX_GPIO: u8 = 48;
 const MAX_LABEL: usize = 40;
@@ -27,33 +36,206 @@ pub enum Error {
     Json(#[from] serde_json::Error),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Kind {
-    /// Lit while its pin is an output at its active level.
-    Led,
-    /// Drives its pin to its active level while pressed, and to the other level
-    /// otherwise, as a pull-up or pull-down resistor would.
-    Button,
+// ---------------------------------------------------------------- models
+
+/// A property a person sets when placing a part.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Prop {
+    #[serde(rename = "type")]
+    pub kind: PropKind,
+    pub default: serde_json::Value,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PropKind {
+    Bool,
+    Int,
+    Number,
+}
+
+/// Something a person works while the simulation runs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Control {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: ControlKind,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ControlKind {
+    /// On while held (a push button): value true, then false.
+    Momentary,
+    /// Stays where it is put: value true or false.
+    Toggle,
+    /// A number between min and max (a sensor reading).
+    Slider,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct I2cSpec {
+    /// 7-bit addresses the part can be set to; the first is the default.
+    pub addresses: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DisplaySpec {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// A kind of part.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Model {
+    pub schema_version: String,
+    pub id: String,
+    pub name: String,
+    /// How the app draws it: led, button, switch, rgb-led, display, or box.
+    pub look: String,
+    /// Named connections to GPIOs.
+    #[serde(default)]
+    pub pins: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub i2c: Option<I2cSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<DisplaySpec>,
+    #[serde(default)]
+    pub props: BTreeMap<String, Prop>,
+    #[serde(default)]
+    pub controls: Vec<Control>,
+    /// The state the app shows, with its starting values.
+    #[serde(default)]
+    pub state: serde_json::Map<String, serde_json::Value>,
+    pub script: String,
+}
+
+/// The models built into the program: (description, script).
+const BUILT_IN: [(&str, &str); 4] = [
+    (
+        include_str!("../models/led.json"),
+        include_str!("../models/led.rhai"),
+    ),
+    (
+        include_str!("../models/button.json"),
+        include_str!("../models/button.rhai"),
+    ),
+    (
+        include_str!("../models/switch.json"),
+        include_str!("../models/switch.rhai"),
+    ),
+    (
+        include_str!("../models/rgb-led.json"),
+        include_str!("../models/rgb-led.rhai"),
+    ),
+];
+
+/// A model with its script.
+#[derive(Debug, Clone)]
+pub struct ModelSource {
+    pub model: Model,
+    pub script: &'static str,
+}
+
+/// The built-in models. They are checked by the tests, so this cannot fail at run time.
+pub fn models() -> Vec<ModelSource> {
+    BUILT_IN
+        .iter()
+        .filter_map(|(json, script)| {
+            serde_json::from_str::<Model>(json)
+                .ok()
+                .map(|model| ModelSource { model, script })
+        })
+        .collect()
+}
+
+pub fn model(id: &str) -> Option<ModelSource> {
+    models().into_iter().find(|m| m.model.id == id)
+}
+
+// ---------------------------------------------------------------- circuits
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct I2cPlace {
+    pub bus: u8,
+    pub address: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Part {
     /// Unique within the circuit: lowercase letters, digits and dashes.
     pub id: String,
-    pub kind: Kind,
-    pub pin: u8,
-    /// Active when the pin is low: an LED wired to 3V3, or a button to GND with a
-    /// pull-up (the usual `INPUT_PULLUP` wiring).
-    #[serde(default)]
-    pub active_low: bool,
-    /// What a person calls it, e.g. "Status LED".
+    /// The model's id (led, button, ...).
+    pub kind: String,
+    /// The GPIO for a model with one pin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pin: Option<u8>,
+    /// GPIOs by the model's pin names, for models with several pins.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub pins: BTreeMap<String, u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub i2c: Option<I2cPlace>,
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub props: serde_json::Map<String, serde_json::Value>,
+    /// Circuit 1.0's shorthand for `props.activeLow`; still read, never written.
+    #[serde(default, skip_serializing)]
+    pub active_low: Option<bool>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub label: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl Part {
+    /// The part's GPIO connections by pin name, with the 1.0 `pin` shorthand applied.
+    pub fn connections(&self, model: &Model) -> BTreeMap<String, u8> {
+        let mut pins = self.pins.clone();
+        if let (Some(gpio), [only]) = (self.pin, model.pins.as_slice()) {
+            pins.entry(only.clone()).or_insert(gpio);
+        }
+        pins
+    }
+
+    /// The properties to run with: the model's defaults, then what the part sets.
+    pub fn resolved_props(&self, model: &Model) -> serde_json::Map<String, serde_json::Value> {
+        let mut props: serde_json::Map<String, serde_json::Value> = model
+            .props
+            .iter()
+            .map(|(k, p)| (k.clone(), p.default.clone()))
+            .collect();
+        if let Some(a) = self
+            .active_low
+            .filter(|_| model.props.contains_key("activeLow"))
+        {
+            props.insert("activeLow".into(), a.into());
+        }
+        for (k, v) in &self.props {
+            props.insert(k.clone(), v.clone());
+        }
+        props
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Circuit {
     pub schema_version: String,
@@ -70,8 +252,10 @@ impl Default for Circuit {
 }
 
 impl Circuit {
-    /// Check ids, pins, labels and limits. Parts may share a pin (an LED and a
-    /// button on one GPIO is a real, if odd, circuit), but not two buttons.
+    /// Check each part against its model: unique ids, every model pin connected to a
+    /// real GPIO, an I2C address the model allows (and no two parts at one), known
+    /// properties of the right type, labels. Two parts may watch one pin, but only one
+    /// may drive it.
     pub fn validate(&self) -> Result<(), Error> {
         let major = self.schema_version.split('.').next().unwrap_or("");
         if major != "1" {
@@ -83,32 +267,94 @@ impl Circuit {
         if self.parts.len() > MAX_PARTS {
             return Err(Error::Invalid(format!("at most {MAX_PARTS} parts")));
         }
+        let invalid = |m: String| Err(Error::Invalid(m));
         let mut ids = std::collections::BTreeSet::new();
-        let mut button_pins = std::collections::BTreeSet::new();
+        let mut driven = BTreeMap::new();
+        let mut addresses = std::collections::BTreeSet::new();
         for p in &self.parts {
             if !valid_id(&p.id) {
-                return Err(Error::Invalid(format!(
+                return invalid(format!(
                     "`{}` is not a part id (lowercase letters, digits and dashes, up to 32)",
                     p.id
-                )));
+                ));
             }
             if !ids.insert(p.id.as_str()) {
-                return Err(Error::Invalid(format!("two parts are called `{}`", p.id)));
+                return invalid(format!("two parts are called `{}`", p.id));
             }
-            if p.pin > MAX_GPIO {
-                return Err(Error::Invalid(format!("GPIO {} does not exist", p.pin)));
+            let Some(src) = model(&p.kind) else {
+                return invalid(format!(
+                    "`{}` is not a kind of part this program has",
+                    p.kind
+                ));
+            };
+            let m = &src.model;
+            let pins = p.connections(m);
+            for name in &m.pins {
+                match pins.get(name) {
+                    None => return invalid(format!("`{}` needs its {name} pin connected", p.id)),
+                    Some(&g) if g > MAX_GPIO => return invalid(format!("GPIO {g} does not exist")),
+                    Some(_) => {}
+                }
+            }
+            if let Some(extra) = pins.keys().find(|k| !m.pins.contains(k)) {
+                return invalid(format!("the {} model has no pin called {extra}", m.name));
+            }
+            // Parts with controls drive their pins.
+            if !m.controls.is_empty() {
+                for (name, &g) in &pins {
+                    if let Some(other) = driven.insert(g, p.id.clone()) {
+                        return invalid(format!(
+                            "`{}` and `{other}` would both drive GPIO {g} ({name})",
+                            p.id
+                        ));
+                    }
+                }
+            }
+            match (&m.i2c, &p.i2c) {
+                (Some(spec), Some(place)) => {
+                    if !spec.addresses.contains(&place.address) {
+                        return invalid(format!(
+                            "the {} model cannot be at address {:#04x}",
+                            m.name, place.address
+                        ));
+                    }
+                    if place.bus > 1 {
+                        return invalid(format!("there is no I2C bus {}", place.bus));
+                    }
+                    if !addresses.insert((place.bus, place.address)) {
+                        return invalid(format!(
+                            "two parts at address {:#04x} on bus {}",
+                            place.address, place.bus
+                        ));
+                    }
+                }
+                (Some(_), None) => return invalid(format!("`{}` needs an I2C address", p.id)),
+                (None, Some(_)) => {
+                    return invalid(format!("the {} model is not an I2C part", m.name));
+                }
+                (None, None) => {}
+            }
+            for (k, v) in &p.props {
+                let Some(prop) = m.props.get(k) else {
+                    return invalid(format!("the {} model has no property {k}", m.name));
+                };
+                let ok = match prop.kind {
+                    PropKind::Bool => v.is_boolean(),
+                    PropKind::Int => v.is_i64(),
+                    PropKind::Number => v.is_number(),
+                };
+                let in_range = v.as_f64().is_none_or(|x| {
+                    prop.min.is_none_or(|lo| x >= lo) && prop.max.is_none_or(|hi| x <= hi)
+                });
+                if !ok || !in_range {
+                    return invalid(format!("`{}`: {k} is out of range or the wrong type", p.id));
+                }
             }
             if p.label.chars().count() > MAX_LABEL || p.label.chars().any(char::is_control) {
-                return Err(Error::Invalid(format!(
+                return invalid(format!(
                     "the label of `{}` is too long or has control characters",
                     p.id
-                )));
-            }
-            if p.kind == Kind::Button && !button_pins.insert(p.pin) {
-                return Err(Error::Invalid(format!(
-                    "two buttons on GPIO {}: they would fight over the pin",
-                    p.pin
-                )));
+                ));
             }
         }
         Ok(())
@@ -116,7 +362,12 @@ impl Circuit {
 
     /// GPIOs the parts use, sorted.
     pub fn pins(&self) -> Vec<u8> {
-        let mut pins: Vec<u8> = self.parts.iter().map(|p| p.pin).collect();
+        let mut pins: Vec<u8> = self
+            .parts
+            .iter()
+            .filter_map(|p| model(&p.kind).map(|m| p.connections(&m.model)))
+            .flat_map(|c| c.into_values())
+            .collect();
         pins.sort_unstable();
         pins.dedup();
         pins
@@ -150,248 +401,138 @@ pub fn load(root: &Path, project: &str, board: &str) -> Result<Circuit, Error> {
     }
 }
 
-/// Save a circuit (validated first), replacing the file in one step.
+/// Save a circuit (validated first), replacing the file in one step. Written as the
+/// current format version.
 pub fn save(root: &Path, project: &str, board: &str, circuit: &Circuit) -> Result<(), Error> {
     circuit.validate()?;
+    let mut c = circuit.clone();
+    c.schema_version = SCHEMA_VERSION.to_owned();
+    for p in &mut c.parts {
+        // Fold the 1.0 shorthand into props.
+        if let Some(a) = p.active_low.take() {
+            p.props.entry("activeLow").or_insert(a.into());
+        }
+    }
     let file = path(root, project, board);
     let dir = file
         .parent()
         .ok_or_else(|| Error::Invalid("bad path".into()))?;
     std::fs::create_dir_all(dir)?;
     let tmp = dir.join(format!(".{board}.json.tmp"));
-    std::fs::write(&tmp, serde_json::to_vec_pretty(circuit)?)?;
+    std::fs::write(&tmp, serde_json::to_vec_pretty(&c)?)?;
     std::fs::rename(&tmp, &file)?;
     Ok(())
-}
-
-/// A part's state while a simulation runs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct PartState {
-    pub id: String,
-    /// LED lit, or button pressed.
-    pub on: bool,
-}
-
-/// The parts of one running simulation.
-pub struct Parts {
-    parts: Vec<Part>,
-    /// gpio -> (level, output) as the firmware last set them.
-    pins: BTreeMap<u8, (Option<bool>, Option<bool>)>,
-    pressed: BTreeMap<String, bool>,
-}
-
-impl Parts {
-    pub fn new(circuit: &Circuit) -> Self {
-        Parts {
-            parts: circuit.parts.clone(),
-            pins: BTreeMap::new(),
-            pressed: BTreeMap::new(),
-        }
-    }
-
-    /// Levels to drive when the simulation starts: every button released.
-    pub fn idle_levels(&self) -> Vec<(u8, bool)> {
-        self.parts
-            .iter()
-            .filter(|p| p.kind == Kind::Button)
-            .map(|p| (p.pin, p.active_low))
-            .collect()
-    }
-
-    fn state(&self, p: &Part) -> PartState {
-        let on = match p.kind {
-            Kind::Led => {
-                let (level, output) = self.pins.get(&p.pin).copied().unwrap_or_default();
-                output == Some(true) && level == Some(!p.active_low)
-            }
-            Kind::Button => self.pressed.get(&p.id).copied().unwrap_or(false),
-        };
-        PartState {
-            id: p.id.clone(),
-            on,
-        }
-    }
-
-    /// Every part's state.
-    pub fn states(&self) -> Vec<PartState> {
-        self.parts.iter().map(|p| self.state(p)).collect()
-    }
-
-    /// The firmware changed a pin: the parts on it whose state changed.
-    pub fn on_pin(
-        &mut self,
-        gpio: u8,
-        level: Option<bool>,
-        output: Option<bool>,
-    ) -> Vec<PartState> {
-        let before: Vec<PartState> = self.on_gpio(gpio).map(|p| self.state(p)).collect();
-        let e = self.pins.entry(gpio).or_default();
-        if level.is_some() {
-            e.0 = level;
-        }
-        if output.is_some() {
-            e.1 = output;
-        }
-        self.on_gpio(gpio)
-            .map(|p| self.state(p))
-            .filter(|s| !before.contains(s))
-            .collect()
-    }
-
-    fn on_gpio(&self, gpio: u8) -> impl Iterator<Item = &Part> {
-        self.parts.iter().filter(move |p| p.pin == gpio)
-    }
-
-    /// Press or release button `id`: the pin level to drive, and its new state.
-    pub fn press(&mut self, id: &str, pressed: bool) -> Result<((u8, bool), PartState), Error> {
-        let part = self
-            .parts
-            .iter()
-            .find(|p| p.id == id)
-            .ok_or_else(|| Error::Invalid(format!("no part `{id}`")))?;
-        if part.kind != Kind::Button {
-            return Err(Error::Invalid(format!("`{id}` is not a button")));
-        }
-        let level = pressed != part.active_low;
-        let pin = part.pin;
-        self.pressed.insert(id.to_owned(), pressed);
-        let state = PartState {
-            id: id.to_owned(),
-            on: pressed,
-        };
-        Ok(((pin, level), state))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
-    fn part(id: &str, kind: Kind, pin: u8, active_low: bool) -> Part {
-        Part {
-            id: id.into(),
-            kind,
-            pin,
-            active_low,
-            label: String::new(),
+    fn circuit(parts: serde_json::Value) -> Circuit {
+        serde_json::from_value(json!({ "schemaVersion": "1.1.0", "parts": parts })).unwrap()
+    }
+
+    #[test]
+    fn built_in_models_load_and_match_their_schema() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../schema/part-model");
+        let schema: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(root.join("v1.schema.json")).unwrap())
+                .unwrap();
+        let v = jsonschema::validator_for(&schema).unwrap();
+        assert_eq!(
+            models().len(),
+            BUILT_IN.len(),
+            "a built-in model does not parse"
+        );
+        for (json, _) in BUILT_IN {
+            let value: serde_json::Value = serde_json::from_str(json).unwrap();
+            assert!(v.is_valid(&value), "{json}");
+        }
+        for m in models() {
+            assert_eq!(format!("{}.rhai", m.model.id), m.model.script);
+            for (k, p) in &m.model.props {
+                let ok = match p.kind {
+                    PropKind::Bool => p.default.is_boolean(),
+                    PropKind::Int => p.default.is_i64(),
+                    PropKind::Number => p.default.is_number(),
+                };
+                assert!(ok, "{}: default of {k}", m.model.id);
+            }
         }
     }
 
-    fn circuit(parts: Vec<Part>) -> Circuit {
-        Circuit {
-            parts,
-            ..Circuit::default()
-        }
+    #[test]
+    fn reads_circuit_1_0() {
+        // As milestone 2 wrote it: kind, pin and activeLow.
+        let c: Circuit = serde_json::from_value(json!({ "schemaVersion": "1.0.0", "parts": [
+            { "id": "led-1", "kind": "led", "pin": 2, "activeLow": false },
+            { "id": "go", "kind": "button", "pin": 4, "activeLow": true, "label": "Go" }
+        ]}))
+        .unwrap();
+        c.validate().unwrap();
+        assert_eq!(c.pins(), [2, 4]);
+        let b = model("button").unwrap();
+        assert_eq!(c.parts[1].connections(&b.model)["pin"], 4);
+        assert_eq!(c.parts[1].resolved_props(&b.model)["activeLow"], true);
+        // Without the field, 1.0 meant active high; the model's default keeps that.
+        let plain: Circuit = serde_json::from_value(json!({ "schemaVersion": "1.0.0", "parts": [
+            { "id": "b", "kind": "button", "pin": 4 } ]}))
+        .unwrap();
+        assert_eq!(plain.parts[0].resolved_props(&b.model)["activeLow"], false);
     }
 
     #[test]
-    fn led_is_lit_only_when_driven_at_its_active_level() {
-        let c = circuit(vec![
-            part("led", Kind::Led, 2, false),
-            part("led-low", Kind::Led, 2, true),
-        ]);
-        let mut p = Parts::new(&c);
-        assert!(p.states().iter().all(|s| !s.on));
-        // High, but still an input: not driven, so not lit.
-        assert!(p.on_pin(2, Some(true), None).is_empty());
-        let changed = p.on_pin(2, None, Some(true));
-        assert_eq!(
-            changed,
-            [PartState {
-                id: "led".into(),
-                on: true
-            }]
-        );
-        let changed = p.on_pin(2, Some(false), None);
-        assert_eq!(
-            changed,
-            [
-                PartState {
-                    id: "led".into(),
-                    on: false
-                },
-                PartState {
-                    id: "led-low".into(),
-                    on: true
-                }
-            ]
-        );
-        // Other pins do not touch it.
-        assert!(p.on_pin(4, Some(true), Some(true)).is_empty());
-    }
-
-    #[test]
-    fn button_drives_its_pin_like_a_pull_resistor() {
-        let c = circuit(vec![
-            part("boot", Kind::Button, 0, true),
-            part("go", Kind::Button, 4, false),
-            part("led", Kind::Led, 2, false),
-        ]);
-        let mut p = Parts::new(&c);
-        // Released: active-low idles high (pull-up), active-high idles low.
-        assert_eq!(p.idle_levels(), [(0, true), (4, false)]);
-        let ((pin, level), s) = p.press("boot", true).unwrap();
-        assert_eq!((pin, level, s.on), (0, false, true));
-        let ((_, level), _) = p.press("boot", false).unwrap();
-        assert!(level);
-        let ((pin, level), _) = p.press("go", true).unwrap();
-        assert_eq!((pin, level), (4, true));
-        assert!(p.press("led", true).is_err());
-        assert!(p.press("nope", true).is_err());
-    }
-
-    #[test]
-    fn validation_catches_bad_circuits() {
-        let ok = circuit(vec![
-            part("led1", Kind::Led, 2, false),
-            part("btn", Kind::Button, 2, true),
-        ]);
-        ok.validate().unwrap();
+    fn validation_checks_parts_against_their_models() {
+        circuit(json!([
+            { "id": "led-1", "kind": "led", "pin": 2 },
+            { "id": "rgb", "kind": "rgb-led", "pins": { "red": 25, "green": 26, "blue": 27 } },
+            { "id": "sw", "kind": "switch", "pin": 4, "props": { "activeLow": true } }
+        ]))
+        .validate()
+        .unwrap();
         for bad in [
-            circuit(vec![part("Led", Kind::Led, 2, false)]),
-            circuit(vec![part("", Kind::Led, 2, false)]),
-            circuit(vec![
-                part("a", Kind::Led, 2, false),
-                part("a", Kind::Led, 3, false),
-            ]),
-            circuit(vec![part("a", Kind::Led, 49, false)]),
-            circuit(vec![
-                part("a", Kind::Button, 4, false),
-                part("b", Kind::Button, 4, true),
-            ]),
-            circuit(
-                (0..33)
-                    .map(|i| part(&format!("p{i}"), Kind::Led, 2, false))
-                    .collect(),
-            ),
-            Circuit {
-                schema_version: "2.0.0".into(),
-                parts: vec![],
-            },
+            json!([{ "id": "Led", "kind": "led", "pin": 2 }]),
+            json!([{ "id": "a", "kind": "motor", "pin": 2 }]),
+            json!([{ "id": "a", "kind": "led" }]),
+            json!([{ "id": "a", "kind": "led", "pin": 49 }]),
+            json!([{ "id": "a", "kind": "rgb-led", "pins": { "red": 25, "green": 26 } }]),
+            json!([{ "id": "a", "kind": "led", "pins": { "anode": 2, "cathode": 3 } }]),
+            json!([{ "id": "a", "kind": "button", "pin": 4 }, { "id": "b", "kind": "switch", "pin": 4 }]),
+            json!([{ "id": "a", "kind": "led", "pin": 2 }, { "id": "a", "kind": "led", "pin": 3 }]),
+            json!([{ "id": "a", "kind": "led", "pin": 2, "props": { "brightness": 3 } }]),
+            json!([{ "id": "a", "kind": "led", "pin": 2, "props": { "activeLow": 1 } }]),
+            json!([{ "id": "a", "kind": "led", "pin": 2, "i2c": { "bus": 0, "address": 60 } }]),
+            json!([{ "id": "a", "kind": "led", "pin": 2, "label": "two\nlines" }]),
         ] {
-            assert!(bad.validate().is_err(), "{bad:?}");
+            assert!(circuit(bad.clone()).validate().is_err(), "{bad}");
         }
-        let mut label = part("a", Kind::Led, 2, false);
-        label.label = "two\nlines".into();
-        assert!(circuit(vec![label]).validate().is_err());
+        // An LED may watch a button's pin.
+        circuit(json!([{ "id": "b", "kind": "button", "pin": 4 }, { "id": "l", "kind": "led", "pin": 4 }]))
+            .validate()
+            .unwrap();
     }
 
     #[test]
-    fn saves_and_loads() {
+    fn saves_as_the_current_version_and_loads() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(
             load(dir.path(), "blink", "esp32").unwrap(),
             Circuit::default()
         );
-        let mut c = circuit(vec![part("led", Kind::Led, 2, false)]);
-        c.parts[0].label = "Status LED".into();
+        let mut c: Circuit = serde_json::from_value(json!({ "schemaVersion": "1.0.0", "parts": [
+            { "id": "led-1", "kind": "led", "pin": 2, "activeLow": true, "label": "Status LED" }
+        ]}))
+        .unwrap();
         save(dir.path(), "blink", "esp32", &c).unwrap();
-        assert_eq!(load(dir.path(), "blink", "esp32").unwrap(), c);
-        assert_eq!(c.pins(), [2]);
+        let back = load(dir.path(), "blink", "esp32").unwrap();
+        assert_eq!(back.schema_version, SCHEMA_VERSION);
+        assert_eq!(back.parts[0].props["activeLow"], true);
+        assert_eq!(back.parts[0].active_low, None);
         // Not saved when invalid.
-        let bad = circuit(vec![part("x", Kind::Led, 99, false)]);
-        assert!(save(dir.path(), "blink", "esp32", &bad).is_err());
-        assert_eq!(load(dir.path(), "blink", "esp32").unwrap(), c);
+        c.parts[0].pin = Some(99);
+        assert!(save(dir.path(), "blink", "esp32", &c).is_err());
+        assert_eq!(load(dir.path(), "blink", "esp32").unwrap(), back);
     }
 
     #[test]
@@ -400,19 +541,14 @@ mod tests {
         let schema: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(root.join("v1.schema.json")).unwrap())
                 .unwrap();
-        let example: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(root.join("example.json")).unwrap())
-                .unwrap();
         let v = jsonschema::validator_for(&schema).unwrap();
-        assert!(v.is_valid(&example));
-        // And this program reads it.
-        let c: Circuit = serde_json::from_value(example).unwrap();
-        c.validate().unwrap();
-        // What we write passes the schema too.
-        let written = serde_json::to_value(&c).unwrap();
-        assert!(v.is_valid(&written));
-        // The schema rejects what validate rejects at the format level.
-        let bad = serde_json::json!({ "schemaVersion": "1.0.0", "parts": [ { "id": "a", "kind": "motor", "pin": 2 } ] });
-        assert!(!v.is_valid(&bad));
+        for file in ["example.json", "example-1.0.json"] {
+            let example: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(root.join(file)).unwrap()).unwrap();
+            assert!(v.is_valid(&example), "{file}");
+            let c: Circuit = serde_json::from_value(example).unwrap();
+            c.validate().unwrap();
+            assert!(v.is_valid(&serde_json::to_value(&c).unwrap()));
+        }
     }
 }
