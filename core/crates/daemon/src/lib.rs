@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.4.0";
+pub const PROTOCOL: &str = "0.5.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -26,14 +26,34 @@ pub struct State {
     pub library_source: String,
     /// One refresh at a time, so two never race on the cache file.
     refresh_lock: tokio::sync::Mutex<()>,
+    /// Consent tokens handed out for builds (rule 4).
+    pub consent: esp32bench_build::Consent,
+    /// Build folders live under here, one per project and board.
+    pub builds_root: PathBuf,
+    /// Private Arduino sketchbook for installed libraries.
+    pub sketchbook: PathBuf,
+    /// arduino-cli to use instead of `$ESP32BENCH_ARDUINO_CLI` or PATH (tests).
+    pub arduino_cli: Option<PathBuf>,
+    /// One build at a time.
+    build_lock: tokio::sync::Mutex<()>,
 }
 
 impl State {
-    pub fn new(library: esp32bench_library::Cache, library_source: String) -> Self {
+    pub fn new(
+        library: esp32bench_library::Cache,
+        library_source: String,
+        builds_root: PathBuf,
+        sketchbook: PathBuf,
+    ) -> Self {
         State {
             library,
             library_source,
             refresh_lock: tokio::sync::Mutex::new(()),
+            consent: esp32bench_build::Consent::new(),
+            builds_root,
+            sketchbook,
+            arduino_cli: None,
+            build_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -41,17 +61,29 @@ impl State {
     pub fn from_env() -> io::Result<Self> {
         let dir = esp32bench_library::cache_dir()
             .map_err(|e| io::Error::new(io::ErrorKind::NotFound, e.to_string()))?;
+        let sketchbook = esp32bench_build::default_sketchbook().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "no data directory: set XDG_DATA_HOME or HOME",
+            )
+        })?;
         Ok(Self::new(
-            esp32bench_library::Cache::new(dir),
+            esp32bench_library::Cache::new(dir.clone()),
             esp32bench_library::default_source(),
+            dir.join("builds"),
+            sketchbook,
         ))
     }
 }
 
 /// Every method the daemon serves. A test checks this against `schema/rpc/`.
 pub fn router(state: Arc<State>) -> Router {
-    let (s1, s2, s3) = (state.clone(), state.clone(), state);
+    let (s1, s2, s3, s4) = (state.clone(), state.clone(), state.clone(), state);
     Router::new()
+        .method("build.start", move |p, ctx| {
+            let s = s4.clone();
+            async move { build_start(p, ctx, s).await }
+        })
         .method("core.hello", |p, _| async move { core_hello(p) })
         .method("job.cancel", |p, ctx| async move { job_cancel(p, ctx) })
         .method("library.list", move |p, _| {
@@ -199,6 +231,89 @@ fn library_refresh(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
         sub.send("library.refreshed", event);
     });
     Ok(json!({ "job": job }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BuildParams {
+    project: String,
+    board: String,
+    #[serde(default)]
+    consent: Option<String>,
+}
+
+fn build_error(e: esp32bench_build::Error) -> RpcError {
+    use esp32bench_build::Error as E;
+    let code = match &e {
+        E::NoProject(_) | E::NoBuild { .. } => code::NOT_FOUND,
+        E::BadId(_) => code::INVALID_PARAMS,
+        E::NoArduinoCli => code::UNAVAILABLE,
+        _ => code::FAILED,
+    };
+    RpcError::new(code, e.to_string())
+}
+
+async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: BuildParams = parse_params(params)?;
+    let manifest = state
+        .library
+        .load()
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                "the project library has not been downloaded",
+            )
+        })?;
+    let (plan, code) =
+        esp32bench_build::plan(&manifest, &p.project, &p.board).map_err(build_error)?;
+    // Check the toolchain before asking for consent, so nobody agrees to a build that
+    // cannot run.
+    let tools = match &state.arduino_cli {
+        Some(cli) => esp32bench_build::Toolchain {
+            arduino_cli: cli.clone(),
+            sketchbook: state.sketchbook.clone(),
+        },
+        None => {
+            esp32bench_build::Toolchain::detect(state.sketchbook.clone()).map_err(build_error)?
+        }
+    };
+
+    // Library projects are downloaded, so they never build without consent (rule 4).
+    let granted = p
+        .consent
+        .as_deref()
+        .is_some_and(|t| state.consent.redeem(t, &plan));
+    if !granted {
+        let token = state
+            .consent
+            .issue(&plan)
+            .map_err(|e| RpcError::internal(e.to_string()))?;
+        let message = if p.consent.is_some() {
+            "the consent token is not valid for this build; ask the user again"
+        } else {
+            "this project was downloaded; ask the user before building it"
+        };
+        return Err(RpcError::new(code::CONSENT_REQUIRED, message)
+            .with_data(json!({ "token": token, "plan": plan })));
+    }
+
+    let result_plan = plan.clone();
+    let job = ctx.subscribe(move |sub| async move {
+        let _one_at_a_time = state.build_lock.lock().await;
+        let dirs = esp32bench_build::Dirs::new(&state.builds_root, &plan);
+        let r = esp32bench_build::run(&plan, &code, &tools, &dirs, |stream, line| {
+            sub.send("build.log", json!({ "stream": stream, "line": line }));
+        })
+        .await;
+        let event = match r {
+            Ok(out) => json!({ "ok": true, "image": out.image, "elf": out.elf }),
+            Err(e) => json!({ "ok": false, "error": e.to_string() }),
+        };
+        sub.send("build.finished", event);
+    });
+    Ok(json!({ "job": job, "plan": result_plan }))
 }
 
 #[derive(Deserialize)]

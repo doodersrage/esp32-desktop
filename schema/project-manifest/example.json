@@ -94,7 +94,15 @@
    ],
    "summary": "Toggle the LED on GPIO 2 and print a tick every second. The first thing to flash on any new board.",
    "firmware": "sketch",
-   "libraries": [],
+   "libraries": [
+    "Adafruit NeoPixel"
+   ],
+   "install": [
+    {
+     "library": "Adafruit NeoPixel",
+     "registry": "adafruit/Adafruit NeoPixel"
+    }
+   ],
    "baud": 115200,
    "needs": [],
    "parts": [

@@ -31,6 +31,11 @@ CoreConnection::CoreConnection(QObject *parent)
     connect(m_client, &RpcClient::disconnected, this, [this] {
         m_devicesSubscription = 0; // the core drops subscriptions and jobs with the connection
         m_earlyLibraryEvents.clear();
+        m_earlyBuildEvents.clear();
+        if (m_buildJob != 0) {
+            m_buildJob = 0;
+            emit buildFinished(false, tr("The connection to the core was lost."), {});
+        }
         if (m_libraryJob != 0) {
             m_libraryJob = 0;
             emit libraryRefreshed(false, tr("The connection to the core was lost."));
@@ -82,7 +87,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.4.0"_s},
+        {u"protocol"_s, u"0.5.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -183,6 +188,11 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
         return;
     if (method == u"device.changed" && sub == m_devicesSubscription) {
         emit devicesListed(params.value(u"ports"_s).toArray());
+    } else if (method == u"build.log" || method == u"build.finished") {
+        if (sub == m_buildJob)
+            handleBuildEvent(method, params);
+        else if (m_buildJob == -1)
+            m_earlyBuildEvents.append({method, params}); // our job id is not known yet
     } else if (method == u"library.refreshed") {
         if (sub == m_libraryJob)
             finishLibraryRefresh(params);
@@ -242,5 +252,62 @@ void CoreConnection::getProject(const QString &id)
             emit projectLoaded(r.result.toObject());
         else
             emit requestFailed(method, r.errorMessage);
+    });
+}
+
+void CoreConnection::startBuild(const QString &project, const QString &board, const QString &consent)
+{
+    if (m_buildJob != 0)
+        return; // one build at a time
+    QJsonObject params{{u"project"_s, project}, {u"board"_s, board}};
+    if (!consent.isEmpty())
+        params[u"consent"_s] = consent;
+    m_buildJob = -1;
+    m_client->call(u"build.start"_s, params, this, [this, project, board](const RpcReply &r) {
+        if (!r.ok) {
+            m_buildJob = 0;
+            m_earlyBuildEvents.clear();
+            const QJsonObject data = r.errorData.toObject();
+            if (r.errorCode == ConsentRequired && data.contains(u"token"_s))
+                emit buildConsentRequired(project, board, data.value(u"token"_s).toString(),
+                                          data.value(u"plan"_s).toObject());
+            else
+                emit buildFinished(false, r.errorMessage, {});
+            return;
+        }
+        const QJsonObject o = r.result.toObject();
+        m_buildJob = o.value(u"job"_s).toInteger();
+        emit buildStarted(o.value(u"plan"_s).toObject());
+        // Events that beat the reply, in the order they came.
+        const auto early = std::exchange(m_earlyBuildEvents, {});
+        for (const auto &[method, params] : early) {
+            if (m_buildJob > 0 && params.value(u"subscription"_s).toInteger() == m_buildJob)
+                handleBuildEvent(method, params);
+        }
+    });
+}
+
+void CoreConnection::handleBuildEvent(const QString &method, const QJsonObject &params)
+{
+    if (method == u"build.log") {
+        emit buildLog(params.value(u"stream"_s).toString(), params.value(u"line"_s).toString());
+        return;
+    }
+    m_buildJob = 0;
+    emit buildFinished(params.value(u"ok"_s).toBool(), params.value(u"error"_s).toString(),
+                       params.value(u"image"_s).toString());
+}
+
+void CoreConnection::cancelBuild()
+{
+    if (m_buildJob <= 0)
+        return;
+    const qint64 job = m_buildJob;
+    m_client->call(u"job.cancel"_s, {{u"job"_s, job}}, this, [this, job](const RpcReply &r) {
+        // A cancelled job sends no build.finished, so report it here.
+        if (r.ok && m_buildJob == job) {
+            m_buildJob = 0;
+            emit buildFinished(false, tr("Cancelled."), {});
+        }
     });
 }

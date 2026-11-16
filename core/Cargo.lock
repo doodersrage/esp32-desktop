@@ -287,6 +287,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "clap",
+ "esp32bench-build",
  "esp32bench-device",
  "esp32bench-library",
  "esp32bench-rpc",
@@ -297,10 +298,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "esp32bench-build"
+version = "0.0.1"
+dependencies = [
+ "esp32bench-library",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "esp32bench-daemon"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "esp32bench-build",
  "esp32bench-device",
  "esp32bench-library",
  "esp32bench-rpc",

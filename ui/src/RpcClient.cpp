@@ -48,7 +48,7 @@ void RpcClient::call(const QString &method, const QJsonObject &params, QObject *
         // Answer asynchronously, like a real reply, so callers have one code path.
         QMetaObject::invokeMethod(this, [context = QPointer<QObject>(context), handler, this] {
             if (context && handler)
-                handler({false, {}, DisconnectedError, tr("Not connected to the core.")});
+                handler({false, {}, DisconnectedError, tr("Not connected to the core."), {}});
         }, Qt::QueuedConnection);
         return;
     }
@@ -106,6 +106,7 @@ void RpcClient::handleMessage(const QJsonObject &msg)
         const QJsonObject e = msg.value(u"error"_s).toObject();
         reply.errorCode = e.value(u"code"_s).toInt();
         reply.errorMessage = e.value(u"message"_s).toString();
+        reply.errorData = e.value(u"data"_s);
     }
     p.handler(reply);
 }
@@ -115,6 +116,6 @@ void RpcClient::failAllPending(const QString &message)
     const auto pending = std::exchange(m_pending, {});
     for (const Pending &p : pending) {
         if (p.context && p.handler)
-            p.handler({false, {}, DisconnectedError, message});
+            p.handler({false, {}, DisconnectedError, message, {}});
     }
 }

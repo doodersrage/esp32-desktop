@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "BuildPanel.h"
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
 #include "LibraryPanel.h"
@@ -10,6 +11,7 @@
 #include <QCloseEvent>
 #include <QDockWidget>
 #include <QIcon>
+#include <QJsonArray>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -47,6 +49,18 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_devicesDock->setWidget(m_devices);
     addDockWidget(Qt::LeftDockWidgetArea, m_devicesDock);
 
+    m_buildDock = new QDockWidget(tr("Build"), this);
+    m_buildDock->setObjectName(u"buildDock"_s);
+    m_buildPanel = new BuildPanel(core, m_buildDock);
+    m_buildDock->setWidget(m_buildPanel);
+    addDockWidget(Qt::BottomDockWidgetArea, m_buildDock);
+    connect(core, &CoreConnection::buildStarted, m_buildDock, &QDockWidget::show);
+    connect(core, &CoreConnection::buildConsentRequired, this,
+            [this](const QString &project, const QString &board, const QString &token, const QJsonObject &plan) {
+                if (confirmBuild(project, board, plan))
+                    m_core->startBuild(project, board, token);
+            });
+
     m_startCore->setIcon(QIcon::fromTheme(u"media-playback-start"_s));
     m_startCore->setToolTip(tr("Start the esp32bench core in the background"));
     connect(m_startCore, &QPushButton::clicked, this, &MainWindow::startCore);
@@ -73,6 +87,7 @@ void MainWindow::buildMenus()
 
     QMenu *view = menuBar()->addMenu(tr("&View"));
     view->addAction(m_devicesDock->toggleViewAction());
+    view->addAction(m_buildDock->toggleViewAction());
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
     QAction *about = help->addAction(QIcon::fromTheme(u"help-about"_s), tr("&About ESP32 Bench"));
@@ -143,4 +158,26 @@ void MainWindow::closeEvent(QCloseEvent *event)
 {
     saveLayout();
     QMainWindow::closeEvent(event);
+}
+
+bool MainWindow::confirmBuild(const QString &project, const QString &board, const QJsonObject &plan)
+{
+    QStringList libs;
+    for (const QJsonValue &v : plan.value(u"install"_s).toArray())
+        libs << v.toString();
+    QMessageBox box(QMessageBox::Warning, tr("Build a downloaded project?"),
+                    tr("“%1” for %2 came from esp32bench.dev. Building it runs its code through "
+                       "arduino-cli on this computer.")
+                        .arg(project, board),
+                    QMessageBox::Cancel, this);
+    box.setInformativeText(libs.isEmpty()
+                               ? tr("No libraries will be downloaded.")
+                               : tr("These libraries will be downloaded and installed: %1.")
+                                     .arg(libs.join(u", "_s)));
+    box.setDetailedText(tr("Board: %1\nCode SHA-256: %2")
+                            .arg(plan.value(u"fqbn"_s).toString(), plan.value(u"codeSha256"_s).toString()));
+    QPushButton *build = box.addButton(tr("Build"), QMessageBox::AcceptRole);
+    box.setDefaultButton(QMessageBox::Cancel);
+    box.exec();
+    return box.clickedButton() == build;
 }

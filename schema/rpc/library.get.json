@@ -91,6 +91,35 @@
             },
             "description": "Arduino libraries to install before building."
           },
+          "install": {
+            "type": "array",
+            "description": "Libraries to download before building, in the order to install them. Libraries built into the ESP32 core are not listed. The Arduino library name is the part of `registry` after the slash.",
+            "items": {
+              "type": "object",
+              "required": [
+                "library",
+                "registry"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "library": {
+                  "type": "string",
+                  "description": "As written in `libraries`."
+                },
+                "registry": {
+                  "type": "string",
+                  "pattern": "^[^/\\s]+/[^/]+$",
+                  "description": "Registry id, owner/name, e.g. adafruit/Adafruit SSD1306."
+                }
+              }
+            }
+          },
+          "partitions": {
+            "enum": [
+              "huge_app"
+            ],
+            "description": "Arduino-ESP32 partition scheme when the default app partition is too small."
+          },
           "baud": {
             "type": "integer",
             "minimum": 1
@@ -377,7 +406,15 @@
           ],
           "summary": "Toggle the LED on GPIO 2 and print a tick every second. The first thing to flash on any new board.",
           "firmware": "sketch",
-          "libraries": [],
+          "libraries": [
+            "Adafruit NeoPixel"
+          ],
+          "install": [
+            {
+              "library": "Adafruit NeoPixel",
+              "registry": "adafruit/Adafruit NeoPixel"
+            }
+          ],
           "baud": 115200,
           "needs": [],
           "parts": [

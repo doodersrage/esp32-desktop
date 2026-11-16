@@ -27,6 +27,7 @@ v1 is done when every esp32bench.dev library project builds and flashes from the
 | Simulation engine | lcgamboa's QEMU fork, pinned to a commit (decided in phase 0) | Both forks passed boot, UART, reset, GDB and the pinned Arduino core on all three chips; only lcgamboa's lets the host read and drive GPIO and answer as an I2C device, and it adds Wi-Fi on ESP32 and C3. That makes phase 4 app work rather than QEMU patches. Results: [PHASE0.md](PHASE0.md), [qemu-forks.md](qemu-forks.md). |
 | Getting QEMU | Build lcgamboa's fork from source at the pinned commit, as executables and as a library | The fork has no releases. The AUR package is stale (see Arch-specific notes). Espressif's prebuilt binaries stay as a test baseline until the core's setup step builds the fork. |
 | Toolchain | Detect an existing ESP-IDF and Arduino core, offer a managed install | The AUR `esp-idf` package is one supported source. |
+| Serial monitor | Plain text view (`QPlainTextEdit`) (decided 2026-11-16) | Line-based output needs no terminal emulation, and `qt6-base` already has it. |
 
 The cost of going native is that the esp32-bench Astro UI is not reused. The shared data schema still carries the library content over.
 
@@ -71,7 +72,7 @@ A Rust core process does the work and a Qt 6 UI shows it, talking over a local s
     - JSON-RPC API over a Unix socket, with event streams for serial output, build logs and device hotplug. Wire format, errors, events and versioning are in [rpc.md](rpc.md); methods are defined in `schema/rpc/`.
 2. **UI (Qt 6 Widgets, C++)**
     - Dockable panels: project library, board picker, serial monitor, flash and partition view, simulator panel and debug panel.
-    - Serial monitor on a terminal widget (QTermWidget, if its Qt 6 build fits; otherwise a plain text view).
+    - Serial monitor on a plain text view (`QPlainTextEdit`), decided 2026-11-16: ESP32 output is line-based text, and it keeps the UI on `qt6-base` with no AUR dependencies. QTermWidget would only pay off for interactive terminal programs, which the library projects are not.
     - QGraphicsScene canvas for pin diagrams and, later, virtual parts.
     - QEMU framebuffer embedded as a widget instead of a separate SDL window.
 3. **Shared data**

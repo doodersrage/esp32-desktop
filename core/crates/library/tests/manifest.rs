@@ -127,3 +127,11 @@ async fn refuses_non_https_urls() {
         );
     }
 }
+
+#[test]
+fn install_entries_give_arduino_library_names() {
+    let m = parse(&read(schema_dir().join("example.json"))).unwrap();
+    let i = &m.projects[0].install[0];
+    assert_eq!(i.registry, "adafruit/Adafruit NeoPixel");
+    assert_eq!(i.arduino_name(), "Adafruit NeoPixel");
+}

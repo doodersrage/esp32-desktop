@@ -39,10 +39,39 @@ fn assert_valid(schema: &Value, instance: &Value, what: &str) {
 
 /// State with a private library cache, fetching from `source`.
 fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
-    Arc::new(esp32bench_daemon::State::new(
+    let mut s = esp32bench_daemon::State::new(
         esp32bench_library::Cache::new(dir.join("cache")),
         source.to_string_lossy().into_owned(),
-    ))
+        dir.join("builds"),
+        dir.join("sketchbook"),
+    );
+    s.arduino_cli = Some(fake_arduino_cli(dir));
+    Arc::new(s)
+}
+
+/// A stand-in arduino-cli: installs nothing, and "compiles" by printing a line and
+/// writing empty output files where arduino-cli would.
+fn fake_arduino_cli(dir: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join("fake-arduino-cli");
+    std::fs::write(
+        &path,
+        r#"#!/bin/sh
+case "$1" in
+  lib) echo "Installed $3" ;;
+  compile)
+    out=""; prev=""
+    for a in "$@"; do [ "$prev" = "--output-dir" ] && out="$a"; prev="$a"; last="$a"; done
+    name=$(basename "$last")
+    echo "Sketch uses 1234 bytes"
+    : > "$out/$name.ino.merged.bin"; : > "$out/$name.ino.elf" ;;
+esac
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
 }
 
 fn example_manifest() -> PathBuf {
@@ -194,7 +223,7 @@ async fn core_hello_round_trip() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
     let def = method_def("core.hello");
-    let params = json!({ "client": "test", "protocol": "0.4.0" });
+    let params = json!({ "client": "test", "protocol": "0.5.0" });
     assert_valid(&def["params"], &params, "core.hello params");
     let r = c.call("core.hello", params).await.unwrap();
     assert_valid(&def["result"], &r, "core.hello result");
@@ -404,5 +433,162 @@ async fn library_get_round_trip() {
     {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
         other => panic!("expected not found, got {other:?}"),
+    }
+}
+
+#[test]
+fn every_error_example_matches_its_error_data_schema() {
+    for m in index()["methods"].as_array().unwrap() {
+        let m = m.as_str().unwrap();
+        let def = method_def(m);
+        for (i, ex) in def["errorExamples"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .enumerate()
+        {
+            let code = ex["code"].as_i64().unwrap();
+            assert!(
+                def["errors"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|c| c.as_i64() == Some(code)),
+                "{m} error example {i}: code {code} is not in errors"
+            );
+            let schema = &def["errorData"][code.to_string()];
+            assert!(!schema.is_null(), "{m}: no errorData schema for {code}");
+            assert_valid(schema, &ex["data"], &format!("{m} error example {i}"));
+        }
+    }
+}
+
+/// Download the example library into the daemon, so projects can be built.
+async fn with_library(c: &mut Client) {
+    c.call("library.refresh", json!({})).await.unwrap();
+    let n = c.next_notification().await.unwrap();
+    assert_eq!(n["params"]["ok"], true);
+}
+
+#[tokio::test]
+async fn build_needs_consent_for_the_exact_plan() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let def = method_def("build.start");
+
+    // No token: refused, with a token and the plan to show the user.
+    let refusal = match c
+        .call(
+            "build.start",
+            json!({ "project": "blink", "board": "esp32" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => e,
+        other => panic!("expected consent required, got {other:?}"),
+    };
+    assert_eq!(refusal.code, code::CONSENT_REQUIRED);
+    let data = refusal.data.unwrap();
+    assert_valid(&def["errorData"]["-32002"], &data, "consent data");
+    assert_eq!(data["plan"]["install"], json!(["Adafruit NeoPixel"]));
+    let token = data["token"].as_str().unwrap().to_owned();
+
+    // A token for one board does not build another.
+    match c
+        .call(
+            "build.start",
+            json!({ "project": "blink", "board": "esp32-doit", "consent": token }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::CONSENT_REQUIRED),
+        other => panic!("expected consent required, got {other:?}"),
+    }
+    // ...and that attempt used it up.
+    match c
+        .call(
+            "build.start",
+            json!({ "project": "blink", "board": "esp32", "consent": token }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::CONSENT_REQUIRED),
+        other => panic!("a used token started a build: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn build_runs_after_consent_and_reports() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+
+    let token = match c
+        .call(
+            "build.start",
+            json!({ "project": "blink", "board": "esp32" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => e.data.unwrap()["token"].as_str().unwrap().to_owned(),
+        other => panic!("expected consent required, got {other:?}"),
+    };
+    let r = c
+        .call(
+            "build.start",
+            json!({ "project": "blink", "board": "esp32", "consent": token }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("build.start")["result"],
+        &r,
+        "build.start result",
+    );
+    let job = r["job"].clone();
+
+    let mut saw_log = false;
+    loop {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(n["params"]["subscription"], job);
+        let event = n["method"].as_str().unwrap();
+        assert_valid(&method_def(event)["params"], &n["params"], event);
+        if event == "build.log" {
+            saw_log = true;
+            continue;
+        }
+        assert_eq!(event, "build.finished");
+        assert_eq!(n["params"]["ok"], true, "{n}");
+        assert!(Path::new(n["params"]["image"].as_str().unwrap()).is_file());
+        break;
+    }
+    assert!(saw_log);
+}
+
+#[tokio::test]
+async fn build_refuses_prebuilt_and_unknown_projects() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    for (project, board, want) in [
+        ("probeharbor-probe", "esp32", code::FAILED),
+        ("no-such-project", "esp32", code::NOT_FOUND),
+        ("blink", "esp32c6", code::NOT_FOUND),
+        ("../../etc", "esp32", code::INVALID_PARAMS),
+    ] {
+        match c
+            .call("build.start", json!({ "project": project, "board": board }))
+            .await
+        {
+            Err(ClientError::Rpc(e)) => {
+                assert_eq!(e.code, want, "{project}/{board}: {}", e.message)
+            }
+            other => panic!("{project}/{board}: expected an error, got {other:?}"),
+        }
     }
 }

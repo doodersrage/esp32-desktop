@@ -52,4 +52,4 @@ Standard JSON-RPC codes for protocol problems, and application codes from -32000
 
 ## Method definitions
 
-Each method is one file, `schema/rpc/<method>.json`, holding a JSON Schema (draft 2020-12) for `params` and `result`, the error codes it can return, and an example request and response. A test in the core checks every example against its schema, and every method the daemon registers against the files. The UI client is written against the same files.
+Each method is one file, `schema/rpc/<method>.json`, holding a JSON Schema (draft 2020-12) for `params` and `result`, the error codes it can return, and an example request and response. When an error carries `data` a client must read, `errorData` maps the code to a schema for it and `errorExamples` gives an example; `build.start`'s consent refusal (-32002) is the first. Events have their own files with `event` instead of `method`. A test in the core checks every example against its schema, and every method the daemon registers against the files. The UI client is written against the same files.

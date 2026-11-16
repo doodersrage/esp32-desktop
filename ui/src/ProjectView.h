@@ -36,11 +36,13 @@ public:
     QTreeWidget *wiringTree() const { return m_wiring; }
     QPlainTextEdit *codeView() const { return m_code; }
     QTabWidget *tabs() const { return m_tabs; }
+    QPushButton *buildButton() const { return m_build; }
     QString notesText() const;
 
 private:
     void showBuild(int index);
     void showPlaceholder(const QString &text);
+    void updateBuildButton();
 
     CoreConnection *m_core;
     QString m_requestedId;
@@ -53,6 +55,7 @@ private:
     QLabel *m_meta;
     QLabel *m_summary;
     QPushButton *m_openSite;
+    QPushButton *m_build;
     QComboBox *m_board;
     QTabWidget *m_tabs;
     QTreeWidget *m_parts;

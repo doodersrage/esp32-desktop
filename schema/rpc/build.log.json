@@ -1,0 +1,39 @@
+{
+  "event": "build.log",
+  "description": "One line printed by arduino-cli during a build.start job.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "stream",
+      "line"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The job id."
+      },
+      "stream": {
+        "enum": [
+          "stdout",
+          "stderr"
+        ]
+      },
+      "line": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 7,
+        "stream": "stdout",
+        "line": "Sketch uses 254756 bytes (19%) of program storage space."
+      }
+    }
+  ]
+}

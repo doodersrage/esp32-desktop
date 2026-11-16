@@ -1,8 +1,10 @@
 #pragma once
 
+#include <QJsonObject>
 #include <QMainWindow>
 
 class CoreConnection;
+class BuildPanel;
 class DevicesPanel;
 class LibraryPanel;
 class ProjectView;
@@ -21,6 +23,11 @@ public:
     LibraryPanel *libraryPanel() const { return m_library; }
     ProjectView *projectView() const { return m_project; }
     QString connectionText() const;
+    BuildPanel *buildPanel() const { return m_buildPanel; }
+
+    // Ask the user whether to build a downloaded project. Returns true to build.
+    // Virtual so tests can answer without a modal dialog.
+    virtual bool confirmBuild(const QString &project, const QString &board, const QJsonObject &plan);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -38,6 +45,8 @@ private:
     ProjectView *m_project = nullptr;
     QSplitter *m_split = nullptr;
     QDockWidget *m_devicesDock;
+    QDockWidget *m_buildDock = nullptr;
+    BuildPanel *m_buildPanel = nullptr;
     QLabel *m_connection;
     QPushButton *m_startCore;
 };

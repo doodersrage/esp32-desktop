@@ -8,6 +8,7 @@ members = [
     "crates/device",
     "crates/daemon",
     "crates/library",
+    "crates/build",
 ]
 
 [workspace.package]

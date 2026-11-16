@@ -1,0 +1,51 @@
+{
+  "event": "build.finished",
+  "description": "The end of a build.start job. Sent once, unless the job was cancelled.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "ok"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "image": {
+        "type": "string",
+        "description": "Merged flash image, when ok."
+      },
+      "elf": {
+        "type": "string",
+        "description": "ELF with symbols, when ok."
+      },
+      "error": {
+        "type": "string",
+        "description": "What went wrong, when not ok."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 7,
+        "ok": true,
+        "image": "/home/u/.cache/esp32bench/builds/blink/esp32/out/blink.ino.merged.bin",
+        "elf": "/home/u/.cache/esp32bench/builds/blink/esp32/out/blink.ino.elf"
+      }
+    },
+    {
+      "params": {
+        "subscription": 7,
+        "ok": false,
+        "error": "compiling failed (exit status: 1)"
+      }
+    }
+  ]
+}

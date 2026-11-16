@@ -1,7 +1,8 @@
 {
-  "protocol": "0.4.0",
+  "protocol": "0.5.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
+    "build.start",
     "core.hello",
     "core.unsubscribe",
     "device.list",
@@ -12,6 +13,8 @@
     "library.refresh"
   ],
   "events": [
+    "build.finished",
+    "build.log",
     "device.changed",
     "library.refreshed"
   ]

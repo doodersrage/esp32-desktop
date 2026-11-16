@@ -62,6 +62,16 @@ public:
     // library.get: one project with its boards, through projectLoaded.
     void getProject(const QString &id);
 
+    // build.start. Without a consent token the core refuses, and buildConsentRequired
+    // carries the plan to show the user; call again with the token if they agree.
+    void startBuild(const QString &project, const QString &board, const QString &consent = {});
+    // job.cancel for the running build.
+    void cancelBuild();
+    bool isBuilding() const { return m_buildJob != 0; }
+
+    // Error code the core uses when consent is missing (docs/rpc.md).
+    static constexpr int ConsentRequired = -32002;
+
     RpcClient *client() const { return m_client; }
 
 signals:
@@ -72,6 +82,13 @@ signals:
     void libraryRefreshed(bool ok, const QString &error);
     // The library.get result: {project, boards}.
     void projectLoaded(const QJsonObject &result);
+    // Builds.
+    void buildConsentRequired(const QString &project, const QString &board, const QString &token,
+                              const QJsonObject &plan);
+    void buildStarted(const QJsonObject &plan);
+    void buildLog(const QString &stream, const QString &line);
+    // `image` is the merged flash image when ok.
+    void buildFinished(bool ok, const QString &error, const QString &image);
     // A request failed. `method` is the RPC method name.
     void requestFailed(const QString &method, const QString &message);
 
@@ -81,6 +98,7 @@ private:
     void onSocketConnected();
     void onNotification(const QString &method, const QJsonObject &params);
     void finishLibraryRefresh(const QJsonObject &params);
+    void handleBuildEvent(const QString &method, const QJsonObject &params);
 
     RpcClient *m_client;
     QTimer *m_retry;
@@ -94,4 +112,6 @@ private:
     // library.refreshed events that arrived before library.refresh's reply told us
     // our job id (docs/rpc.md allows that order).
     QList<QJsonObject> m_earlyLibraryEvents;
+    qint64 m_buildJob = 0; // running build.start job, -1 while starting, or 0
+    QList<QPair<QString, QJsonObject>> m_earlyBuildEvents;
 };

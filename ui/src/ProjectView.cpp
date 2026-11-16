@@ -75,6 +75,17 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
             QDesktopServices::openUrl(url);
     });
 
+    m_build = new QPushButton(QIcon::fromTheme(u"run-build"_s), tr("Build"), page);
+    m_build->setToolTip(tr("Build this project for the selected board with arduino-cli"));
+    connect(m_build, &QPushButton::clicked, this, [this] {
+        // The core asks for consent first; MainWindow shows that dialog.
+        m_core->startBuild(m_project.value(u"id"_s).toString(), m_board->currentData().toString());
+    });
+    connect(m_core, &CoreConnection::stateChanged, this, &ProjectView::updateBuildButton);
+    connect(m_core, &CoreConnection::buildStarted, this, &ProjectView::updateBuildButton);
+    connect(m_core, &CoreConnection::buildFinished, this, &ProjectView::updateBuildButton);
+    connect(m_core, &CoreConnection::buildConsentRequired, this, &ProjectView::updateBuildButton);
+
     m_board = new QComboBox(page);
     connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::showBuild);
 
@@ -124,6 +135,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     headText->addWidget(m_title);
     headText->addWidget(m_meta);
     head->addLayout(headText, 1);
+    head->addWidget(m_build, 0, Qt::AlignTop);
     head->addWidget(m_openSite, 0, Qt::AlignTop);
     auto *boardRow = new QFormLayout;
     boardRow->addRow(tr("Board:"), m_board);
@@ -240,6 +252,7 @@ void ProjectView::showResult(const QJsonObject &result)
     }
     m_board->setEnabled(m_builds.size() > 1);
     showBuild(0);
+    updateBuildButton();
     m_stack->setCurrentIndex(1);
 }
 
@@ -273,4 +286,12 @@ void ProjectView::showBuild(int index)
     for (const QJsonValue &v : b.value(u"sample"_s).toArray())
         sample << v.toString();
     m_output->setPlainText(sample.join(u'\n'));
+}
+
+void ProjectView::updateBuildButton()
+{
+    const bool sketch = m_project.value(u"firmware"_s).toString() == u"sketch";
+    m_build->setVisible(sketch);
+    m_build->setEnabled(sketch && m_core->state() == CoreConnection::State::Connected
+                        && !m_core->isBuilding());
 }

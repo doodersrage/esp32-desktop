@@ -18,6 +18,7 @@ struct RpcReply {
     QJsonValue result;
     int errorCode = 0;
     QString errorMessage;
+    QJsonValue errorData; // the error's `data`, e.g. a consent token and plan
 };
 
 class RpcClient : public QObject {

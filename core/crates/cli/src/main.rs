@@ -35,6 +35,18 @@ enum Cmd {
     /// The esp32bench.dev project library.
     #[command(subcommand)]
     Library(LibraryCmd),
+    /// Build a library project with arduino-cli. Shows what will run and stops,
+    /// unless --yes says you agree: library projects are downloaded code.
+    Build {
+        /// Project id, as in `library list`.
+        project: String,
+        /// Board id, as in `library show`.
+        #[arg(long)]
+        board: String,
+        /// Build without asking. Only use this after reading the plan.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Call a method on a running esp32benchd and print the result as JSON.
     Rpc {
         /// Method name, e.g. `core.hello`.
@@ -331,6 +343,51 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                     m.generated
                 );
             }
+        }
+        Cmd::Build {
+            project,
+            board,
+            yes,
+        } => {
+            let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+            let Some(m) = cache.load().await? else {
+                bail!("no project library cached yet; run `esp32bench library refresh`");
+            };
+            let (plan, code) = esp32bench_build::plan(&m, &project, &board)?;
+            let sketchbook = esp32bench_build::default_sketchbook()
+                .context("no data directory: set XDG_DATA_HOME or HOME")?;
+            let tools = esp32bench_build::Toolchain::detect(sketchbook)?;
+            eprintln!("Build {} for {} ({})", plan.project, plan.board, plan.fqbn);
+            eprintln!("  code      sha256 {}", plan.code_sha256);
+            if plan.install.is_empty() {
+                eprintln!("  libraries none to download");
+            } else {
+                eprintln!(
+                    "  libraries download and install: {}",
+                    plan.install.join(", ")
+                );
+            }
+            if !yes {
+                eprintln!(
+                    "\nThis project was downloaded. Read it first (`esp32bench library show {project} --board {board}`), then run again with --yes to build it."
+                );
+                return Ok(ExitCode::from(2));
+            }
+            let dirs = esp32bench_build::Dirs::new(
+                &esp32bench_library::cache_dir()?.join("builds"),
+                &plan,
+            );
+            let out =
+                esp32bench_build::run(&plan, &code, &tools, &dirs, |stream, line| match stream {
+                    esp32bench_build::Stream::Stdout => println!("{line}"),
+                    esp32bench_build::Stream::Stderr => eprintln!("{line}"),
+                })
+                .await?;
+            eprintln!(
+                "\nimage {}\nelf   {}",
+                out.image.display(),
+                out.elf.display()
+            );
         }
         Cmd::Rpc {
             method,

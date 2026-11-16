@@ -1,0 +1,189 @@
+{
+  "method": "build.start",
+  "description": "Build a library project for one board with arduino-cli. Library projects are downloaded, so they are untrusted (CLAUDE.md rule 4): without a valid `consent` token the call fails with -32002, and the error's data carries a token and the plan to show the user. Calling again with that token starts the build. A token is single-use, expires after 10 minutes, and only covers that exact plan. Returns a job; build.log and build.finished report progress; job.cancel stops it.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "board"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string"
+      },
+      "board": {
+        "type": "string"
+      },
+      "consent": {
+        "type": "string",
+        "description": "Token from an earlier -32002 error, after the user agreed to its plan."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job",
+      "plan"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "plan": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "board",
+          "target",
+          "fqbn",
+          "codeSha256",
+          "install"
+        ],
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "board": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string",
+            "description": "Board whose firmware is built; a variant builds as its parent."
+          },
+          "fqbn": {
+            "type": "string"
+          },
+          "codeSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 of the sketch the consent covers."
+          },
+          "install": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Arduino libraries that will be downloaded and installed."
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32000,
+    -32002,
+    -32003,
+    -32005
+  ],
+  "errorData": {
+    "-32002": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": [
+        "token",
+        "plan"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project",
+            "board",
+            "target",
+            "fqbn",
+            "codeSha256",
+            "install"
+          ],
+          "properties": {
+            "project": {
+              "type": "string"
+            },
+            "board": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string",
+              "description": "Board whose firmware is built; a variant builds as its parent."
+            },
+            "fqbn": {
+              "type": "string"
+            },
+            "codeSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "SHA-256 of the sketch the consent covers."
+            },
+            "install": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Arduino libraries that will be downloaded and installed."
+            }
+          }
+        }
+      }
+    }
+  },
+  "events": [
+    "build.log",
+    "build.finished"
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink",
+        "board": "esp32",
+        "consent": "0123456789abcdef0123456789abcdef"
+      },
+      "result": {
+        "job": 7,
+        "plan": {
+          "project": "blink",
+          "board": "esp32",
+          "target": "esp32",
+          "fqbn": "esp32:esp32:esp32:FlashMode=dio",
+          "codeSha256": "9f2c000000000000000000000000000000000000000000000000000000000000",
+          "install": [
+            "Adafruit NeoPixel"
+          ]
+        }
+      }
+    }
+  ],
+  "errorExamples": [
+    {
+      "params": {
+        "project": "blink",
+        "board": "esp32"
+      },
+      "code": -32002,
+      "data": {
+        "token": "0123456789abcdef0123456789abcdef",
+        "plan": {
+          "project": "blink",
+          "board": "esp32",
+          "target": "esp32",
+          "fqbn": "esp32:esp32:esp32:FlashMode=dio",
+          "codeSha256": "9f2c000000000000000000000000000000000000000000000000000000000000",
+          "install": [
+            "Adafruit NeoPixel"
+          ]
+        }
+      }
+    }
+  ]
+}

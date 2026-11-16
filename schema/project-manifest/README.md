@@ -3,7 +3,7 @@
 The project library the esp32bench.dev site publishes for the desktop app, at `https://esp32bench.dev/desktop-manifest.json`. The site generates it from `src/data/projects.ts` in `src/pages/desktop-manifest.json.ts`.
 
 - `v1.schema.json`: the format, version 1.x (JSON Schema 2020-12).
-- `example.json`: a valid manifest with the real board list and two real projects, trimmed to two boards each. Sketch code is replaced by placeholders. The text comes from esp32bench.dev and is CC BY 4.0.
+- `example.json`: a valid manifest with the real board list and two real projects, trimmed to two boards each. Sketch code is replaced by placeholders, and `blink` lists one extra library (Adafruit NeoPixel) so that `install` is exercised. The rest of the text comes from esp32bench.dev and is CC BY 4.0.
 
 ## Versioning
 

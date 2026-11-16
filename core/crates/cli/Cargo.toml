@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+esp32bench-build = { path = "../build" }
 esp32bench-device = { path = "../device" }
 esp32bench-library = { path = "../library" }
 esp32bench-rpc = { path = "../rpc" }

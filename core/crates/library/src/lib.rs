@@ -83,6 +83,12 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_url: Option<String>,
     pub libraries: Vec<String>,
+    /// Libraries to download before building (not the ones built into the core).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub install: Vec<Install>,
+    /// Arduino-ESP32 partition scheme, when the default is too small.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partitions: Option<String>,
     pub baud: u32,
     pub needs: Vec<Vec<String>>,
     pub parts: Vec<Part>,
@@ -99,6 +105,22 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra: Option<serde_json::Value>,
     pub builds: Vec<Build>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Install {
+    pub library: String,
+    /// `owner/name`; the Arduino library name is the part after the slash.
+    pub registry: String,
+}
+
+impl Install {
+    /// The name `arduino-cli lib install` takes.
+    pub fn arduino_name(&self) -> &str {
+        self.registry
+            .split_once('/')
+            .map_or(self.registry.as_str(), |(_, n)| n)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
