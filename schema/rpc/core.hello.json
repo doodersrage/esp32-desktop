@@ -1,0 +1,31 @@
+{
+  "method": "core.hello",
+  "description": "Handshake. The UI calls it first to learn the core's version and protocol version.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "client": { "type": "string", "description": "Name and version of the caller, for logs." },
+      "protocol": { "type": "string", "description": "Protocol version the caller was written against." }
+    },
+    "additionalProperties": false
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": ["name", "version", "protocol"],
+    "properties": {
+      "name": { "const": "esp32benchd" },
+      "version": { "type": "string", "description": "Core version." },
+      "protocol": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+    },
+    "additionalProperties": false
+  },
+  "errors": [],
+  "examples": [
+    {
+      "params": { "client": "esp32bench-ui 0.0.1", "protocol": "0.1.0" },
+      "result": { "name": "esp32benchd", "version": "0.0.1", "protocol": "0.1.0" }
+    }
+  ]
+}

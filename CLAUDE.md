@@ -6,7 +6,7 @@ The plan is in `docs/PLAN.md`. Read it before any design work. It is the source 
 
 ## Current state
 
-Phase 0 is done (2026-11-15); the next step is phase 1, the core daemon with its JSON-RPC API and the first Qt shell. Phase 0's results are in `docs/PHASE0.md` and `docs/qemu-forks.md`. `core/` has three crates: `esp32bench-sim` (QEMU session supervisor, QMP, UART, GDB probe, image checks, pinned QEMU install), the `esp32bench` CLI, and `esp32bench-qemu-host` (runs lcgamboa's QEMU library, bridges GPIO to a socket and models I2C devices). The boot tests in `core/crates/sim/tests/boot.rs` boot images from `tests/firmware/out/` (built by `tests/firmware/build.sh`) and skip if QEMU or the images are missing; `core/crates/qemu-host/tests/hooks.rs` needs `ESP32BENCH_TEST_QEMU_LIB_{XTENSA,RISCV32}` pointing at a library build of the fork. The pinned QEMU install (`esp32bench qemu install`) is still Espressif's prebuilt build; switching it to the chosen fork is phase 3 work.
+Phase 1 in progress. Phase 0 is done (2026-11-15); its results are in `docs/PHASE0.md` and `docs/qemu-forks.md`. The RPC protocol is in `docs/rpc.md` and the method definitions in `schema/rpc/`. `core/` crates: `esp32bench-rpc` (JSON-RPC over a Unix socket: router, server, client), `esp32bench-daemon` (`esp32benchd`, serving `core.hello` and `device.list`), `esp32bench-device` (serial port discovery with chip hints), `esp32bench-sim` (QEMU sessions), `esp32bench` (the CLI) and `esp32bench-qemu-host` (lcgamboa's QEMU library with GPIO and I2C hooks). Simulator methods are not on the RPC API yet. No UI code exists yet. Boot tests in `core/crates/sim/tests/boot.rs` use images from `tests/firmware/out/` (built by `tests/firmware/build.sh`) and skip without QEMU; `core/crates/qemu-host/tests/hooks.rs` needs `ESP32BENCH_TEST_QEMU_LIB_{XTENSA,RISCV32}` pointing at a library build of the fork. `esp32bench qemu install` still fetches Espressif's prebuilt QEMU; switching it to the chosen fork is phase 3 work.
 
 CI is in `.github/workflows/ci.yml`. It runs fmt, clippy and tests for the core; the UI job skips until `ui/CMakeLists.txt` exists. CI has no QEMU, so the boot tests skip there.
 
@@ -31,6 +31,8 @@ The commands and paths below are the intended layout. If one does not exist yet,
 | Test core | `cargo test --manifest-path core/Cargo.toml` |
 | Lint core | `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings` |
 | Format core | `cargo fmt --manifest-path core/Cargo.toml --all` |
+| Run the daemon | `cargo run --manifest-path core/Cargo.toml --bin esp32benchd` |
+| Call it | `cargo run --manifest-path core/Cargo.toml --bin esp32bench -- rpc core.hello` |
 | Configure UI | `cmake -S ui -B build/ui -G Ninja` |
 | Build UI | `cmake --build build/ui` |
 | Test UI | `ctest --test-dir build/ui --output-on-failure` |

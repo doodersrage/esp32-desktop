@@ -9,5 +9,9 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+esp32bench-device = { path = "../device" }
+esp32bench-rpc = { path = "../rpc" }
 esp32bench-sim = { path = "../sim" }
+libc.workspace = true
+serde_json.workspace = true
 tokio.workspace = true

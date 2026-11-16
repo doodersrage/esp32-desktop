@@ -29,6 +29,33 @@ enum Cmd {
     /// Run firmware in the simulator.
     #[command(subcommand)]
     Sim(SimCmd),
+    /// Find connected boards.
+    #[command(subcommand)]
+    Device(DeviceCmd),
+    /// Call a method on a running esp32benchd and print the result as JSON.
+    Rpc {
+        /// Method name, e.g. `core.hello`.
+        method: String,
+        /// Params as a JSON object.
+        #[arg(default_value = "{}")]
+        params: String,
+        /// Daemon socket. Default: $XDG_RUNTIME_DIR/esp32bench/core.sock.
+        #[arg(long)]
+        socket: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DeviceCmd {
+    /// List serial ports, with the chips each could be (same data as `device.list`).
+    List {
+        /// Include ports that are not USB.
+        #[arg(long)]
+        all: bool,
+        /// Print JSON instead of a table.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -104,6 +131,11 @@ enum SimCmd {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // Exit quietly when stdout is a closed pipe (e.g. `| head`) instead of panicking.
+    // SAFETY: setting a signal disposition to the default before any threads use it.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     match run(Cli::parse()).await {
         Ok(code) => code,
         Err(e) => {
@@ -154,6 +186,61 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                     info.flash_mode
                 );
             }
+        }
+        Cmd::Device(DeviceCmd::List { all, json }) => {
+            let ports = esp32bench_device::list(all)?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({ "ports": ports }))?
+                );
+            } else if ports.is_empty() {
+                println!("no serial ports found");
+            } else {
+                for p in &ports {
+                    let ids = p
+                        .usb
+                        .as_ref()
+                        .map(|u| format!("{:04x}:{:04x}", u.vid, u.pid))
+                        .unwrap_or_else(|| "-".into());
+                    let bridge = p
+                        .bridge
+                        .and_then(|b| serde_json::to_value(b).ok())
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                        .unwrap_or_else(|| "unknown".into());
+                    let chips = if p.chips.is_empty() {
+                        "any".to_owned()
+                    } else {
+                        p.chips.join(",")
+                    };
+                    let access = match p.access {
+                        esp32bench_device::Access::Ok => "",
+                        esp32bench_device::Access::Denied => {
+                            "  (no access: check the udev rule and uucp group)"
+                        }
+                    };
+                    println!(
+                        "{:<16} {ids:<10} {bridge:<16} chips: {chips}{access}",
+                        p.path
+                    );
+                }
+            }
+        }
+        Cmd::Rpc {
+            method,
+            params,
+            socket,
+        } => {
+            let params: serde_json::Value =
+                serde_json::from_str(&params).context("params must be JSON")?;
+            let socket = match socket {
+                Some(s) => s,
+                None => esp32bench_rpc::default_socket_path()
+                    .context("XDG_RUNTIME_DIR is not set; pass --socket")?,
+            };
+            let mut client = esp32bench_rpc::Client::connect(&socket).await?;
+            let result = client.call(&method, params).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
         }
         Cmd::Sim(SimCmd::Run { session, paused }) => {
             if paused && session.gdb.is_none() {

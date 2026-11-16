@@ -68,7 +68,7 @@ A Rust core process does the work and a Qt 6 UI shows it, talking over a local s
     - Serial layer for real boards (`serialport`), flashing via `espflash` as a library, and device hotplug via udev.
     - Build runner that shells out to `idf.py` and `arduino-cli`, with PlatformIO as a later option.
     - GDB/MI client for both QEMU and real boards (USB-Serial-JTAG or OpenOCD).
-    - JSON-RPC API over a Unix socket, with event streams for serial output, build logs and device hotplug.
+    - JSON-RPC API over a Unix socket, with event streams for serial output, build logs and device hotplug. Wire format, errors, events and versioning are in [rpc.md](rpc.md); methods are defined in `schema/rpc/`.
 2. **UI (Qt 6 Widgets, C++)**
     - Dockable panels: project library, board picker, serial monitor, flash and partition view, simulator panel and debug panel.
     - Serial monitor on a terminal widget (QTermWidget, if its Qt 6 build fits; otherwise a plain text view).
