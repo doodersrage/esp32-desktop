@@ -23,6 +23,7 @@ public:
     QLineEdit *input() const { return m_input; }
     QPushButton *stopButton() const { return m_stop; }
     QPushButton *resetButton() const { return m_reset; }
+    QPushButton *runAgainButton() const { return m_again; }
 
 private:
     void send();
@@ -32,6 +33,10 @@ private:
     QLabel *m_status;
     QPushButton *m_reset;
     QPushButton *m_stop;
+    QPushButton *m_again;
+    // The last build run here, for Run again.
+    QString m_lastProject;
+    QString m_lastBoard;
     QPushButton *m_clear;
     ConsoleView *m_output;
     QLineEdit *m_input;

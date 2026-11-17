@@ -22,6 +22,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
                           this))
     , m_reset(new QPushButton(QIcon::fromTheme(u"view-refresh"_s), tr("Reset"), this))
     , m_stop(new QPushButton(QIcon::fromTheme(u"media-playback-stop"_s), tr("Stop"), this))
+    , m_again(new QPushButton(QIcon::fromTheme(u"media-playback-start"_s), tr("Run again"), this))
     , m_clear(new QPushButton(QIcon::fromTheme(u"edit-clear"_s), tr("Clear"), this))
     , m_output(new ConsoleView(this))
     , m_input(new QLineEdit(this))
@@ -38,6 +39,11 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
 
     connect(m_reset, &QPushButton::clicked, m_core, &CoreConnection::resetSim);
     connect(m_stop, &QPushButton::clicked, m_core, &CoreConnection::stopSim);
+    m_again->setToolTip(tr("Run the same build again, without rebuilding"));
+    connect(m_again, &QPushButton::clicked, this, [this] {
+        if (!m_lastProject.isEmpty() && !m_core->isSimRunning())
+            m_core->startSim(m_lastProject, m_lastBoard);
+    });
     connect(m_clear, &QPushButton::clicked, m_output, &ConsoleView::clear);
     connect(m_send, &QPushButton::clicked, this, &SimulatorPanel::send);
     connect(m_input, &QLineEdit::returnPressed, this, &SimulatorPanel::send);
@@ -46,6 +52,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     top->addWidget(m_status, 1);
     top->addWidget(m_reset);
     top->addWidget(m_stop);
+    top->addWidget(m_again);
     top->addWidget(m_clear);
     auto *bottom = new QHBoxLayout;
     bottom->addWidget(m_input, 1);
@@ -62,6 +69,8 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
                 m_output->appendNotice(tr("Started %1 for %2 on a simulated %3.")
                                            .arg(project, board, Labels::chipName(chip)));
                 m_status->setText(tr("Running %1 on a simulated %2.").arg(project, Labels::chipName(chip)));
+                m_lastProject = project;
+                m_lastBoard = board;
                 setRunning(true);
             });
     connect(m_core, &CoreConnection::simOutput, m_output, &ConsoleView::appendBytes);
@@ -102,6 +111,7 @@ void SimulatorPanel::setRunning(bool running)
 {
     m_reset->setEnabled(running);
     m_stop->setEnabled(running);
+    m_again->setVisible(!running && !m_lastProject.isEmpty());
     m_input->setEnabled(running);
     m_ending->setEnabled(running);
     m_send->setEnabled(running);

@@ -41,7 +41,7 @@ Seen while checking: there is no app icon yet (packaging). Fixed since: the core
 
 ## Phase 4 check on Plasma (2026-11-17)
 
-The owner placed every built-in part from the Circuit dock without an error. rtc-clock with a DS3231 ran in the simulator, and its `set` command changed the clock. bme280-web cannot be checked through: it finds the BME280, then waits forever for Wi-Fi, and simulations have no network (rule 4). The library has no BME280 project that works without Wi-Fi, so the sensor's sliders are covered by the tests (`bme280_part_reads`, the integration test), not yet by a check in the app.
+The owner placed every built-in part from the Circuit dock without an error. rtc-clock with a DS3231 ran in the simulator, and its `set` command changed the clock. bme280-web cannot be checked through: it finds the BME280, then waits forever for Wi-Fi, and simulations have no network (rule 4). A serial-only project, BME280 weather readings (`bme280-serial`, on the site's `desktop-manifest` branch), was added for this, and the owner checked it: the readings followed the Circuit dock's controls, and a second run started where they were left. Seen while checking: after Stop, starting the same build again meant going back to the Build dock (it is tabbed with the Simulator); the Simulator dock now has Run again.
 
 ## Not yet tried on real hardware
 

@@ -114,6 +114,17 @@ private slots:
         QTRY_VERIFY(!core.isSimRunning());
         QTRY_VERIFY(fake.calls.contains(u"core.unsubscribe"_s));
         QVERIFY(!panel.input()->isEnabled());
+
+        // Stopped: Run again starts the same build, with no rebuild.
+        QVERIFY(!panel.runAgainButton()->isHidden());
+        QCOMPARE(fake.calls.count(u"sim.start"_s), 1);
+        panel.runAgainButton()->click();
+        QTRY_VERIFY(core.isSimRunning());
+        QCOMPARE(fake.calls.count(u"sim.start"_s), 2);
+        QVERIFY(!fake.calls.contains(u"build.start"_s));
+        QVERIFY(panel.runAgainButton()->isHidden());
+        core.stopSim();
+        QTRY_VERIFY(!core.isSimRunning());
     }
 
     void showsWhyABoardCannotBeSimulated()
@@ -127,6 +138,8 @@ private slots:
         core.startSim(u"blink"_s, u"esp32c6"_s);
         QTRY_VERIFY(panel.outputText().contains(u"workbench-only"_s));
         QVERIFY(!core.isSimRunning());
+        // Nothing ran, so there is nothing to run again.
+        QVERIFY(panel.runAgainButton()->isHidden());
     }
 };
 

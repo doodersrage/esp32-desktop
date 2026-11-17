@@ -1,6 +1,6 @@
 # Plan: Arch-native ESP32 workbench and simulator
 
-Last updated: 2026-11-16 (phases 1 and 3 done after the Plasma check; phase 4's parts in place; phases 4 and 5 rescaled)
+Last updated: 2026-11-17 (phase 4 done after the Plasma check; phase 5 next)
 
 ## Summary
 
@@ -97,7 +97,7 @@ A Rust core process does the work and a Qt 6 UI shows it, talking over a local s
 
 ## Phases
 
-The first estimate was about 33 weeks for phases 0 to 3 and 5, at about 14 hours a week, with phase 4 open-ended. Actual effort has been far below it: phase 0 took about 4 hours, not 3 weeks, because prebuilt QEMU and an existing fork did most of the work, and phases 1 to 3 reached feature complete in two days of sessions (2026-11-15 and 16) against 27 estimated weeks. Phases 1 and 3 passed the owner's check on Plasma the same day (`docs/hardware-notes.md`); phase 2 waits on board erase and a UART-bridge board. On that evidence phases 4 and 5 were rescaled on 2026-11-16: the remaining work is about 2 weeks at 14 hours a week, most of it checks on Plasma and real hardware and the AUR submission, which only the owner can do. Further part models stay open-ended.
+The first estimate was about 33 weeks for phases 0 to 3 and 5, at about 14 hours a week, with phase 4 open-ended. Actual effort has been far below it: phase 0 took about 4 hours, not 3 weeks, because prebuilt QEMU and an existing fork did most of the work, and phases 1 to 3 reached feature complete in two days of sessions (2026-11-15 and 16) against 27 estimated weeks. Phases 1 and 3 passed the owner's check on Plasma the same day (`docs/hardware-notes.md`); phase 2 waits on board erase and a UART-bridge board. On that evidence phases 4 and 5 were rescaled on 2026-11-16: the remaining work is about 2 weeks at 14 hours a week, most of it checks on Plasma and real hardware and the AUR submission, which only the owner can do. Phase 4 then took two days of sessions and passed its Plasma check on 2026-11-17. Further part models stay open-ended.
 
 | Phase | Deliverable | Rough effort at ~14 h/week |
 | --- | --- | --- |
@@ -105,7 +105,7 @@ The first estimate was about 33 weeks for phases 0 to 3 and 5, at about 14 hours
 | 1. Shell (done 2026-11-16, checked on Plasma) | Core daemon with its JSON-RPC API, and a Qt app with the project library imported from esp32-bench data, board detection, the serial monitor, arduino-cli builds and a first-run toolchain setup. | 12 weeks; actual part of two days, with phases 2 and 3 |
 | 2. Real hardware (feature complete 2026-11-16; board operations checked on an ESP32-C3, erase and UART-bridge boards not yet) | Flash, erase, partition table and eFuse summary. Ship a udev rule and handle the `uucp` group. | 6 weeks |
 | 3. Simulator v1 (done 2026-11-16, checked on Plasma) | Build and pin lcgamboa's fork in the setup step (executables and library). Build, flash image, run in QEMU, with console, reset, GDB panel and embedded framebuffer. | 9 weeks |
-| 4. Virtual parts (parts in place 2026-11-16; awaiting a Plasma check) | LEDs, buttons and I2C sensors on a QGraphicsScene pin diagram, for ESP32 and C3, driven through the fork's library hooks. In place: LED, button, switch, RGB LED, SSD1306 OLED, BME280, MPU-6050 and DS3231, with sensor controls kept between runs. | was 12+ weeks; rescaled to about 1 week for the Plasma check and its fixes; more parts open-ended |
+| 4. Virtual parts (done 2026-11-17, checked on Plasma) | LEDs, buttons and I2C sensors on a QGraphicsScene pin diagram, for ESP32 and C3, driven through the fork's library hooks. In place: LED, button, switch, RGB LED, SSD1306 OLED, BME280, MPU-6050 and DS3231, with sensor controls kept between runs. | was 12+ weeks; actual two days of sessions (2026-11-16 and 17); more parts open-ended |
 | 5. Packaging | PKGBUILD (`-git` and `-bin`) building both the Rust core and the Qt UI, desktop entry, optional deps declared, AUR submission. | was 3 weeks; rescaled to about 1 week, including a clean-chroot build and the owner's AUR submission |
 
 Phase 4 builds on lcgamboa's library hooks, which phase 0 proved for GPIO and I2C. The work is mostly the canvas and the part models:
