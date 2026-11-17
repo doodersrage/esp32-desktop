@@ -43,8 +43,18 @@ Seen while checking: there is no app icon yet (packaging). Fixed since: the core
 
 The owner placed every built-in part from the Circuit dock without an error. rtc-clock with a DS3231 ran in the simulator, and its `set` command changed the clock. bme280-web cannot be checked through: it finds the BME280, then waits forever for Wi-Fi, and simulations have no network (rule 4). A serial-only project, BME280 weather readings (`bme280-serial`, on the site's `desktop-manifest` branch), was added for this, and the owner checked it: the readings followed the Circuit dock's controls, and a second run started where they were left. Seen while checking: after Stop, starting the same build again meant going back to the Build dock (it is tabbed with the Simulator); the Simulator dock now has Run again.
 
+## Erase and restore on the ESP32-C3 (2026-11-17)
+
+With the owner's approval, on the C3 at `/dev/ttyACM0` (ESP32-C3 v0.4, 4 MiB), from the CLI:
+
+1. `board read` twice: the whole flash both times (37 s each), identical except 241 bytes of NVS, which the firmware rewrites when each read resets it. The board had been reflashed elsewhere since the 2026-11-16 backup: ProbeHarbor 1.5.2 in app0 and app1 blank, where the backup has 1.6.1 and a 1.4.1-test build. Both copies are kept in `~/esp/backups/`.
+2. `board erase --yes`: 2 s with the stub. Read back, all 4,194,304 bytes were 0xFF.
+3. `board flash --whole` with the second read: 14 s. Read back, identical to it byte for byte, NVS included.
+4. On reset it booted ProbeHarbor 1.5.2 as before.
+
+So erase, whole-image restore and read all work on real hardware through espflash's stub. The daemon's `board.erase` uses the same library call but has not been run against a real board.
+
 ## Not yet tried on real hardware
 
-- `board erase`: needs the stub, which QEMU cannot run, and the session's permission policy blocked running it on the C3. Untested anywhere.
 - The DTR/RTS reset sequence used by UART-bridge boards (CP210x, CH340); only the USB-Serial-JTAG sequence has been exercised.
 - The serial monitor's Reset board button, and the daemon and UI paths for board jobs (the CLI uses the same library calls).
