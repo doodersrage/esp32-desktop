@@ -230,7 +230,15 @@ async fn gdb_stub_answers_while_halted() {
     let Some((mut cfg, _)) = setup(Chip::Esp32) else {
         return;
     };
-    cfg.gdb_port = Some(41234);
+    // A port the OS says is free: a fixed one can be taken by a parallel test's
+    // outgoing connection (it was: 41234 is in Linux's ephemeral range).
+    cfg.gdb_port = Some(
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port(),
+    );
     cfg.start_paused = true;
     let s = Session::start(cfg).await.unwrap();
     let reply = gdb::probe(s.gdb_addr().unwrap(), Duration::from_secs(5))

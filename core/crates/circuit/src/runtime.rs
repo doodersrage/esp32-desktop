@@ -616,6 +616,51 @@ mod tests {
     }
 
     #[test]
+    fn mpu6050_reads_tilt_as_gravity() {
+        let mut r = runtime(json!([
+            { "id": "imu", "kind": "mpu6050", "i2c": { "bus": 0, "address": 104 } }
+        ]));
+        r.init();
+        assert_eq!(read_regs(&mut r, 0x68, 0x75, 1), [0x68], "WHO_AM_I");
+        // Asleep after power-up: outputs read zero.
+        assert_eq!(read_regs(&mut r, 0x68, 0x6B, 1), [0x40]);
+        assert!(read_regs(&mut r, 0x68, 0x3B, 14).iter().all(|b| *b == 0));
+        // Wake it, as the projects do, and read the 14-byte burst.
+        write_reg(&mut r, 0x68, 0x6B, 0x00);
+        let burst = |r: &mut Runtime| {
+            let d = read_regs(r, 0x68, 0x3B, 14);
+            (0..7)
+                .map(|i| i16::from_be_bytes([d[2 * i], d[2 * i + 1]]))
+                .collect::<Vec<i16>>()
+        };
+        let v = burst(&mut r);
+        assert_eq!(&v[..3], [0, 0, 16384], "flat: +1 g on z");
+        let temp = f64::from(v[3]) / 340.0 + 36.53;
+        assert!((temp - 25.0).abs() < 0.01, "{temp}");
+        assert_eq!(&v[4..], [0, 0, 0], "held still");
+        // Tilt it, and the usual atan2 formulas give the angles back.
+        r.control("imu", "pitch", Dynamic::from(20.0_f64)).unwrap();
+        r.control("imu", "roll", Dynamic::from(-35.0_f64)).unwrap();
+        let v = burst(&mut r);
+        let (ax, ay, az) = (f64::from(v[0]), f64::from(v[1]), f64::from(v[2]));
+        let roll = ay.atan2(az).to_degrees();
+        let pitch = (-ax).atan2((ay * ay + az * az).sqrt()).to_degrees();
+        assert!((roll + 35.0).abs() < 0.05, "{roll}");
+        assert!((pitch - 20.0).abs() < 0.05, "{pitch}");
+        // The +-8 g range: 4096 counts per g.
+        r.control("imu", "pitch", Dynamic::from(0.0_f64)).unwrap();
+        r.control("imu", "roll", Dynamic::from(0.0_f64)).unwrap();
+        write_reg(&mut r, 0x68, 0x1C, 0x10);
+        assert_eq!(burst(&mut r)[2], 4096);
+        // Outputs are read-only; DEVICE_RESET puts it back to sleep.
+        write_reg(&mut r, 0x68, 0x3F, 0x00);
+        assert_eq!(burst(&mut r)[2], 4096);
+        write_reg(&mut r, 0x68, 0x6B, 0x80);
+        assert_eq!(read_regs(&mut r, 0x68, 0x6B, 1), [0x40]);
+        assert!(!r.has_i2c(0, 0x69));
+    }
+
+    #[test]
     fn scripts_cannot_run_forever_or_reach_out() {
         let engine_check = |script: &str| {
             let mut e = Engine::new();

@@ -9,7 +9,7 @@ A part model is a data file plus a small script, so a new part needs no change t
 - `<model>.json`: the model's description (schema `schema/part-model/v1.schema.json`): its name, the pins it connects to, whether it sits on an I2C bus, the properties a person sets when placing it, the controls they can work while it runs, and the state the app shows.
 - `<model>.rhai`: what it does, in [Rhai](https://rhai.rs), a small scripting language embedded in Rust. Scripts are sandboxed: no files, no network, no processes, and limits on operations and memory per call.
 
-The models that ship with the app are built into the program (`core/crates/circuit/models/`): `led`, `button`, `switch`, `rgb-led`, `ssd1306` (128 × 64 OLED on I2C) and `bme280` (temperature, humidity and pressure on I2C, set with sliders). `esp32bench circuit models` lists them, and `circuit.models` serves them to the app. Loading models from elsewhere would need the consent rules that apply to downloaded projects, so it is not offered.
+The models that ship with the app are built into the program (`core/crates/circuit/models/`): `led`, `button`, `switch`, `rgb-led`, `ssd1306` (128 × 64 OLED on I2C), `bme280` (temperature, humidity and pressure on I2C, set with sliders) and `mpu6050` (accelerometer and gyroscope on I2C: pitch, roll and temperature set with sliders; the gyroscope reads a sensor held still). `esp32bench circuit models` lists them, and `circuit.models` serves them to the app. Loading models from elsewhere would need the consent rules that apply to downloaded projects, so it is not offered.
 
 A circuit (`schema/circuit/`) places parts: each refers to a model, connects its pins to GPIOs (or sits on an I2C bus at an address), and sets its properties.
 

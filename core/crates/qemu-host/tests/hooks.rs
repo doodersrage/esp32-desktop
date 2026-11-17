@@ -492,3 +492,63 @@ async fn esp32_bme280_part_reads() {
 async fn esp32c3_bme280_part_reads() {
     bme280_part_reads(Chip::Esp32c3).await;
 }
+
+/// The MPU-6050 part model on a real I2C bus: tests/firmware/mpu6050 wakes it and
+/// reads the 14-byte burst; flat it reads +1 g on z, and tilting it moves gravity.
+async fn mpu6050_part_reads(chip: Chip) {
+    let Some(build) = esp32bench_sim::lcgamboa::Build::find() else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let image = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../../tests/firmware/out/mpu6050-{chip}.bin"));
+    if !image.is_file() {
+        eprintln!("skipping {chip}: mpu6050 firmware not built");
+        return;
+    }
+    let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
+    let launch = esp32bench_sim::engine::lcgamboa_launch(chip, &build, Some(&host)).unwrap();
+    let mut cfg = launch.config(chip, image);
+    cfg.circuit = Some(
+        r#"{"schemaVersion":"1.1.0","parts":[{"id":"imu","kind":"mpu6050","i2c":{"bus":0,"address":104}}]}"#
+            .into(),
+    );
+    let mut s = Session::start(cfg).await.unwrap();
+    let mut link = s.gpio.take().expect("no link to the host");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let mut text = String::new();
+    let mut tilted = false;
+    // 25 degC: 2500 or 2501 after the firmware's integer arithmetic.
+    let flat = "ax=0 ay=0 az=16384 t=250";
+    // pitch 30: ax = -sin 30 g, az = cos 30 g, at 16384 counts per g.
+    let at_30 = "ax=-8192 ay=0 az=14189";
+    while !(tilted && text.contains(at_30)) {
+        tokio::select! {
+            chunk = s.uart.read_chunk() => {
+                if let Ok(Some(c)) = chunk { text.push_str(&String::from_utf8_lossy(&c)); }
+                if !tilted && text.contains(flat) {
+                    assert!(text.contains("esp32bench-mpu6050 ready who=0x68"), "{chip}: {text}");
+                    link.control("imu", "pitch", &serde_json::json!(30.0)).await.unwrap();
+                    tilted = true;
+                }
+            }
+            ev = link.next_event() => {
+                if let esp32bench_sim::gpio::PinEvent::PartError { id, message } = ev.unwrap().expect("host closed the link") {
+                    panic!("{chip}: {id}: {message}");
+                }
+            }
+            () = tokio::time::sleep_until(deadline) => panic!("{chip}: tilted={tilted}; uart:\n{text}"),
+        }
+    }
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn esp32_mpu6050_part_reads() {
+    mpu6050_part_reads(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn esp32c3_mpu6050_part_reads() {
+    mpu6050_part_reads(Chip::Esp32c3).await;
+}
