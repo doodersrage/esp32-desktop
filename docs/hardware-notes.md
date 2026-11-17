@@ -63,7 +63,9 @@ A Prolific PL2303 cable (`067b:2303`) wired to the C3's UART0: 5V, GND, adapter 
 - `board read --no-reset` read all 4 MiB in 6 min 19 s at 115200 baud. Every region nothing had written to (bootloader, partition table, app0, spiffs) matched the copy restored that morning byte for byte; app1 had meanwhile received ProbeHarbor 1.6.1 from the firmware itself, with otadata switched to it.
 - The core did not know the PL2303: `device list` called it unknown, and the udev rule did not cover it. Both fixed; the RPC protocol is 0.18.0 for the new `pl2303` bridge value.
 
-Still untried: the automatic DTR/RTS reset of boards with an auto-reset circuit (CP210x or CH340 dev boards), and writing over a UART bridge.
+- Writing, with the owner's approval: `board flash --whole --no-reset` wrote all 4 MiB of that read back in 2 min 24 s, and a `board read --no-reset` straight after (the board stays in download mode, so no buttons) matched it byte for byte.
+
+Still untried: the automatic DTR/RTS reset of boards with an auto-reset circuit (CP210x or CH340 dev boards).
 
 ## Not yet tried on real hardware
 
