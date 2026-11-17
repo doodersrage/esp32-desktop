@@ -23,6 +23,17 @@ A native Linux desktop workbench and simulator for ESP32 boards, built for KDE P
 - [docs/PHASE0.md](docs/PHASE0.md): checklist and exit criteria for the QEMU spike.
 - [CLAUDE.md](CLAUDE.md): working rules for Claude Code in this repo.
 
+## Installing
+
+On Arch Linux, build the package from `packaging/esp32bench-git/` (it is not on the AUR yet):
+
+```sh
+cd packaging/esp32bench-git
+makepkg -si
+```
+
+It installs `esp32bench-gui` (the app, also in the Plasma launcher as ESP32 Bench), `esp32benchd` (the core it starts), the `esp32bench` CLI, the udev rule for USB serial boards, and the handler for `esp32bench://` links from esp32bench.dev. To reach boards without root, be in the `uucp` group or logged in at the seat (the rule uses `uaccess`), then replug the board. Builds need `arduino-cli`; the simulator is built from source by the app's setup step (Tools menu), which lists any build tools it is missing.
+
 ## Licence
 
 GPLv2-or-later. See [LICENSE](LICENSE) for the GPLv2 text. The simulator loads lcgamboa's QEMU library, and QEMU is GPLv2, so the project cannot move to GPLv3-only.

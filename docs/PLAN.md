@@ -1,6 +1,6 @@
 # Plan: Arch-native ESP32 workbench and simulator
 
-Last updated: 2026-11-17 (phase 4 done after the Plasma check; phase 5 next)
+Last updated: 2026-11-17 (phase 4 done; phase 5 started: the -git package builds)
 
 ## Summary
 
@@ -106,7 +106,7 @@ The first estimate was about 33 weeks for phases 0 to 3 and 5, at about 14 hours
 | 2. Real hardware (feature complete 2026-11-16; inspect, flash, read, erase and restore checked on an ESP32-C3, over USB and a PL2303 UART bridge; the automatic DTR/RTS reset not yet) | Flash, erase, partition table and eFuse summary. Ship a udev rule and handle the `uucp` group. | 6 weeks |
 | 3. Simulator v1 (done 2026-11-16, checked on Plasma) | Build and pin lcgamboa's fork in the setup step (executables and library). Build, flash image, run in QEMU, with console, reset, GDB panel and embedded framebuffer. | 9 weeks |
 | 4. Virtual parts (done 2026-11-17, checked on Plasma) | LEDs, buttons and I2C sensors on a QGraphicsScene pin diagram, for ESP32 and C3, driven through the fork's library hooks. In place: LED, button, switch, RGB LED, SSD1306 OLED, BME280, MPU-6050 and DS3231, with sensor controls kept between runs. | was 12+ weeks; actual two days of sessions (2026-11-16 and 17); more parts open-ended |
-| 5. Packaging | PKGBUILD (`-git` and `-bin`) building both the Rust core and the Qt UI, desktop entry, optional deps declared, AUR submission. | was 3 weeks; rescaled to about 1 week, including a clean-chroot build and the owner's AUR submission |
+| 5. Packaging (in progress: `-git` package builds, 2026-11-17) | PKGBUILD (`-git` and `-bin`) building both the Rust core and the Qt UI, desktop entry, optional deps declared, AUR submission. | was 3 weeks; rescaled to about 1 week, including a clean-chroot build and the owner's AUR submission |
 
 Phase 4 builds on lcgamboa's library hooks, which phase 0 proved for GPIO and I2C. The work is mostly the canvas and the part models:
 

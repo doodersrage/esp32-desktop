@@ -1,0 +1,85 @@
+# Maintainer: esp32bench maintainers <https://github.com/doodersrage/esp32-desktop>
+
+pkgname=esp32bench-git
+_repo=esp32-desktop
+pkgver=r51.9714772
+pkgrel=1
+pkgdesc='ESP32 workbench and simulator: build, flash, monitor and simulate ESP32 projects'
+arch=('x86_64')
+url='https://github.com/doodersrage/esp32-desktop'
+license=('GPL-2.0-or-later')
+depends=(
+  'gcc-libs'
+  'glibc'
+  'hicolor-icon-theme'
+  'qt6-base'
+  'qt6-svg'        # the app icon
+  'systemd-libs'   # libudev: board detection and hotplug
+)
+makedepends=('cargo' 'cmake' 'git' 'ninja')
+optdepends=(
+  'arduino-cli: build Arduino sketches from the project library'
+  # lcgamboa's QEMU fork, the simulator, is built from source by the app's setup step:
+  'git: build the simulator (lcgamboa QEMU)'
+  'gcc: build the simulator (lcgamboa QEMU)'
+  'ninja: build the simulator (lcgamboa QEMU)'
+  'make: build the simulator (lcgamboa QEMU)'
+  'pkgconf: build the simulator (lcgamboa QEMU)'
+  'python: build the simulator (lcgamboa QEMU)'
+  'perl: build the simulator (lcgamboa QEMU)'
+  'glib2: build and run the simulator'
+  'pixman: build and run the simulator'
+  'libgcrypt: build and run the simulator'
+  'libslirp: build and run the simulator'
+)
+provides=('esp32bench')
+conflicts=('esp32bench')
+source=("git+https://github.com/doodersrage/esp32-desktop.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$_repo"
+  printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd "$_repo/core"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_repo"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="$srcdir/target"
+  cargo build --manifest-path core/Cargo.toml --locked --offline --release --bins
+  cmake -S ui -B "$srcdir/build-ui" -G Ninja \
+    -DCMAKE_BUILD_TYPE=None \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DBUILD_TESTING=OFF
+  cmake --build "$srcdir/build-ui"
+}
+
+check() {
+  cd "$_repo"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="$srcdir/target"
+  # Library tests only: the rest need QEMU, boards or a session, and skip without them.
+  cargo test --manifest-path core/Cargo.toml --locked --offline --release --workspace --lib
+}
+
+package() {
+  cd "$_repo"
+  install -Dm755 "$srcdir/target/release/esp32benchd" "$pkgdir/usr/bin/esp32benchd"
+  install -Dm755 "$srcdir/target/release/esp32bench" "$pkgdir/usr/bin/esp32bench"
+  # The per-session simulator host: a helper the daemon starts, not a command.
+  install -Dm755 "$srcdir/target/release/esp32bench-qemu-host" \
+    "$pkgdir/usr/lib/esp32bench/esp32bench-qemu-host"
+  DESTDIR="$pkgdir" cmake --install "$srcdir/build-ui"
+
+  install -Dm644 packaging/esp32bench.desktop "$pkgdir/usr/share/applications/esp32bench.desktop"
+  install -Dm644 packaging/icons/esp32bench.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/esp32bench.svg"
+  install -Dm644 packaging/udev/69-esp32bench.rules \
+    "$pkgdir/usr/lib/udev/rules.d/69-esp32bench.rules"
+}
