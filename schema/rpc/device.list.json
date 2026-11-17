@@ -36,7 +36,7 @@
             },
             "bridge": {
               "description": "What the USB device is. null when unknown.",
-              "enum": ["cp210x", "ch340", "ch9102", "ftdi", "usb-serial-jtag", "usb-cdc", null]
+              "enum": ["cp210x", "ch340", "ch9102", "ftdi", "pl2303", "usb-serial-jtag", "usb-cdc", null]
             },
             "chips": {
               "description": "Chips this port could belong to, as esp32bench.dev chip ids. Empty when the USB IDs do not say.",

@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.17.0";
+pub const PROTOCOL: &str = "0.18.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

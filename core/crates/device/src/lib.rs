@@ -59,6 +59,8 @@ pub enum Bridge {
     Ch340,
     Ch9102,
     Ftdi,
+    /// Prolific PL2303 (old USB-UART cables and modules).
+    Pl2303,
     /// The chip's built-in USB-Serial-JTAG peripheral.
     UsbSerialJtag,
     /// A USB CDC-ACM port run by the firmware itself (TinyUSB), Espressif VID.
@@ -89,6 +91,7 @@ pub const KNOWN_USB: &[(u16, Option<u16>, Bridge, &[&str])] = &[
     (0x0403, Some(0x6011), Bridge::Ftdi, &[]),
     (0x0403, Some(0x6014), Bridge::Ftdi, &[]),
     (0x0403, Some(0x6015), Bridge::Ftdi, &[]),
+    (0x067b, Some(0x2303), Bridge::Pl2303, &[]),
     // USB-Serial-JTAG, built into S3, C3 and C6 (and H2/C5, which the site does not list).
     (
         ESPRESSIF_VID,
@@ -296,6 +299,7 @@ mod tests {
         assert_eq!(classify(0x1a86, 0x7523), (Some(Bridge::Ch340), vec![]));
         assert_eq!(classify(0x1a86, 0x55d4), (Some(Bridge::Ch9102), vec![]));
         assert_eq!(classify(0x0403, 0x6001), (Some(Bridge::Ftdi), vec![]));
+        assert_eq!(classify(0x067b, 0x2303), (Some(Bridge::Pl2303), vec![]));
         assert_eq!(classify(0x046d, 0xc52b), (None, vec![]));
     }
 

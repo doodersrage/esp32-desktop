@@ -54,6 +54,17 @@ With the owner's approval, on the C3 at `/dev/ttyACM0` (ESP32-C3 v0.4, 4 MiB), f
 
 So erase, whole-image restore and read all work on real hardware through espflash's stub. The daemon's `board.erase` uses the same library call but has not been run against a real board.
 
+## The C3 through a PL2303 USB-UART adapter (2026-11-17)
+
+A Prolific PL2303 cable (`067b:2303`) wired to the C3's UART0: 5V, GND, adapter TX to GPIO20, RX to GPIO21. Such cables have no DTR or RTS, so nothing can reset the board or select download mode: the owner held BOOT and tapped RESET by hand. (A first attempt with the cable's GND on 3V3 received nothing.)
+
+- The ROM's banner arrived over the adapter: `boot:0x7 (DOWNLOAD(USB/UART0/1))`, `waiting for download`.
+- `board inspect --no-reset` read the same chip, MAC and partition table as over USB, in 1.2 s.
+- `board read --no-reset` read all 4 MiB in 6 min 19 s at 115200 baud. Every region nothing had written to (bootloader, partition table, app0, spiffs) matched the copy restored that morning byte for byte; app1 had meanwhile received ProbeHarbor 1.6.1 from the firmware itself, with otadata switched to it.
+- The core did not know the PL2303: `device list` called it unknown, and the udev rule did not cover it. Both fixed; the RPC protocol is 0.18.0 for the new `pl2303` bridge value.
+
+Still untried: the automatic DTR/RTS reset of boards with an auto-reset circuit (CP210x or CH340 dev boards), and writing over a UART bridge.
+
 ## Not yet tried on real hardware
 
 - The DTR/RTS reset sequence used by UART-bridge boards (CP210x, CH340); only the USB-Serial-JTAG sequence has been exercised.

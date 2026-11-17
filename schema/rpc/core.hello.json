@@ -44,12 +44,12 @@
     {
       "params": {
         "client": "esp32bench-ui 0.0.1",
-        "protocol": "0.17.0"
+        "protocol": "0.18.0"
       },
       "result": {
         "name": "esp32benchd",
         "version": "0.0.1",
-        "protocol": "0.17.0"
+        "protocol": "0.18.0"
       }
     }
   ]

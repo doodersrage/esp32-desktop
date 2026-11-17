@@ -73,6 +73,7 @@
                 "ch340",
                 "ch9102",
                 "ftdi",
+                "pl2303",
                 "usb-serial-jtag",
                 "usb-cdc",
                 null

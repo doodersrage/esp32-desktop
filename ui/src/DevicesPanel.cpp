@@ -24,6 +24,7 @@ QString bridgeName(const QJsonValue &bridge)
     if (b == u"ch340") return DevicesPanel::tr("CH340 USB to UART");
     if (b == u"ch9102") return DevicesPanel::tr("CH9102 USB to UART");
     if (b == u"ftdi") return DevicesPanel::tr("FTDI USB to UART");
+    if (b == u"pl2303") return DevicesPanel::tr("PL2303 USB to UART");
     if (b == u"usb-serial-jtag") return DevicesPanel::tr("Built-in USB Serial/JTAG");
     if (b == u"usb-cdc") return DevicesPanel::tr("Built-in USB (firmware CDC)");
     return DevicesPanel::tr("Unknown");

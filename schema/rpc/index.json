@@ -1,5 +1,5 @@
 {
-  "protocol": "0.17.0",
+  "protocol": "0.18.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
     "board.erase",
