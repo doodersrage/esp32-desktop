@@ -88,12 +88,22 @@ pub fn find_host() -> Option<PathBuf> {
         return Some(PathBuf::from(p)).filter(|p| p.is_file());
     }
     let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?;
-    [Some(dir), dir.parent()]
+    host_candidates(exe.parent()?)
         .into_iter()
-        .flatten()
-        .map(|d| d.join(HOST_BIN))
         .find(|p| p.is_file())
+}
+
+/// Where the host may be, for an executable in `dir`: beside it (dev builds), one
+/// level up (test binaries in `target/*/deps/`), and in `../lib/esp32bench/` (the
+/// package: /usr/bin/esp32benchd and /usr/lib/esp32bench/esp32bench-qemu-host, since
+/// it is a helper, not a command).
+fn host_candidates(dir: &Path) -> Vec<PathBuf> {
+    let mut v = vec![dir.join(HOST_BIN)];
+    if let Some(up) = dir.parent() {
+        v.push(up.join(HOST_BIN));
+        v.push(up.join("lib/esp32bench").join(HOST_BIN));
+    }
+    v
 }
 
 /// Launch settings on the fork's build `build`, with the host at `host` when present.
@@ -217,6 +227,18 @@ mod tests {
             assert!(l.hooks);
         }
         assert_eq!(lcgamboa_launch(Chip::Esp32, &build(), None), None);
+    }
+
+    #[test]
+    fn host_is_found_beside_the_daemon_or_in_the_packages_lib_dir() {
+        assert_eq!(
+            host_candidates(Path::new("/usr/bin")),
+            [
+                Path::new("/usr/bin/esp32bench-qemu-host"),
+                Path::new("/usr/esp32bench-qemu-host"),
+                Path::new("/usr/lib/esp32bench/esp32bench-qemu-host"),
+            ]
+        );
     }
 
     #[test]
