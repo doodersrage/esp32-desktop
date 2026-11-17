@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=ESP32 Bench
+GenericName=ESP32 workbench and simulator
+Comment=Build, flash, monitor and simulate ESP32 projects
+Exec=esp32bench-gui %u
+Icon=esp32bench
+Terminal=false
+Categories=Development;Electronics;
+Keywords=ESP32;Arduino;microcontroller;QEMU;simulator;serial;flash;
+MimeType=x-scheme-handler/esp32bench;
+StartupNotify=true
+StartupWMClass=esp32bench-gui
