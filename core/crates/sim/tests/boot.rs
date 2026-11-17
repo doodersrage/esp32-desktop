@@ -56,6 +56,7 @@ fn setup(chip: Chip) -> Option<(SessionConfig, &'static [u8])> {
         env: Vec::new(),
         bridge: Vec::new(),
         circuit: None,
+        efuse: None,
     };
     Some((cfg, marker))
 }
@@ -87,6 +88,7 @@ async fn lcgamboa_boot_reset_and_quit(chip: Chip) {
         env: Vec::new(),
         bridge: Vec::new(),
         circuit: None,
+        efuse: None,
     };
     boot_reset_and_quit_with(cfg, marker).await;
 }
@@ -177,6 +179,7 @@ async fn arduino_hello_boots() {
             env: Vec::new(),
             bridge: Vec::new(),
             circuit: None,
+            efuse: None,
         };
         let mut s = Session::start(cfg).await.unwrap();
         let t = Duration::from_secs(30);
@@ -301,12 +304,20 @@ async fn lcgamboa_esp32c3_runs_arduino() {
     arduino_keeps_running_on_lcgamboa(Chip::Esp32c3, 1).await;
 }
 
-/// Wi-Fi firmware on the fork's ESP32: it has a radio (without one the fork's Wi-Fi
-/// start-up crashes), and no network behind it (rule 4): it starts, gets no address,
-/// and keeps running.
+/// Wi-Fi firmware on the fork: it has a radio (without one the fork's Wi-Fi start-up
+/// crashes on the ESP32 and the C3 aborts), and no network behind it (rule 4): it
+/// starts, gets no address, and keeps running. The C3's radio needs an eFuse image.
 #[tokio::test]
 async fn lcgamboa_esp32_wifi_has_a_radio_but_no_network() {
-    let chip = Chip::Esp32;
+    wifi_has_a_radio_but_no_network(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32c3_wifi_has_a_radio_but_no_network() {
+    wifi_has_a_radio_but_no_network(Chip::Esp32c3).await;
+}
+
+async fn wifi_has_a_radio_but_no_network(chip: Chip) {
     let Some(image) = built_image("wifi-sta", chip) else {
         eprintln!("skipping: wifi-sta not built");
         return;

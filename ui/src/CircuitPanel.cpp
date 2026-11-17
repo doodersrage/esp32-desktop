@@ -348,6 +348,12 @@ QImage CircuitPanel::partPicture(const QString &id) const
     return i ? i->picture() : QImage();
 }
 
+QString CircuitPanel::partToolTip(const QString &id) const
+{
+    const PartItem *i = m_items.value(id);
+    return i ? i->toolTip() : QString();
+}
+
 QPointF CircuitPanel::partCentre(const QString &id) const
 {
     const PartItem *i = m_items.value(id);
@@ -472,11 +478,16 @@ void CircuitPanel::rebuildScene()
         const QString id = o.value(u"id"_s).toString();
         const QJsonObject model = m_models.value(o.value(u"kind"_s).toString());
         const QHash<QString, int> conn = connections(o, model);
-        if (conn.isEmpty() && o.contains(u"i2c"_s)) {
+        if (o.contains(u"i2c"_s)) {
             const QJsonObject i2c = o.value(u"i2c"_s).toObject();
-            const QString where = tr("I2C bus %1, address 0x%2")
-                                      .arg(i2c.value(u"bus"_s).toInt())
-                                      .arg(i2c.value(u"address"_s).toInt(), 2, 16, QLatin1Char('0'));
+            QString where = tr("I2C bus %1, address 0x%2")
+                                .arg(i2c.value(u"bus"_s).toInt())
+                                .arg(i2c.value(u"address"_s).toInt(), 2, 16, QLatin1Char('0'));
+            // Other connections (an RTC's alarm output) are named rather than wired.
+            for (const QJsonValue &n : model.value(u"pins"_s).toArray()) {
+                if (conn.contains(n.toString()))
+                    where = tr("%1, %2 on GPIO %3").arg(where, n.toString().toUpper()).arg(conn.value(n.toString()));
+            }
             QString label = o.value(u"label"_s).toString();
             label = label.isEmpty() ? tr("%1, %2").arg(id, where) : tr("%1, %2").arg(label, where);
             auto *item = new PartItem(id, model, label, [this, id](const QString &control, const QJsonValue &value) {
@@ -581,12 +592,20 @@ void CircuitPanel::addDialog(const QString &kind)
     auto *form = new QFormLayout(&dialog);
     QList<QPair<QString, QSpinBox *>> pinBoxes;
     int next = 0;
+    const QJsonArray optional = model.value(u"optionalPins"_s).toArray();
     for (const QJsonValue &v : model.value(u"pins"_s).toArray()) {
         auto *box = new QSpinBox(&dialog);
-        box->setRange(0, 48);
         box->setPrefix(tr("GPIO "));
-        if (next < m_projectPins.size())
-            box->setValue(m_projectPins.at(next++));
+        if (optional.contains(v)) {
+            // -1 is "not connected", the default for a pin that may be left free.
+            box->setRange(-1, 48);
+            box->setSpecialValueText(tr("Not connected"));
+            box->setValue(-1);
+        } else {
+            box->setRange(0, 48);
+            if (next < m_projectPins.size())
+                box->setValue(m_projectPins.at(next++));
+        }
         const QString name = v.toString();
         form->addRow(model.value(u"pins"_s).toArray().size() == 1 ? tr("Pin:") : tr("%1 pin:").arg(name), box);
         pinBoxes << qMakePair(name, box);
@@ -639,8 +658,10 @@ void CircuitPanel::addDialog(const QString &kind)
     if (dialog.exec() != QDialog::Accepted)
         return;
     QJsonObject pins;
-    for (const auto &[name, box] : std::as_const(pinBoxes))
-        pins.insert(name, box->value());
+    for (const auto &[name, box] : std::as_const(pinBoxes)) {
+        if (box->value() >= 0)
+            pins.insert(name, box->value());
+    }
     QJsonObject values;
     for (const auto &field : std::as_const(propFields)) {
         const auto [key, value] = field();

@@ -402,6 +402,7 @@ fn start_bridge(
             bql_lock,
             bql_unlock,
             pictures: HashMap::new(),
+            last_tick: None,
         };
         loop {
             match rx.recv_timeout(std::time::Duration::from_millis(PICTURE_MS)) {
@@ -414,6 +415,7 @@ fn start_bridge(
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
             worker.flush_pictures(false);
+            worker.tick();
         }
     });
 }
@@ -433,6 +435,7 @@ struct Worker {
     bql_lock: LockFn,
     bql_unlock: UnlockFn,
     pictures: HashMap<String, PendingPicture>,
+    last_tick: Option<std::time::Instant>,
 }
 
 impl Worker {
@@ -514,6 +517,22 @@ impl Worker {
         }
         for line in due {
             self.send(&line);
+        }
+    }
+
+    /// Every 100 ms, the parts' `tick` hooks (clocks, alarms).
+    fn tick(&mut self) {
+        let now = std::time::Instant::now();
+        if self
+            .last_tick
+            .is_some_and(|t| now.duration_since(t).as_millis() < 100)
+        {
+            return;
+        }
+        self.last_tick = Some(now);
+        let effects = parts_lock().filter(|p| p.has_tick()).map(|mut p| p.tick());
+        if let Some(e) = effects {
+            self.apply(e);
         }
     }
 

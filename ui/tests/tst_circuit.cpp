@@ -98,6 +98,12 @@ private:
                     m.insert(u"display"_s, QJsonObject{{u"width"_s, 4}, {u"height"_s, 2}});
                     return m;
                 }(),
+                [&] {
+                    QJsonObject m = model(u"ds3231"_s, u"DS3231"_s, u"box"_s, {u"sqw"_s}, {}, QJsonObject{});
+                    m.insert(u"optionalPins"_s, QJsonArray{u"sqw"_s});
+                    m.insert(u"i2c"_s, QJsonObject{{u"addresses"_s, QJsonArray{104}}});
+                    return m;
+                }(),
             }}});
         } else if (m == u"circuit.get") {
             reply(id, QJsonObject{{u"circuit"_s, saved}});
@@ -149,8 +155,8 @@ private slots:
         core.start();
         QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
         // The kinds of part come from the core, one menu entry each.
-        QTRY_COMPARE(panel.modelIds(), (QStringList{u"led"_s, u"button"_s, u"switch"_s, u"rgb-led"_s, u"bme280"_s, u"ssd1306"_s}));
-        QCOMPARE(panel.addPartButton()->menu()->actions().size(), 6);
+        QTRY_COMPARE(panel.modelIds(), (QStringList{u"led"_s, u"button"_s, u"switch"_s, u"rgb-led"_s, u"bme280"_s, u"ssd1306"_s, u"ds3231"_s}));
+        QCOMPARE(panel.addPartButton()->menu()->actions().size(), 7);
 
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"GND"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
@@ -177,6 +183,12 @@ private slots:
         QCOMPARE(partsOf(fake.saved, 4).value(u"i2c"_s).toObject().value(u"address"_s).toInt(), 60);
         QVERIFY(!partsOf(fake.saved, 4).contains(u"pins"_s));
         panel.addPart(u"bme280"_s, {}, {}, {}, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 118}});
+        QTRY_COMPARE(panel.parts().size(), 6);
+        // An I2C part with a pin as well: it stays with the I2C parts, and names the pin.
+        panel.addPart(u"ds3231"_s, QJsonObject{{u"sqw"_s, 25}}, {}, {}, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 104}});
+        QTRY_COMPARE(panel.parts().size(), 7);
+        QTRY_COMPARE(panel.partToolTip(u"ds3231-1"_s), u"I2C bus 0, address 0x68, SQW on GPIO 25"_s);
+        panel.removePart(u"ds3231-1"_s);
         QTRY_COMPARE(panel.parts().size(), 6);
 
         // A refusal from the core is shown, and nothing changes.

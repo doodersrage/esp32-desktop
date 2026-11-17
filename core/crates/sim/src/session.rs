@@ -50,6 +50,9 @@ pub struct SessionConfig {
     /// A circuit (schema/circuit, as JSON) whose parts the host runs. Its pins must be
     /// in `bridge`. Needs lcgamboa's library build, like `bridge`.
     pub circuit: Option<String>,
+    /// An eFuse image for the chip, copied into the session's directory (QEMU writes
+    /// to it) and given to the machine's eFuse device. None: the machine's defaults.
+    pub efuse: Option<Vec<u8>>,
 }
 
 /// Files a session uses, all inside one private runtime directory.
@@ -61,6 +64,7 @@ pub struct SessionPaths {
     pub uart: PathBuf,
     pub qmp: PathBuf,
     pub stderr: PathBuf,
+    pub efuse: PathBuf,
 }
 
 impl SessionPaths {
@@ -71,6 +75,7 @@ impl SessionPaths {
             uart: dir.join("uart0.sock"),
             qmp: dir.join("qmp.sock"),
             stderr: dir.join("qemu.stderr"),
+            efuse: dir.join("efuse.bin"),
             dir,
         }
     }
@@ -113,6 +118,22 @@ pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
     if let Some(port) = cfg.gdb_port {
         args.push("-gdb".into());
         args.push(format!("tcp:127.0.0.1:{port}").into());
+    }
+    if cfg.efuse.is_some() {
+        let mut drive = OsString::from("file=");
+        drive.push(&paths.efuse);
+        drive.push(",if=none,format=raw,id=efuse");
+        let device = match cfg.chip {
+            Chip::Esp32 => "nvram.esp32.efuse",
+            Chip::Esp32s3 => "nvram.esp32s3.efuse",
+            Chip::Esp32c3 => "nvram.esp32c3.efuse",
+        };
+        args.extend([
+            "-drive".into(),
+            drive,
+            "-global".into(),
+            format!("driver={device},property=drive,value=efuse").into(),
+        ]);
     }
     args.extend(cfg.extra_args.iter().cloned());
     args
@@ -162,6 +183,9 @@ impl Session {
             let pins: Vec<String> = cfg.bridge.iter().map(u8::to_string).collect();
             cmd.env("ESP32BENCH_GPIO_PINS", pins.join(","))
                 .env("ESP32BENCH_GPIO_SOCK", &paths.gpio);
+        }
+        if let Some(efuse) = &cfg.efuse {
+            tokio::fs::write(&paths.efuse, efuse).await?;
         }
         if let Some(circuit) = &cfg.circuit {
             let file = paths.dir.join("circuit.json");
@@ -389,6 +413,7 @@ mod tests {
             env: Vec::new(),
             bridge: Vec::new(),
             circuit: None,
+            efuse: None,
         }
     }
 
@@ -419,6 +444,29 @@ mod tests {
                 "-qmp",
                 "unix:/run/s/qmp.sock,server=on,wait=off",
             ]
+        );
+    }
+
+    #[test]
+    fn efuse_image_is_a_file_in_the_session_directory() {
+        let paths = SessionPaths::in_dir("/run/s".into());
+        let mut c = cfg(Chip::Esp32c3, None);
+        c.efuse = Some(vec![0; 1024]);
+        let args = strs(qemu_args(&c, &paths));
+        let at = args.iter().position(|a| a == "-global").unwrap();
+        assert_eq!(
+            args[at - 1],
+            "file=/run/s/efuse.bin,if=none,format=raw,id=efuse"
+        );
+        assert_eq!(
+            args[at + 1],
+            "driver=nvram.esp32c3.efuse,property=drive,value=efuse"
+        );
+        c.efuse = None;
+        assert!(
+            !strs(qemu_args(&c, &paths))
+                .iter()
+                .any(|a| a.contains("efuse"))
         );
     }
 

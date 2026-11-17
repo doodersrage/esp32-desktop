@@ -115,6 +115,21 @@ impl Build {
     }
 }
 
+/// An eFuse image for the fork's ESP32-C3 with what its built-in defaults set (they
+/// apply only without a file, and the C3's Wi-Fi radio needs a file): chip revision
+/// v0.3, eFuse block revision v1.3, and the same MAC address, c4:0a:24:fe:10:01.
+/// 1024 bytes, from EFUSE_RD_WR_DIS (register 0x2C) on.
+pub fn esp32c3_efuse() -> Vec<u8> {
+    let mut b = vec![0u8; 1024];
+    // EFUSE_RD_MAC_SPI_SYS_0/1 (0x44): the MAC, lowest byte first.
+    b[24..30].copy_from_slice(&[0x01, 0x10, 0xfe, 0x24, 0x0a, 0xc4]);
+    // EFUSE_RD_MAC_SPI_SYS_3 (0x50): WAFER_VER_MINOR_LO = 3, BLK_VERSION_MINOR = 3.
+    b[36..40].copy_from_slice(&((3u32 << 18) | (3u32 << 24)).to_le_bytes());
+    // EFUSE_RD_SYS_PART1_DATA4 (0x6C): BLK_VERSION_MAJOR = 1.
+    b[64..68].copy_from_slice(&1u32.to_le_bytes());
+    b
+}
+
 /// The machine to run each chip on with this fork. Its plain `esp32` machine aborts
 /// at start-up at the pinned commit, and only the PICSimLab machines have the GPIO
 /// and I2C hooks; the S3 has none (docs/qemu-forks.md).

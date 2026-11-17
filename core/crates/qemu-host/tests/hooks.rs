@@ -84,6 +84,7 @@ async fn start(
         // These tests set the host's pins and socket themselves.
         bridge: Vec::new(),
         circuit: None,
+        efuse: None,
     };
     Some((Session::start(cfg).await.unwrap(), sock))
 }
@@ -551,4 +552,63 @@ async fn esp32_mpu6050_part_reads() {
 #[tokio::test]
 async fn esp32c3_mpu6050_part_reads() {
     mpu6050_part_reads(Chip::Esp32c3).await;
+}
+
+/// The DS3231 part model: tests/firmware/ds3231 sets the time to a second before
+/// midnight on 2026-02-28 and arms alarm 1; the clock rolls into March, and the
+/// host's tick fires the alarm and pulls SQW/INT low on a GPIO the firmware reads.
+async fn ds3231_part_keeps_time(chip: Chip) {
+    let Some(build) = esp32bench_sim::lcgamboa::Build::find() else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let image = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../../tests/firmware/out/ds3231-{chip}.bin"));
+    if !image.is_file() {
+        eprintln!("skipping {chip}: ds3231 firmware not built");
+        return;
+    }
+    let int_pin: u8 = if chip == Chip::Esp32c3 { 4 } else { 25 };
+    let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
+    let launch = esp32bench_sim::engine::lcgamboa_launch(chip, &build, Some(&host)).unwrap();
+    let mut cfg = launch.config(chip, image);
+    cfg.bridge = vec![int_pin];
+    cfg.circuit = Some(format!(
+        r#"{{"schemaVersion":"1.1.0","parts":[{{"id":"rtc","kind":"ds3231","pins":{{"sqw":{int_pin}}},"i2c":{{"bus":0,"address":104}}}}]}}"#
+    ));
+    let mut s = Session::start(cfg).await.unwrap();
+    let mut link = s.gpio.take().expect("no link to the host");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let mut text = String::new();
+    while !text.contains("esp32bench-ds3231 2026-03-01 00:00:0") || !text.contains("a1f=1 int=0") {
+        tokio::select! {
+            chunk = s.uart.read_chunk() => {
+                if let Ok(Some(c)) = chunk { text.push_str(&String::from_utf8_lossy(&c)); }
+            }
+            ev = link.next_event() => {
+                if let esp32bench_sim::gpio::PinEvent::PartError { id, message } = ev.unwrap().expect("host closed the link") {
+                    panic!("{chip}: {id}: {message}");
+                }
+            }
+            () = tokio::time::sleep_until(deadline) => panic!("{chip}: uart:\n{text}"),
+        }
+    }
+    // Before midnight the alarm had not fired and INT was released. (A line can show
+    // 23:59:59 with the flag set: the firmware reads the time and the flag in two
+    // transactions, and the second can tick over between them, as on a real DS3231.)
+    assert!(
+        text.contains("2026-02-28 23:59:58 a1f=0 int=1"),
+        "{chip}: {text}"
+    );
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn esp32_ds3231_part_keeps_time() {
+    ds3231_part_keeps_time(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn esp32c3_ds3231_part_keeps_time() {
+    ds3231_part_keeps_time(Chip::Esp32c3).await;
 }

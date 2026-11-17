@@ -1144,6 +1144,7 @@ async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
             env: Vec::new(),
             bridge: Vec::new(),
             circuit: None,
+            efuse: None,
         },
         None => {
             let launch = esp32bench_sim::engine::launch(a.chip, a.engine)?;

@@ -102,6 +102,12 @@ pub struct Runtime {
     pins: BTreeMap<u8, (bool, bool)>,
 }
 
+/// When the runtime started, for `millis()`.
+fn started() -> std::time::Instant {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    *START.get_or_init(std::time::Instant::now)
+}
+
 fn lock(ctx: &Mutex<Context>) -> std::sync::MutexGuard<'_, Context> {
     ctx.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -146,6 +152,18 @@ impl Runtime {
         });
 
         engine.register_fn("pages_to_pixels", pages_to_pixels);
+        // Clocks: milliseconds of host time since the simulation started (QEMU's
+        // virtual time follows the host's), and the computer's clock in Unix seconds,
+        // UTC (an RTC that was set and kept its battery).
+        let start = started();
+        engine.register_fn("millis", move || -> i64 {
+            i64::try_from(start.elapsed().as_millis()).unwrap_or(i64::MAX)
+        });
+        engine.register_fn("wall_time", || -> i64 {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0))
+        });
 
         let mut compiled: BTreeMap<String, Arc<AST>> = BTreeMap::new();
         let mut parts = Vec::new();
@@ -266,6 +284,20 @@ impl Runtime {
         v.sort_unstable();
         v.dedup();
         v
+    }
+
+    /// Run every part's `tick`, for parts that keep time (an RTC's alarm). The host
+    /// calls this about every 100 ms.
+    pub fn tick(&mut self) -> Vec<Effect> {
+        for i in 0..self.parts.len() {
+            self.call(i, "tick", ());
+        }
+        self.take()
+    }
+
+    /// Whether any part has a `tick` hook.
+    pub fn has_tick(&self) -> bool {
+        self.parts.iter().any(|p| p.hooks.contains("tick"))
     }
 
     /// Run every part's `init`.
@@ -658,6 +690,98 @@ mod tests {
         write_reg(&mut r, 0x68, 0x6B, 0x80);
         assert_eq!(read_regs(&mut r, 0x68, 0x6B, 1), [0x40]);
         assert!(!r.has_i2c(0, 0x69));
+    }
+
+    fn write_regs(r: &mut Runtime, addr: u8, reg: u8, data: &[u8]) -> Vec<Effect> {
+        r.i2c(0, addr, I2cEvent::Start { read: false }).unwrap();
+        r.i2c(0, addr, I2cEvent::Write(reg)).unwrap();
+        for b in data {
+            r.i2c(0, addr, I2cEvent::Write(*b)).unwrap();
+        }
+        r.i2c(0, addr, I2cEvent::Stop).unwrap().1
+    }
+
+    #[test]
+    fn ds3231_keeps_time_and_fires_alarms() {
+        let mut r = runtime(json!([
+            { "id": "rtc", "kind": "ds3231", "pins": { "sqw": 4 }, "i2c": { "bus": 0, "address": 104 } }
+        ]));
+        r.init();
+        // Kept its time: the oscillator-stop flag is clear (RTClib's lostPower()).
+        assert_eq!(read_regs(&mut r, 0x68, 0x0F, 1)[0] & 0x80, 0);
+        // A year that RTClib can show: the computer's clock, so 20xx.
+        let y = read_regs(&mut r, 0x68, 0x06, 1)[0];
+        assert!(y >> 4 <= 9 && y & 0x0F <= 9, "BCD year {y:#x}");
+
+        // Set 2026-02-28 23:59:59, a Saturday (RTClib writes 6), as RTClib's adjust().
+        write_regs(&mut r, 0x68, 0x00, &[0x59, 0x59, 0x23, 6, 0x28, 0x02, 0x26]);
+        assert_eq!(
+            read_regs(&mut r, 0x68, 0x00, 7),
+            [0x59, 0x59, 0x23, 6, 0x28, 0x02, 0x26]
+        );
+        // A second later it is March (2026 is not a leap year), and Sunday in the
+        // firmware's numbering.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let t = read_regs(&mut r, 0x68, 0x00, 7);
+        assert!(t[0] <= 0x01, "{t:x?}");
+        assert_eq!(t[1..], [0x00, 0x00, 7, 0x01, 0x03, 0x26]);
+        // Leap days count.
+        write_regs(&mut r, 0x68, 0x00, &[0x00, 0x00, 0x12, 4, 0x29, 0x02, 0x24]);
+        assert_eq!(read_regs(&mut r, 0x68, 0x04, 3), [0x29, 0x02, 0x24]);
+
+        // Alarm 1 once a minute at :00 (A1M2..A1M4 set), with its interrupt on.
+        write_regs(&mut r, 0x68, 0x00, &[0x59, 0x14, 0x07, 1, 0x16, 0x11, 0x26]);
+        write_regs(&mut r, 0x68, 0x07, &[0x00, 0x80, 0x80, 0x80]);
+        let fx = write_regs(&mut r, 0x68, 0x0E, &[0x1D]);
+        assert!(
+            !fx.iter().any(|e| matches!(e, Effect::Drive { .. })),
+            "{fx:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let fx = r.tick();
+        assert_eq!(read_regs(&mut r, 0x68, 0x0F, 1)[0] & 1, 1, "A1F");
+        assert!(
+            fx.iter().any(|e| matches!(
+                e,
+                Effect::Drive {
+                    gpio: 4,
+                    level: false
+                }
+            )),
+            "INT pulled low: {fx:?}"
+        );
+        // Writing 1 does not clear the flag; writing 0 does, and releases INT.
+        write_regs(&mut r, 0x68, 0x0F, &[0x09]);
+        assert_eq!(read_regs(&mut r, 0x68, 0x0F, 1)[0] & 1, 1);
+        let fx = write_regs(&mut r, 0x68, 0x0F, &[0x08]);
+        assert_eq!(read_regs(&mut r, 0x68, 0x0F, 1)[0] & 1, 0);
+        assert!(
+            fx.iter().any(|e| matches!(
+                e,
+                Effect::Drive {
+                    gpio: 4,
+                    level: true
+                }
+            )),
+            "{fx:?}"
+        );
+
+        // Temperature in quarter degrees, from the slider.
+        r.control("rtc", "temperature", Dynamic::from(30.25_f64))
+            .unwrap();
+        assert_eq!(read_regs(&mut r, 0x68, 0x11, 2), [30, 0x40]);
+        r.control("rtc", "temperature", Dynamic::from(-5.5_f64))
+            .unwrap();
+        let t = read_regs(&mut r, 0x68, 0x11, 2);
+        assert_eq!(f64::from(t[0] as i8) + f64::from(t[1] >> 6) * 0.25, -5.5);
+    }
+
+    #[test]
+    fn ds3231_alarm_pin_is_optional() {
+        let mut r = runtime(json!([
+            { "id": "rtc", "kind": "ds3231", "i2c": { "bus": 0, "address": 104 } }
+        ]));
+        assert!(r.init().iter().all(|e| !matches!(e, Effect::Error { .. })));
     }
 
     #[test]

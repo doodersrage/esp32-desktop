@@ -115,6 +115,9 @@ pub struct Model {
     /// Named connections to GPIOs.
     #[serde(default)]
     pub pins: Vec<String>,
+    /// Pins that may be left unconnected (e.g. an RTC's alarm output).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optional_pins: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub i2c: Option<I2cSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -130,7 +133,7 @@ pub struct Model {
 }
 
 /// The models built into the program: (description, script).
-const BUILT_IN: [(&str, &str); 7] = [
+const BUILT_IN: [(&str, &str); 8] = [
     (
         include_str!("../models/led.json"),
         include_str!("../models/led.rhai"),
@@ -158,6 +161,10 @@ const BUILT_IN: [(&str, &str); 7] = [
     (
         include_str!("../models/mpu6050.json"),
         include_str!("../models/mpu6050.rhai"),
+    ),
+    (
+        include_str!("../models/ds3231.json"),
+        include_str!("../models/ds3231.rhai"),
     ),
 ];
 
@@ -303,6 +310,7 @@ impl Circuit {
             let pins = p.connections(m);
             for name in &m.pins {
                 match pins.get(name) {
+                    None if m.optional_pins.contains(name) => {}
                     None => return invalid(format!("`{}` needs its {name} pin connected", p.id)),
                     Some(&g) if g > MAX_GPIO => return invalid(format!("GPIO {g} does not exist")),
                     Some(_) => {}

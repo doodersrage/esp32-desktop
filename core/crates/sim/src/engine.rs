@@ -58,6 +58,8 @@ pub struct Launch {
     /// Whether GPIOs can be bridged ([`SessionConfig::bridge`]): only through the host
     /// with the fork's library, so not on the S3 or Espressif's QEMU.
     pub hooks: bool,
+    /// An eFuse image the machine needs ([`SessionConfig::efuse`]).
+    pub efuse: Option<Vec<u8>>,
 }
 
 impl Launch {
@@ -74,6 +76,7 @@ impl Launch {
             env: self.env.clone(),
             bridge: Vec::new(),
             circuit: None,
+            efuse: self.efuse.clone(),
         }
     }
 }
@@ -106,17 +109,25 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
             args,
             env: Vec::new(),
             hooks: false,
+            efuse: None,
         });
     }
     let host = host?;
     let mut args = args;
-    if chip == Chip::Esp32 {
-        // A Wi-Fi radio with no network behind it: an empty hub port, so frames go
-        // nowhere (no DHCP, no DNS, no route out; rule 4). Without a radio the fork's
-        // Wi-Fi start-up crashes (esp_phy_enable). The C3's radio needs an eFuse image
-        // and aborts without one, so the C3 gets none yet.
-        args.extend(["-nic".into(), "hubport,hubid=0,model=esp32_wifi".into()]);
-    }
+    // A Wi-Fi radio with no network behind it: an empty hub port, so frames go
+    // nowhere (no DHCP, no DNS, no route out; rule 4). Without a radio the fork's Wi-Fi
+    // start-up crashes (esp_phy_enable). The C3's radio reads its MAC address from the
+    // eFuses before the eFuse device is ready, and aborts unless they come from a file:
+    // `efuse` below.
+    let model = if chip == Chip::Esp32 {
+        "esp32_wifi"
+    } else {
+        "esp32c3_wifi"
+    };
+    args.extend([
+        "-nic".into(),
+        format!("hubport,hubid=0,model={model}").into(),
+    ]);
     Some(Launch {
         engine: Engine::Lcgamboa,
         qemu: host.to_owned(),
@@ -127,6 +138,7 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
             build.library(chip.arch()).into(),
         )],
         hooks: true,
+        efuse: (chip == Chip::Esp32c3).then(lcgamboa::esp32c3_efuse),
     })
 }
 
@@ -145,6 +157,7 @@ pub fn launch(chip: Chip, want: Option<Engine>) -> Result<Launch, Error> {
             args: Vec::new(),
             env: Vec::new(),
             hooks: false,
+            efuse: None,
         })
     };
     match want {
@@ -179,10 +192,23 @@ mod tests {
             assert_eq!(l.qemu, Path::new("/bin/host"));
             assert_eq!(l.machine.as_deref(), Some(machine));
             assert_eq!(&l.args[..2], ["-L", "/q/src/pc-bios"]);
-            if chip == Chip::Esp32 {
-                assert_eq!(&l.args[2..], ["-nic", "hubport,hubid=0,model=esp32_wifi"]);
+            // A radio on an empty hub: no network (rule 4).
+            let nic = if chip == Chip::Esp32 {
+                "esp32_wifi"
             } else {
-                assert_eq!(l.args.len(), 2);
+                "esp32c3_wifi"
+            };
+            assert_eq!(
+                &l.args[2..],
+                ["-nic", &format!("hubport,hubid=0,model={nic}")]
+            );
+            // The C3's radio needs an eFuse image: chip revision v0.3 and a MAC.
+            if chip == Chip::Esp32c3 {
+                let e = l.efuse.as_deref().unwrap();
+                assert_eq!(e.len(), 1024);
+                assert_eq!(e[24..30], [0x01, 0x10, 0xfe, 0x24, 0x0a, 0xc4]);
+            } else {
+                assert!(l.efuse.is_none());
             }
             assert_eq!(l.env[0].0, "ESP32BENCH_QEMU_LIB");
             assert!(Path::new(&l.env[0].1).ends_with(lib));
