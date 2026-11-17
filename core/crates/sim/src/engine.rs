@@ -109,6 +109,14 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
         });
     }
     let host = host?;
+    let mut args = args;
+    if chip == Chip::Esp32 {
+        // A Wi-Fi radio with no network behind it: an empty hub port, so frames go
+        // nowhere (no DHCP, no DNS, no route out; rule 4). Without a radio the fork's
+        // Wi-Fi start-up crashes (esp_phy_enable). The C3's radio needs an eFuse image
+        // and aborts without one, so the C3 gets none yet.
+        args.extend(["-nic".into(), "hubport,hubid=0,model=esp32_wifi".into()]);
+    }
     Some(Launch {
         engine: Engine::Lcgamboa,
         qemu: host.to_owned(),
@@ -170,7 +178,12 @@ mod tests {
             assert_eq!(l.engine, Engine::Lcgamboa);
             assert_eq!(l.qemu, Path::new("/bin/host"));
             assert_eq!(l.machine.as_deref(), Some(machine));
-            assert_eq!(l.args, ["-L", "/q/src/pc-bios"]);
+            assert_eq!(&l.args[..2], ["-L", "/q/src/pc-bios"]);
+            if chip == Chip::Esp32 {
+                assert_eq!(&l.args[2..], ["-nic", "hubport,hubid=0,model=esp32_wifi"]);
+            } else {
+                assert_eq!(l.args.len(), 2);
+            }
             assert_eq!(l.env[0].0, "ESP32BENCH_QEMU_LIB");
             assert!(Path::new(&l.env[0].1).ends_with(lib));
             // No socket or pins: nothing is attached.

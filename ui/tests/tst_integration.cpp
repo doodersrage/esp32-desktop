@@ -14,6 +14,7 @@
 #include "MainWindow.h"
 
 #include <QDir>
+#include <QDoubleSpinBox>
 #include <QFile>
 #include <QScopeGuard>
 #include <QPushButton>
@@ -232,6 +233,35 @@ private slots:
                 QTRY_VERIFY(!core.isSimRunning());
             } else {
                 qWarning("lcgamboa's QEMU or the gpio firmware missing; pins step skipped");
+            }
+
+            // A BME280 on I2C: placed through the Circuit dock, read by the firmware, and
+            // its temperature set from the dock's controls while it runs.
+            const QString bmeFw = QStringLiteral(ESP32BENCH_SOURCE_DIR "/../tests/firmware/out/bme280-esp32.bin");
+            if (haveFork && QFile::exists(bmeFw)) {
+                CircuitPanel *circuit = window.circuit();
+                const qsizetype before = circuit->parts().size();
+                circuit->addPart(u"bme280"_s, {}, {}, u"Air"_s, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 118}});
+                QTRY_COMPARE(circuit->parts().size(), before + 1);
+                QVERIFY(QFile::remove(image));
+                QVERIFY(QFile::copy(bmeFw, image));
+                window.buildPanel()->simulateButton()->click();
+                QTRY_VERIFY_WITH_TIMEOUT(window.simulator()->outputText().contains(u"esp32bench-bme280 ready id=0x60"_s), 30000);
+                QTRY_VERIFY_WITH_TIMEOUT(core.simPartsActive(), 5000);
+                circuit->selectPart(u"bme280-1"_s, true);
+                QDoubleSpinBox *temp = circuit->controlBox(u"temperature"_s);
+                QVERIFY(temp);
+                QTRY_VERIFY(temp->isEnabled());
+                temp->setValue(30.5);
+                QTRY_VERIFY_WITH_TIMEOUT(window.simulator()->outputText().contains(u"esp32bench-bme280 t=3050"_s)
+                                             || window.simulator()->outputText().contains(u"esp32bench-bme280 t=3049"_s),
+                                         20000);
+                QTRY_COMPARE(circuit->partState(u"bme280-1"_s).value(u"temperature"_s).toDouble(), 30.5);
+                circuit->selectPart(u"bme280-1"_s, false);
+                core.stopSim();
+                QTRY_VERIFY(!core.isSimRunning());
+            } else {
+                qWarning("lcgamboa's QEMU or the bme280 firmware missing; sensor step skipped");
             }
 
             // An SSD1306 on I2C: placed through the Circuit dock, drawn on the canvas by

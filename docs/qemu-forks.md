@@ -129,6 +129,10 @@ Arduino core 3.3.12 builds (Blink, the library's `oled`) panicked within seconds
 - **Ruled out on the way:** the fork's cache refill changes, its per-CPU cache wiring, multi-threaded TCG, and swapping in Espressif's interrupt matrix and timer group (the matrix turned the panic into an interrupt-watchdog timeout, which led to the cause; neither is needed). `tests/firmware/flashop` (flash reads on one core while the other runs) came out of this too; it runs clean on both forks.
 - **Upstream:** our pin is the fork's head; this is worth reporting to lcgamboa.
 
+### Wi-Fi firmware needs a radio (found 2026-11-16)
+
+With `-nic none`, Wi-Fi start-up on the fork's ESP32 crashes (`LoadStorePIFAddrError` in `esp_phy_enable` / `register_chipv7_phy`): the radio model exists only with a NIC. ESP32 sessions on the fork therefore get `-nic hubport,hubid=0,model=esp32_wifi`: a radio on an empty hub, with no DHCP, DNS or route anywhere. `-nic user,restrict=on` was considered and rejected: it isolates the guest from the host and the outside, but QEMU's user-mode stack still forwards DNS queries to the host's resolver. `wifi-sta` now starts, gets no address and keeps running (`lcgamboa_esp32_wifi_has_a_radio_but_no_network`). The C3's radio (`esp32c3_wifi`) aborts without an eFuse image, so C3 sessions have no radio; Wi-Fi firmware there does not crash, but waits.
+
 ## Open questions
 
 - Should simulator boot tests stub out Wi-Fi, or should a project be marked as "no simulator" when it starts Wi-Fi at boot? lcgamboa's fork answers this for ESP32 and C3 only.

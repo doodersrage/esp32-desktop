@@ -292,3 +292,36 @@ async fn lcgamboa_esp32_runs_arduino() {
 async fn lcgamboa_esp32c3_runs_arduino() {
     arduino_keeps_running_on_lcgamboa(Chip::Esp32c3, 1).await;
 }
+
+/// Wi-Fi firmware on the fork's ESP32: it has a radio (without one the fork's Wi-Fi
+/// start-up crashes), and no network behind it (rule 4): it starts, gets no address,
+/// and keeps running.
+#[tokio::test]
+async fn lcgamboa_esp32_wifi_has_a_radio_but_no_network() {
+    let chip = Chip::Esp32;
+    let Some(image) = built_image("wifi-sta", chip) else {
+        eprintln!("skipping: wifi-sta not built");
+        return;
+    };
+    let Ok(launch) = esp32bench_sim::engine::launch(chip, Some(esp32bench_sim::Engine::Lcgamboa))
+    else {
+        eprintln!("skipping: lcgamboa's QEMU is not built");
+        return;
+    };
+    let mut s = Session::start(launch.config(chip, image)).await.unwrap();
+    let mut text = Vec::new();
+    // Ten seconds: long enough for a crash, a reboot or a DHCP lease to show.
+    let _ = s
+        .uart
+        .wait_for(b"never printed", Duration::from_secs(10), |b| {
+            text.extend_from_slice(b)
+        })
+        .await
+        .unwrap();
+    let text = String::from_utf8_lossy(&text);
+    assert!(text.contains("esp32bench-wifi start"), "{text}");
+    assert!(!text.contains("Guru Meditation"), "{text}");
+    assert_eq!(text.matches("rst:").count(), 1, "rebooted:\n{text}");
+    assert!(!text.contains("got ip"), "it reached a network:\n{text}");
+    s.shutdown().await.unwrap();
+}

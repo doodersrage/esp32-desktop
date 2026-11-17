@@ -20,6 +20,8 @@ class QGraphicsView;
 class QLabel;
 class QPushButton;
 class QToolButton;
+class QDoubleSpinBox;
+class QGroupBox;
 class PartItem;
 
 class CircuitPanel : public QWidget {
@@ -50,6 +52,10 @@ public:
     // The middle of a part on the canvas, in scene coordinates.
     QPointF partCentre(const QString &id) const;
     QToolButton *addPartButton() const { return m_add; }
+    // The spin box for a selected part's number control, or null.
+    QDoubleSpinBox *controlBox(const QString &name) const;
+    // Select a part on the canvas, as a click does.
+    void selectPart(const QString &id, bool selected);
 
 private:
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
@@ -59,6 +65,7 @@ private:
     void addDialog(const QString &kind);
     QString freeId(const QString &kind) const;
     void updateStatus();
+    void rebuildControls();
 
     CoreConnection *m_core;
     QLabel *m_status;
@@ -66,6 +73,7 @@ private:
     QPushButton *m_remove;
     QGraphicsScene *m_scene;
     QGraphicsView *m_view;
+    QGroupBox *m_controls;
     QString m_project;
     QString m_board;
     QList<int> m_projectPins;

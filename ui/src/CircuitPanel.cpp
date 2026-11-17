@@ -4,10 +4,12 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
@@ -56,6 +58,8 @@ public:
                 m_momentary = o.value(u"name"_s).toString();
             if (type == u"toggle" && m_toggle.isEmpty())
                 m_toggle = o.value(u"name"_s).toString();
+            if (type == u"slider")
+                m_sliders << o;
         }
         const QJsonObject display = model.value(u"display"_s).toObject();
         m_display = QSize(display.value(u"width"_s).toInt(), display.value(u"height"_s).toInt());
@@ -88,6 +92,9 @@ public:
         update();
     }
     bool isDisplay() const { return m_look == u"display" && !m_display.isEmpty(); }
+    bool isBox() const { return m_look == u"box"; }
+    // Controls a person sets with a number (a sensor's readings).
+    QList<QJsonObject> sliders() const { return m_sliders; }
     // A display is drawn twice its size, so single pixels read.
     QRectF screen() const { return QRectF(4, 4, m_display.width() * 2, m_display.height() * 2); }
 
@@ -95,6 +102,8 @@ public:
     {
         if (isDisplay())
             return QRectF(-2, -2, screen().width() + 12, screen().height() + 30);
+        if (isBox())
+            return QRectF(-2, -2, 234, 30 + 18 * m_sliders.size());
         return {-2, -2, PartSize + 160, PartSize + 4};
     }
 
@@ -128,6 +137,32 @@ public:
             p->setPen(pal.color(QPalette::Text));
             p->drawText(QRectF(0, screen().height() + 10, screen().width() + 8, 18), Qt::AlignLeft | Qt::AlignVCenter,
                         m_label);
+            return;
+        }
+        if (isBox()) {
+            // A breakout board: its name, then one line per reading.
+            const QRectF board = boundingRect().adjusted(2, 2, -2, -2);
+            p->setBrush(pal.color(QPalette::Button));
+            p->drawRoundedRect(board, 4, 4);
+            if (option->state & QStyle::State_Selected) {
+                p->setPen(QPen(pal.color(QPalette::Highlight), 1, Qt::DashLine));
+                p->setBrush(Qt::NoBrush);
+                p->drawRect(board.adjusted(-2, -2, 2, 2));
+            }
+            p->setPen(pal.color(QPalette::ButtonText));
+            QFont bold = p->font();
+            bold.setBold(true);
+            p->setFont(bold);
+            p->drawText(QRectF(8, 4, 220, 18), Qt::AlignLeft | Qt::AlignVCenter, m_label);
+            p->setFont(QFont());
+            int line = 0;
+            for (const QJsonObject &c : m_sliders) {
+                const QString name = c.value(u"name"_s).toString();
+                const double v = m_state.value(name).toDouble(c.value(u"default"_s).toDouble());
+                p->drawText(QRectF(8, 24 + 18 * line++, 220, 18), Qt::AlignLeft | Qt::AlignVCenter,
+                            QCoreApplication::translate("PartItem", "%1: %2 %3").arg(c.value(u"label"_s).toString()).arg(v, 0, 'f', 2)
+                                .arg(c.value(u"unit"_s).toString()));
+            }
             return;
         }
         if (m_look == u"led") {
@@ -192,6 +227,7 @@ private:
     QString m_label;
     QSize m_display;
     QImage m_picture;
+    QList<QJsonObject> m_sliders;
     QString m_momentary;
     QString m_toggle;
     QJsonObject m_initial;
@@ -207,6 +243,7 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     , m_remove(new QPushButton(QIcon::fromTheme(u"list-remove"_s), tr("Remove"), this))
     , m_scene(new QGraphicsScene(this))
     , m_view(new QGraphicsView(m_scene, this))
+    , m_controls(new QGroupBox(this))
 {
     m_status->setWordWrap(true);
     m_view->setRenderHint(QPainter::Antialiasing);
@@ -228,8 +265,10 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     });
     // m_remove as the context: the scene emits selectionChanged while it is destroyed,
     // after the button has gone.
-    connect(m_scene, &QGraphicsScene::selectionChanged, m_remove,
-            [this] { m_remove->setEnabled(!m_scene->selectedItems().isEmpty()); });
+    connect(m_scene, &QGraphicsScene::selectionChanged, m_remove, [this] {
+        m_remove->setEnabled(!m_scene->selectedItems().isEmpty());
+        rebuildControls();
+    });
 
     auto *tools = new QHBoxLayout;
     tools->addWidget(m_add);
@@ -239,6 +278,8 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     layout->addWidget(m_status);
     layout->addLayout(tools);
     layout->addWidget(m_view, 1);
+    m_controls->setVisible(false);
+    layout->addWidget(m_controls);
 
     connect(core, &CoreConnection::circuitLoaded, this, &CircuitPanel::circuitLoaded);
     connect(core, &CoreConnection::modelsLoaded, this, &CircuitPanel::modelsLoaded);
@@ -261,10 +302,12 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     connect(core, &CoreConnection::simStarted, this, [this] {
         resetStates();
         updateStatus();
+        rebuildControls();
     });
     connect(core, &CoreConnection::simStopped, this, [this] {
         resetStates();
         updateStatus();
+        rebuildControls();
     });
     connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
         if (method.startsWith(u"circuit."))
@@ -607,4 +650,52 @@ void CircuitPanel::addDialog(const QString &kind)
     if (address)
         i2c = {{u"bus"_s, bus->value()}, {u"address"_s, address->currentData().toInt()}};
     addPart(kind, pins, values, labelEdit->text().trimmed(), i2c);
+}
+
+QDoubleSpinBox *CircuitPanel::controlBox(const QString &name) const
+{
+    return m_controls->findChild<QDoubleSpinBox *>(name);
+}
+
+// The selected part's number controls (a sensor's readings), as spin boxes. They
+// work while the simulation runs its parts; values are not kept between runs.
+void CircuitPanel::rebuildControls()
+{
+    delete m_controls->layout();
+    qDeleteAll(m_controls->findChildren<QWidget *>(Qt::FindDirectChildrenOnly));
+    PartItem *part = nullptr;
+    for (QGraphicsItem *i : m_scene->selectedItems()) {
+        if ((part = dynamic_cast<PartItem *>(i)))
+            break;
+    }
+    const QList<QJsonObject> sliders = part ? part->sliders() : QList<QJsonObject>();
+    m_controls->setVisible(!sliders.isEmpty());
+    if (sliders.isEmpty())
+        return;
+    const bool live = m_core->simPartsActive();
+    m_controls->setTitle(live ? tr("Controls for %1").arg(part->id())
+                              : tr("Controls for %1 (run the simulator to change them)").arg(part->id()));
+    auto *form = new QFormLayout(m_controls);
+    const QString id = part->id();
+    for (const QJsonObject &c : sliders) {
+        const QString name = c.value(u"name"_s).toString();
+        auto *box = new QDoubleSpinBox(m_controls);
+        box->setObjectName(name);
+        box->setRange(c.value(u"min"_s).toDouble(), c.value(u"max"_s).toDouble());
+        box->setDecimals(2);
+        box->setSuffix(u" "_s + c.value(u"unit"_s).toString());
+        box->setValue(part->state().value(name).toDouble(c.value(u"default"_s).toDouble()));
+        box->setEnabled(live);
+        box->setKeyboardTracking(false); // one change per finished edit, not per key
+        connect(box, &QDoubleSpinBox::valueChanged, this, [this, id, name](double v) {
+            m_core->controlPart(id, name, v);
+        });
+        form->addRow(c.value(u"label"_s).toString(), box);
+    }
+}
+
+void CircuitPanel::selectPart(const QString &id, bool selected)
+{
+    if (PartItem *i = m_items.value(id))
+        i->setSelected(selected);
 }

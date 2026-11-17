@@ -4,6 +4,8 @@
 #include "CircuitPanel.h"
 #include "CoreConnection.h"
 
+#include <QDoubleSpinBox>
+#include <QGraphicsItem>
 #include <QGraphicsView>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -82,6 +84,15 @@ private:
                 model(u"rgb-led"_s, u"RGB LED"_s, u"rgb-led"_s, {u"red"_s, u"green"_s, u"blue"_s}, {},
                       QJsonObject{{u"red"_s, false}, {u"green"_s, false}, {u"blue"_s, false}}),
                 [&] {
+                    QJsonObject m = model(u"bme280"_s, u"BME280"_s, u"box"_s, {},
+                                          {QJsonObject{{u"name"_s, u"temperature"_s}, {u"type"_s, u"slider"_s},
+                                                       {u"label"_s, u"Temperature"_s}, {u"min"_s, -40}, {u"max"_s, 85},
+                                                       {u"default"_s, 21}, {u"unit"_s, u"°C"_s}}},
+                                          QJsonObject{{u"temperature"_s, 21.0}});
+                    m.insert(u"i2c"_s, QJsonObject{{u"addresses"_s, QJsonArray{118, 119}}});
+                    return m;
+                }(),
+                [&] {
                     QJsonObject m = model(u"ssd1306"_s, u"SSD1306"_s, u"display"_s, {}, {}, off);
                     m.insert(u"i2c"_s, QJsonObject{{u"addresses"_s, QJsonArray{60, 61}}});
                     m.insert(u"display"_s, QJsonObject{{u"width"_s, 4}, {u"height"_s, 2}});
@@ -138,8 +149,8 @@ private slots:
         core.start();
         QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
         // The kinds of part come from the core, one menu entry each.
-        QTRY_COMPARE(panel.modelIds(), (QStringList{u"led"_s, u"button"_s, u"switch"_s, u"rgb-led"_s, u"ssd1306"_s}));
-        QCOMPARE(panel.addPartButton()->menu()->actions().size(), 5);
+        QTRY_COMPARE(panel.modelIds(), (QStringList{u"led"_s, u"button"_s, u"switch"_s, u"rgb-led"_s, u"bme280"_s, u"ssd1306"_s}));
+        QCOMPARE(panel.addPartButton()->menu()->actions().size(), 6);
 
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"GND"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
@@ -165,12 +176,14 @@ private slots:
         QTRY_COMPARE(panel.parts().size(), 5);
         QCOMPARE(partsOf(fake.saved, 4).value(u"i2c"_s).toObject().value(u"address"_s).toInt(), 60);
         QVERIFY(!partsOf(fake.saved, 4).contains(u"pins"_s));
+        panel.addPart(u"bme280"_s, {}, {}, {}, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 118}});
+        QTRY_COMPARE(panel.parts().size(), 6);
 
         // A refusal from the core is shown, and nothing changes.
         fake.rejectNext = true;
         panel.addPart(u"switch"_s, 4, false, {});
         QTRY_VERIFY(panel.statusText().contains(u"would drive"_s));
-        QCOMPARE(panel.parts().size(), 5);
+        QCOMPARE(panel.parts().size(), 6);
 
         // Running: parts show the state the core reports.
         core.startSim(u"blink"_s, u"esp32"_s);
@@ -188,6 +201,25 @@ private slots:
         QCOMPARE(panel.partPicture(u"ssd1306-1"_s).size(), QSize(4, 2));
         QVERIFY(qGray(panel.partPicture(u"ssd1306-1"_s).pixel(3, 1)) > 128);
         QCOMPARE(qGray(panel.partPicture(u"ssd1306-1"_s).pixel(0, 0)), 0);
+
+        // A sensor: selecting it shows its readings as controls; changing one sends it.
+        QVERIFY(!panel.controlBox(u"temperature"_s));
+        panel.selectPart(u"bme280-1"_s, true);
+        QDoubleSpinBox *temp = panel.controlBox(u"temperature"_s);
+        QVERIFY(temp);
+        QVERIFY(temp->isEnabled());
+        QCOMPARE(temp->value(), 21.0);
+        QCOMPARE(temp->maximum(), 85.0);
+        temp->setValue(30.5);
+        QTRY_VERIFY(!fake.controls.isEmpty());
+        QCOMPARE(fake.controls.last().value(u"part"_s).toString(), u"bme280-1"_s);
+        QCOMPARE(fake.controls.last().value(u"control"_s).toString(), u"temperature"_s);
+        QCOMPARE(fake.controls.last().value(u"value"_s).toDouble(), 30.5);
+        fake.parts(QJsonArray{QJsonObject{{u"id"_s, u"bme280-1"_s}, {u"state"_s, QJsonObject{{u"temperature"_s, 30.5}}}}});
+        QTRY_COMPARE(panel.partState(u"bme280-1"_s).value(u"temperature"_s).toDouble(), 30.5);
+        panel.selectPart(u"bme280-1"_s, false);
+        QVERIFY(!panel.controlBox(u"temperature"_s));
+        fake.controls.clear();
 
         // Holding the mouse on a button presses it.
         const QPoint at = panel.view()->mapFromScene(panel.partCentre(u"button-1"_s));
@@ -220,7 +252,7 @@ private slots:
 
         QVERIFY(panel.partPicture(u"ssd1306-1"_s).isNull()); // cleared when the simulator stopped
         panel.removePart(u"rgb-led-1"_s);
-        QTRY_COMPARE(panel.parts().size(), 4);
+        QTRY_COMPARE(panel.parts().size(), 5);
     }
 };
 

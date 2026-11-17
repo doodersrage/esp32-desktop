@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "bme280",
+  "name": "BME280 (temperature, humidity, pressure)",
+  "look": "box",
+  "i2c": { "addresses": [118, 119] },
+  "controls": [
+    { "name": "temperature", "type": "slider", "label": "Temperature", "min": -40, "max": 85, "default": 21, "unit": "°C" },
+    { "name": "humidity", "type": "slider", "label": "Humidity", "min": 0, "max": 100, "default": 45, "unit": "%" },
+    { "name": "pressure", "type": "slider", "label": "Pressure", "min": 300, "max": 1100, "default": 1013.25, "unit": "hPa" }
+  ],
+  "state": { "temperature": 21.0, "humidity": 45.0, "pressure": 1013.25 },
+  "script": "bme280.rhai"
+}

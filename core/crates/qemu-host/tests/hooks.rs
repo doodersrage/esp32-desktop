@@ -415,3 +415,80 @@ async fn esp32_ssd1306_part_draws() {
 async fn esp32c3_ssd1306_part_draws() {
     ssd1306_part_draws(Chip::Esp32c3).await;
 }
+
+/// The last `esp32bench-bme280 t=.. h=.. p=..` line in `text`, as (t, h, p).
+fn last_reading(text: &str) -> Option<(i64, i64, i64)> {
+    let line = text
+        .lines()
+        .rev()
+        .find(|l| l.contains("esp32bench-bme280 t="))?;
+    let num = |key: &str| -> Option<i64> {
+        let rest = &line[line.find(key)? + key.len()..];
+        rest.split_whitespace().next()?.parse().ok()
+    };
+    Some((num("t=")?, num("h=")?, num("p=")?))
+}
+
+/// Within one unit of the firmware's integer output (it truncates).
+fn near(got: (i64, i64, i64), want: (i64, i64, i64)) -> bool {
+    (got.0 - want.0).abs() <= 1 && (got.1 - want.1).abs() <= 1 && (got.2 - want.2).abs() <= 1
+}
+
+/// The BME280 part model on a real I2C bus: tests/firmware/bme280 reads it with the
+/// datasheet's compensation, and a control moves the reading.
+async fn bme280_part_reads(chip: Chip) {
+    let Some(build) = esp32bench_sim::lcgamboa::Build::find() else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let image = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../../tests/firmware/out/bme280-{chip}.bin"));
+    if !image.is_file() {
+        eprintln!("skipping {chip}: bme280 firmware not built");
+        return;
+    }
+    let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
+    let launch = esp32bench_sim::engine::lcgamboa_launch(chip, &build, Some(&host)).unwrap();
+    let mut cfg = launch.config(chip, image);
+    cfg.circuit = Some(
+        r#"{"schemaVersion":"1.1.0","parts":[{"id":"env","kind":"bme280","i2c":{"bus":0,"address":118}}]}"#
+            .into(),
+    );
+    let mut s = Session::start(cfg).await.unwrap();
+    let mut link = s.gpio.take().expect("no link to the host");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let mut text = String::new();
+    let mut moved = false;
+    // UART0 and the host's link are both read all along.
+    // 21 degC, 45 %RH, 1013.25 hPa, in the firmware's units (0.01 degC, 0.01 %, Pa).
+    let defaults = (2100, 4500, 101325);
+    while !(moved && last_reading(&text).is_some_and(|r| near(r, (3050, 4500, 101325)))) {
+        tokio::select! {
+            chunk = s.uart.read_chunk() => {
+                if let Ok(Some(c)) = chunk { text.push_str(&String::from_utf8_lossy(&c)); }
+                if !moved && last_reading(&text).is_some_and(|r| near(r, defaults)) {
+                    assert!(text.contains("esp32bench-bme280 ready id=0x60"), "{chip}: {text}");
+                    link.control("env", "temperature", &serde_json::json!(30.5)).await.unwrap();
+                    moved = true;
+                }
+            }
+            ev = link.next_event() => {
+                if let esp32bench_sim::gpio::PinEvent::PartError { id, message } = ev.unwrap().expect("host closed the link") {
+                    panic!("{chip}: {id}: {message}");
+                }
+            }
+            () = tokio::time::sleep_until(deadline) => panic!("{chip}: moved={moved}; uart:\n{text}"),
+        }
+    }
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn esp32_bme280_part_reads() {
+    bme280_part_reads(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn esp32c3_bme280_part_reads() {
+    bme280_part_reads(Chip::Esp32c3).await;
+}

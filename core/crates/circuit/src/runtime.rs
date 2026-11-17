@@ -508,6 +508,113 @@ mod tests {
         assert_eq!(px.iter().filter(|p| **p == 1).count(), 1);
     }
 
+    /// Read `n` registers from `reg` of the part at (0, addr), as Wire does: a write of
+    /// the register pointer, then a read.
+    fn read_regs(r: &mut Runtime, addr: u8, reg: u8, n: usize) -> Vec<u8> {
+        r.i2c(0, addr, I2cEvent::Start { read: false }).unwrap();
+        r.i2c(0, addr, I2cEvent::Write(reg)).unwrap();
+        r.i2c(0, addr, I2cEvent::Stop).unwrap();
+        r.i2c(0, addr, I2cEvent::Start { read: true }).unwrap();
+        let out = (0..n)
+            .map(|_| r.i2c(0, addr, I2cEvent::Read).unwrap().0 as u8)
+            .collect();
+        r.i2c(0, addr, I2cEvent::Stop).unwrap();
+        out
+    }
+
+    fn write_reg(r: &mut Runtime, addr: u8, reg: u8, v: u8) {
+        r.i2c(0, addr, I2cEvent::Start { read: false }).unwrap();
+        r.i2c(0, addr, I2cEvent::Write(reg)).unwrap();
+        r.i2c(0, addr, I2cEvent::Write(v)).unwrap();
+        r.i2c(0, addr, I2cEvent::Stop).unwrap();
+    }
+
+    /// What firmware computes from the registers: Bosch's compensation (datasheet
+    /// 4.2.3), written here independently of the model's script.
+    fn bme280_readings(r: &mut Runtime, addr: u8) -> (f64, f64, f64) {
+        let c = read_regs(r, addr, 0x88, 24);
+        let u = |i: usize| i64::from(u16::from_le_bytes([c[i], c[i + 1]]));
+        let s = |i: usize| i64::from(i16::from_le_bytes([c[i], c[i + 1]]));
+        let (t1, t2, t3) = (u(0), s(2), s(4));
+        let (p1, p2, p3, p4, p5, p6, p7, p8, p9) =
+            (u(6), s(8), s(10), s(12), s(14), s(16), s(18), s(20), s(22));
+        let h1 = i64::from(read_regs(r, addr, 0xA1, 1)[0]);
+        let e = read_regs(r, addr, 0xE1, 7);
+        let h2 = i64::from(i16::from_le_bytes([e[0], e[1]]));
+        let h3 = i64::from(e[2]);
+        let h4 = (i64::from(e[3] as i8) << 4) | i64::from(e[4] & 0x0F);
+        let h5 = (i64::from(e[5] as i8) << 4) | i64::from(e[4] >> 4);
+        let h6 = i64::from(e[6] as i8);
+        let d = read_regs(r, addr, 0xF7, 8);
+        let adc_p = (i64::from(d[0]) << 12) | (i64::from(d[1]) << 4) | i64::from(d[2] >> 4);
+        let adc_t = (i64::from(d[3]) << 12) | (i64::from(d[4]) << 4) | i64::from(d[5] >> 4);
+        let adc_h = (i64::from(d[6]) << 8) | i64::from(d[7]);
+        let var1 = (((adc_t >> 3) - (t1 << 1)) * t2) >> 11;
+        let var2 = (((((adc_t >> 4) - t1) * ((adc_t >> 4) - t1)) >> 12) * t3) >> 14;
+        let t_fine = var1 + var2;
+        let t = ((t_fine * 5 + 128) >> 8) as f64 / 100.0;
+        let mut v1 = t_fine - 128000;
+        let mut v2 = v1 * v1 * p6;
+        v2 += (v1 * p5) << 17;
+        v2 += p4 << 35;
+        v1 = ((v1 * v1 * p3) >> 8) + ((v1 * p2) << 12);
+        v1 = (((1i64 << 47) + v1) * p1) >> 33;
+        let mut p = 1048576 - adc_p;
+        p = (((p << 31) - v2) * 3125) / v1;
+        let w1 = (p9 * (p >> 13) * (p >> 13)) >> 25;
+        let w2 = (p8 * p) >> 19;
+        let p = (((p + w1 + w2) >> 8) + (p7 << 4)) as f64 / 256.0 / 100.0;
+        let mut h = t_fine - 76800;
+        h = ((((adc_h << 14) - (h4 << 20) - (h5 * h)) + 16384) >> 15)
+            * (((((((h * h6) >> 10) * (((h * h3) >> 11) + 32768)) >> 10) + 2097152) * h2 + 8192)
+                >> 14);
+        h -= ((((h >> 15) * (h >> 15)) >> 7) * h1) >> 4;
+        let h = (h.clamp(0, 419430400) >> 12) as f64 / 1024.0;
+        (t, h, p)
+    }
+
+    #[test]
+    fn bme280_reads_back_what_the_sliders_say() {
+        let mut r = runtime(json!([
+            { "id": "env", "kind": "bme280", "i2c": { "bus": 0, "address": 118 } }
+        ]));
+        r.init();
+        assert_eq!(read_regs(&mut r, 0x76, 0xD0, 1), [0x60], "chip id");
+        // Adafruit's begin(): soft reset, then setSampling (x16 everything, normal mode).
+        write_reg(&mut r, 0x76, 0xE0, 0xB6);
+        write_reg(&mut r, 0x76, 0xF2, 0x05);
+        write_reg(&mut r, 0x76, 0xF5, 0x00);
+        write_reg(&mut r, 0x76, 0xF4, 0xB7);
+        let (t, h, p) = bme280_readings(&mut r, 0x76);
+        assert!((t - 21.0).abs() <= 0.01, "{t}");
+        assert!((h - 45.0).abs() <= 0.01, "{h}");
+        assert!((p - 1013.25).abs() <= 0.01, "{p}");
+        // Move the sliders.
+        r.control("env", "temperature", Dynamic::from(-12.5_f64))
+            .unwrap();
+        r.control("env", "humidity", Dynamic::from(80.0_f64))
+            .unwrap();
+        let e = r
+            .control("env", "pressure", Dynamic::from(950.0_f64))
+            .unwrap();
+        assert_eq!(
+            state(&e, "env"),
+            Some(json!({ "temperature": -12.5, "humidity": 80.0, "pressure": 950.0 }))
+        );
+        let (t, h, p) = bme280_readings(&mut r, 0x76);
+        assert!((t + 12.5).abs() <= 0.01, "{t}");
+        assert!((h - 80.0).abs() <= 0.01, "{h}");
+        assert!((p - 950.0).abs() <= 0.01, "{p}");
+        // Oversampling 0 skips a measurement: 0x80000, as the datasheet says.
+        write_reg(&mut r, 0x76, 0xF4, 0x03);
+        let d = read_regs(&mut r, 0x76, 0xF7, 6);
+        assert_eq!(d, [0x80, 0x00, 0x00, 0x80, 0x00, 0x00]);
+        // Nothing at 0x77, and a control it does not have is an error.
+        assert!(!r.has_i2c(0, 0x77));
+        let e = r.control("env", "light", Dynamic::from(1.0_f64)).unwrap();
+        assert!(e.iter().any(|x| matches!(x, Effect::Error { .. })));
+    }
+
     #[test]
     fn scripts_cannot_run_forever_or_reach_out() {
         let engine_check = |script: &str| {
