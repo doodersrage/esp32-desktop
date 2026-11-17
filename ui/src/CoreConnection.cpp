@@ -115,7 +115,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.18.0"_s},
+        {u"protocol"_s, u"0.19.0"_s},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -302,6 +302,19 @@ void CoreConnection::getProject(const QString &id)
             emit projectLoaded(r.result.toObject());
         else
             emit requestFailed(method, r.errorMessage);
+    });
+}
+
+void CoreConnection::openLink(const QString &url)
+{
+    const QString method = u"link.open"_s;
+    m_client->call(method, {{u"url"_s, url}}, this, [this, method](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(method, r.errorMessage);
+            return;
+        }
+        const QJsonObject o = r.result.toObject();
+        emit linkOpened(o.value(u"project"_s).toString(), o.value(u"board"_s).toString());
     });
 }
 

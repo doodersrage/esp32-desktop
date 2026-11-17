@@ -191,6 +191,11 @@ void ProjectView::showResult(const QJsonObject &result)
     // Replies can arrive after the user has moved on; show only the latest pick.
     if (!m_requestedId.isEmpty() && p.value(u"id"_s).toString() != m_requestedId)
         return;
+    // Showing the same project again keeps its board, unless a link asked for one.
+    const QString keepBoard = m_wantBoard.isEmpty() && m_project.value(u"id"_s) == p.value(u"id"_s)
+        ? m_board->currentData().toString()
+        : m_wantBoard;
+    m_wantBoard.clear();
     m_project = p;
     m_builds = p.value(u"builds"_s).toArray();
 
@@ -251,7 +256,9 @@ void ProjectView::showResult(const QJsonObject &result)
         m_board->addItem(names.value(id, id), id);
     }
     m_board->setEnabled(m_builds.size() > 1);
-    showBuild(0);
+    const int start = qMax(0, m_board->findData(keepBoard));
+    m_board->setCurrentIndex(start);
+    showBuild(start);
     updateBuildButton();
     m_stack->setCurrentIndex(1);
 }

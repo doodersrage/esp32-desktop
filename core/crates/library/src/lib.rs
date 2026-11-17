@@ -6,6 +6,8 @@
 //! UI lists. Reading is lenient: unknown fields are ignored, because a 1.x manifest
 //! may add optional fields.
 
+pub mod link;
+
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};

@@ -80,6 +80,12 @@ enum LibraryCmd {
         #[arg(long)]
         source: Option<String>,
     },
+    /// What an esp32bench:// link from the site opens: its project and board (as
+    /// `link.open`). Nothing is built.
+    Link {
+        /// e.g. esp32bench://project/blink?board=esp32
+        url: String,
+    },
     /// Show one project: summary, parts and, for one board, wiring and code.
     Show {
         /// Project id, as in `library list`.
@@ -617,6 +623,20 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 m.generated,
                 cache.path().display()
             );
+        }
+        Cmd::Library(LibraryCmd::Link { url }) => {
+            let link = esp32bench_library::link::parse(&url).map_err(anyhow::Error::msg)?;
+            let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+            let Some(m) = cache.load().await? else {
+                bail!("no project library cached yet; run `esp32bench library refresh`");
+            };
+            let Some(p) = m.project(&link.project) else {
+                bail!("no project `{}` in the library", link.project);
+            };
+            let board = link
+                .board
+                .filter(|b| p.builds.iter().any(|x| &x.board == b));
+            println!("{}  {}", p.id, board.as_deref().unwrap_or("(no board)"));
         }
         Cmd::Library(LibraryCmd::Show { id, board, json }) => {
             let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);

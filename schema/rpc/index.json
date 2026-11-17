@@ -1,5 +1,5 @@
 {
-  "protocol": "0.18.0",
+  "protocol": "0.19.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
     "board.erase",
@@ -21,6 +21,7 @@
     "library.get",
     "library.list",
     "library.refresh",
+    "link.open",
     "serial.open",
     "serial.reset",
     "serial.write",

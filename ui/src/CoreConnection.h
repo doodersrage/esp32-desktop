@@ -68,6 +68,8 @@ public:
     void refreshLibrary();
     // library.get: one project with its boards, through projectLoaded.
     void getProject(const QString &id);
+    // What an esp32bench:// link opens (link.open): answers with linkOpened.
+    void openLink(const QString &url);
 
     // build.start. Without a consent token the core refuses, and buildConsentRequired
     // carries the plan to show the user; call again with the token if they agree.
@@ -147,6 +149,8 @@ signals:
     void libraryRefreshed(bool ok, const QString &error);
     // The library.get result: {project, boards}.
     void projectLoaded(const QJsonObject &result);
+    // A link named this project, and this board if the project has a build for it.
+    void linkOpened(const QString &project, const QString &board);
     // Builds.
     void buildConsentRequired(const QString &project, const QString &board, const QString &token,
                               const QJsonObject &plan);

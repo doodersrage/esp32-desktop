@@ -14,6 +14,8 @@
 #include "MainWindow.h"
 
 #include <QDir>
+#include <QComboBox>
+#include <QStatusBar>
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QScopeGuard>
@@ -124,11 +126,24 @@ private slots:
         // No library cached yet, so the panel downloads it once by itself.
         QTRY_COMPARE_WITH_TIMEOUT(window.libraryPanel()->tree()->topLevelItemCount(), 2, 10000);
         QVERIFY(window.libraryPanel()->statusText().contains(u"Projects: 2"_s));
+        // An esp32bench:// link selects its project and board (link.open), and builds
+        // nothing: building would still ask first.
+        window.openLink(u"esp32bench://project/probeharbor-probe?board=esp32-doit"_s);
+        QTRY_COMPARE_WITH_TIMEOUT(window.projectView()->boardPicker()->currentData().toString(), u"esp32-doit"_s, 5000);
+        QVERIFY(window.projectView()->title().contains(u"ProbeHarbor"_s));
+        QCOMPARE(window.libraryPanel()->tree()->currentItem()->data(LibraryPanel::NameColumn, LibraryPanel::IdRole).toString(),
+                 u"probeharbor-probe"_s);
+        QCOMPARE(window.asked, 0);
+        QVERIFY(window.statusBar()->currentMessage().contains(u"will ask first"_s));
+        // A link that asks for more than a project is refused, and nothing changes.
+        window.openLink(u"esp32bench://project/blink?board=esp32&flash=1"_s);
+        QTRY_VERIFY(window.statusBar()->currentMessage().contains(u"Could not open the link"_s));
+        QCOMPARE(window.projectView()->boardPicker()->currentData().toString(), u"esp32-doit"_s);
+
         // Picking a project loads it through library.get.
         window.libraryPanel()->tree()->setCurrentItem(window.libraryPanel()->tree()->topLevelItem(0));
-        QTRY_VERIFY_WITH_TIMEOUT(!window.projectView()->title().isEmpty(), 5000);
-        QCOMPARE(window.projectView()->title(),
-                 window.libraryPanel()->tree()->topLevelItem(0)->text(LibraryPanel::NameColumn));
+        QTRY_COMPARE_WITH_TIMEOUT(window.projectView()->title(),
+                                  window.libraryPanel()->tree()->topLevelItem(0)->text(LibraryPanel::NameColumn), 5000);
 
         // Build it: the daemon asks for consent, the window agrees, the build runs.
         QPushButton *build = window.projectView()->buildButton();

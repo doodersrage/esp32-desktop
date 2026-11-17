@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.18.0";
+pub const PROTOCOL: &str = "0.19.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -137,6 +137,7 @@ impl State {
 pub fn router(state: Arc<State>) -> Router {
     let (s1, s2, s3, s4) = (state.clone(), state.clone(), state.clone(), state.clone());
     let (s5, s6, s7) = (state.clone(), state.clone(), state.clone());
+    let links = state.clone();
     let (s8, s9) = (state.clone(), state.clone());
     let (s10, s11, s12) = (state.clone(), state.clone(), state.clone());
     let (s13, s14, s15) = (state.clone(), state.clone(), state.clone());
@@ -242,6 +243,13 @@ pub fn router(state: Arc<State>) -> Router {
         .method("library.get", move |p, _| {
             let s = s3.clone();
             async move { library_get(p, s).await }
+        })
+        .method("link.open", {
+            let s = links;
+            move |p, _| {
+                let s = s.clone();
+                async move { link_open(p, s).await }
+            }
         })
         .method("library.refresh", move |p, ctx| {
             let s = s2.clone();
@@ -367,6 +375,41 @@ async fn library_get(params: Value, state: Arc<State>) -> Result<Value, RpcError
         .filter(|b| project.builds.iter().any(|x| x.board == b.id))
         .collect();
     Ok(json!({ "project": project, "boards": boards }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LinkParams {
+    url: String,
+}
+
+/// An `esp32bench://` link from the site: the project it names, if it is in the
+/// library, and the board when that project has a build for it. Nothing is built or
+/// flashed: the app selects the project, and building still asks for consent.
+async fn link_open(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: LinkParams = parse_params(params)?;
+    let link = esp32bench_library::link::parse(&p.url).map_err(RpcError::invalid_params)?;
+    let manifest = state
+        .library
+        .load()
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                "the project library has not been downloaded",
+            )
+        })?;
+    let project = manifest.project(&link.project).ok_or_else(|| {
+        RpcError::new(
+            code::NOT_FOUND,
+            format!("no project `{}` in the library", link.project),
+        )
+    })?;
+    let board = link
+        .board
+        .filter(|b| project.builds.iter().any(|x| &x.board == b));
+    Ok(json!({ "project": project.id, "board": board }))
 }
 
 fn library_refresh(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {

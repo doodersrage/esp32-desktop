@@ -1895,3 +1895,54 @@ fn write_script(path: &std::path::Path, content: impl AsRef<[u8]>) {
         .unwrap();
     assert!(child.wait().unwrap().success());
 }
+
+#[tokio::test]
+async fn link_open_names_a_library_project_and_nothing_more() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let open = |url: &str| json!({ "url": url });
+    // Before the library is downloaded, no project can be found.
+    match c
+        .call("link.open", open("esp32bench://project/blink"))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("expected not found, got {other:?}"),
+    }
+    c.call("library.refresh", json!({})).await.unwrap();
+    c.next_notification().await.unwrap();
+
+    let params = open("esp32bench://project/blink?board=esp32-doit");
+    assert_valid(
+        &method_def("link.open")["params"],
+        &params,
+        "link.open params",
+    );
+    let r = c.call("link.open", params).await.unwrap();
+    assert_valid(&method_def("link.open")["result"], &r, "link.open result");
+    assert_eq!(r, json!({ "project": "blink", "board": "esp32-doit" }));
+    // A board the project has no build for is dropped, not an error.
+    let r = c
+        .call(
+            "link.open",
+            open("esp32bench://project/blink?board=esp32c6"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r, json!({ "project": "blink", "board": null }));
+    match c.call("link.open", open("esp32bench://project/nope")).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("expected not found, got {other:?}"),
+    }
+    // Links are untrusted: anything but the plain form is refused.
+    for bad in [
+        "esp32bench://project/blink?board=esp32&flash=1",
+        "esp32bench://project/../blink",
+        "file:///etc/passwd",
+    ] {
+        match c.call("link.open", open(bad)).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS, "{bad}"),
+            other => panic!("{bad}: expected invalid params, got {other:?}"),
+        }
+    }
+}

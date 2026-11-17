@@ -27,6 +27,8 @@ public:
     void showLibrary(const QJsonObject &library);
     QTreeWidget *tree() const { return m_tree; }
     QLineEdit *filter() const { return m_filter; }
+    // Select a project by id (for links), now or once the list has arrived.
+    void selectProject(const QString &id);
     QString statusText() const;
 
 signals:
@@ -39,6 +41,7 @@ private:
     void updateEnabled();
 
     CoreConnection *m_core;
+    QString m_pendingSelect;
     QLineEdit *m_filter;
     QLabel *m_status;
     QToolButton *m_refresh;

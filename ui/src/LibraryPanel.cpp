@@ -179,6 +179,25 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
         : tr("unknown");
     setStatus(tr("Projects: %1. Downloaded %2.").arg(projects.size()).arg(when));
     applyFilter();
+    if (!m_pendingSelect.isEmpty())
+        selectProject(std::exchange(m_pendingSelect, {}));
+}
+
+void LibraryPanel::selectProject(const QString &id)
+{
+    for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *item = m_tree->topLevelItem(i);
+        if (item->data(NameColumn, IdRole).toString() != id)
+            continue;
+        if (item->isHidden()) {
+            m_filter->clear(); // a filter would hide what the link asked for
+            applyFilter();
+        }
+        m_tree->setCurrentItem(item);
+        m_tree->scrollToItem(item);
+        return;
+    }
+    m_pendingSelect = id;
 }
 
 void LibraryPanel::applyFilter()

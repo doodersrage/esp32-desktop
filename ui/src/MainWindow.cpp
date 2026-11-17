@@ -219,7 +219,24 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
 
     m_setup = new SetupDialog(core, this);
     // First run: if something builds need is missing, show the setup once.
+    connect(core, &CoreConnection::linkOpened, this, [this](const QString &project, const QString &board) {
+        m_project->preferBoard(board);
+        m_project->showProject(project);
+        m_library->selectProject(project);
+        raise();
+        activateWindow();
+        statusBar()->showMessage(
+            tr("Opened %1 from a link. Building or flashing it will ask first.").arg(project), 15000);
+    });
+    connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
+        if (method == u"link.open")
+            statusBar()->showMessage(tr("Could not open the link: %1").arg(message), 15000);
+    });
     connect(core, &CoreConnection::stateChanged, this, [this](CoreConnection::State s) {
+        if (s == CoreConnection::State::Connected) {
+            for (const QString &url : std::exchange(m_pendingLinks, {}))
+                m_core->openLink(url);
+        }
         if (s != CoreConnection::State::Connected)
             return;
         QSettings settings;
@@ -376,6 +393,19 @@ bool MainWindow::confirmBuild(const QString &project, const QString &board, cons
     box.setDefaultButton(QMessageBox::Cancel);
     box.exec();
     return box.clickedButton() == build;
+}
+
+void MainWindow::openLink(const QString &url)
+{
+    if (url.isEmpty()) {
+        raise();
+        activateWindow();
+        return;
+    }
+    if (m_core->state() == CoreConnection::State::Connected)
+        m_core->openLink(url);
+    else
+        m_pendingLinks << url;
 }
 
 void MainWindow::showSetup()

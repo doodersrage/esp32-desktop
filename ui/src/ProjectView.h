@@ -26,6 +26,8 @@ public:
 
     // Ask the core for a project; the view updates when the answer comes.
     void showProject(const QString &id);
+    // Show `board` when the project next arrives, if it has a build for it.
+    void preferBoard(const QString &board) { m_wantBoard = board; }
     // Render a library.get result. Public so tests can feed fixed data.
     void showResult(const QJsonObject &result);
 
@@ -50,6 +52,7 @@ private:
 
     CoreConnection *m_core;
     QString m_requestedId;
+    QString m_wantBoard;
     QJsonObject m_project;
     QJsonArray m_builds;
 

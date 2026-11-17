@@ -6,8 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Network Widgets Test)
+option(BUILD_TESTING "Build the UI tests" ON)
+
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Network Widgets)
+if(BUILD_TESTING)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
+endif()
 qt_standard_project_setup()
+include(GNUInstallDirs)
 
 # Everything except main() goes in a library so the tests can link it.
 add_library(esp32bench_ui STATIC
@@ -40,7 +46,17 @@ target_compile_options(esp32bench_ui PUBLIC -Wall -Wextra -Wpedantic)
 
 qt_add_executable(esp32bench-gui src/main.cpp)
 target_link_libraries(esp32bench-gui PRIVATE esp32bench_ui)
+# The app icon, for the window when the installed theme icon is not there (dev builds).
+qt_add_resources(esp32bench-gui "icon"
+    PREFIX "/"
+    BASE ../packaging/icons
+    FILES ../packaging/icons/esp32bench.svg
+)
+install(TARGETS esp32bench-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+if(NOT BUILD_TESTING)
+    return()
+endif()
 enable_testing()
 foreach(t tst_rpcclient tst_devicespanel tst_librarypanel tst_projectview tst_build tst_serialmonitor tst_setup tst_board tst_simulator tst_debugger tst_display tst_pins tst_circuit tst_integration)
     qt_add_executable(${t} tests/${t}.cpp)

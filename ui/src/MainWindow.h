@@ -40,6 +40,9 @@ public:
     PinsPanel *pins() const { return m_pins; }
     CircuitPanel *circuit() const { return m_circuit; }
     void showSetup();
+    // Open an esp32bench:// link: select the project (and board) it names. It is
+    // not built or flashed; that still asks first. Waits for the core if needed.
+    void openLink(const QString &url);
 
     // Ask the user whether to build a downloaded project. Returns true to build.
     // Virtual so tests can answer without a modal dialog.
@@ -54,6 +57,7 @@ protected:
 
 private:
     void buildMenus();
+    QStringList m_pendingLinks;
     void showConnectionState();
     void startCore();
     void restoreLayout();

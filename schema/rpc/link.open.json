@@ -1,0 +1,55 @@
+{
+  "method": "link.open",
+  "description": "What an esp32bench:// link from the site asks the app to open: esp32bench://project/<id>, optionally with ?board=<board>. Returns the project if it is in the cached library, and the board if that project has a build for it (else null). Nothing is built or flashed; building what a link opened still needs consent like anything else.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "url"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "url": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "The link, as the desktop environment passed it to the app."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "board"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
+      "board": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "url": "esp32bench://project/blink?board=esp32"
+      },
+      "result": {
+        "project": "blink",
+        "board": "esp32"
+      }
+    }
+  ]
+}
