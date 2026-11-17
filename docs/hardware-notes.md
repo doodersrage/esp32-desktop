@@ -39,6 +39,10 @@ The owner ran the app on KDE Plasma (Wayland, Breeze dark), with the core from a
 
 Seen while checking: there is no app icon yet (packaging). Fixed since: the core had to be started with the Start core button each time (the app now starts it once on launch if none is running); the Debugger opened as a tab over the Simulator console (it now sits beside it, and a saved layout with the tab is corrected when debugging starts), and the Devices table showed a horizontal scrollbar (the USB device column now stretches and elides).
 
+## Phase 4 check on Plasma (2026-11-17)
+
+The owner placed every built-in part from the Circuit dock without an error. rtc-clock with a DS3231 ran in the simulator, and its `set` command changed the clock. bme280-web cannot be checked through: it finds the BME280, then waits forever for Wi-Fi, and simulations have no network (rule 4). The library has no BME280 project that works without Wi-Fi, so the sensor's sliders are covered by the tests (`bme280_part_reads`, the integration test), not yet by a check in the app.
+
 ## Not yet tried on real hardware
 
 - `board erase`: needs the stub, which QEMU cannot run, and the session's permission policy blocked running it on the C3. Untested anywhere.
