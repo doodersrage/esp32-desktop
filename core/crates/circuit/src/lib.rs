@@ -21,7 +21,7 @@ mod runtime;
 pub use runtime::{Effect, I2cEvent, Runtime};
 
 /// The circuit format this program writes. It reads every 1.x.
-pub const SCHEMA_VERSION: &str = "1.1.0";
+pub const SCHEMA_VERSION: &str = "1.2.0";
 pub const MAX_PARTS: usize = 32;
 pub const MAX_GPIO: u8 = 48;
 const MAX_LABEL: usize = 40;
@@ -222,6 +222,10 @@ pub struct Part {
     pub active_low: Option<bool>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub label: String,
+    /// Where the part's sliders were left (circuit 1.2): applied when a simulation
+    /// starts, so a sensor keeps its readings between runs.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub controls: BTreeMap<String, f64>,
 }
 
 impl Part {
@@ -328,6 +332,19 @@ impl Circuit {
                             p.id
                         ));
                     }
+                }
+            }
+            for (name, &v) in &p.controls {
+                let Some(c) = m
+                    .controls
+                    .iter()
+                    .find(|c| &c.name == name && c.kind == ControlKind::Slider)
+                else {
+                    return invalid(format!("the {} model has no slider called {name}", m.name));
+                };
+                let (lo, hi) = (c.min.unwrap_or(f64::MIN), c.max.unwrap_or(f64::MAX));
+                if !v.is_finite() || v < lo || v > hi {
+                    return invalid(format!("`{}`: {name} must be from {lo} to {hi}", p.id));
                 }
             }
             match (&m.i2c, &p.i2c) {
@@ -531,6 +548,33 @@ mod tests {
         circuit(json!([{ "id": "b", "kind": "button", "pin": 4 }, { "id": "l", "kind": "led", "pin": 4 }]))
             .validate()
             .unwrap();
+    }
+
+    #[test]
+    fn controls_must_be_sliders_in_range() {
+        let with = |controls: serde_json::Value| -> Result<(), Error> {
+            let c: Circuit = serde_json::from_value(json!({ "schemaVersion": "1.2.0", "parts": [
+                { "id": "air", "kind": "bme280", "i2c": { "bus": 0, "address": 118 }, "controls": controls },
+                { "id": "go", "kind": "button", "pin": 4 }
+            ] }))
+            .unwrap();
+            c.validate()
+        };
+        with(json!({ "temperature": -12.25, "humidity": 100 })).unwrap();
+        let err = |v| with(v).unwrap_err().to_string();
+        assert!(err(json!({ "wind": 3 })).contains("no slider called wind"));
+        assert!(err(json!({ "temperature": 200 })).contains("from -40 to 85"));
+        // A button's press is momentary, not a slider: not something to remember.
+        let c: Circuit = serde_json::from_value(json!({ "schemaVersion": "1.2.0", "parts": [
+            { "id": "go", "kind": "button", "pin": 4, "controls": { "press": 1 } }
+        ] }))
+        .unwrap();
+        assert!(
+            c.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("no slider called press")
+        );
     }
 
     #[test]

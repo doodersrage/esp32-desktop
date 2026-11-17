@@ -11,7 +11,7 @@ A part model is a data file plus a small script, so a new part needs no change t
 
 The models that ship with the app are built into the program (`core/crates/circuit/models/`): `led`, `button`, `switch`, `rgb-led`, `ssd1306` (128 × 64 OLED on I2C), `bme280` (temperature, humidity and pressure on I2C, set with sliders), `mpu6050` (accelerometer and gyroscope on I2C: pitch, roll and temperature set with sliders; the gyroscope reads a sensor held still) and `ds3231` (real-time clock on I2C, with alarms on an optional SQW/INT pin; it starts at the computer's time in UTC, as a module whose battery kept it running). `esp32bench circuit models` lists them, and `circuit.models` serves them to the app. Loading models from elsewhere would need the consent rules that apply to downloaded projects, so it is not offered.
 
-A circuit (`schema/circuit/`) places parts: each refers to a model, connects its pins to GPIOs (or sits on an I2C bus at an address), and sets its properties.
+A circuit (`schema/circuit/`) places parts: each refers to a model, connects its pins to GPIOs (or sits on an I2C bus at an address), and sets its properties. Since circuit 1.2 it also keeps where the part's sliders were left (`controls`): a sensor starts the next run with the readings it had. Moving a slider during a run updates the saved circuit (the core does this on `sim.control`); while stopped, the Circuit dock's controls and `esp32bench circuit control` set it directly.
 
 ## Where parts run
 

@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.16.0";
+pub const PROTOCOL: &str = "0.17.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -739,6 +739,12 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             Some(serde_json::to_string(&circuit).map_err(|e| RpcError::internal(e.to_string()))?);
     }
     let bridged_pins = pins.clone();
+    // Where to remember slider values moved during the run.
+    let circuit_at = (
+        state.circuits_root.clone(),
+        p.project.clone(),
+        p.board.clone(),
+    );
     config.gdb_port = gdb_port;
     // Debugging starts paused at the first instruction, for breakpoints in setup.
     config.start_paused = p.debug;
@@ -917,6 +923,13 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                                 Some(link) => link.control(&id, &name, &value).await.map_err(|e| e.to_string()),
                                 None => Err("this simulation runs no parts".into()),
                             };
+                            if let (Ok(()), Some(v)) = (&r, value.as_f64()) {
+                                let (root, project, board) = circuit_at.clone();
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    remember_control(&root, &project, &board, &id, &name, v)
+                                })
+                                .await;
+                            }
                             let _ = done.send(r);
                         }
                         Some(SimCmd::Reset(done)) => {
@@ -1099,6 +1112,21 @@ fn circuit_models() -> Result<Value, RpcError> {
         .map(|m| m.model)
         .collect();
     Ok(json!({ "models": models }))
+}
+
+/// Keep a slider's value in the saved circuit (circuit 1.2 `controls`), so the part
+/// starts there next run. Only for a part that is still placed and a value its model
+/// accepts; anything else (the circuit changed meanwhile) is left alone.
+fn remember_control(root: &Path, project: &str, board: &str, part: &str, control: &str, v: f64) {
+    let Ok(mut c) = esp32bench_circuit::load(root, project, board) else {
+        return;
+    };
+    let Some(p) = c.parts.iter_mut().find(|p| p.id == part) else {
+        return;
+    };
+    p.controls.insert(control.to_owned(), v);
+    // A value the model refuses is not saved; the run itself already has it.
+    let _ = esp32bench_circuit::save(root, project, board, &c);
 }
 
 async fn circuit_get(params: Value, state: Arc<State>) -> Result<Value, RpcError> {

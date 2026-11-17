@@ -2,7 +2,7 @@
 
 A native Linux desktop workbench and simulator for ESP32 boards, built for KDE Plasma on Arch Linux. It is the desktop companion to [esp32bench.dev](https://esp32bench.dev/).
 
-**Status:** phases 1 to 3 are feature complete and awaiting checks on Plasma and more hardware: the app browses and builds the esp32bench.dev library, monitors, inspects and flashes real boards, and runs builds in lcgamboa's QEMU with a console, GDB debugging and the virtual display. Phase 4 (virtual parts) is next.
+**Status:** phases 1 and 3 are done and phase 2 is feature complete (board erase and UART-bridge boards are still untried): the app browses and builds the esp32bench.dev library, monitors, inspects and flashes real boards, and runs builds in lcgamboa's QEMU with a console, GDB debugging and the virtual display. Phase 4 (virtual parts) has its parts in place (LEDs, buttons, switches, an RGB LED, an SSD1306 OLED, BME280, MPU-6050 and DS3231 on ESP32 and C3) and awaits a check on Plasma; packaging (phase 5) is next.
 
 ## What it will do
 

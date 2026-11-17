@@ -107,6 +107,16 @@
                 "props": {
                   "type": "object",
                   "description": "Values for the model's properties."
+                },
+                "controls": {
+                  "type": "object",
+                  "description": "Where the part's sliders were left (1.2), by control name; applied when a simulation starts. Each must be a slider of the part's model, within its range.",
+                  "additionalProperties": {
+                    "type": "number"
+                  },
+                  "propertyNames": {
+                    "pattern": "^[a-zA-Z0-9_-]{1,32}$"
+                  }
                 }
               }
             }

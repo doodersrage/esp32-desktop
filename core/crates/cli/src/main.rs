@@ -296,6 +296,15 @@ enum CircuitCmd {
         #[arg(long, default_value = "")]
         label: String,
     },
+    /// Set where a part's slider starts next run (a sensor's reading), e.g.
+    /// `circuit control blink esp32 air temperature 30.5`.
+    Control {
+        project: String,
+        board: String,
+        id: String,
+        control: String,
+        value: f64,
+    },
     /// Remove a part.
     Remove {
         project: String,
@@ -364,10 +373,13 @@ fn circuit_command(cmd: CircuitCmd) -> Result<()> {
                     .iter()
                     .map(|(n, g)| format!("{n}=GPIO {g}"))
                     .collect();
-                let at = match &p.i2c {
+                let mut at = match &p.i2c {
                     Some(i) => format!(" I2C {}:{:#04x}", i.bus, i.address),
                     None => String::new(),
                 };
+                for (n, v) in &p.controls {
+                    at.push_str(&format!(" {n}={v}"));
+                }
                 println!(
                     "{:<16} {:<10} {}{at} {} {}",
                     p.id,
@@ -399,6 +411,7 @@ fn circuit_command(cmd: CircuitCmd) -> Result<()> {
                 props: Default::default(),
                 active_low: None,
                 label,
+                controls: Default::default(),
             };
             for p in &pins {
                 let (k, v) = key_value(p)?;
@@ -424,6 +437,23 @@ fn circuit_command(cmd: CircuitCmd) -> Result<()> {
             }
             let mut c = esp32bench_circuit::load(&root, &project, &board)?;
             c.parts.push(part);
+            esp32bench_circuit::save(&root, &project, &board, &c)?;
+        }
+        CircuitCmd::Control {
+            project,
+            board,
+            id,
+            control,
+            value,
+        } => {
+            ids(&project, &board)?;
+            let mut c = esp32bench_circuit::load(&root, &project, &board)?;
+            let part = c
+                .parts
+                .iter_mut()
+                .find(|p| p.id == id)
+                .with_context(|| format!("no part `{id}` on {project} / {board}"))?;
+            part.controls.insert(control, value);
             esp32bench_circuit::save(&root, &project, &board, &c)?;
         }
         CircuitCmd::Remove { project, board, id } => {

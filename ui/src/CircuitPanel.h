@@ -67,6 +67,7 @@ private:
     QString freeId(const QString &kind) const;
     void updateStatus();
     void rebuildControls();
+    void saveControl(const QString &id, const QString &name, double value);
 
     CoreConnection *m_core;
     QLabel *m_status;

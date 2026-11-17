@@ -72,7 +72,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.16.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.17.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -171,7 +171,7 @@ private slots:
         QCOMPARE(b.value(u"pins"_s).toObject().value(u"pin"_s).toInt(), 4);
         QCOMPARE(b.value(u"props"_s).toObject().value(u"activeLow"_s).toBool(), true);
         QCOMPARE(b.value(u"label"_s).toString(), u"Go"_s);
-        QCOMPARE(fake.saved.value(u"schemaVersion"_s).toString(), u"1.1.0"_s);
+        QCOMPARE(fake.saved.value(u"schemaVersion"_s).toString(), u"1.2.0"_s);
         panel.addPart(u"rgb-led"_s, QJsonObject{{u"red"_s, 25}, {u"green"_s, 26}, {u"blue"_s, 27}}, {}, {});
         QTRY_COMPARE(panel.parts().size(), 3);
         QCOMPARE(partsOf(fake.saved, 2).value(u"id"_s).toString(), u"rgb-led-1"_s);
@@ -197,6 +197,21 @@ private slots:
         QTRY_VERIFY(panel.statusText().contains(u"would drive"_s));
         QCOMPARE(panel.parts().size(), 6);
 
+        // Stopped, a sensor's controls set where the next run starts: saved in the
+        // circuit, shown on the part, and the part stays selected.
+        panel.selectPart(u"bme280-1"_s, true);
+        QDoubleSpinBox *start = panel.controlBox(u"temperature"_s);
+        QVERIFY(start);
+        QVERIFY(start->isEnabled());
+        QCOMPARE(start->value(), 21.0);
+        start->setValue(25.5);
+        QTRY_COMPARE(partsOf(fake.saved, 5).value(u"controls"_s).toObject().value(u"temperature"_s).toDouble(), 25.5);
+        QTRY_COMPARE(panel.partState(u"bme280-1"_s).value(u"temperature"_s).toDouble(), 25.5);
+        QTRY_VERIFY(panel.controlBox(u"temperature"_s));
+        QCOMPARE(panel.controlBox(u"temperature"_s)->value(), 25.5);
+        QVERIFY(fake.controls.isEmpty());
+        panel.selectPart(u"bme280-1"_s, false);
+
         // Running: parts show the state the core reports.
         core.startSim(u"blink"_s, u"esp32"_s);
         QTRY_VERIFY(core.simPartsActive());
@@ -220,7 +235,7 @@ private slots:
         QDoubleSpinBox *temp = panel.controlBox(u"temperature"_s);
         QVERIFY(temp);
         QVERIFY(temp->isEnabled());
-        QCOMPARE(temp->value(), 21.0);
+        QCOMPARE(temp->value(), 25.5); // where it was left
         QCOMPARE(temp->maximum(), 85.0);
         temp->setValue(30.5);
         QTRY_VERIFY(!fake.controls.isEmpty());

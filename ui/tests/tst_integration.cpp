@@ -260,6 +260,8 @@ private slots:
                 circuit->selectPart(u"bme280-1"_s, false);
                 core.stopSim();
                 QTRY_VERIFY(!core.isSimRunning());
+                // The core kept where the slider was left; the next run starts there.
+                QTRY_COMPARE(circuit->partState(u"bme280-1"_s).value(u"temperature"_s).toDouble(), 30.5);
             } else {
                 qWarning("lcgamboa's QEMU or the bme280 firmware missing; sensor step skipped");
             }

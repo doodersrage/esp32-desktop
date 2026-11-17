@@ -79,6 +79,14 @@ public:
             update();
         }
     }
+    // Where the part's sliders were left (the circuit's `controls`): its state
+    // before and between runs.
+    void setSaved(const QJsonObject &controls)
+    {
+        for (auto it = controls.begin(); it != controls.end(); ++it)
+            m_initial.insert(it.key(), it.value());
+        setState(m_initial);
+    }
     void reset()
     {
         setState(m_initial);
@@ -308,6 +316,9 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
         resetStates();
         updateStatus();
         rebuildControls();
+        // The core kept the sliders moved during the run: show where they were left.
+        if (!m_project.isEmpty())
+            m_core->loadCircuit(m_project, m_board);
     });
     connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
         if (method.startsWith(u"circuit."))
@@ -443,6 +454,12 @@ static QHash<QString, int> connections(const QJsonObject &part, const QJsonObjec
 
 void CircuitPanel::rebuildScene()
 {
+    // Keep the selection across a rebuild (saving a control reloads the circuit).
+    QStringList selected;
+    for (QGraphicsItem *i : m_scene->selectedItems()) {
+        if (auto *p = dynamic_cast<PartItem *>(i))
+            selected << p->id();
+    }
     m_scene->clear();
     m_items.clear();
     if (m_project.isEmpty())
@@ -528,7 +545,33 @@ void CircuitPanel::rebuildScene()
         item->setToolTip(where.join(u", "_s));
         m_items.insert(id, item);
     }
+    for (const QJsonValue &v : parts()) {
+        const QJsonObject o = v.toObject();
+        if (PartItem *i = m_items.value(o.value(u"id"_s).toString()))
+            i->setSaved(o.value(u"controls"_s).toObject());
+    }
     m_scene->setSceneRect(m_scene->itemsBoundingRect().adjusted(-10, -10, 10, 10));
+    for (const QString &id : std::as_const(selected))
+        selectPart(id, true);
+}
+
+// Stopped: keep a slider's value in the circuit, where the next run starts.
+void CircuitPanel::saveControl(const QString &id, const QString &name, double value)
+{
+    QJsonArray list = parts();
+    for (qsizetype n = 0; n < list.size(); ++n) {
+        QJsonObject part = list.at(n).toObject();
+        if (part.value(u"id"_s).toString() != id)
+            continue;
+        QJsonObject controls = part.value(u"controls"_s).toObject();
+        controls.insert(name, value);
+        part.insert(u"controls"_s, controls);
+        list.replace(n, part);
+    }
+    QJsonObject c = m_circuit;
+    c.insert(u"schemaVersion"_s, u"1.2.0"_s);
+    c.insert(u"parts"_s, list);
+    m_core->saveCircuit(m_project, m_board, c);
 }
 
 QString CircuitPanel::freeId(const QString &kind) const
@@ -558,7 +601,7 @@ void CircuitPanel::addPart(const QString &kind, const QJsonObject &pins, const Q
     QJsonArray list = parts();
     list.append(part);
     QJsonObject c = m_circuit;
-    c.insert(u"schemaVersion"_s, u"1.1.0"_s);
+    c.insert(u"schemaVersion"_s, u"1.2.0"_s);
     c.insert(u"parts"_s, list);
     m_core->saveCircuit(m_project, m_board, c);
 }
@@ -578,7 +621,7 @@ void CircuitPanel::removePart(const QString &id)
             list.append(v);
     }
     QJsonObject c = m_circuit;
-    c.insert(u"schemaVersion"_s, u"1.1.0"_s);
+    c.insert(u"schemaVersion"_s, u"1.2.0"_s);
     c.insert(u"parts"_s, list);
     m_core->saveCircuit(m_project, m_board, c);
 }
@@ -693,9 +736,14 @@ void CircuitPanel::rebuildControls()
     m_controls->setVisible(!sliders.isEmpty());
     if (sliders.isEmpty())
         return;
+    // Running its parts: changes go to the simulation (and the core keeps them).
+    // Stopped: they are saved, and the next run starts there. Running on a
+    // simulator without parts: nothing to change.
     const bool live = m_core->simPartsActive();
-    m_controls->setTitle(live ? tr("Controls for %1").arg(part->id())
-                              : tr("Controls for %1 (run the simulator to change them)").arg(part->id()));
+    const bool editable = live || !m_core->isSimRunning();
+    m_controls->setTitle(live       ? tr("Controls for %1").arg(part->id())
+                         : editable ? tr("Controls for %1 (where the next run starts)").arg(part->id())
+                                    : tr("Controls for %1 (this simulator does not run parts)").arg(part->id()));
     auto *form = new QFormLayout(m_controls);
     const QString id = part->id();
     for (const QJsonObject &c : sliders) {
@@ -706,10 +754,13 @@ void CircuitPanel::rebuildControls()
         box->setDecimals(2);
         box->setSuffix(u" "_s + c.value(u"unit"_s).toString());
         box->setValue(part->state().value(name).toDouble(c.value(u"default"_s).toDouble()));
-        box->setEnabled(live);
+        box->setEnabled(editable);
         box->setKeyboardTracking(false); // one change per finished edit, not per key
         connect(box, &QDoubleSpinBox::valueChanged, this, [this, id, name](double v) {
-            m_core->controlPart(id, name, v);
+            if (m_core->simPartsActive())
+                m_core->controlPart(id, name, v);
+            else if (!m_core->isSimRunning())
+                saveControl(id, name, v);
         });
         form->addRow(c.value(u"label"_s).toString(), box);
     }

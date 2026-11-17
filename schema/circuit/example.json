@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "parts": [
     {
       "id": "status-led",
@@ -29,6 +29,18 @@
       "id": "mode",
       "kind": "switch",
       "pin": 4
+    },
+    {
+      "id": "air",
+      "kind": "bme280",
+      "i2c": {
+        "bus": 0,
+        "address": 118
+      },
+      "controls": {
+        "temperature": 30.5,
+        "humidity": 60
+      }
     }
   ]
 }

@@ -1704,7 +1704,8 @@ async fn sim_runs_the_boards_parts() {
         json!({ "project": "blink", "board": "esp32", "circuit": {
         "schemaVersion": "1.0.0", "parts": [
             { "id": "led", "kind": "led", "pin": 2 },
-            { "id": "go", "kind": "button", "pin": 4 }
+            { "id": "go", "kind": "button", "pin": 4 },
+            { "id": "air", "kind": "bme280", "i2c": { "bus": 0, "address": 118 } }
         ] } }),
     )
     .await
@@ -1791,6 +1792,35 @@ async fn sim_runs_the_boards_parts() {
             break;
         }
     }
+    // A slider moved during the run is remembered in the saved circuit (1.2
+    // `controls`), so the sensor starts there next run; a button press is not.
+    c.call(
+        "sim.control",
+        json!({ "subscription": sub, "part": "air", "control": "temperature", "value": 30.5 }),
+    )
+    .await
+    .unwrap();
+    let r = c
+        .call(
+            "circuit.get",
+            json!({ "project": "blink", "board": "esp32" }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("circuit.get")["result"],
+        &r,
+        "circuit.get result",
+    );
+    let parts = r["circuit"]["parts"].as_array().unwrap();
+    let air = parts.iter().find(|p| p["id"] == "air").unwrap();
+    assert_eq!(air["controls"], json!({ "temperature": 30.5 }));
+    assert!(
+        parts
+            .iter()
+            .all(|p| p["id"] == "air" || p.get("controls").is_none())
+    );
+    assert_eq!(r["circuit"]["schemaVersion"], "1.2.0");
     // Values are booleans or numbers, nothing else.
     match c
         .call(

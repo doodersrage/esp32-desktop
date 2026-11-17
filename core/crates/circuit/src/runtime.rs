@@ -82,6 +82,8 @@ struct Instance {
     i2c: Option<(u8, u8)>,
     display: Option<(u32, u32)>,
     last_state: serde_json::Value,
+    /// Saved slider values, applied after `init`.
+    controls: Vec<(String, f64)>,
 }
 
 /// What hook calls write to: the part being called, and the effects so far.
@@ -198,6 +200,7 @@ impl Runtime {
                 i2c: p.i2c.as_ref().map(|i| (i.bus, i.address)),
                 display: src.model.display.as_ref().map(|d| (d.width, d.height)),
                 last_state: state_json,
+                controls: p.controls.iter().map(|(k, v)| (k.clone(), *v)).collect(),
             });
         }
         Ok(Runtime {
@@ -304,6 +307,10 @@ impl Runtime {
     pub fn init(&mut self) -> Vec<Effect> {
         for i in 0..self.parts.len() {
             self.call(i, "init", ());
+            // Then where its sliders were left, as if a person had set them.
+            for (name, v) in self.parts[i].controls.clone() {
+                self.call(i, "control", (name, Dynamic::from(v)));
+            }
         }
         self.take()
     }
@@ -782,6 +789,25 @@ mod tests {
             { "id": "rtc", "kind": "ds3231", "i2c": { "bus": 0, "address": 104 } }
         ]));
         assert!(r.init().iter().all(|e| !matches!(e, Effect::Error { .. })));
+    }
+
+    #[test]
+    fn saved_slider_values_apply_at_start() {
+        let mut r = runtime(json!([
+            { "id": "air", "kind": "bme280", "i2c": { "bus": 0, "address": 118 },
+              "controls": { "temperature": 30.5, "pressure": 990.0 } }
+        ]));
+        let fx = r.init();
+        let s = state(&fx, "air").unwrap();
+        assert_eq!(s["temperature"], 30.5);
+        assert_eq!(s["pressure"], 990.0);
+        assert_eq!(s["humidity"], 45.0, "unsaved controls keep their defaults");
+        // As firmware sees it, after Adafruit's begin() (see the test above).
+        write_reg(&mut r, 0x76, 0xF2, 0x05);
+        write_reg(&mut r, 0x76, 0xF4, 0xB7);
+        let (t, _, p) = bme280_readings(&mut r, 0x76);
+        assert!((t - 30.5).abs() <= 0.01, "{t}");
+        assert!((p - 990.0).abs() <= 0.01, "{p}");
     }
 
     #[test]

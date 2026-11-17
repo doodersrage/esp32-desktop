@@ -63,7 +63,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.16.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.17.0"_s}});
             return;
         }
         if (m == u"device.list" || m == u"device.watch") {
