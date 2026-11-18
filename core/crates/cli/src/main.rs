@@ -47,10 +47,15 @@ enum Cmd {
     /// The esp32bench.dev project library.
     #[command(subcommand)]
     Library(LibraryCmd),
-    /// Build a library project with arduino-cli. Shows what will run and stops,
+    /// Your own ESP-IDF projects: folders opened here build with idf.py, and their ids
+    /// work wherever a library project's does (build, the app's simulator, flashing).
+    #[command(subcommand)]
+    Local(LocalCmd),
+    /// Build a library project with arduino-cli, or a local ESP-IDF project (`local
+    /// open`) with idf.py. For a library project it shows what will run and stops,
     /// unless --yes says you agree: library projects are downloaded code.
     Build {
-        /// Project id, as in `library list`.
+        /// Project id, as in `library list` or `local list`.
         project: String,
         /// Board id, as in `library show`.
         #[arg(long)]
@@ -70,6 +75,16 @@ enum Cmd {
         #[arg(long)]
         socket: Option<PathBuf>,
     },
+}
+
+#[derive(Subcommand)]
+enum LocalCmd {
+    /// Open an ESP-IDF project folder and print its id. Nothing is written to it.
+    Open { path: PathBuf },
+    /// The projects opened so far, and the ESP-IDF install builds use.
+    List,
+    /// Forget a project. Its folder is left as it is.
+    Remove { id: String },
 }
 
 #[derive(Subcommand)]
@@ -727,6 +742,61 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                     m.generated
                 );
             }
+        }
+        Cmd::Local(cmd) => {
+            let registry = esp32bench_build::idf::Registry::new(
+                esp32bench_sim::install::data_dir()?.join("local-projects.json"),
+            );
+            match cmd {
+                LocalCmd::Open { path } => {
+                    let p = registry.add(&path)?;
+                    println!("{}  {}  {}", p.id, p.name, p.path.display());
+                }
+                LocalCmd::List => {
+                    for p in registry.list() {
+                        println!("{}  {}  {}", p.id, p.name, p.path.display());
+                    }
+                    match esp32bench_build::idf::detect() {
+                        Some(i) => eprintln!("ESP-IDF {} at {}", i.version, i.path.display()),
+                        None => eprintln!("{}", esp32bench_build::Error::NoIdf),
+                    }
+                }
+                LocalCmd::Remove { id } => {
+                    if !registry.remove(&id)? {
+                        bail!("no local project `{id}`");
+                    }
+                }
+            }
+        }
+        Cmd::Build { project, board, .. } if esp32bench_build::idf::is_local(&project) => {
+            // The user's own folder: no consent step (rule 4 is for downloaded code).
+            use esp32bench_build::idf;
+            let registry = idf::Registry::new(
+                esp32bench_sim::install::data_dir()?.join("local-projects.json"),
+            );
+            let lp = registry
+                .get(&project)
+                .ok_or_else(|| esp32bench_build::Error::NoLocalProject(project.clone()))?;
+            let install = idf::detect().ok_or(esp32bench_build::Error::NoIdf)?;
+            let plan = idf::plan(&lp, &board, &install)?;
+            eprintln!(
+                "Build {} ({}) for {} with ESP-IDF {}",
+                lp.name,
+                lp.path.display(),
+                plan.target,
+                install.version
+            );
+            let dirs = idf::Dirs::new(&esp32bench_library::cache_dir()?.join("builds"), &plan);
+            let out = idf::run(&plan, &dirs, |stream, line| match stream {
+                esp32bench_build::Stream::Stdout => println!("{line}"),
+                esp32bench_build::Stream::Stderr => eprintln!("{line}"),
+            })
+            .await?;
+            eprintln!(
+                "\nimage {}\nelf   {}",
+                out.image.display(),
+                out.elf.display()
+            );
         }
         Cmd::Build {
             project,

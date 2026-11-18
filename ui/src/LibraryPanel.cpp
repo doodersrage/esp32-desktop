@@ -4,6 +4,8 @@
 #include "Labels.h"
 
 #include <QDateTime>
+#include <QFileDialog>
+#include <QMenu>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
@@ -40,6 +42,7 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     , m_filter(new QLineEdit(this))
     , m_status(new QLabel(this))
     , m_refresh(new QToolButton(this))
+    , m_open(new QToolButton(this))
     , m_tree(new QTreeWidget(this))
 {
     m_filter->setPlaceholderText(tr("Filter projects"));
@@ -55,6 +58,12 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
         m_refresh->setEnabled(false);
         m_core->refreshLibrary();
     });
+
+    m_open->setIcon(QIcon::fromTheme(u"document-open-folder"_s));
+    m_open->setText(tr("Open ESP-IDF project…"));
+    m_open->setToolTip(tr("Add one of your own ESP-IDF project folders, to build with ESP-IDF, flash and simulate"));
+    m_open->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    connect(m_open, &QToolButton::clicked, this, &LibraryPanel::openFolder);
 
     m_status->setWordWrap(true);
 
@@ -72,16 +81,34 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
         if (item)
             emit projectSelected(item->data(NameColumn, IdRole).toString());
     });
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tree, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QTreeWidgetItem *item = m_tree->itemAt(pos);
+        if (!item || !item->data(NameColumn, LocalRole).toBool())
+            return;
+        const QString id = item->data(NameColumn, IdRole).toString();
+        QMenu menu(this);
+        menu.addAction(QIcon::fromTheme(u"list-remove"_s), tr("Forget this project"), this,
+                       [this, id] { m_core->removeLocal(id); });
+        menu.exec(m_tree->viewport()->mapToGlobal(pos));
+    });
 
     auto *top = new QHBoxLayout;
     top->addWidget(m_filter, 1);
     top->addWidget(m_refresh);
+    top->addWidget(m_open);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     layout->addWidget(m_status);
     layout->addWidget(m_tree, 1);
 
     connect(m_core, &CoreConnection::libraryListed, this, &LibraryPanel::showLibrary);
+    connect(m_core, &CoreConnection::localListed, this,
+            [this](const QJsonArray &projects, const QJsonObject &) { showLocal(projects); });
+    connect(m_core, &CoreConnection::localOpened, this, [this](const QJsonObject &project) {
+        m_pendingSelect = project.value(u"id"_s).toString();
+        m_core->listLocal();
+    });
     connect(m_core, &CoreConnection::libraryRefreshed, this, [this](bool ok, const QString &error) {
         m_refresh->setEnabled(m_core->state() == CoreConnection::State::Connected);
         if (!ok)
@@ -91,11 +118,15 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
             [this](const QString &method, const QString &message) {
                 if (method == u"library.list")
                     setStatus(tr("Could not read the project library: %1").arg(message));
+                else if (method == u"local.open")
+                    setStatus(tr("Could not open that folder: %1").arg(message));
             });
     connect(m_core, &CoreConnection::stateChanged, this, [this](CoreConnection::State s) {
         updateEnabled();
-        if (s == CoreConnection::State::Connected)
+        if (s == CoreConnection::State::Connected) {
             m_core->listLibrary();
+            m_core->listLocal();
+        }
     });
     updateEnabled();
 }
@@ -114,6 +145,7 @@ void LibraryPanel::updateEnabled()
 {
     const bool up = m_core->state() == CoreConnection::State::Connected;
     m_refresh->setEnabled(up);
+    m_open->setEnabled(up);
     // Keep showing a library already on screen; only the button depends on the core.
     if (!up && m_tree->topLevelItemCount() == 0)
         setStatus(tr("Not connected to the core."));
@@ -123,6 +155,7 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
 {
     if (!library.value(u"available"_s).toBool()) {
         m_tree->clear();
+        addLocalItems();
         setStatus(tr("The project library has not been downloaded yet."));
         // Fetch it once by ourselves; after that only when the user asks.
         if (!m_autoRefreshed && m_core->state() == CoreConnection::State::Connected) {
@@ -171,6 +204,7 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
         words << chips;
         item->setData(NameColumn, Qt::UserRole, words.join(u' ').toLower());
     }
+    addLocalItems();
     m_tree->setSortingEnabled(true);
 
     const qint64 fetched = library.value(u"fetchedAt"_s).toInteger();
@@ -181,6 +215,62 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
     applyFilter();
     if (!m_pendingSelect.isEmpty())
         selectProject(std::exchange(m_pendingSelect, {}));
+}
+
+void LibraryPanel::openFolder()
+{
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Open an ESP-IDF project folder"));
+    if (!dir.isEmpty())
+        m_core->openLocal(dir); // the core checks it is an ESP-IDF project
+}
+
+void LibraryPanel::showLocal(const QJsonArray &projects)
+{
+    m_local = projects;
+    const QString current = m_tree->currentItem() ? m_tree->currentItem()->data(NameColumn, IdRole).toString()
+                                                   : QString();
+    m_tree->setSortingEnabled(false);
+    for (int i = m_tree->topLevelItemCount() - 1; i >= 0; --i) {
+        if (m_tree->topLevelItem(i)->data(NameColumn, LocalRole).toBool())
+            delete m_tree->takeTopLevelItem(i);
+    }
+    addLocalItems();
+    m_tree->setSortingEnabled(true);
+    applyFilter();
+    if (!m_pendingSelect.isEmpty())
+        selectProject(std::exchange(m_pendingSelect, {}));
+    else if (!current.isEmpty() && current.startsWith(u"local-")) {
+        // The one shown was forgotten: nothing is selected now.
+        bool still = false;
+        for (const QJsonValue &v : projects)
+            still = still || v.toObject().value(u"id"_s).toString() == current;
+        if (!still)
+            m_tree->setCurrentItem(nullptr);
+    }
+}
+
+// The local projects at the top, before the library's.
+void LibraryPanel::addLocalItems()
+{
+    int at = 0;
+    for (const QJsonValue &v : m_local) {
+        const QJsonObject p = v.toObject();
+        auto *item = new ProjectItem;
+        item->setText(NameColumn, p.value(u"name"_s).toString());
+        item->setToolTip(NameColumn, p.value(u"path"_s).toString());
+        item->setData(NameColumn, IdRole, p.value(u"id"_s).toString());
+        item->setData(NameColumn, LocalRole, true);
+        item->setText(ChipsColumn, QStringList{Labels::chipName(u"esp32"_s), Labels::chipName(u"esp32s3"_s),
+                                               Labels::chipName(u"esp32c3"_s)}
+                                       .join(u", "_s));
+        item->setText(FirmwareColumn, tr("ESP-IDF (your folder)"));
+        item->setToolTip(FirmwareColumn, tr("Your own ESP-IDF project, built with idf.py. Right-click to forget it."));
+        item->setData(NameColumn, Qt::UserRole,
+                      QStringList{p.value(u"name"_s).toString(), p.value(u"path"_s).toString(), u"esp-idf"_s}
+                          .join(u' ')
+                          .toLower());
+        m_tree->insertTopLevelItem(at++, item);
+    }
 }
 
 void LibraryPanel::selectProject(const QString &id)

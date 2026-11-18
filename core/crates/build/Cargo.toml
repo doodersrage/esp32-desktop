@@ -10,10 +10,10 @@ publish.workspace = true
 esp32bench-library = { path = "../library" }
 libc.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 tempfile.workspace = true

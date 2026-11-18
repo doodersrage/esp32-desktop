@@ -1,0 +1,145 @@
+{
+  "method": "local.get",
+  "description": "One local project: the boards it builds for (the simulated chips, named as the library names their boards), the ESP-IDF install, and whether its folder is still there.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "id"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "boards",
+      "idf",
+      "exists"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "path"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^local-[0-9a-f]{12}$",
+            "description": "local- and a hash of the folder's path; used as a project id by build.start, sim.start, board.flash and circuit.*."
+          },
+          "name": {
+            "type": "string",
+            "description": "From project(<name>) in the project's CMakeLists.txt."
+          },
+          "path": {
+            "type": "string",
+            "description": "The project folder (canonical)."
+          }
+        }
+      },
+      "boards": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "chip"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "chip": {
+              "enum": [
+                "esp32",
+                "esp32s3",
+                "esp32c3"
+              ]
+            }
+          }
+        }
+      },
+      "idf": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "required": [
+          "path",
+          "version"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          }
+        },
+        "description": "The ESP-IDF install local builds use: $IDF_PATH, ~/esp/esp-idf or /opt/esp-idf. Null when there is none."
+      },
+      "exists": {
+        "type": "boolean",
+        "description": "Whether the folder still holds the project."
+      }
+    }
+  },
+  "errors": [
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "id": "local-3f9a0c21b4de"
+      },
+      "result": {
+        "project": {
+          "id": "local-3f9a0c21b4de",
+          "name": "blinky",
+          "path": "/home/u/esp/blinky"
+        },
+        "boards": [
+          {
+            "id": "esp32",
+            "name": "ESP32 DevKitC",
+            "chip": "esp32"
+          },
+          {
+            "id": "esp32s3",
+            "name": "ESP32-S3 DevKitC-1",
+            "chip": "esp32s3"
+          },
+          {
+            "id": "esp32c3",
+            "name": "ESP32-C3 DevKitM-1",
+            "chip": "esp32c3"
+          }
+        ],
+        "idf": {
+          "path": "/home/u/esp/esp-idf",
+          "version": "6.0.2"
+        },
+        "exists": true
+      }
+    }
+  ]
+}

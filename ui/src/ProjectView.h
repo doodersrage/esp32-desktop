@@ -30,6 +30,8 @@ public:
     void preferBoard(const QString &board) { m_wantBoard = board; }
     // Render a library.get result. Public so tests can feed fixed data.
     void showResult(const QJsonObject &result);
+    // Render a local.get result: one of the user's ESP-IDF projects.
+    void showLocal(const QJsonObject &result);
 
     // For tests.
     QString title() const;
@@ -39,6 +41,8 @@ public:
     QPlainTextEdit *codeView() const { return m_code; }
     QTabWidget *tabs() const { return m_tabs; }
     QPushButton *buildButton() const { return m_build; }
+    QPushButton *openButton() const { return m_openSite; }
+    QString summaryText() const;
     QString notesText() const;
 
 signals:
@@ -55,6 +59,9 @@ private:
     QString m_wantBoard;
     QJsonObject m_project;
     QJsonArray m_builds;
+    // A local ESP-IDF project, and whether it can be built now (ESP-IDF found, folder there).
+    bool m_local = false;
+    bool m_localBuildable = false;
 
     QStackedWidget *m_stack;
     QLabel *m_placeholder;

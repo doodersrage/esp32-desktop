@@ -1,0 +1,42 @@
+{
+  "method": "local.remove",
+  "description": "Forget a local project. Its folder and builds are left as they are.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "id"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "removed"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "removed": {
+        "type": "boolean",
+        "description": "Whether it was there."
+      }
+    }
+  },
+  "errors": [],
+  "examples": [
+    {
+      "params": {
+        "id": "local-3f9a0c21b4de"
+      },
+      "result": {
+        "removed": true
+      }
+    }
+  ]
+}

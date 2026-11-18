@@ -47,6 +47,7 @@ fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
     );
     s.arduino_cli = Some(fake_arduino_cli(dir));
     s.circuits_root = dir.join("circuits");
+    s.local = esp32bench_build::idf::Registry::new(dir.join("local-projects.json"));
     Arc::new(s)
 }
 
@@ -1371,6 +1372,129 @@ async fn sim_joins_a_sketch_to_the_simulated_wifi() {
     let mut reply = String::new();
     tcp.read_to_string(&mut reply).await.unwrap();
     assert!(reply.contains("esp32bench-web ok"), "{reply}");
+}
+
+/// A local ESP-IDF project: local.open refuses a folder that is not one and remembers
+/// one that is; build.start builds it with idf.py without asking for consent (the user
+/// chose it); sim.start runs the build. tests/firmware/hello is an ESP-IDF project.
+/// The build and the simulation need ESP-IDF and QEMU, and skip without them.
+#[tokio::test]
+async fn local_idf_projects_open_build_and_run() {
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+
+    let not = d.path().join("not-idf");
+    std::fs::create_dir_all(&not).unwrap();
+    match c.call("local.open", json!({ "path": not })).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS, "{}", e.message),
+        other => panic!("opened a folder that is no project: {other:?}"),
+    }
+
+    // A copy, so the test cannot touch the repo's project.
+    let hello = d.path().join("hello");
+    let src =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/firmware/hello");
+    for f in [
+        "CMakeLists.txt",
+        "sdkconfig.defaults",
+        "main/CMakeLists.txt",
+        "main/hello.c",
+    ] {
+        if let Some(parent) = hello.join(f).parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::copy(src.join(f), hello.join(f)).unwrap();
+    }
+    let r = c
+        .call("local.open", json!({ "path": hello }))
+        .await
+        .unwrap();
+    assert_valid(&method_def("local.open")["result"], &r, "local.open result");
+    let id = r["project"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(r["project"]["name"], "esp32bench-hello");
+    // Opening it again gives the same project.
+    let again = c
+        .call("local.open", json!({ "path": hello }))
+        .await
+        .unwrap();
+    assert_eq!(again["project"]["id"], id.as_str());
+
+    let list = c.call("local.list", json!({})).await.unwrap();
+    assert_valid(
+        &method_def("local.list")["result"],
+        &list,
+        "local.list result",
+    );
+    assert_eq!(list["projects"].as_array().unwrap().len(), 1);
+    let got = c.call("local.get", json!({ "id": id })).await.unwrap();
+    assert_valid(&method_def("local.get")["result"], &got, "local.get result");
+    let boards: Vec<&str> = got["boards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(boards, ["esp32", "esp32s3", "esp32c3"]);
+    assert_eq!(got["exists"], true);
+
+    if got["idf"].is_null() {
+        eprintln!("skipping the build: ESP-IDF is not installed");
+    } else {
+        let r = c
+            .call("build.start", json!({ "project": id, "board": "esp32c3" }))
+            .await
+            .unwrap();
+        assert_valid(
+            &method_def("build.start")["result"],
+            &r,
+            "build.start result",
+        );
+        assert_eq!(r["plan"]["target"], "esp32c3");
+        let job = r["job"].clone();
+        let finished = loop {
+            let n =
+                tokio::time::timeout(std::time::Duration::from_secs(900), c.next_notification())
+                    .await
+                    .expect("the ESP-IDF build did not finish")
+                    .unwrap();
+            assert_eq!(n["params"]["subscription"], job);
+            if n["method"] == "build.finished" {
+                break n;
+            }
+        };
+        assert_eq!(finished["params"]["ok"], true, "{finished}");
+
+        if esp32bench_sim::install::find_qemu(esp32bench_sim::Arch::Riscv32).is_ok()
+            || expected_engine() == "lcgamboa"
+        {
+            let r = c
+                .call(
+                    "sim.start",
+                    json!({ "project": id, "board": "esp32c3", "network": false }),
+                )
+                .await
+                .unwrap();
+            sim_wait_for(&mut c, &r["subscription"], "esp32bench-hello ready").await;
+            c.call(
+                "core.unsubscribe",
+                json!({ "subscription": r["subscription"] }),
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    let r = c.call("local.remove", json!({ "id": id })).await.unwrap();
+    assert_eq!(r["removed"], true);
+    assert!(
+        hello.join("CMakeLists.txt").is_file(),
+        "the folder was touched"
+    );
+    match c.call("local.get", json!({ "id": id })).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("a forgotten project is still there: {other:?}"),
+    }
 }
 
 /// Wait for a debug event named `event`, checking every notification on the way

@@ -70,6 +70,10 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     m_summary->setWordWrap(true);
     m_openSite = new QPushButton(QIcon::fromTheme(u"internet-web-browser"_s), tr("Open on esp32bench.dev"), page);
     connect(m_openSite, &QPushButton::clicked, this, [this] {
+        if (m_local) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(m_project.value(u"path"_s).toString()));
+            return;
+        }
         const QUrl url(m_project.value(u"url"_s).toString());
         if (url.scheme() == u"https")
             QDesktopServices::openUrl(url);
@@ -151,9 +155,10 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     layout->addWidget(m_stack);
 
     connect(m_core, &CoreConnection::projectLoaded, this, &ProjectView::showResult);
+    connect(m_core, &CoreConnection::localLoaded, this, &ProjectView::showLocal);
     connect(m_core, &CoreConnection::requestFailed, this,
             [this](const QString &method, const QString &message) {
-                if (method == u"library.get" && !m_requestedId.isEmpty())
+                if ((method == u"library.get" || method == u"local.get") && !m_requestedId.isEmpty())
                     showPlaceholder(tr("Could not load the project: %1").arg(message));
             });
     showPlaceholder(tr("Select a project to see its parts, wiring and code."));
@@ -182,7 +187,71 @@ void ProjectView::showProject(const QString &id)
     m_requestedId = id;
     if (m_project.value(u"id"_s).toString() != id)
         showPlaceholder(tr("Loading…"));
-    m_core->getProject(id);
+    // The core gives local projects ids starting "local-" (local.open).
+    if (id.startsWith(u"local-"))
+        m_core->getLocal(id);
+    else
+        m_core->getProject(id);
+}
+
+QString ProjectView::summaryText() const
+{
+    return m_summary->text();
+}
+
+void ProjectView::showLocal(const QJsonObject &result)
+{
+    const QJsonObject p = result.value(u"project"_s).toObject();
+    if (!m_requestedId.isEmpty() && p.value(u"id"_s).toString() != m_requestedId)
+        return;
+    const QString keepBoard = m_wantBoard.isEmpty() && m_project.value(u"id"_s) == p.value(u"id"_s)
+        ? m_board->currentData().toString()
+        : m_wantBoard;
+    m_wantBoard.clear();
+    m_local = true;
+    m_project = p;
+    m_builds = {};
+    const QJsonArray boards = result.value(u"boards"_s).toArray();
+    for (const QJsonValue &v : boards)
+        m_builds.append(QJsonObject{{u"board"_s, v.toObject().value(u"id"_s)}, {u"pins"_s, QJsonArray{}}});
+
+    const QString path = p.value(u"path"_s).toString();
+    const QJsonObject idf = result.value(u"idf"_s).toObject();
+    const bool exists = result.value(u"exists"_s).toBool();
+    m_localBuildable = exists && !idf.isEmpty();
+    m_title->setText(p.value(u"name"_s).toString());
+    m_meta->setText(tr("ESP-IDF project · %1").arg(path));
+    if (!exists)
+        m_summary->setText(tr("The project is no longer in %1. Forget it from the library's list, or put it back.").arg(path));
+    else if (idf.isEmpty())
+        m_summary->setText(tr("ESP-IDF was not found, so this project cannot be built yet. Install it (the esp-idf "
+                              "package, or Espressif's guide into ~/esp/esp-idf) or set IDF_PATH, then select the "
+                              "project again."));
+    else
+        m_summary->setText(tr("Builds with ESP-IDF %1 (%2) for the chip you choose. Build files go to the app's "
+                              "cache; the project folder is not changed. Then flash it, or run it in the simulator, "
+                              "from the Build dock.")
+                               .arg(idf.value(u"version"_s).toString(), idf.value(u"path"_s).toString()));
+
+    m_openSite->setText(tr("Open folder"));
+    m_openSite->setIcon(QIcon::fromTheme(u"folder-open"_s));
+    m_build->setToolTip(tr("Build this project for the selected chip with ESP-IDF"));
+    m_tabs->hide();
+
+    const QSignalBlocker block(m_board);
+    m_board->clear();
+    for (const QJsonValue &v : boards) {
+        const QJsonObject b = v.toObject();
+        m_board->addItem(tr("%1 (%2)").arg(b.value(u"name"_s).toString(),
+                                           Labels::chipName(b.value(u"chip"_s).toString())),
+                         b.value(u"id"_s).toString());
+    }
+    m_board->setEnabled(m_builds.size() > 1);
+    const int start = qMax(0, m_board->findData(keepBoard));
+    m_board->setCurrentIndex(start);
+    showBuild(start);
+    updateBuildButton();
+    m_stack->setCurrentIndex(1);
 }
 
 void ProjectView::showResult(const QJsonObject &result)
@@ -196,8 +265,13 @@ void ProjectView::showResult(const QJsonObject &result)
         ? m_board->currentData().toString()
         : m_wantBoard;
     m_wantBoard.clear();
+    m_local = false;
     m_project = p;
     m_builds = p.value(u"builds"_s).toArray();
+    m_openSite->setText(tr("Open on esp32bench.dev"));
+    m_openSite->setIcon(QIcon::fromTheme(u"internet-web-browser"_s));
+    m_build->setToolTip(tr("Build this project for the selected board with arduino-cli"));
+    m_tabs->show();
 
     m_title->setText(p.value(u"name"_s).toString());
     const QString level = p.value(u"level"_s).toString();
@@ -300,7 +374,8 @@ void ProjectView::showBuild(int index)
 void ProjectView::updateBuildButton()
 {
     const bool sketch = m_project.value(u"firmware"_s).toString() == u"sketch";
-    m_build->setVisible(sketch);
-    m_build->setEnabled(sketch && m_core->state() == CoreConnection::State::Connected
+    const bool buildable = m_local ? m_localBuildable : sketch;
+    m_build->setVisible(m_local || sketch);
+    m_build->setEnabled(buildable && m_core->state() == CoreConnection::State::Connected
                         && !m_core->isBuilding());
 }

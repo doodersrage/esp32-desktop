@@ -9,6 +9,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QPlainTextEdit>
+#include <QPushButton>
+#include <QTabWidget>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -94,6 +96,53 @@ private slots:
         view.showResult(other);
         QVERIFY(view.title() != u"Late reply"_s);
         QCOMPARE(view.title(), shown);
+    }
+
+    // A local ESP-IDF project (local.get): the chips to build for, the ESP-IDF that
+    // builds it, a folder button instead of the site, and no library tabs.
+    void showsALocalProject()
+    {
+        QFile f(QStringLiteral(ESP32BENCH_SOURCE_DIR "/../schema/rpc/local.get.json"));
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QJsonObject result = QJsonDocument::fromJson(f.readAll())
+                                 .object()
+                                 .value(u"examples"_s)
+                                 .toArray()
+                                 .at(0)
+                                 .toObject()
+                                 .value(u"result"_s)
+                                 .toObject();
+        CoreConnection core;
+        ProjectView view(&core);
+        QList<QStringList> selected;
+        connect(&view, &ProjectView::boardSelected, this,
+                [&](const QString &project, const QString &board, const QJsonArray &) { selected << QStringList{project, board}; });
+        view.showLocal(result);
+        QCOMPARE(view.title(), u"blinky"_s);
+        QVERIFY(view.summaryText().contains(u"ESP-IDF 6.0.2"_s));
+        QCOMPARE(view.boardPicker()->count(), 3);
+        QVERIFY(view.boardPicker()->itemText(1).contains(u"ESP32-S3"_s));
+        QVERIFY(view.tabs()->isHidden());
+        QCOMPARE(view.openButton()->text(), u"Open folder"_s);
+        QVERIFY(!view.buildButton()->isHidden());
+        QCOMPARE(selected.last(), (QStringList{u"local-3f9a0c21b4de"_s, u"esp32"_s}));
+        view.boardPicker()->setCurrentIndex(2);
+        QCOMPARE(selected.last(), (QStringList{u"local-3f9a0c21b4de"_s, u"esp32c3"_s}));
+
+        // No ESP-IDF, or the folder gone: it says so.
+        QJsonObject noIdf = result;
+        noIdf.insert(u"idf"_s, QJsonValue::Null);
+        view.showLocal(noIdf);
+        QVERIFY(view.summaryText().contains(u"ESP-IDF was not found"_s));
+        QJsonObject gone = result;
+        gone.insert(u"exists"_s, false);
+        view.showLocal(gone);
+        QVERIFY(view.summaryText().contains(u"no longer in"_s));
+
+        // Back to a library project: its tabs and site button return.
+        view.showResult(example());
+        QVERIFY(!view.tabs()->isHidden());
+        QCOMPARE(view.openButton()->text(), u"Open on esp32bench.dev"_s);
     }
 };
 

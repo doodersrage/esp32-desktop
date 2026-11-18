@@ -281,6 +281,10 @@ QString MainWindow::connectionText() const
 void MainWindow::buildMenus()
 {
     QMenu *file = menuBar()->addMenu(tr("&File"));
+    QAction *openIdf = file->addAction(QIcon::fromTheme(u"document-open-folder"_s), tr("&Open ESP-IDF Project…"));
+    openIdf->setShortcut(QKeySequence::Open);
+    connect(openIdf, &QAction::triggered, m_library, &LibraryPanel::openFolder);
+    file->addSeparator();
     QAction *quit = file->addAction(QIcon::fromTheme(u"application-exit"_s), tr("&Quit"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);

@@ -44,6 +44,34 @@ private slots:
         QVERIFY(panel.statusText().contains(u"Projects: 2"_s));
     }
 
+    void showsLocalProjectsFirst()
+    {
+        CoreConnection core;
+        LibraryPanel panel(&core);
+        const QJsonArray local{QJsonObject{{u"id"_s, u"local-3f9a0c21b4de"_s},
+                                           {u"name"_s, u"blinky"_s},
+                                           {u"path"_s, u"/home/u/esp/blinky"_s}}};
+        panel.showLocal(local);
+        panel.showLibrary(library());
+        QTreeWidget *t = panel.tree();
+        QCOMPARE(t->topLevelItemCount(), 3);
+        QTreeWidgetItem *mine = t->topLevelItem(0);
+        QCOMPARE(mine->text(LibraryPanel::NameColumn), u"blinky"_s);
+        QCOMPARE(mine->text(LibraryPanel::FirmwareColumn), u"ESP-IDF (your folder)"_s);
+        QVERIFY(mine->data(LibraryPanel::NameColumn, LibraryPanel::LocalRole).toBool());
+        QCOMPARE(mine->toolTip(LibraryPanel::NameColumn), u"/home/u/esp/blinky"_s);
+        // A filter finds it by its folder, and the library refreshing keeps it.
+        panel.filter()->setText(u"esp/blinky"_s);
+        QVERIFY(!mine->isHidden());
+        panel.filter()->clear();
+        panel.showLibrary(library());
+        QCOMPARE(t->topLevelItemCount(), 3);
+        QVERIFY(t->topLevelItem(0)->data(LibraryPanel::NameColumn, LibraryPanel::LocalRole).toBool());
+        // Forgotten: gone, and the library's projects stay.
+        panel.showLocal({});
+        QCOMPARE(t->topLevelItemCount(), 2);
+    }
+
     void sortsTimeByMinutes()
     {
         CoreConnection core;

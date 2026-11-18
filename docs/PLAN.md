@@ -72,7 +72,7 @@ A Rust core process does the work and a Qt 6 UI shows it, talking over a local s
 1. **Rust core (daemon + CLI)**
     - Process supervisor for QEMU, controlled over QMP, with UART on a socket chardev. For GPIO and I2C, each session runs a small host process that loads the fork's QEMU library and serves pin events on a socket (`esp32bench-qemu-host`, built in phase 0).
     - Serial layer for real boards (`serialport`), flashing via `espflash` as a library, and device hotplug via udev.
-    - Build runner that shells out to `idf.py` and `arduino-cli`, with PlatformIO as a later option.
+    - Build runner that shells out to `arduino-cli` (the library's sketches) and `idf.py` (the user's own ESP-IDF project folders, added 2026-11-18 at the owner's request), with PlatformIO as a later option.
     - GDB/MI client for both QEMU and real boards (USB-Serial-JTAG or OpenOCD).
     - JSON-RPC API over a Unix socket, with event streams for serial output, build logs and device hotplug. Wire format, errors, events and versioning are in [rpc.md](rpc.md); methods are defined in `schema/rpc/`.
 2. **UI (Qt 6 Widgets, C++)**

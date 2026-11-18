@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.21.0";
+pub const PROTOCOL: &str = "0.22.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -52,6 +52,10 @@ pub struct State {
     pub circuits_root: PathBuf,
     /// Running simulators by (connection, subscription), to send them commands.
     sims: std::sync::Mutex<HashMap<(u64, u64), tokio::sync::mpsc::UnboundedSender<SimCmd>>>,
+    /// Local ESP-IDF projects the user opened (local.open).
+    pub local: esp32bench_build::idf::Registry,
+    /// ESP-IDF to use instead of detecting one (tests).
+    pub idf_path: Option<PathBuf>,
 }
 
 /// What board.flash will write, shown to the user before it runs.
@@ -111,6 +115,20 @@ impl State {
                 .map(|d| d.join("circuits"))
                 .unwrap_or_else(|_| PathBuf::from("esp32bench-circuits")),
             board_lock: tokio::sync::Mutex::new(()),
+            local: esp32bench_build::idf::Registry::new(
+                esp32bench_sim::install::data_dir()
+                    .map(|d| d.join("local-projects.json"))
+                    .unwrap_or_else(|_| PathBuf::from("esp32bench-local-projects.json")),
+            ),
+            idf_path: None,
+        }
+    }
+
+    /// The ESP-IDF install local builds use, if there is one.
+    pub fn idf(&self) -> Option<esp32bench_build::idf::Idf> {
+        match &self.idf_path {
+            Some(p) => esp32bench_build::idf::at(p),
+            None => esp32bench_build::idf::detect(),
         }
     }
 
@@ -135,6 +153,7 @@ impl State {
 
 /// Every method the daemon serves. A test checks this against `schema/rpc/`.
 pub fn router(state: Arc<State>) -> Router {
+    let local = state.clone();
     let (s1, s2, s3, s4) = (state.clone(), state.clone(), state.clone(), state.clone());
     let (s5, s6, s7) = (state.clone(), state.clone(), state.clone());
     let links = state.clone();
@@ -243,6 +262,34 @@ pub fn router(state: Arc<State>) -> Router {
         .method("library.get", move |p, _| {
             let s = s3.clone();
             async move { library_get(p, s).await }
+        })
+        .method("local.open", {
+            let s = local.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { local_open(p, s).await }
+            }
+        })
+        .method("local.list", {
+            let s = local.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { local_list(p, s).await }
+            }
+        })
+        .method("local.get", {
+            let s = local.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { local_get(p, s).await }
+            }
+        })
+        .method("local.remove", {
+            let s = local;
+            move |p, _| {
+                let s = s.clone();
+                async move { local_remove(p, s).await }
+            }
         })
         .method("link.open", {
             let s = links;
@@ -439,7 +486,9 @@ fn build_error(e: esp32bench_build::Error) -> RpcError {
     let code = match &e {
         E::NoProject(_) | E::NoBuild { .. } => code::NOT_FOUND,
         E::BadId(_) => code::INVALID_PARAMS,
-        E::NoArduinoCli => code::UNAVAILABLE,
+        E::NoArduinoCli | E::NoIdf => code::UNAVAILABLE,
+        E::NoLocalProject(_) => code::NOT_FOUND,
+        E::NotAnIdfProject(_) => code::INVALID_PARAMS,
         _ => code::FAILED,
     };
     RpcError::new(code, e.to_string())
@@ -447,6 +496,9 @@ fn build_error(e: esp32bench_build::Error) -> RpcError {
 
 async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: BuildParams = parse_params(params)?;
+    if esp32bench_build::idf::is_local(&p.project) {
+        return local_build_start(p, ctx, state);
+    }
     let manifest = state
         .library
         .load()
@@ -506,6 +558,95 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         sub.send("build.finished", event);
     });
     Ok(json!({ "job": job, "plan": result_plan }))
+}
+
+/// An ESP-IDF build of a local project. The user opened the folder, so no consent is
+/// asked for (rule 4 is about downloaded projects); the events are build.start's.
+fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    use esp32bench_build::{Error as E, idf};
+    esp32bench_build::safe_id(&p.board).map_err(build_error)?;
+    let project = state
+        .local
+        .get(&p.project)
+        .ok_or_else(|| build_error(E::NoLocalProject(p.project.clone())))?;
+    let install = state.idf().ok_or_else(|| build_error(E::NoIdf))?;
+    let plan = idf::plan(&project, &p.board, &install).map_err(build_error)?;
+    let result_plan = plan.clone();
+    let job = ctx.subscribe(move |sub| async move {
+        let _one_at_a_time = state.build_lock.lock().await;
+        let dirs = idf::Dirs::new(&state.builds_root, &plan);
+        let r = idf::run(&plan, &dirs, |stream, line| {
+            sub.send("build.log", json!({ "stream": stream, "line": line }));
+        })
+        .await;
+        let event = match r {
+            Ok(out) => json!({ "ok": true, "image": out.image, "elf": out.elf }),
+            Err(e) => json!({ "ok": false, "error": e.to_string() }),
+        };
+        sub.send("build.finished", event);
+    });
+    Ok(json!({ "job": job, "plan": result_plan }))
+}
+
+/// The boards a local project builds for, named as the library names them when it is
+/// there, and their chips.
+async fn local_boards(state: &State) -> Vec<Value> {
+    let manifest = state.library.load().await.ok().flatten();
+    esp32bench_build::idf::TARGETS
+        .iter()
+        .map(|(board, chip)| {
+            let name = manifest
+                .as_ref()
+                .and_then(|m| m.boards.iter().find(|b| b.id == *board))
+                .map(|b| b.name.clone())
+                .unwrap_or_else(|| (*board).to_owned());
+            json!({ "id": board, "name": name, "chip": chip })
+        })
+        .collect()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocalOpenParams {
+    path: PathBuf,
+}
+
+async fn local_open(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: LocalOpenParams = parse_params(params)?;
+    let project = state.local.add(&p.path).map_err(build_error)?;
+    Ok(json!({ "project": project }))
+}
+
+async fn local_list(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let _: NoParams = parse_params(params)?;
+    Ok(json!({ "projects": state.local.list(), "idf": state.idf() }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocalIdParams {
+    id: String,
+}
+
+async fn local_get(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: LocalIdParams = parse_params(params)?;
+    let project = state
+        .local
+        .get(&p.id)
+        .ok_or_else(|| build_error(esp32bench_build::Error::NoLocalProject(p.id.clone())))?;
+    let exists = project.path.join("CMakeLists.txt").is_file();
+    Ok(json!({
+        "project": project,
+        "boards": local_boards(&state).await,
+        "idf": state.idf(),
+        "exists": exists,
+    }))
+}
+
+async fn local_remove(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: LocalIdParams = parse_params(params)?;
+    let removed = state.local.remove(&p.id).map_err(build_error)?;
+    Ok(json!({ "removed": removed }))
 }
 
 fn toolchain_env(state: &State) -> esp32bench_toolchain::Env {

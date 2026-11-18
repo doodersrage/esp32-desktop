@@ -18,6 +18,8 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+pub mod idf;
+
 /// Overrides the arduino-cli binary (tests use a stand-in).
 pub const ARDUINO_CLI_ENV: &str = "ESP32BENCH_ARDUINO_CLI";
 const CONSENT_LIFETIME: Duration = Duration::from_secs(10 * 60);
@@ -46,6 +48,14 @@ pub enum Error {
     StepFailed { step: &'static str, status: String },
     #[error("the build finished but {0} is missing")]
     MissingOutput(PathBuf),
+    #[error(
+        "ESP-IDF was not found: install it (the esp-idf package, or Espressif's guide into ~/esp/esp-idf) or set IDF_PATH"
+    )]
+    NoIdf,
+    #[error("{0}")]
+    NotAnIdfProject(String),
+    #[error("no local project `{0}`; open its folder first")]
+    NoLocalProject(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -107,7 +117,7 @@ pub fn safe_id(id: &str) -> Result<(), Error> {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes.iter().fold(String::new(), |mut s, b| {
         let _ = write!(s, "{b:02x}");
@@ -408,9 +418,20 @@ async fn step(
     args: Vec<OsString>,
     log: &mut impl FnMut(Stream, String),
 ) -> Result<(), Error> {
-    let mut child = Command::new(&tools.arduino_cli)
-        .args(&args)
-        .env("ARDUINO_DIRECTORIES_USER", &tools.sketchbook)
+    let mut cmd = Command::new(&tools.arduino_cli);
+    cmd.args(&args)
+        .env("ARDUINO_DIRECTORIES_USER", &tools.sketchbook);
+    run_logged(cmd, name, log).await
+}
+
+/// Run `cmd` in its own process group (killed if the future is dropped), streaming
+/// every output line to `log`. `name` labels the step in errors.
+pub(crate) async fn run_logged(
+    mut cmd: Command,
+    name: &'static str,
+    log: &mut impl FnMut(Stream, String),
+) -> Result<(), Error> {
+    let mut child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

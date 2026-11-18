@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 21;
+    static constexpr int ProtocolMinor = 22;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -73,6 +73,13 @@ public:
     void getProject(const QString &id);
     // What an esp32bench:// link opens (link.open): answers with linkOpened.
     void openLink(const QString &url);
+
+    // Local ESP-IDF projects (local.*). openLocal answers with localOpened, listLocal
+    // with localListed, getLocal with localLoaded; removeLocal lists them again.
+    void openLocal(const QString &path);
+    void listLocal();
+    void getLocal(const QString &id);
+    void removeLocal(const QString &id);
 
     // build.start. Without a consent token the core refuses, and buildConsentRequired
     // carries the plan to show the user; call again with the token if they agree.
@@ -159,6 +166,12 @@ signals:
     void libraryRefreshed(bool ok, const QString &error);
     // The library.get result: {project, boards}.
     void projectLoaded(const QJsonObject &result);
+    // A folder opened as a local project (local.open's project).
+    void localOpened(const QJsonObject &project);
+    // local.list: the projects, and the ESP-IDF install (empty when there is none).
+    void localListed(const QJsonArray &projects, const QJsonObject &idf);
+    // local.get's result.
+    void localLoaded(const QJsonObject &result);
     // A link named this project, and this board if the project has a build for it.
     void linkOpened(const QString &project, const QString &board);
     // Builds.

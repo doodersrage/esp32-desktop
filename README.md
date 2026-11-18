@@ -7,6 +7,7 @@ A native Linux desktop workbench and simulator for ESP32 boards, built for KDE P
 ## What it does
 
 - Browse the esp32bench.dev project library and build projects with `arduino-cli`, asking before anything downloaded is built or flashed. Links on esp32bench.dev open a project in the app.
+- Open your own ESP-IDF project folders and build them with your installed ESP-IDF (`idf.py`) for the ESP32, S3 or C3, then flash, monitor, simulate and debug them the same way.
 - Flash, inspect, erase and monitor real boards over USB, without root.
 - Run ESP32, ESP32-S3 and ESP32-C3 builds in a simulator (lcgamboa's QEMU fork, built on your computer by the setup step), with a console, reset, GDB debugging and the virtual display. Of the library's 227 simulated builds, 222 print what they print on a real board; the rest use Bluetooth.
 - Place virtual parts on the ESP32 and C3: LEDs, buttons, switches, an RGB LED, a NeoPixel strip, an SSD1306 OLED, and BME280, MPU-6050 and DS3231 modules on I2C.

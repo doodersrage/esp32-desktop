@@ -306,6 +306,52 @@ void CoreConnection::finishLibraryRefresh(const QJsonObject &params)
         listLibrary();
 }
 
+void CoreConnection::openLocal(const QString &path)
+{
+    const QString method = u"local.open"_s;
+    m_client->call(method, {{u"path"_s, path}}, this, [this, method](const RpcReply &r) {
+        if (r.ok)
+            emit localOpened(r.result.toObject().value(u"project"_s).toObject());
+        else
+            emit requestFailed(method, r.errorMessage);
+    });
+}
+
+void CoreConnection::listLocal()
+{
+    const QString method = u"local.list"_s;
+    m_client->call(method, {}, this, [this, method](const RpcReply &r) {
+        if (r.ok) {
+            const QJsonObject o = r.result.toObject();
+            emit localListed(o.value(u"projects"_s).toArray(), o.value(u"idf"_s).toObject());
+        } else {
+            emit requestFailed(method, r.errorMessage);
+        }
+    });
+}
+
+void CoreConnection::getLocal(const QString &id)
+{
+    const QString method = u"local.get"_s;
+    m_client->call(method, {{u"id"_s, id}}, this, [this, method](const RpcReply &r) {
+        if (r.ok)
+            emit localLoaded(r.result.toObject());
+        else
+            emit requestFailed(method, r.errorMessage);
+    });
+}
+
+void CoreConnection::removeLocal(const QString &id)
+{
+    const QString method = u"local.remove"_s;
+    m_client->call(method, {{u"id"_s, id}}, this, [this, method](const RpcReply &r) {
+        if (r.ok)
+            listLocal();
+        else
+            emit requestFailed(method, r.errorMessage);
+    });
+}
+
 void CoreConnection::getProject(const QString &id)
 {
     const QString method = u"library.get"_s;

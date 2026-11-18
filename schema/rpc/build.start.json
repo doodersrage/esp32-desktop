@@ -1,6 +1,6 @@
 {
   "method": "build.start",
-  "description": "Build a library project for one board with arduino-cli. Library projects are downloaded, so they are untrusted (CLAUDE.md rule 4): without a valid `consent` token the call fails with -32002, and the error's data carries a token and the plan to show the user. Calling again with that token starts the build. A token is single-use, expires after 10 minutes, and only covers that exact plan. Returns a job; build.log and build.finished report progress; job.cancel stops it.",
+  "description": "Build a library project for one board with arduino-cli. Library projects are downloaded, so they are untrusted (CLAUDE.md rule 4): without a valid `consent` token the call fails with -32002, and the error's data carries a token and the plan to show the user. Calling again with that token starts the build. A token is single-use, expires after 10 minutes, and only covers that exact plan. Returns a job; build.log and build.finished report progress; job.cancel stops it. A local project's id (local-..., local.open) builds with ESP-IDF's idf.py instead, without consent (the user chose the folder): its plan has project, board, target, path and idf.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -36,43 +36,91 @@
         "minimum": 1
       },
       "plan": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "project",
-          "board",
-          "target",
-          "fqbn",
-          "codeSha256",
-          "install"
-        ],
-        "properties": {
-          "project": {
-            "type": "string"
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "project",
+              "board",
+              "target",
+              "fqbn",
+              "codeSha256",
+              "install"
+            ],
+            "properties": {
+              "project": {
+                "type": "string"
+              },
+              "board": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string",
+                "description": "Board whose firmware is built; a variant builds as its parent."
+              },
+              "fqbn": {
+                "type": "string"
+              },
+              "codeSha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "SHA-256 of the sketch the consent covers."
+              },
+              "install": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Arduino libraries that will be downloaded and installed."
+              }
+            }
           },
-          "board": {
-            "type": "string"
-          },
-          "target": {
-            "type": "string",
-            "description": "Board whose firmware is built; a variant builds as its parent."
-          },
-          "fqbn": {
-            "type": "string"
-          },
-          "codeSha256": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$",
-            "description": "SHA-256 of the sketch the consent covers."
-          },
-          "install": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Arduino libraries that will be downloaded and installed."
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "project",
+              "board",
+              "target",
+              "path",
+              "idf"
+            ],
+            "properties": {
+              "project": {
+                "type": "string"
+              },
+              "board": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string",
+                "description": "ESP-IDF's target."
+              },
+              "path": {
+                "type": "string",
+                "description": "The project folder."
+              },
+              "idf": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "version"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           }
-        }
+        ],
+        "description": "What the build does: an Arduino build of a library project, or an ESP-IDF build of a local one."
       }
     }
   },

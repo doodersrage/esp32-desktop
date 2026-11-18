@@ -1,0 +1,87 @@
+{
+  "method": "local.list",
+  "description": "The local ESP-IDF projects opened so far, by name, and the ESP-IDF install their builds use.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "projects",
+      "idf"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "projects": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "path"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^local-[0-9a-f]{12}$",
+              "description": "local- and a hash of the folder's path; used as a project id by build.start, sim.start, board.flash and circuit.*."
+            },
+            "name": {
+              "type": "string",
+              "description": "From project(<name>) in the project's CMakeLists.txt."
+            },
+            "path": {
+              "type": "string",
+              "description": "The project folder (canonical)."
+            }
+          }
+        }
+      },
+      "idf": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "required": [
+          "path",
+          "version"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          }
+        },
+        "description": "The ESP-IDF install local builds use: $IDF_PATH, ~/esp/esp-idf or /opt/esp-idf. Null when there is none."
+      }
+    }
+  },
+  "errors": [],
+  "examples": [
+    {
+      "params": {},
+      "result": {
+        "projects": [
+          {
+            "id": "local-3f9a0c21b4de",
+            "name": "blinky",
+            "path": "/home/u/esp/blinky"
+          }
+        ],
+        "idf": {
+          "path": "/home/u/esp/esp-idf",
+          "version": "6.0.2"
+        }
+      }
+    }
+  ]
+}
