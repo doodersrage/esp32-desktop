@@ -73,6 +73,10 @@ The owner built and installed `esp32bench-git` (r52) with `makepkg -si`. `xdg-mi
 
 Package checks (2026-11-17): `extra-x86_64-build` built it in a clean chroot (checkpkg skipped, as it does for packages in no repo). `namcap PKGBUILD` is clean. On the package, namcap found `gcc-libs` replaced by `libgcc` and `libstdc++` (fixed); what remains is expected: `qt6-svg` "may not be needed" (a Qt plugin loaded at run time, which namcap cannot see), and "unused shared library ld-linux" on the Rust binaries, a known false positive.
 
+## 0.1.2 from the release, on Plasma (2026-11-18)
+
+The owner installed `esp32bench-bin-0.1.2-1-x86_64.pkg.tar.zst` from the v0.1.2 release with `pacman -U`, following the instructions on esp32bench.dev/desktop/, after stopping the 0.1.1 core (`pkill -x esp32benchd`). Both checks passed: "Open in the desktop app" on a live esp32bench.dev project page opened the project in the app, and the simulator ran it.
+
 ## Not yet tried on real hardware
 
 - The DTR/RTS reset sequence used by UART-bridge boards (CP210x, CH340); only the USB-Serial-JTAG sequence has been exercised.
