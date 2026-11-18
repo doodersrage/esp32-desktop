@@ -2,7 +2,7 @@
 
 A native Linux desktop workbench and simulator for ESP32 boards, built for KDE Plasma on Arch Linux. It is the desktop companion to [esp32bench.dev](https://esp32bench.dev/).
 
-**Status:** version 0.1.2 is out, for Arch Linux with KDE Plasma only. It browses and builds the esp32bench.dev library, flashes, inspects and monitors real boards, and runs builds in a simulator. The automatic reset of boards with a USB-UART bridge (CP210x, CH340) is still untested on hardware.
+**Status:** version 0.1.3 is out, for Arch Linux with KDE Plasma only. It browses and builds the esp32bench.dev library, flashes, inspects and monitors real boards, and runs builds in a simulator. The automatic reset of boards with a USB-UART bridge (CP210x, CH340) is still untested on hardware.
 
 ## What it does
 
@@ -34,8 +34,8 @@ Report problems at [github.com/doodersrage/esp32-desktop/issues](https://github.
 On Arch Linux, install the package from the [latest release](https://github.com/doodersrage/esp32-desktop/releases/latest):
 
 ```sh
-curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.2/esp32bench-bin-0.1.2-1-x86_64.pkg.tar.zst
-sudo pacman -U esp32bench-bin-0.1.2-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.3/esp32bench-bin-0.1.3-1-x86_64.pkg.tar.zst
+sudo pacman -U esp32bench-bin-0.1.3-1-x86_64.pkg.tar.zst
 ```
 
 pacman installs the dependencies from the official repos. The package is not signed, so it is installed from the downloaded file. To build it yourself, run `makepkg -si` in `packaging/esp32bench-bin/` (the release's files) or `packaging/esp32bench-git/` (the latest source). The packages are not on the AUR: its registration is closed for now.
