@@ -536,6 +536,11 @@ async fn lcgamboa_esp32c3_simulated_wifi_is_isolated_and_serves() {
     simulated_wifi_on_lcgamboa(Chip::Esp32c3).await;
 }
 
+#[tokio::test]
+async fn lcgamboa_esp32s3_simulated_wifi_is_isolated_and_serves() {
+    simulated_wifi_on_lcgamboa(Chip::Esp32s3).await;
+}
+
 /// With `icount` (QEMU's -icount: time counted in instructions) an Arduino sketch
 /// still boots and keeps time: its once-a-second tick comes. On the library build this
 /// needed patch 0009 (an -O0 library and a 100 ms eFuse read made boot look hung).

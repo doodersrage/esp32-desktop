@@ -1,0 +1,373 @@
+esp32s3: a Wi-Fi radio, from the C3's models
+
+The S3 had no Wi-Fi radio: Wi-Fi start-up hung in the PHY's calibration
+(ram_read_sar2_code polling 0x6000E050, where nothing was mapped), so the
+library's S3 Wi-Fi sketches never got past WiFi.begin or a scan. The S3's
+radio blocks are the C3's generation at the C3's addresses, so lcgamboa's
+C3 models serve:
+
+- When a session asks for the radio (-nic ...,model=esp32c3_wifi), the S3
+  machine maps the C3's analog I2C master (0x6000E000), PHYA, FE and power
+  manager models, FE2 and the baseband (NRX, BB) as the C3 machine does,
+  and the C3's Wi-Fi MAC at 0x60033000 on the S3's interrupt matrix, with
+  its MAC address from the S3's eFuses. Without that NIC nothing changes.
+- The S3's SENS (patch 0004) reports the internal temperature sensor
+  ready, reading about 25 degC: the PHY reads it at start-up.
+
+So that the C3's MAC model can share the xtensa program with the ESP32's:
+the two models defined the same global functions (Esp32_sendFrame,
+Esp32_WLAN_frame_delivered) and QOM type name (esp32_wifi). Each now sets
+its frame functions in the shared Esp32WifiState, which the shared access
+point code calls through; the C3 model's type is esp32c3_wifi (the C3
+machine creates it by that name); and esp32_wifi_channel is defined once,
+in esp32_wifi_ap.c, rather than in both analog models.
+
+Written for esp32bench (GPL-2.0-or-later). Changes lcgamboa's and
+Espressif's hw/misc/esp32_wifi.c, esp32c3_wifi.c, esp32_ana.c,
+esp32c3_ana.c, esp32_wifi_ap.c, their headers, hw/riscv/esp32c3_picsimlab.c,
+hw/xtensa/esp32s3.c and hw/misc/meson.build (GPL-2.0-or-later; notices
+kept). Applied by esp32bench (core/crates/sim/src/lcgamboa.rs) to
+lcgamboa/qemu at 885a6e7061fb70fac78a074a719423810bc19a17, after patch 0011.
+
+diff --git a/hw/misc/esp32_ana.c b/hw/misc/esp32_ana.c
+index 37124ac..3b789d3 100644
+--- a/hw/misc/esp32_ana.c
++++ b/hw/misc/esp32_ana.c
+@@ -9,7 +9,8 @@
+ 
+ #define DEBUG 0
+ 
+-int esp32_wifi_channel=0;
++/* esp32bench: defined once, in esp32_wifi_ap.c, which both radios share. */
++extern int esp32_wifi_channel;
+ 
+ static uint64_t esp32_ana_read(void *opaque, hwaddr addr, unsigned int size)
+ {
+diff --git a/hw/misc/esp32_wifi.c b/hw/misc/esp32_wifi.c
+index bf001d3..ddb1890 100644
+--- a/hw/misc/esp32_wifi.c
++++ b/hw/misc/esp32_wifi.c
+@@ -268,7 +268,7 @@ static void set_interrupt(Esp32WifiState *s,int e) {
+     qemu_set_irq(s->irq, 1);
+ }
+ 
+-void Esp32_WLAN_frame_delivered(Esp32WifiState *s){
++static void esp32_wlan_frame_delivered(Esp32WifiState *s){
+     s->raw_interrupt |= 0x80;
+     qemu_set_irq(s->irq, 1);
+ }
+@@ -318,7 +318,7 @@ static int match_mac_address(uint8_t *a1,uint8_t *a2) {
+     return 0;
+ }
+ // frame from ap to esp32
+-void Esp32_sendFrame(Esp32WifiState *s, mac80211_frame *frame,int length, int signal_strength) {
++static void esp32_send_frame(Esp32WifiState *s, mac80211_frame *frame,int length, int signal_strength) {
+     if(s->dma_inlink_address==0) return;
+     uint8_t *header=malloc(sizeof(wifi_pkt_rx_ctrl_t)+length);
+     memset(header,0,sizeof(wifi_pkt_rx_ctrl_t)+length);
+@@ -403,6 +403,8 @@ static void esp32_wifi_realize(DeviceState *dev, Error **errp)
+     sysbus_init_mmio(sbd, &s->iomem);
+     sysbus_init_irq(sbd, &s->irq);
+     memset(s->mem,0,sizeof(s->mem));
++    s->send_frame = esp32_send_frame;
++    s->frame_delivered = esp32_wlan_frame_delivered;
+     Esp32_WLAN_setup_ap(dev, s);
+ }
+ static Property esp32_wifi_properties[] = {
+diff --git a/hw/misc/esp32_wifi_ap.c b/hw/misc/esp32_wifi_ap.c
+index 1f5d492..0ae842c 100644
+--- a/hw/misc/esp32_wifi_ap.c
++++ b/hw/misc/esp32_wifi_ap.c
+@@ -40,6 +40,9 @@
+ #include "esp32_wlan.h"
+ #include "esp32_wlan_packet.h"
+ 
++/* esp32bench: the radio channel the analog models set (esp32_ana.c, esp32c3_ana.c). */
++int esp32_wifi_channel = 0;
++
+ // 50ms between beacons
+ #define BEACON_TIME 500000000
+ #define INTER_FRAME_TIME 5000000
+@@ -78,12 +81,12 @@ int nb_aps=sizeof(access_points)/sizeof(access_point_info);
+  * it would. The guest's own SoftAP and the host's station on it go on. */
+ static bool esp32_wifi_get_access_points_off(Object *obj, Error **errp)
+ {
+-    return ESP32_WIFI(obj)->access_points_off;
++    return ((Esp32WifiState *) (obj))->access_points_off;
+ }
+ 
+ static void esp32_wifi_set_access_points_off(Object *obj, bool value, Error **errp)
+ {
+-    ESP32_WIFI(obj)->access_points_off = value;
++    ((Esp32WifiState *) (obj))->access_points_off = value;
+ }
+ 
+ void Esp32_WLAN_class_init(ObjectClass *klass)
+diff --git a/hw/misc/esp32c3_ana.c b/hw/misc/esp32c3_ana.c
+index 4857ce4..22d8624 100644
+--- a/hw/misc/esp32c3_ana.c
++++ b/hw/misc/esp32c3_ana.c
+@@ -9,7 +9,8 @@
+ 
+ #define DEBUG 0
+ 
+-int esp32_wifi_channel=0;
++/* esp32bench: defined once, in esp32_wifi_ap.c, which both radios share. */
++extern int esp32_wifi_channel;
+ 
+ static uint64_t esp32c3_ana_read(void *opaque, hwaddr addr, unsigned int size)
+ {
+diff --git a/hw/misc/esp32c3_wifi.c b/hw/misc/esp32c3_wifi.c
+index 7d38fc2..1e48d1d 100644
+--- a/hw/misc/esp32c3_wifi.c
++++ b/hw/misc/esp32c3_wifi.c
+@@ -67,7 +67,7 @@ static const char * get_reg_name(hwaddr addr){
+ static uint64_t esp32C3_wifi_read(void *opaque, hwaddr addr, unsigned int size)
+ {
+     
+-    Esp32WifiState *s = ESP32_WIFI(opaque);
++    Esp32WifiState *s = ESP32C3_WIFI(opaque);
+     uint32_t r = s->mem[addr/4];
+     
+     switch(addr) {
+@@ -98,14 +98,14 @@ static void set_interrupt(Esp32WifiState *s,int e) {
+     qemu_set_irq(s->irq, 1);
+ }
+ 
+-void Esp32_WLAN_frame_delivered(Esp32WifiState *s){
++static void esp32c3_wlan_frame_delivered(Esp32WifiState *s){
+     s->raw_interrupt |= 0x80;
+     qemu_set_irq(s->irq, 1);
+ }
+ 
+ static void esp32C3_wifi_write(void *opaque, hwaddr addr, uint64_t value,
+                                  unsigned int size) {
+-    Esp32WifiState *s = ESP32_WIFI(opaque);
++    Esp32WifiState *s = ESP32C3_WIFI(opaque);
+ #if DEBUG    
+     printf("esp32C3_wifi_write %25s(0x%04lx)= 0x%08lx\n",get_reg_name(addr),(unsigned long) addr, (unsigned long) value);
+ #endif
+@@ -147,7 +147,7 @@ static int match_mac_address(uint8_t *a1,uint8_t *a2) {
+     return 0;
+ }
+ // frame from ap to esp32
+-void Esp32_sendFrame(Esp32WifiState *s, mac80211_frame *frame,int length, int signal_strength) {    
++static void esp32c3_send_frame(Esp32WifiState *s, mac80211_frame *frame,int length, int signal_strength) {    
+     if(s->dma_inlink_address==0) return;
+     uint8_t *header=malloc(sizeof(wifi_pkt_rx_ctrl_c3_t)+length);
+     memset(header,0,sizeof(wifi_pkt_rx_ctrl_c3_t)+length);
+@@ -212,7 +212,7 @@ static const MemoryRegionOps esp32C3_wifi_ops = {
+ 
+ static void esp32c3_wifi_reset_enter(Object *obj, ResetType type)
+ {
+-    Esp32WifiState *s = ESP32_WIFI(obj);
++    Esp32WifiState *s = ESP32C3_WIFI(obj);
+ 
+     s->dma_inlink_address=0;
+     s->dma_inlink_ptr=0;
+@@ -222,16 +222,18 @@ static void esp32c3_wifi_reset_enter(Object *obj, ResetType type)
+ 
+ static void esp32C3_wifi_realize(DeviceState *dev, Error **errp)
+ {
+-    Esp32WifiState *s = ESP32_WIFI(dev);
++    Esp32WifiState *s = ESP32C3_WIFI(dev);
+     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
+     s->dma_inlink_address=0;
+     s->dma_inlink_ptr=0;
+ 
+     memory_region_init_io(&s->iomem, OBJECT(dev), &esp32C3_wifi_ops, s,
+-                          TYPE_ESP32_WIFI, 0x1000);
++                          TYPE_ESP32C3_WIFI, 0x1000);
+     sysbus_init_mmio(sbd, &s->iomem);
+     sysbus_init_irq(sbd, &s->irq);
+     memset(s->mem,0,sizeof(s->mem));
++    s->send_frame = esp32c3_send_frame;
++    s->frame_delivered = esp32c3_wlan_frame_delivered;
+     Esp32_WLAN_setup_ap(dev, s);
+     
+ }
+@@ -256,7 +258,7 @@ static void esp32C3_wifi_class_init(ObjectClass *klass, void *data)
+ 
+ 
+ static const TypeInfo esp32C3_wifi_info = {
+-    .name = TYPE_ESP32_WIFI,
++    .name = TYPE_ESP32C3_WIFI,
+     .parent = TYPE_SYS_BUS_DEVICE,
+     .instance_size = sizeof(Esp32WifiState),
+     .class_init    = esp32C3_wifi_class_init,
+diff --git a/hw/misc/meson.build b/hw/misc/meson.build
+index c10e491..541dcf8 100644
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -190,7 +190,14 @@ system_ss.add(when: 'CONFIG_XTENSA_ESP32S3', if_true: files(
+   'esp32s3_pms.c',
+   'esp_hmac.c',
+   'esp32s3_hmac.c',
+-  'esp32bench_rmt.c'
++  'esp32bench_rmt.c',
++  'esp32c3_ana.c',
++  'esp32_phya.c',
++  'esp32_fe.c',
++  'esp32c3_pwrmng.c',
++  'esp32c3_wifi.c',
++  'esp32_wifi_ap.c',
++  'esp32_wlan_packet.c'
+ ))
+ 
+ if gcrypt.found()
+diff --git a/hw/riscv/esp32c3_picsimlab.c b/hw/riscv/esp32c3_picsimlab.c
+index e8a4b66..4425824 100644
+--- a/hw/riscv/esp32c3_picsimlab.c
++++ b/hw/riscv/esp32c3_picsimlab.c
+@@ -840,7 +840,7 @@ static void esp32c3_machine_init(MachineState *machine)
+     ms->i2c.model = I2C_MODEL_ESP32C3;
+ 
+     if (qemu_find_nic_info(TYPE_ESP32C3_WIFI, false, NULL) != NULL)
+-        object_initialize_child(OBJECT(machine), "wifi", &ms->wifi, TYPE_ESP32_WIFI);
++        object_initialize_child(OBJECT(machine), "wifi", &ms->wifi, TYPE_ESP32C3_WIFI);
+ 
+     /* Realize all the I/O peripherals we depend on */
+ 
+diff --git a/hw/xtensa/esp32s3.c b/hw/xtensa/esp32s3.c
+index 05c0441..e61f3a6 100644
+--- a/hw/xtensa/esp32s3.c
++++ b/hw/xtensa/esp32s3.c
+@@ -30,6 +30,11 @@
+ 
+ #include "hw/misc/esp32s3_rtc_cntl.h"
+ #include "hw/misc/esp32bench_rmt.h"
++#include "hw/misc/esp32c3_ana.h"
++#include "hw/misc/esp32_phya.h"
++#include "hw/misc/esp32_fe.h"
++#include "hw/misc/esp32c3_pwrmng.h"
++#include "hw/misc/esp32c3_wifi.h"
+ #include "hw/xtensa/esp32s3_intc.h"
+ 
+ #include "hw/sd/dwc_sdmmc.h"
+@@ -271,6 +276,8 @@ static void esp32s3_soc_add_periph_device(MemoryRegion *dest, void* dev, hwaddr
+ #define ESP32BENCH_SAR_MEAS2_CTRL2  0x30
+ #define ESP32BENCH_MEAS_DONE        (1u << 16)
+ #define ESP32BENCH_MEAS_DATA        0xFFFFu
++#define ESP32BENCH_SAR_TSENS_CTRL   0x50
++#define ESP32BENCH_TSENS_READY      (1u << 8)
+ 
+ static uint64_t esp32bench_sens_read(void *opaque, hwaddr addr, unsigned int size)
+ {
+@@ -279,6 +286,11 @@ static uint64_t esp32bench_sens_read(void *opaque, hwaddr addr, unsigned int siz
+     if (addr == ESP32BENCH_SAR_MEAS1_CTRL2 || addr == ESP32BENCH_SAR_MEAS2_CTRL2) {
+         v = (v & ~ESP32BENCH_MEAS_DATA) | ESP32BENCH_MEAS_DONE;
+     }
++    /* The internal temperature sensor, which the Wi-Fi PHY reads at start-up:
++     * always ready, reading about 25 degC (raw 104 in ESP-IDF's S3 conversion). */
++    if (addr == ESP32BENCH_SAR_TSENS_CTRL) {
++        v = (v & ~0x1ffu) | ESP32BENCH_TSENS_READY | 104;
++    }
+     return v;
+ }
+ 
+@@ -698,6 +710,49 @@ OBJECT_DECLARE_SIMPLE_TYPE(Esp32s3MachineState, ESP32S3_MACHINE)
+ 
+ // -----------------------------------------------
+ 
++/* esp32bench: a Wi-Fi radio for the S3. The S3's radio blocks are the C3's generation
++ * at the C3's addresses, so lcgamboa's C3 models serve: the analog I2C master the PHY
++ * calibration polls (0x6000E000), PHYA, FE and the power manager, with the
++ * baseband registers reading all ones as on the C3, and the C3's Wi-Fi MAC with its
++ * interrupt. The MAC exists only when a session asks for the radio
++ * (-nic ...,model=esp32c3_wifi); without the analog models Wi-Fi start-up hung in
++ * the PHY's calibration (ram_read_sar2_code polling 0x6000E050). */
++static void esp32bench_s3_add_dev(MemoryRegion *sys_mem, const char *type, hwaddr base)
++{
++    DeviceState *d = qdev_new(type);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(d), &error_fatal);
++    memory_region_add_subregion_overlap(sys_mem, base, sysbus_mmio_get_region(SYS_BUS_DEVICE(d), 0), 1);
++}
++
++static void esp32bench_s3_init_radio(Esp32s3SocState *ss, MemoryRegion *sys_mem)
++{
++    NICInfo *nd = qemu_find_nic_info(TYPE_ESP32C3_WIFI, false, NULL);
++    if (nd == NULL) {
++        return;
++    }
++    esp32bench_s3_add_dev(sys_mem, TYPE_ESP32C3_ANA, 0x6000E000);
++    esp32bench_s3_add_dev(sys_mem, TYPE_ESP32_PHYA, 0x60034000);
++    esp32bench_s3_add_dev(sys_mem, TYPE_ESP32_FE, 0x60006000);
++    esp32bench_s3_add_dev(sys_mem, TYPE_ESP32C3_PWR_MANAGER, 0x60035000);
++    create_unimplemented_device_default_value("esp32s3.fe2", 0x60005000, 0x1000, 0);
++    create_unimplemented_device_default_value("esp32s3.nrx", 0x6001C000, 0x1000, -1);
++    create_unimplemented_device_default_value("esp32s3.bb", 0x6001D000, 0x1000, -1);
++
++    DeviceState *dev = qdev_new(TYPE_ESP32C3_WIFI);
++    Esp32WifiState *wifi = ESP32C3_WIFI(dev);
++    /* The station's MAC address, from the eFuses, as the C3 machine takes it. */
++    device_cold_reset(DEVICE(&ss->efuse));
++    const uint8_t *mac = (const uint8_t *) &ss->efuse.parent.efuses.blocks.rd_mac_spi_sys_0;
++    for (int i = 0; i < 6; i++) {
++        wifi->macaddr[i] = mac[5 - i];
++    }
++    qdev_set_nic_properties(dev, nd);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    memory_region_add_subregion_overlap(sys_mem, 0x60033000, sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0), 1);
++    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
++                       qdev_get_gpio_in(DEVICE(&ss->intmatrix), ETS_WIFI_MAC_INTR_SOURCE));
++}
++
+ static void esp32s3_soc_add_unimp_device(MemoryRegion *dest, const char* name, hwaddr dport_base_addr, size_t size)
+ {
+     create_unimplemented_device(name, dport_base_addr, size);
+@@ -976,6 +1031,7 @@ static void esp32s3_machine_init(MachineState *machine)
+     }
+ 
+     esp32s3_soc_add_unimp_device(sys_mem, "esp32s3.iomux", DR_REG_IO_MUX_BASE, 0x2000);
++    esp32bench_s3_init_radio(ss, sys_mem);
+ 
+     
+     esp32s3_machine_init_sd(ss);
+diff --git a/include/hw/misc/esp32_wifi.h b/include/hw/misc/esp32_wifi.h
+index aed765b..36c9e41 100644
+--- a/include/hw/misc/esp32_wifi.h
++++ b/include/hw/misc/esp32_wifi.h
+@@ -57,6 +57,12 @@ typedef struct Esp32WifiState {
+     uint8_t mode;  
+     bool access_points_off;
+ 
++    /* esp32bench: the MAC model's own frame functions (ESP32 or C3/S3 layout), so
++     * both models can be linked into one program: the S3 uses the C3's model in the
++     * same xtensa build as the ESP32's. */
++    void (*send_frame)(struct Esp32WifiState *s, struct mac80211_frame *frame, int length, int signal_strength);
++    void (*frame_delivered)(struct Esp32WifiState *s);
++
+ } Esp32WifiState;
+ 
+ #define Esp32_Mode_Station 0
+@@ -67,8 +73,14 @@ void Esp32_WLAN_handle_frame(Esp32WifiState *s, struct mac80211_frame *frame);
+ void Esp32_WLAN_setup_ap(DeviceState *dev,Esp32WifiState *s);
+ void Esp32_WLAN_reset_ap(Esp32WifiState *s);
+ void Esp32_WLAN_class_init(ObjectClass *klass);
+-void Esp32_sendFrame(Esp32WifiState *s, struct mac80211_frame *frame,int length, int signal_strength);
+-void Esp32_WLAN_frame_delivered(Esp32WifiState *s);
++static inline void Esp32_sendFrame(Esp32WifiState *s, struct mac80211_frame *frame, int length, int signal_strength)
++{
++    s->send_frame(s, frame, length, signal_strength);
++}
++static inline void Esp32_WLAN_frame_delivered(Esp32WifiState *s)
++{
++    s->frame_delivered(s);
++}
+ 
+ REG32(WIFI_BSSID_ADDR_FST_0, 0x000);
+ REG32(WIFI_BSSID_ADDR_SND_0, 0x004);
+diff --git a/include/hw/misc/esp32c3_wifi.h b/include/hw/misc/esp32c3_wifi.h
+index 256caee..ee5e23c 100644
+--- a/include/hw/misc/esp32c3_wifi.h
++++ b/include/hw/misc/esp32c3_wifi.h
+@@ -8,7 +8,8 @@
+ #include "esp32_wifi.h"
+ 
+ #define TYPE_ESP32C3_WIFI "esp32c3_wifi"
+-//#define ESP32C3_WIFI(obj) OBJECT_CHECK(Esp32WifiState, (obj), TYPE_ESP32C3_WIFI)
++/* esp32bench: its own QOM type, so it can share a program with the ESP32 model. */
++#define ESP32C3_WIFI(obj) OBJECT_CHECK(Esp32WifiState, (obj), TYPE_ESP32C3_WIFI)
+ 
+ 
+ REG32(C3_WIFI_DMA_IN_STATUS, 0x84);

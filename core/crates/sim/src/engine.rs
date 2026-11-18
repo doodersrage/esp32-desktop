@@ -122,6 +122,10 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
     let args = build.qemu_args();
     let machine = Some(lcgamboa::machine(chip).to_owned());
     if chip == Chip::Esp32s3 {
+        // The S3 runs on the fork's executable. Its radio is the C3's model (patch
+        // 0012), on hub 0 as for the others.
+        let mut args = args;
+        args.extend(["-nic".into(), "hubport,hubid=0,model=esp32c3_wifi".into()]);
         return Some(Launch {
             engine: Engine::Lcgamboa,
             qemu: build.executable(chip.arch()),
@@ -131,7 +135,7 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
             hooks: false,
             efuse: None,
             usb_console: false,
-            network: false,
+            network: true,
         });
     }
     let host = host?;
@@ -268,6 +272,9 @@ mod tests {
         assert_eq!(l.machine.as_deref(), Some("esp32s3"));
         assert!(l.env.is_empty());
         assert!(!l.hooks, "the fork has no GPIO hooks on the S3");
+        // The C3's radio model, on hub 0 (patch 0012); the network is the session's.
+        assert_eq!(&l.args[2..], ["-nic", "hubport,hubid=0,model=esp32c3_wifi"]);
+        assert!(l.network);
     }
 
     #[test]

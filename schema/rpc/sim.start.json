@@ -1,6 +1,6 @@
 {
   "method": "sim.start",
-  "description": "Run the last build of a project for a board (build.start's output) in QEMU: lcgamboa's fork when it is built (ESP32 and C3 through its library, so I2C buses answer no address), else Espressif's prebuilt QEMU. On lcgamboa's ESP32 and C3 the firmware sees a simulated Wi-Fi network unless network is false: an open access point (result network.ssid) that gives an address by DHCP and reaches nothing else, no name lookups and no connections out; the firmware's port 80 is forwarded to a port on this computer's loopback (network.webUrl). With joinWifi (the default), when a library sketch's settings block reports its Wi-Fi unset, the core sends it the network's name and an empty password, then SAVE, which restarts it; sim.wifiJoined says so. Only ESP32, ESP32-S3 and ESP32-C3 boards are simulated; others are workbench-only and refused. Returns a subscription: sim.output carries UART0, sim.frame the virtual RGB panel once firmware draws on it, sim.pins the project's pins, sim.exited says when QEMU stopped. sim.write and sim.reset act on it; core.unsubscribe stops QEMU, as does closing the connection. With debug: true, QEMU starts paused with its GDB stub on loopback and the core attaches the Arduino core's GDB to the build's ELF; debug.* methods and debug.stopped, debug.running and debug.exited events then work on the same subscription. The simulator is firmware-level: no Bluetooth, and the network reaches nothing beyond the simulated access point.",
+  "description": "Run the last build of a project for a board (build.start's output) in QEMU: lcgamboa's fork when it is built (ESP32 and C3 through its library, so I2C buses answer no address), else Espressif's prebuilt QEMU. On lcgamboa's fork (ESP32, S3 and C3) the firmware sees a simulated Wi-Fi network unless network is false: an open access point (result network.ssid) that gives an address by DHCP and reaches nothing else, no name lookups and no connections out; the firmware's port 80 is forwarded to a port on this computer's loopback (network.webUrl). With joinWifi (the default), when a library sketch's settings block reports its Wi-Fi unset, the core sends it the network's name and an empty password, then SAVE, which restarts it; sim.wifiJoined says so. Only ESP32, ESP32-S3 and ESP32-C3 boards are simulated; others are workbench-only and refused. Returns a subscription: sim.output carries UART0, sim.frame the virtual RGB panel once firmware draws on it, sim.pins the project's pins, sim.exited says when QEMU stopped. sim.write and sim.reset act on it; core.unsubscribe stops QEMU, as does closing the connection. With debug: true, QEMU starts paused with its GDB stub on loopback and the core attaches the Arduino core's GDB to the build's ELF; debug.* methods and debug.stopped, debug.running and debug.exited events then work on the same subscription. The simulator is firmware-level: no Bluetooth, and the network reaches nothing beyond the simulated access point.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -23,7 +23,7 @@
       "network": {
         "type": "boolean",
         "default": true,
-        "description": "The simulated Wi-Fi network, where the machine has a radio for it (lcgamboa's ESP32 and C3). False: the radio sees no network."
+        "description": "The simulated Wi-Fi network, where the machine has a radio for it (lcgamboa's fork: ESP32, S3 and C3). False: the radio sees no network."
       },
       "joinWifi": {
         "type": "boolean",
@@ -90,7 +90,7 @@
           "webUrl"
         ],
         "additionalProperties": false,
-        "description": "The simulated Wi-Fi network, or null when there is none (network: false, the S3, Espressif's QEMU).",
+        "description": "The simulated Wi-Fi network, or null when there is none (network: false, Espressif's QEMU).",
         "properties": {
           "ssid": {
             "type": "string",

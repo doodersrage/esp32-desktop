@@ -8,11 +8,11 @@ A native Linux desktop workbench and simulator for ESP32 boards, built for KDE P
 
 - Browse the esp32bench.dev project library and build projects with `arduino-cli`, asking before anything downloaded is built or flashed. Links on esp32bench.dev open a project in the app.
 - Flash, inspect, erase and monitor real boards over USB, without root.
-- Run ESP32, ESP32-S3 and ESP32-C3 builds in a simulator (lcgamboa's QEMU fork, built on your computer by the setup step), with a console, reset, GDB debugging and the virtual display. Of the library's 227 simulated builds, 212 print what they print on a real board.
+- Run ESP32, ESP32-S3 and ESP32-C3 builds in a simulator (lcgamboa's QEMU fork, built on your computer by the setup step), with a console, reset, GDB debugging and the virtual display. Of the library's 227 simulated builds, 222 print what they print on a real board; the rest use Bluetooth.
 - Place virtual parts on the ESP32 and C3: LEDs, buttons, switches, an RGB LED, a NeoPixel strip, an SSD1306 OLED, and BME280, MPU-6050 and DS3231 modules on I2C.
-- Give simulated sketches a Wi-Fi network that reaches nothing outside: they get an address, and their web pages open on your computer. Library sketches are joined to it for you.
+- Give simulated sketches (ESP32, S3 and C3) a Wi-Fi network that reaches nothing outside: they get an address, and their web pages open on your computer. Library sketches are joined to it for you.
 
-The simulator is firmware-level: no Bluetooth, no analog inputs (they read 0), no Wi-Fi on the S3, and no encrypted networks. Light and deep sleep wake on a timer only.
+The simulator is firmware-level: no Bluetooth, no analog inputs (they read 0), and no encrypted Wi-Fi networks. Light and deep sleep wake on a timer only.
 
 Report problems at [github.com/doodersrage/esp32-desktop/issues](https://github.com/doodersrage/esp32-desktop/issues).
 

@@ -34,12 +34,13 @@ const MARKER: &str = "installed";
 /// 9: an optimised library build (it was -O0) and quicker eFuse reads.
 /// 10: coprocessors (the FPU) enabled from reset (floats in global constructors).
 /// 11: RMT symbols and transmission ends reported to the host (WS2812 strip parts).
-pub const RECIPE: u32 = 11;
+/// 12: a Wi-Fi radio on the S3, from the C3's models.
+pub const RECIPE: u32 = 12;
 
 /// Changes esp32bench makes to the pinned commit, in order. Each file says what and
 /// why. Kept in `core/crates/sim/patches/` and built into the program, so an installed
 /// app can build the fork without the repo.
-pub const PATCHES: [(&str, &str); 11] = [
+pub const PATCHES: [(&str, &str); 12] = [
     (
         "0001.patch",
         include_str!("../patches/0001-build-library-with-pixman.patch"),
@@ -80,6 +81,10 @@ pub const PATCHES: [(&str, &str); 11] = [
     (
         "0011.patch",
         include_str!("../patches/0011-rmt-symbols-to-the-host.patch"),
+    ),
+    (
+        "0012.patch",
+        include_str!("../patches/0012-esp32s3-wifi-radio.patch"),
     ),
 ];
 
@@ -313,6 +318,7 @@ pub fn steps(jobs: usize) -> Vec<Step> {
                 "../patches/0009.patch",
                 "../patches/0010.patch",
                 "../patches/0011.patch",
+                "../patches/0012.patch",
             ],
             "src",
         ),
