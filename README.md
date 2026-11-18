@@ -2,7 +2,7 @@
 
 A native Linux desktop workbench and simulator for ESP32 boards, built for KDE Plasma on Arch Linux. It is the desktop companion to [esp32bench.dev](https://esp32bench.dev/).
 
-**Status:** phases 1 and 3 are done and phase 2 is feature complete (the automatic reset of UART-bridge dev boards is still untried): the app browses and builds the esp32bench.dev library, monitors, inspects and flashes real boards, and runs builds in lcgamboa's QEMU with a console, GDB debugging and the virtual display. Phase 4 (virtual parts) is done: LEDs, buttons, switches, an RGB LED, an SSD1306 OLED, BME280, MPU-6050 and DS3231 on ESP32 and C3. Packaging (phase 5) is next.
+**Status:** version 0.1.0 is out. Phases 1 and 3 are done and phase 2 is feature complete (the automatic reset of UART-bridge dev boards is still untried): the app browses and builds the esp32bench.dev library, monitors, inspects and flashes real boards, and runs builds in lcgamboa's QEMU with a console, GDB debugging and the virtual display. Phase 4 (virtual parts) is done: LEDs, buttons, switches, an RGB LED, an SSD1306 OLED, BME280, MPU-6050 and DS3231 on ESP32 and C3. Packaging (phase 5) is next.
 
 ## What it will do
 
@@ -25,10 +25,10 @@ A native Linux desktop workbench and simulator for ESP32 boards, built for KDE P
 
 ## Installing
 
-On Arch Linux, build the package from `packaging/esp32bench-git/` (it is not on the AUR yet):
+On Arch Linux, build one of the packages (they are not on the AUR yet): `packaging/esp32bench-git/` builds the latest source, and `packaging/esp32bench-bin/` installs the prebuilt files from the [latest release](https://github.com/doodersrage/esp32-desktop/releases).
 
 ```sh
-cd packaging/esp32bench-git
+cd packaging/esp32bench-bin   # or esp32bench-git
 makepkg -si
 ```
 

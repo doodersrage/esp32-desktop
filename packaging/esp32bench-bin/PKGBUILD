@@ -1,0 +1,43 @@
+# Maintainer: esp32bench maintainers <https://github.com/doodersrage/esp32-desktop>
+
+pkgname=esp32bench-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='ESP32 workbench and simulator: build, flash, monitor and simulate ESP32 projects (prebuilt)'
+arch=('x86_64')
+url='https://github.com/doodersrage/esp32-desktop'
+license=('GPL-2.0-or-later')
+depends=(
+  'glibc'
+  'hicolor-icon-theme'
+  'libgcc'
+  'libstdc++'
+  'qt6-base'
+  'qt6-svg'        # the app icon: a plugin Qt loads at run time, so namcap cannot see it
+  'systemd-libs'   # libudev: board detection and hotplug
+)
+optdepends=(
+  'arduino-cli: build Arduino sketches from the project library'
+  # lcgamboa's QEMU fork, the simulator, is built from source by the app's setup step:
+  'git: build the simulator (lcgamboa QEMU)'
+  'gcc: build the simulator (lcgamboa QEMU)'
+  'make: build the simulator (lcgamboa QEMU)'
+  'ninja: build the simulator (lcgamboa QEMU)'
+  'pkgconf: build the simulator (lcgamboa QEMU)'
+  'python: build the simulator (lcgamboa QEMU)'
+  'perl: build the simulator (lcgamboa QEMU)'
+  'glib2: build and run the simulator'
+  'pixman: build and run the simulator'
+  'libgcrypt: build and run the simulator'
+  'libslirp: build and run the simulator'
+)
+provides=('esp32bench')
+conflicts=('esp32bench')
+# Built on Arch from the v$pkgver tag: the same files the esp32bench-git package installs.
+source=("$url/releases/download/v$pkgver/esp32bench-$pkgver-$CARCH.tar.gz")
+sha256sums=('ca89ebb96657b7aa961605aa169eac2c782d9570f2042854abd21e7700779a4e')
+
+package() {
+  cd "esp32bench-$pkgver-$CARCH"
+  cp -a usr "$pkgdir/"
+}

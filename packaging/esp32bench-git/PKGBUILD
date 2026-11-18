@@ -2,7 +2,7 @@
 
 pkgname=esp32bench-git
 _repo=esp32-desktop
-pkgver=r53.11ba4a2
+pkgver=0.1.0.r0.g71f785b
 pkgrel=1
 pkgdesc='ESP32 workbench and simulator: build, flash, monitor and simulate ESP32 projects'
 arch=('x86_64')
