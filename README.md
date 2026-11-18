@@ -2,7 +2,7 @@
 
 A native Linux desktop workbench and simulator for ESP32 boards, built for KDE Plasma on Arch Linux. It is the desktop companion to [esp32bench.dev](https://esp32bench.dev/).
 
-**Status:** version 0.1.0 is out. Phases 1 and 3 are done and phase 2 is feature complete (the automatic reset of UART-bridge dev boards is still untried): the app browses and builds the esp32bench.dev library, monitors, inspects and flashes real boards, and runs builds in lcgamboa's QEMU with a console, GDB debugging and the virtual display. Phase 4 (virtual parts) is done: LEDs, buttons, switches, an RGB LED, an SSD1306 OLED, BME280, MPU-6050 and DS3231 on ESP32 and C3. Packaging (phase 5) is next.
+**Status:** version 0.1.1 is out. Phases 1 and 3 are done and phase 2 is feature complete (the automatic reset of UART-bridge dev boards is still untried): the app browses and builds the esp32bench.dev library, monitors, inspects and flashes real boards, and runs builds in lcgamboa's QEMU with a console, GDB debugging and the virtual display. Phase 4 (virtual parts) is done: LEDs, buttons, switches, an RGB LED, an SSD1306 OLED, BME280, MPU-6050 and DS3231 on ESP32 and C3. Packaging (phase 5) is in progress.
 
 ## What it will do
 
@@ -28,8 +28,8 @@ A native Linux desktop workbench and simulator for ESP32 boards, built for KDE P
 On Arch Linux, install the package from the [latest release](https://github.com/doodersrage/esp32-desktop/releases/latest):
 
 ```sh
-curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.0/esp32bench-bin-0.1.0-1-x86_64.pkg.tar.zst
-sudo pacman -U esp32bench-bin-0.1.0-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.1/esp32bench-bin-0.1.1-1-x86_64.pkg.tar.zst
+sudo pacman -U esp32bench-bin-0.1.1-1-x86_64.pkg.tar.zst
 ```
 
 pacman installs the dependencies from the official repos. The package is not signed, so it is installed from the downloaded file. To build it yourself, run `makepkg -si` in `packaging/esp32bench-bin/` (the release's files) or `packaging/esp32bench-git/` (the latest source). The packages are not on the AUR: its registration is closed for now.
