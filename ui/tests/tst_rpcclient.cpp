@@ -191,13 +191,29 @@ private slots:
         FakeCore core(path(), [](const QJsonObject &req) -> QList<QJsonObject> {
             return {result(req, QJsonObject{{u"name"_s, u"esp32benchd"_s},
                                             {u"version"_s, u"9.9.9"_s},
-                                            {u"protocol"_s, u"0.4.2"_s}})};
+                                            {u"protocol"_s, u"0.99.2"_s}})}; // a newer core is fine
         });
         CoreConnection conn;
         conn.setSocketPath(path());
         conn.start();
         QTRY_COMPARE(conn.state(), CoreConnection::State::Connected);
         QCOMPARE(conn.coreVersion(), u"9.9.9"_s);
+    }
+
+    void handshakeRejectsAnOlderCore()
+    {
+        // A core left running from before an upgrade: same major, older minor.
+        FakeCore core(path(), [](const QJsonObject &req) -> QList<QJsonObject> {
+            return {result(req, QJsonObject{{u"name"_s, u"esp32benchd"_s},
+                                            {u"version"_s, u"0.0.1"_s},
+                                            {u"protocol"_s, u"0.17.0"_s}})};
+        });
+        CoreConnection conn;
+        conn.setSocketPath(path());
+        conn.start();
+        QTRY_COMPARE(conn.state(), CoreConnection::State::Incompatible);
+        QVERIFY(conn.lastError().contains(u"older core (protocol 0.17.0)"_s));
+        QVERIFY(conn.lastError().contains(u"pkill -x esp32benchd"_s));
     }
 
     void handshakeRejectsOtherMajorVersion()
@@ -221,7 +237,7 @@ private slots:
             if (m == u"core.hello")
                 return {result(req, QJsonObject{{u"name"_s, u"esp32benchd"_s},
                                                 {u"version"_s, u"0.0.1"_s},
-                                                {u"protocol"_s, u"0.2.0"_s}})};
+                                                {u"protocol"_s, u"0.19.0"_s}})};
             if (m == u"device.watch") {
                 const QJsonArray ports{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s}}};
                 auto changed = [](int sub, const QString &path) {

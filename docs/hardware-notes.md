@@ -67,6 +67,10 @@ A Prolific PL2303 cable (`067b:2303`) wired to the C3's UART0: 5V, GND, adapter 
 
 Still untried: the automatic DTR/RTS reset of boards with an auto-reset circuit (CP210x or CH340 dev boards).
 
+## The package on Plasma (2026-11-17)
+
+The owner built and installed `esp32bench-git` (r52) with `makepkg -si`. `xdg-mime query default x-scheme-handler/esp32bench` gave `esp32bench.desktop`. `xdg-open 'esp32bench://project/rtc-clock?board=esp32c3'` at first seemed to do nothing: a core from a dev build, started that morning before `link.open` existed, was still running, the installed app connected to it, and the refusal showed only in the status bar. With that core stopped, the link opened the app and selected the project and board. Since then the app refuses a core with an older protocol minor and says how to replace it, rather than connecting to it.
+
 ## Not yet tried on real hardware
 
 - The DTR/RTS reset sequence used by UART-bridge boards (CP210x, CH340); only the USB-Serial-JTAG sequence has been exercised.

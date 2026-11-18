@@ -115,7 +115,7 @@ void CoreConnection::onSocketConnected()
     setState(State::Connecting);
     const QJsonObject params{
         {u"client"_s, u"esp32bench-ui %1"_s.arg(QStringLiteral(ESP32BENCH_UI_VERSION))},
-        {u"protocol"_s, u"0.19.0"_s},
+        {u"protocol"_s, u"%1.%2.0"_s.arg(ProtocolMajor).arg(ProtocolMinor)},
     };
     m_client->call(u"core.hello"_s, params, this, [this](const RpcReply &r) {
         if (!r.ok) {
@@ -131,6 +131,18 @@ void CoreConnection::onSocketConnected()
             m_lastError = tr("The core speaks protocol %1; this program needs %2.x.")
                               .arg(protocol)
                               .arg(ProtocolMajor);
+            setState(State::Incompatible);
+            m_client->disconnectFromCore();
+            return;
+        }
+        // Same major but older: a core left running from an earlier version (after
+        // an upgrade, say). It would refuse what is new, so say how to replace it.
+        if (protocol.section(u'.', 1, 1).toInt() < ProtocolMinor) {
+            m_lastError = tr("an older core (protocol %1) is still running; this version needs %2.%3 or newer. "
+                             "Stop it (pkill -x esp32benchd), then press Start core.")
+                              .arg(protocol)
+                              .arg(ProtocolMajor)
+                              .arg(ProtocolMinor);
             setState(State::Incompatible);
             m_client->disconnectFromCore();
             return;
