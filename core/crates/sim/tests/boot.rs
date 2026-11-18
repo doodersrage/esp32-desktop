@@ -344,3 +344,54 @@ async fn wifi_has_a_radio_but_no_network(chip: Chip) {
     assert!(!text.contains("got ip"), "it reached a network:\n{text}");
     s.shutdown().await.unwrap();
 }
+
+/// The ADC and LEDC calls the library's sketches make run through on the fork:
+/// analogRead() (on the S3, ADC calibration ran before setup() and hung until patch
+/// 0004), tone() and analogWrite() (LEDC; aborted on the C3 and S3 until patches 0004
+/// and 0005).
+async fn arduino_adc_and_ledc_on_lcgamboa(chip: Chip) {
+    let Some(image) = built_image("arduino-periph", chip) else {
+        eprintln!("skipping {chip}: arduino-periph not built");
+        return;
+    };
+    let Ok(launch) = esp32bench_sim::engine::launch(chip, Some(esp32bench_sim::Engine::Lcgamboa))
+    else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let mut s = Session::start(launch.config(chip, image)).await.unwrap();
+    let mut text = Vec::new();
+    let found = s
+        .uart
+        .wait_for(b"esp32bench-periph done", Duration::from_secs(30), |b| {
+            text.extend_from_slice(b)
+        })
+        .await
+        .unwrap();
+    let text = String::from_utf8_lossy(&text);
+    assert_eq!(found, WaitOutcome::Found, "{chip}:\n{text}");
+    for marker in [
+        "esp32bench-periph adc=",
+        "esp32bench-periph tone",
+        "esp32bench-periph pwm",
+    ] {
+        assert!(text.contains(marker), "{chip}: no {marker}:\n{text}");
+    }
+    assert!(!text.contains("abort()"), "{chip}:\n{text}");
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32_runs_adc_and_ledc() {
+    arduino_adc_and_ledc_on_lcgamboa(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32s3_runs_adc_and_ledc() {
+    arduino_adc_and_ledc_on_lcgamboa(Chip::Esp32s3).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32c3_runs_adc_and_ledc() {
+    arduino_adc_and_ledc_on_lcgamboa(Chip::Esp32c3).await;
+}

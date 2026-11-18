@@ -28,3 +28,13 @@ Library: 55 projects from esp32bench.dev, 255 project × board builds. Arduino c
 | `stepper-28byj` on ESP32 and S3 crashed once (`LoadProhibited`) and not in three reruns. | 2 | Intermittent | ESP32, S3 |
 
 Wi-Fi, Bluetooth and deep sleep are outside what the simulator claims. The SuperMini console, the S3 ADC, RMT and LEDC are gaps in the QEMU models that sketches in the library hit, and each can be patched in the fork the way the clock fix was.
+
+## After fork patches 0004 and 0005 (2026-11-18)
+
+The same builds booted again on recipe 5 (S3 ADC and LEDC registers, C3 LEDC readback; `docs/qemu-forks.md`). **141 of 227 pass, up from 129; crashes 12, down from 19.** Fourteen builds changed, none for the worse:
+
+- Seven S3 sketches that hung in ADC calibration before `setup()` now run: `auto-fan`, `battery-sensor`, `ir-sweep`, `joystick-turret`, `oled-pong`, `sd-logger` and `talking-plant`.
+- `tone()` no longer aborts: `simon` and `morse-decoder` pass on the C3, `simon` and `keypad-lock` on the S3; on the SuperMini, `simon` and `morse-decoder` now run silently (USB console).
+- `stepper-28byj` on the ESP32 passed this time; it stays listed as intermittent, with its S3 build.
+
+Left: the SuperMini console (39 builds), RMT for WS2812 LEDs, Wi-Fi waiting by design, deep sleep (4) and Bluetooth (5), which the simulator does not claim, and the intermittent stepper crash on the S3.

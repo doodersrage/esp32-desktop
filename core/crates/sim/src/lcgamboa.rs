@@ -27,12 +27,13 @@ const MARKER: &str = "installed";
 /// 2: the library is built with pixman, for the virtual RGB panel and screendump.
 /// 3: patches as files (PATCHES); esp32-picsimlab reads "QEMU" for the RGB driver.
 /// 4: the CPU clock change fix (Arduino builds panicked at start-up).
-pub const RECIPE: u32 = 4;
+/// 5: S3 ADC and LEDC registers, C3 LEDC readback (sketches hung or aborted).
+pub const RECIPE: u32 = 5;
 
 /// Changes esp32bench makes to the pinned commit, in order. Each file says what and
 /// why. Kept in `core/crates/sim/patches/` and built into the program, so an installed
 /// app can build the fork without the repo.
-pub const PATCHES: [(&str, &str); 3] = [
+pub const PATCHES: [(&str, &str); 5] = [
     (
         "0001.patch",
         include_str!("../patches/0001-build-library-with-pixman.patch"),
@@ -44,6 +45,14 @@ pub const PATCHES: [(&str, &str); 3] = [
     (
         "0003.patch",
         include_str!("../patches/0003-cpu-clock-changes.patch"),
+    ),
+    (
+        "0004.patch",
+        include_str!("../patches/0004-esp32s3-adc-and-ledc-registers.patch"),
+    ),
+    (
+        "0005.patch",
+        include_str!("../patches/0005-esp32c3-ledc-readback.patch"),
     ),
 ];
 
@@ -269,6 +278,8 @@ pub fn steps(jobs: usize) -> Vec<Step> {
                 "../patches/0001.patch",
                 "../patches/0002.patch",
                 "../patches/0003.patch",
+                "../patches/0004.patch",
+                "../patches/0005.patch",
             ],
             "src",
         ),

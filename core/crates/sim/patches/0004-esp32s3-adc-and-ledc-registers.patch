@@ -1,0 +1,125 @@
+esp32s3: SAR ADC and LEDC registers that read back what is written
+
+The esp32s3 machine leaves the SENS (0x60008800) and LEDC (0x60019000)
+ranges unimplemented, so every read returns 0.
+
+- ADC: any Arduino sketch that links the ADC driver runs
+  adc_hw_calibration() before setup(), which starts a one-shot
+  conversion and polls SENS_SAR_MEAS1_CTRL2_REG's MEAS1_DONE_SAR. It
+  never sets, so the sketch hangs silently before setup() (found with GDB:
+  adc_oneshot_ll_get_event in read_cal_channel). About 14 library sketches
+  on the S3 hung this way. Now the SENS registers keep what is written,
+  and a conversion on ADC1 or ADC2 is done at once and reads 0: analog
+  inputs are not simulated.
+- LEDC: ESP-IDF's LEDC driver reads back the clock source and each
+  channel's duty; reading 0 made ledc_get_freq() abort, which stopped
+  tone(). Now the registers keep what is written and each channel's
+  DUTY_R mirrors its DUTY. No PWM output is produced.
+
+Written for esp32bench (GPL-2.0-or-later). Applied by esp32bench
+(core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu at
+885a6e7061fb70fac78a074a719423810bc19a17, after patch 0003.
+
+diff --git a/hw/xtensa/esp32s3.c b/hw/xtensa/esp32s3.c
+index 4a24a04..571afb8 100644
+--- a/hw/xtensa/esp32s3.c
++++ b/hw/xtensa/esp32s3.c
+@@ -248,6 +248,89 @@ static void esp32s3_soc_add_periph_device(MemoryRegion *dest, void* dev, hwaddr
+ 
+ #define MB (1024*1024)
+ 
++/* esp32bench: the SAR ADC's SENS registers (DR_REG_SENS_BASE). Unmodelled, they read
++ * 0, and ESP-IDF's ADC calibration, which runs before setup() in any sketch that
++ * links the ADC driver, polls SENS_SAR_MEAS1_CTRL2_REG's MEAS1_DONE_SAR forever.
++ * Here every register keeps what is written, and a one-shot conversion on ADC1 or
++ * ADC2 is done at once and reads 0: analog inputs are not simulated. */
++#define ESP32BENCH_SENS_BASE        0x60008800
++#define ESP32BENCH_SENS_SIZE        0x400
++#define ESP32BENCH_SAR_MEAS1_CTRL2  0x0C
++#define ESP32BENCH_SAR_MEAS2_CTRL2  0x30
++#define ESP32BENCH_MEAS_DONE        (1u << 16)
++#define ESP32BENCH_MEAS_DATA        0xFFFFu
++
++static uint64_t esp32bench_sens_read(void *opaque, hwaddr addr, unsigned int size)
++{
++    uint32_t *regs = opaque;
++    uint32_t v = regs[addr / 4];
++    if (addr == ESP32BENCH_SAR_MEAS1_CTRL2 || addr == ESP32BENCH_SAR_MEAS2_CTRL2) {
++        v = (v & ~ESP32BENCH_MEAS_DATA) | ESP32BENCH_MEAS_DONE;
++    }
++    return v;
++}
++
++static void esp32bench_sens_write(void *opaque, hwaddr addr, uint64_t value, unsigned int size)
++{
++    uint32_t *regs = opaque;
++    regs[addr / 4] = value;
++}
++
++static const MemoryRegionOps esp32bench_sens_ops = {
++    .read = esp32bench_sens_read,
++    .write = esp32bench_sens_write,
++    .endianness = DEVICE_LITTLE_ENDIAN,
++    .valid.min_access_size = 4,
++    .valid.max_access_size = 4,
++};
++
++/* esp32bench: LEDC (DR_REG_LEDC_BASE), unmodelled on this machine, as registers that
++ * read back what is written, each channel's DUTY_R mirroring its DUTY. Without it
++ * ESP-IDF's LEDC driver reads a clock source of 0 and aborts (ledc_get_freq), which
++ * stops tone(). No PWM output is produced. */
++#define ESP32BENCH_LEDC_BASE  0x60019000
++#define ESP32BENCH_LEDC_SIZE  0x100
++#define ESP32BENCH_LEDC_CHANNELS 8
++
++static uint64_t esp32bench_ledc_read(void *opaque, hwaddr addr, unsigned int size)
++{
++    return ((uint32_t *) opaque)[addr / 4];
++}
++
++static void esp32bench_ledc_write(void *opaque, hwaddr addr, uint64_t value, unsigned int size)
++{
++    uint32_t *regs = opaque;
++    regs[addr / 4] = value;
++    /* Channel n's registers: CONF0, HPOINT, DUTY, CONF1, DUTY_R, every 0x14 bytes. */
++    if (addr < 0x14 * ESP32BENCH_LEDC_CHANNELS && addr % 0x14 == 0x08) {
++        regs[(addr + 8) / 4] = value & 0x7FFFF;
++    }
++}
++
++static const MemoryRegionOps esp32bench_ledc_ops = {
++    .read = esp32bench_ledc_read,
++    .write = esp32bench_ledc_write,
++    .endianness = DEVICE_LITTLE_ENDIAN,
++    .valid.min_access_size = 4,
++    .valid.max_access_size = 4,
++};
++
++static void esp32bench_add_ledc(MemoryRegion *sys_mem)
++{
++    MemoryRegion *mr = g_new(MemoryRegion, 1);
++    uint32_t *regs = g_new0(uint32_t, ESP32BENCH_LEDC_SIZE / 4);
++    memory_region_init_io(mr, NULL, &esp32bench_ledc_ops, regs, "esp32bench.ledc", ESP32BENCH_LEDC_SIZE);
++    memory_region_add_subregion_overlap(sys_mem, ESP32BENCH_LEDC_BASE, mr, 1);
++}
++
++static void esp32bench_add_sens(MemoryRegion *sys_mem)
++{
++    MemoryRegion *mr = g_new(MemoryRegion, 1);
++    uint32_t *regs = g_new0(uint32_t, ESP32BENCH_SENS_SIZE / 4);
++    memory_region_init_io(mr, NULL, &esp32bench_sens_ops, regs, "esp32bench.sens", ESP32BENCH_SENS_SIZE);
++    memory_region_add_subregion_overlap(sys_mem, ESP32BENCH_SENS_BASE, mr, 1);
++}
++
+ static void esp32s3_init_spi_flash(Esp32s3SocState *ms, BlockBackend* blk)
+ {
+     DeviceState *spi_master = DEVICE(&ms->spi1);
+@@ -405,6 +488,8 @@ static void esp32s3_soc_realize(DeviceState *dev, Error **errp)
+ 
+     qdev_realize(DEVICE(&s->rtc_cntl), &s->rtc_bus, &error_fatal);
+     esp32s3_soc_add_periph_device(sys_mem, &s->rtc_cntl, DR_REG_RTCCNTL_BASE);
++    esp32bench_add_sens(sys_mem);
++    esp32bench_add_ledc(sys_mem);
+ 
+     qdev_connect_gpio_out_named(DEVICE(&s->rtc_cntl), ESP32S3_RTC_DIG_RESET_GPIO, 0,
+                                 qdev_get_gpio_in_named(dev, ESP32S3_RTC_DIG_RESET_GPIO, 0));

@@ -133,6 +133,17 @@ Arduino core 3.3.12 builds (Blink, the library's `oled`) panicked within seconds
 
 With `-nic none`, Wi-Fi start-up on the fork's ESP32 crashes (`LoadStorePIFAddrError` in `esp_phy_enable` / `register_chipv7_phy`): the radio model exists only with a NIC. ESP32 sessions on the fork therefore get `-nic hubport,hubid=0,model=esp32_wifi`: a radio on an empty hub, with no DHCP, DNS or route anywhere. `-nic user,restrict=on` was considered and rejected: it isolates the guest from the host and the outside, but QEMU's user-mode stack still forwards DNS queries to the host's resolver. `wifi-sta` now starts, gets no address and keeps running (`lcgamboa_esp32_wifi_has_a_radio_but_no_network`). The C3's radio (`esp32c3_wifi`) reads its MAC address from the eFuse device while the machine is still being built, before that device is realized; without an eFuse file, the device's defaults are only set at realize, so QEMU aborts (`assert(s->mirror != NULL)`). With a file it works, but a blank file fails the bootloader's chip-revision check ("Required >= v0.3, found v0.0"). C3 sessions therefore get a 1024-byte image (`lcgamboa::esp32c3_efuse`) holding what the fork's defaults would set: chip revision v0.3, eFuse block revision v1.3, MAC c4:0a:24:fe:10:01. `wifi-sta` then starts, gets no address and keeps running on the C3 too (`lcgamboa_esp32c3_wifi_has_a_radio_but_no_network`). Upstream could fix it by realizing the eFuses before the NIC.
 
+### Library sketches that hung or aborted: ADC and LEDC (found and fixed 2026-11-18)
+
+The first library sweep (`docs/library-sweep.md`) booted every ESP32, S3 and C3 build. Two register-level gaps stopped sketches that do nothing unusual:
+
+- **S3 SAR ADC.** Any Arduino sketch that links the ADC driver runs `adc_hw_calibration()` before `setup()`. It starts a one-shot conversion and polls `SENS_SAR_MEAS1_CTRL2_REG`'s `MEAS1_DONE_SAR` (0x6000880C, bit 16). The `esp32s3` machine leaves the SENS range unimplemented, so the bit never sets and the sketch hangs silently, on Espressif's QEMU too. Found with GDB attached to the hung `talking-plant` build (`adc_oneshot_ll_get_event` in `read_cal_channel`).
+- **LEDC readback, C3 and S3.** ESP-IDF's LEDC driver reads back `LEDC_CONF_REG`'s clock source (`ledc_get_freq()` aborts on 0) and each channel's `DUTY_R`. The C3 model returned only timer and channel CONF0 registers; the S3 has no LEDC model. So `tone()` aborted (`simon`, `morse-decoder`, `keypad-lock`). Found by decoding the abort's backtrace with the core's `addr2line`.
+- **Fix:** patch 0004 gives the S3 SENS and LEDC ranges as registers that keep what is written, a conversion that completes at once and reads 0 (analog inputs are not simulated), and `DUTY_R` mirroring `DUTY`. Patch 0005 makes the C3's LEDC registers read back the same way, keeping its duty reporting. Recipe 5.
+- **Evidence:** `tests/firmware/arduino-periph` (analogRead, tone, analogWrite) completes on all three chips with the patches (`lcgamboa_*_runs_adc_and_ledc` in `core/crates/sim/tests/boot.rs`); without them the C3 and S3 tests fail.
+
+Still open from the sweep: RMT (WS2812 writes block on all three chips; the ESP32 model exists but the current driver does not complete with it, and the C3 and S3 have none), and the C3's USB-Serial-JTAG console (a stub on both forks, so the C3 SuperMini's output is not seen).
+
 ## Open questions
 
 - Should simulator boot tests stub out Wi-Fi, or should a project be marked as "no simulator" when it starts Wi-Fi at boot? lcgamboa's fork answers this for ESP32 and C3 only.

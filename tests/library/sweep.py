@@ -163,6 +163,7 @@ def main():
         (k, e) for k, e in report.items()
         if (k.split("/")[0], k.split("/")[1]) in todo
         and e["chip"] in SIMULATED_CHIPS and e["board"] not in WORKBENCH_ONLY
+        and not e.get("build", {}).get("prebuilt")
         and e.get("build", {}).get("ok", a.skip_build) is True
     ]
     with concurrent.futures.ThreadPoolExecutor(a.jobs) as pool:
