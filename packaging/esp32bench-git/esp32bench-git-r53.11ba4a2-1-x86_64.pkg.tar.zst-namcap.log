@@ -1,0 +1,7 @@
+esp32bench-git W: Unused shared library '/usr/lib64/ld-linux-x86-64.so.2' by file ('usr/bin/esp32bench')
+esp32bench-git W: Unused shared library '/usr/lib64/ld-linux-x86-64.so.2' by file ('usr/bin/esp32benchd')
+esp32bench-git W: Unused shared library '/usr/lib64/ld-linux-x86-64.so.2' by file ('usr/lib/esp32bench/esp32bench-qemu-host')
+esp32bench-git W: Dependency libstdc++ detected and implicitly satisfied (libraries ['usr/lib/libstdc++.so.6'] needed in files ['usr/bin/esp32bench-gui'])
+esp32bench-git W: Dependency libgcc detected and implicitly satisfied (libraries ['usr/lib/libgcc_s.so.1'] needed in files ['usr/lib/esp32bench/esp32bench-qemu-host', 'usr/bin/esp32bench-gui', 'usr/bin/esp32bench', 'usr/bin/esp32benchd'])
+esp32bench-git W: Dependency included, but may not be needed ('gcc-libs')
+esp32bench-git W: Dependency included, but may not be needed ('qt6-svg')

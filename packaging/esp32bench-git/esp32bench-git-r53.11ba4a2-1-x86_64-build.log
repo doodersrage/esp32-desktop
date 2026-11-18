@@ -1,0 +1,206 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling libc v0.2.191
+   Compiling serde_core v1.0.229
+   Compiling cfg-if v1.0.5
+   Compiling version_check v0.9.5
+   Compiling serde v1.0.229
+   Compiling memchr v2.8.3
+   Compiling typenum v1.20.1
+   Compiling thiserror v2.0.21
+   Compiling scopeguard v1.2.0
+   Compiling itoa v1.0.19
+   Compiling autocfg v1.5.1
+   Compiling parking_lot_core v0.9.12
+   Compiling zmij v1.0.23
+   Compiling pkg-config v0.3.34
+   Compiling serde_json v1.0.154
+   Compiling pin-project-lite v0.2.17
+   Compiling heck v0.5.0
+   Compiling crunchy v0.2.4
+   Compiling bytes v1.12.1
+   Compiling strsim v0.11.1
+   Compiling ident_case v1.0.1
+   Compiling lock_api v0.4.14
+   Compiling equivalent v1.0.3
+   Compiling winnow v1.0.5
+   Compiling fnv v1.0.7
+   Compiling hashbrown v0.17.1
+   Compiling tiny-keccak v2.0.2
+   Compiling radium v0.7.0
+   Compiling portable-atomic v1.15.0
+   Compiling toml_datetime v1.1.3+spec-1.1.0
+   Compiling zerocopy v0.8.63
+   Compiling bitflags v1.3.2
+   Compiling tap v1.0.1
+   Compiling getrandom v0.3.4
+   Compiling rustversion v1.0.23
+   Compiling once_cell v1.21.4
+   Compiling generic-array v0.14.7
+   Compiling ahash v0.8.12
+   Compiling wyz v0.5.1
+   Compiling aho-corasick v1.1.5
+   Compiling funty v2.0.0
+   Compiling regex-syntax v0.8.11
+   Compiling crc32fast v1.5.5
+   Compiling cfg_aliases v0.2.2
+   Compiling const-oid v0.10.3
+   Compiling nix v0.31.3
+   Compiling csv-core v0.1.13
+   Compiling no_std_io2 v0.8.1
+   Compiling static_assertions v1.1.0
+   Compiling indexmap v2.14.2
+   Compiling num-traits v0.2.19
+   Compiling hybrid-array v0.4.15
+   Compiling libudev-sys v0.1.4
+   Compiling syn v3.0.10
+   Compiling syn v2.0.119
+   Compiling smartstring v1.0.1
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling bitvec v1.1.1
+   Compiling ryu v1.0.23
+   Compiling cpufeatures v0.2.17
+   Compiling io-lifetimes v1.0.11
+   Compiling adler2 v2.0.1
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling simd-adler32 v0.3.10
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling stable_deref_trait v1.2.1
+   Compiling miniz_oxide v0.9.1
+   Compiling digest v0.10.7
+   Compiling toml_edit v0.25.19+spec-1.1.0
+   Compiling getrandom v0.2.17
+   Compiling cpufeatures v0.3.1
+   Compiling thin-vec v0.2.21
+   Compiling sha2 v0.10.9
+   Compiling md-5 v0.10.6
+   Compiling base64 v0.22.1
+   Compiling const-random-macro v0.1.16
+   Compiling digest v0.11.3
+   Compiling parse_int v0.9.0
+   Compiling toml_writer v1.2.0+spec-1.1.0
+   Compiling unicode-width v0.1.14
+   Compiling flate2 v1.1.11
+   Compiling sha2 v0.11.1
+   Compiling md-5 v0.11.0
+   Compiling object v0.40.0
+   Compiling proc-macro-crate v3.5.0
+   Compiling errno v0.3.15
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.5
+   Compiling signal-hook-registry v1.4.8
+   Compiling libudev v0.3.0
+   Compiling nix v0.26.4
+   Compiling bitflags v2.13.2
+   Compiling const-random v0.1.18
+   Compiling regex-automata v0.4.18
+   Compiling csv v1.4.0
+   Compiling serde_spanned v1.1.3
+   Compiling toml v1.2.1+spec-1.1.0
+   Compiling gimli v0.34.0
+   Compiling reed-solomon v0.2.1
+   Compiling utf8parse v0.2.2
+   Compiling esp-metadata-generated v0.5.3
+   Compiling anyhow v1.0.104
+   Compiling base64 v0.23.1
+   Compiling slip-codec v0.4.0
+   Compiling log v0.4.35
+   Compiling darling_core v0.20.11
+   Compiling anstyle-parse v1.0.0
+   Compiling udev v0.9.3
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling anstyle v1.0.14
+   Compiling colorchoice v1.0.5
+   Compiling anstyle-query v1.1.5
+   Compiling clap_lex v1.1.1
+   Compiling anstream v1.0.0
+   Compiling clap_builder v4.6.7
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling tokio-macros v2.7.2
+   Compiling regex v1.13.1
+   Compiling bytemuck_derive v1.12.1
+   Compiling strum_macros v0.27.2
+   Compiling strum_macros v0.28.0
+   Compiling miette-derive v7.6.0
+   Compiling rhai_codegen v3.3.0
+   Compiling clap_derive v4.6.7
+   Compiling darling_macro v0.20.11
+   Compiling bytemuck v1.25.2
+   Compiling darling v0.20.11
+   Compiling deku_derive v0.18.1
+   Compiling unescaper v0.1.10
+   Compiling serialport v4.10.1
+   Compiling miette v7.6.0
+   Compiling strum v0.28.0
+   Compiling strum v0.27.2
+   Compiling clap v4.6.7
+   Compiling deku v0.18.1
+   Compiling smallvec v1.16.5
+   Compiling serde_plain v1.0.2
+   Compiling rhai v1.27.0
+   Compiling parking_lot v0.12.5
+   Compiling tokio v1.54.1
+   Compiling esp-idf-part v0.6.0
+   Compiling espflash v4.7.0
+   Compiling esp32bench-flash v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/flash)
+   Compiling esp32bench-library v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/library)
+   Compiling esp32bench-sim v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/sim)
+   Compiling esp32bench-debug v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/debug)
+   Compiling esp32bench-serial v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/serial)
+   Compiling esp32bench-device v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/device)
+   Compiling esp32bench-rpc v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/rpc)
+   Compiling esp32bench-build v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/build)
+   Compiling esp32bench-toolchain v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/toolchain)
+   Compiling esp32bench-circuit v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/circuit)
+   Compiling esp32bench-daemon v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/daemon)
+   Compiling esp32bench-qemu-host v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/qemu-host)
+   Compiling esp32bench v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/cli)
+    Finished `release` profile [optimized] target(s) in 34.62s
+-- The CXX compiler identification is GNU 16.2.1
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Performing Test HAVE_STDATOMIC
+-- Performing Test HAVE_STDATOMIC - Success
+-- Found WrapAtomic: TRUE
+-- Found OpenGL: /usr/lib/libOpenGL.so
+-- Found WrapOpenGL: TRUE
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Configuring done (0.6s)
+-- Generating done (0.0s)
+-- Build files have been written to: /build/esp32bench-git/src/build-ui
+[1/26] Automatic MOC and UIC for target esp32bench_ui
+[2/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/Labels.cpp.o
+[3/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/RpcClient.cpp.o
+[4/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/ConsoleView.cpp.o
+[5/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/DisplayPanel.cpp.o
+[6/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/PinsPanel.cpp.o
+[7/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/DevicesPanel.cpp.o
+[8/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/BoardInfoDialog.cpp.o
+[9/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/SimulatorPanel.cpp.o
+[10/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/BuildPanel.cpp.o
+[11/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/SerialMonitor.cpp.o
+[12/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/SetupDialog.cpp.o
+[13/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/LibraryPanel.cpp.o
+[14/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/DebugPanel.cpp.o
+[15/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/ProjectView.cpp.o
+[16/26] Building CXX object CMakeFiles/esp32bench_ui.dir/esp32bench_ui_autogen/mocs_compilation.cpp.o
+[17/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/MainWindow.cpp.o
+[18/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/CoreConnection.cpp.o
+[19/26] Building CXX object CMakeFiles/esp32bench_ui.dir/src/CircuitPanel.cpp.o
+[20/26] Linking CXX static library libesp32bench_ui.a
+[21/26] Automatic MOC and UIC for target esp32bench-gui
+[22/26] Running rcc for resource icon
+[23/26] Building CXX object CMakeFiles/esp32bench-gui.dir/esp32bench-gui_autogen/mocs_compilation.cpp.o
+[24/26] Building CXX object CMakeFiles/esp32bench-gui.dir/.qt/rcc/qrc_icon.cpp.o
+[25/26] Building CXX object CMakeFiles/esp32bench-gui.dir/src/main.cpp.o
+[26/26] Linking CXX executable esp32bench-gui

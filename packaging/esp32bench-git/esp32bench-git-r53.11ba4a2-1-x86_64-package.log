@@ -1,0 +1,3 @@
+-- Install configuration: "None"
+-- Installing: /build/esp32bench-git/pkg/esp32bench-git/usr/bin/esp32bench-gui
+-- Set non-toolchain portion of runtime path of "/build/esp32bench-git/pkg/esp32bench-git/usr/bin/esp32bench-gui" to "$ORIGIN:$ORIGIN/../lib"

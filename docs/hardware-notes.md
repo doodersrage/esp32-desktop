@@ -69,7 +69,9 @@ Still untried: the automatic DTR/RTS reset of boards with an auto-reset circuit 
 
 ## The package on Plasma (2026-11-17)
 
-The owner built and installed `esp32bench-git` (r52) with `makepkg -si`. `xdg-mime query default x-scheme-handler/esp32bench` gave `esp32bench.desktop`. `xdg-open 'esp32bench://project/rtc-clock?board=esp32c3'` at first seemed to do nothing: a core from a dev build, started that morning before `link.open` existed, was still running, the installed app connected to it, and the refusal showed only in the status bar. With that core stopped, the link opened the app and selected the project and board. Since then the app refuses a core with an older protocol minor and says how to replace it, rather than connecting to it.
+The owner built and installed `esp32bench-git` (r52) with `makepkg -si`. `xdg-mime query default x-scheme-handler/esp32bench` gave `esp32bench.desktop`. `xdg-open 'esp32bench://project/rtc-clock?board=esp32c3'` at first seemed to do nothing: a core from a dev build, started that morning before `link.open` existed, was still running, the installed app connected to it, and the refusal showed only in the status bar. With that core stopped, the link opened the app and selected the project and board. Since then the app refuses a core with an older protocol minor and says how to replace it, rather than connecting to it. "ESP32 Bench" shows in the Plasma launcher with its icon.
+
+Package checks (2026-11-17): `extra-x86_64-build` built it in a clean chroot (checkpkg skipped, as it does for packages in no repo). `namcap PKGBUILD` is clean. On the package, namcap found `gcc-libs` replaced by `libgcc` and `libstdc++` (fixed); what remains is expected: `qt6-svg` "may not be needed" (a Qt plugin loaded at run time, which namcap cannot see), and "unused shared library ld-linux" on the Rust binaries, a known false positive.
 
 ## Not yet tried on real hardware
 

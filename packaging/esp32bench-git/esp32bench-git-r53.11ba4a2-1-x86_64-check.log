@@ -1,0 +1,217 @@
+   Compiling memchr v2.8.3
+   Compiling serde_json v1.0.154
+   Compiling num-traits v0.2.19
+   Compiling foldhash v0.2.0
+   Compiling rustix v1.1.6
+   Compiling getrandom v0.4.3
+   Compiling allocator-api2 v0.2.21
+   Compiling ahash v0.8.12
+   Compiling linux-raw-sys v0.12.1
+   Compiling bitflags v2.13.2
+   Compiling fastrand v2.5.0
+   Compiling ref-cast v1.0.27
+   Compiling ref-cast-impl v1.0.27
+   Compiling borrow-or-share v0.2.4
+   Compiling unicode-general-category v1.1.0
+   Compiling bit-vec v0.8.0
+   Compiling jsonschema-value v0.61.2
+   Compiling bytecount v0.6.9
+   Compiling vsimd v0.8.0
+   Compiling num-cmp v0.1.0
+   Compiling micromap v0.3.0
+   Compiling outref v0.5.2
+   Compiling percent-encoding v2.3.2
+   Compiling email_address v0.2.9
+   Compiling jsonschema-regex v0.61.2
+   Compiling data-encoding v2.11.1
+   Compiling serialport v4.10.1
+   Compiling bit-set v0.8.0
+   Compiling nix v0.31.3
+   Compiling hashbrown v0.17.1
+   Compiling uuid-simd v0.8.0
+   Compiling esp32bench-device v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/device)
+   Compiling esp32bench-serial v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/serial)
+   Compiling aho-corasick v1.1.5
+   Compiling csv-core v0.1.13
+   Compiling no_std_io2 v0.8.1
+   Compiling object v0.40.0
+   Compiling fluent-uri v0.4.1
+   Compiling deku v0.18.1
+   Compiling csv v1.4.0
+   Compiling num-integer v0.1.47
+   Compiling num-complex v0.4.6
+   Compiling parse_int v0.9.0
+   Compiling rhai v1.27.0
+   Compiling num-bigint v0.4.8
+   Compiling num-iter v0.1.46
+   Compiling indexmap v2.14.2
+   Compiling regex-automata v0.4.18
+   Compiling esp32bench-library v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/library)
+   Compiling esp32bench-sim v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/sim)
+   Compiling referencing v0.61.2
+   Compiling esp32bench-rpc v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/rpc)
+   Compiling gimli v0.34.0
+   Compiling esp32bench-debug v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/debug)
+   Compiling tempfile v3.27.0
+   Compiling esp32bench-build v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/build)
+   Compiling num-rational v0.4.2
+   Compiling esp32bench-toolchain v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/toolchain)
+   Compiling num v0.4.3
+   Compiling fraction v0.17.0
+   Compiling regex v1.13.1
+   Compiling fancy-regex v0.20.2
+   Compiling esp-idf-part v0.6.0
+   Compiling espflash v4.7.0
+   Compiling jsonschema v0.61.2
+   Compiling esp32bench-flash v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/flash)
+   Compiling esp32bench-circuit v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/circuit)
+   Compiling esp32bench-daemon v0.0.1 (/build/esp32bench-git/src/esp32-desktop/core/crates/daemon)
+    Finished `release` profile [optimized] target(s) in 30.35s
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-build/580da6828d6f25a5/out/esp32bench_build-580da6828d6f25a5)
+
+running 2 tests
+test tests::every_board_maps_to_an_esp32_fqbn ... ok
+test tests::rejects_unsafe_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-circuit/018f2c8e19943b97/out/esp32bench_circuit-018f2c8e19943b97)
+
+running 17 tests
+test tests::reads_circuit_1_0 ... ok
+test tests::controls_must_be_sliders_in_range ... ok
+test tests::saves_as_the_current_version_and_loads ... ok
+test tests::validation_checks_parts_against_their_models ... ok
+test runtime::tests::rgb_led_lights_each_colour ... ok
+test runtime::tests::led_lights_only_when_driven_at_its_active_level ... ok
+test runtime::tests::button_and_switch_drive_their_pins ... ok
+test runtime::tests::scripts_cannot_run_forever_or_reach_out ... ok
+test runtime::tests::ds3231_alarm_pin_is_optional ... ok
+test runtime::tests::mpu6050_reads_tilt_as_gravity ... ok
+test runtime::tests::ssd1306_page_mode_and_mirroring ... ok
+test tests::example_matches_the_shared_schema ... ok
+test tests::built_in_models_load_and_match_their_schema ... ok
+test runtime::tests::saved_slider_values_apply_at_start ... ok
+test runtime::tests::bme280_reads_back_what_the_sliders_say ... ok
+test runtime::tests::ssd1306_draws_what_adafruit_sends ... ok
+test runtime::tests::ds3231_keeps_time_and_fires_alarms ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.20s
+
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-daemon/55657be5dcb7474d/out/esp32bench_daemon-55657be5dcb7474d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-debug/76ce710d1f0d2105/out/esp32bench_debug-76ce710d1f0d2105)
+
+running 4 tests
+test tests::decodes_stream_escapes ... ok
+test tests::parses_records_seen_from_gdb_17 ... ok
+test tests::picks_general_registers ... ok
+test tests::breakpoint_locations_cannot_smuggle_commands ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-device/10f3ae3d66821e71/out/esp32bench_device-10f3ae3d66821e71)
+
+running 4 tests
+test tests::serializes_to_the_schema_shape ... ok
+test tests::narrows_chips_from_espressif_ids ... ok
+test tests::classifies_common_bridges_without_guessing_the_chip ... ok
+test tests::monitor_waits_quietly_and_its_thread_ends_on_drop ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-flash/247232f9e14358bb/out/esp32bench_flash-247232f9e14358bb)
+
+running 5 tests
+test tests::reads_crystal_mhz ... ok
+test tests::reads_the_chip_from_an_image_header ... ok
+test tests::parses_the_default_arduino_table ... ok
+test tests::rejects_garbage_and_erased_flash ... ok
+test tests::trims_erased_tail_to_whole_sectors ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-library/0ba476e7a0589528/out/esp32bench_library-0ba476e7a0589528)
+
+running 2 tests
+test link::tests::reads_the_sites_links ... ok
+test link::tests::refuses_anything_else ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-rpc/7f1718ddb9fbf575/out/esp32bench_rpc-7f1718ddb9fbf575)
+
+running 7 tests
+test tests::rejects_malformed_messages ... ok
+test tests::round_trips_success_and_error ... ok
+test tests::delivers_notifications_and_skips_notification_responses ... ok
+test tests::closes_connection_on_oversized_message ... ok
+test tests::subscriptions_stop_when_the_client_disconnects ... ok
+test tests::subscriptions_stream_until_unsubscribed ... ok
+test tests::handles_requests_concurrently ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-serial/5f290a5362c78946/out/esp32bench_serial-5f290a5362c78946)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-sim/1933e61b18f0c7b0/out/esp32bench_sim-1933e61b18f0c7b0)
+
+running 41 tests
+test chip::tests::maps_chips_to_qemu ... ok
+test display::tests::parses_qemu_ppm ... ok
+test display::tests::rejects_other_formats_and_short_data ... ok
+test chip::tests::id_matches_serialized_form ... ok
+test chip::tests::rejects_workbench_only_chips ... ok
+test chip::tests::parses_simulated_chips_in_several_spellings ... ok
+test engine::tests::host_is_found_beside_the_daemon_or_in_the_packages_lib_dir ... ok
+test engine::tests::s3_runs_on_the_fork_executable ... ok
+test engine::tests::engine_names_round_trip ... ok
+test engine::tests::esp32_and_c3_go_through_the_host_with_the_library ... ok
+test gdb::tests::frames_packets ... ok
+test image::tests::reads_flash_mode_at_chip_offset ... ok
+test gpio::tests::parses_host_lines ... ok
+test image::tests::rejects_app_only_or_wrong_chip_image ... ok
+test image::tests::rejects_oversize_image ... ok
+test lcgamboa::tests::hint_names_arch_packages_once ... ok
+test lcgamboa::tests::steps_fetch_the_pinned_commit_and_use_fixed_arguments ... ok
+test pin::tests::assets_are_pinned_to_the_release ... ok
+test lcgamboa::tests::a_build_counts_only_with_the_pinned_marker ... ok
+test install::tests::hashes_files ... ok
+test session::tests::builds_args_without_gdb ... ok
+test qmp::tests::rejects_non_qmp_peer ... ok
+test gdb::tests::reads_stop_reply ... ok
+test qmp::tests::negotiates_and_runs_commands ... ok
+test session::tests::gdb_stub_binds_loopback_only ... ok
+test session::tests::machine_override_and_extra_args_are_passed_verbatim ... ok
+test session::tests::no_network_by_default ... ok
+test session::tests::parses_session_dir_names ... ok
+test session::tests::efuse_image_is_a_file_in_the_session_directory ... ok
+test session::tests::removes_only_dead_sessions ... ok
+test session::tests::runtime_dirs_are_private_and_unique ... ok
+test uart::tests::returns_partial_panic_report_when_output_stops ... ok
+test uart::tests::treats_idf_assert_as_panic ... ok
+test uart::tests::writes_reach_the_peer ... ok
+test image::tests::pads_to_fit_when_header_is_too_small ... ok
+test image::tests::pads_to_declared_flash_size ... ok
+test display::tests::untouched_panel_is_unconfigured ... ok
+test uart::tests::finds_marker_split_across_chunks ... ok
+test uart::tests::reports_panic_and_keeps_non_utf8_bytes ... ok
+test session::tests::reports_qemu_stderr_when_it_dies_at_start ... ok
+test uart::tests::times_out_and_detects_close ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src/lib.rs (/build/esp32bench-git/src/target/release/build/esp32bench-toolchain/9eaacbcb02c80f1f/out/esp32bench_toolchain-9eaacbcb02c80f1f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
