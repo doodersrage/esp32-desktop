@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "ws2812",
+  "name": "WS2812 LED strip (NeoPixel)",
+  "look": "strip",
+  "pins": ["din"],
+  "props": {
+    "count": { "type": "int", "default": 8, "min": 1, "max": 64, "label": "LEDs on the strip" },
+    "rgbOrder": { "type": "bool", "default": false, "label": "Colours sent red, green, blue (most strips take green first)" }
+  },
+  "state": { "leds": [] },
+  "script": "ws2812.rhai"
+}

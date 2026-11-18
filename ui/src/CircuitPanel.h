@@ -48,6 +48,8 @@ public:
     // A display part's latest picture (null until the simulation draws).
     QImage partPicture(const QString &id) const;
     QString partToolTip(const QString &id) const;
+    // A strip part's number of LEDs as drawn (0 for other parts).
+    int partStripLength(const QString &id) const;
     QGraphicsView *view() const { return m_view; }
     PartItem *item(const QString &id) const { return m_items.value(id); }
     // The middle of a part on the canvas, in scene coordinates.

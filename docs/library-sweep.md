@@ -85,3 +85,7 @@ Sessions on the fork's ESP32 and C3 now have the simulated Wi-Fi network, and th
 | ESP32-S3 DevKitC | 32 | 2 | 10 |
 
 Every ESP32 and C3 build passes except `ble-scan` (Bluetooth, which the simulator does not claim). On the S3, the ten Wi-Fi builds start without a radio (the fork models none for the S3), and `stepper-28byj` crashes at start-up (an FPU exception in a global constructor; Espressif's QEMU runs it). `dht22` passed in both sweeps and survived 20 sessions at once.
+
+## Recipe 11 (2026-11-18)
+
+Patch 0010 enables the coprocessors from reset, as Espressif's QEMU does: `stepper-28byj` on the S3 now passes (its global constructor uses floats). **212 of 227 pass.** What is left: `ble-scan` on all five boards (Bluetooth) and the S3's ten Wi-Fi builds (no radio in the fork's S3). A targeted rerun of `stepper-28byj`, `neopixel`, `fire-lamp`, `keypad-lock` and `talking-plant` on every board passed.

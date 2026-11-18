@@ -354,7 +354,9 @@ async fn wifi_has_a_radio_but_no_network(chip: Chip) {
     s.shutdown().await.unwrap();
 }
 
-/// The ADC, LEDC and RMT calls the library's sketches make run through on the fork:
+/// Floating point in a global constructor runs (patch 0010: the S3 had the FPU off
+/// from reset), and the ADC, LEDC and RMT calls the library's sketches make run
+/// through on the fork:
 /// analogRead() (on the S3, ADC calibration ran before setup() and hung until patch
 /// 0004), tone() and analogWrite() (LEDC; aborted on the C3 and S3 until patches 0004
 /// and 0005), and rmtWrite() and rgbLedWrite() (RMT, as WS2812 LEDs use it; never
@@ -381,6 +383,7 @@ async fn arduino_peripherals_on_lcgamboa(chip: Chip) {
     let text = String::from_utf8_lossy(&text);
     assert_eq!(found, WaitOutcome::Found, "{chip}:\n{text}");
     for marker in [
+        "esp32bench-periph fpu=6",
         "esp32bench-periph adc=",
         "esp32bench-periph tone",
         "esp32bench-periph pwm",

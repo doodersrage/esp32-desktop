@@ -60,6 +60,7 @@ type RegisterFn = unsafe extern "C" fn(*const c_void);
 type SetPinFn = unsafe extern "C" fn(c_int, c_int);
 type LockFn = unsafe extern "C" fn(*const c_char, c_int);
 type UnlockFn = unsafe extern "C" fn();
+type InternalsFn = unsafe extern "C" fn(c_int) -> *mut u32;
 
 /// Functions resolved from the QEMU library.
 struct Qemu {
@@ -70,6 +71,7 @@ struct Qemu {
     set_pin: SetPinFn,
     bql_lock: LockFn,
     bql_unlock: UnlockFn,
+    internals: InternalsFn,
 }
 
 /// Messages to the bridge's worker thread: lines from QEMU's callbacks, and effects
@@ -78,6 +80,11 @@ enum Msg {
     Qemu(String),
     Client(String),
     Effects(Vec<esp32bench_circuit::Effect>),
+    /// A WS2812 frame an RMT channel sent: the decoded bytes.
+    Rmt {
+        channel: u8,
+        bytes: Vec<u8>,
+    },
     Connected,
 }
 
@@ -239,7 +246,79 @@ extern "C" fn on_spi_event(_id: u8, _event: u16) -> u8 {
 
 extern "C" fn on_uart_tx(_id: u8, _value: u8) {}
 
-extern "C" fn on_rmt_event(_channel: u8, _config0: u32, _value: u32) {}
+/// RMT symbols decoded as WS2812 bits, per channel, until the transmission ends.
+#[derive(Default, Clone)]
+struct Ws2812 {
+    bytes: Vec<u8>,
+    byte: u8,
+    bits: u8,
+}
+
+/// Whether a part listens for RMT frames (a WS2812 strip); else symbols are ignored.
+static WANT_RMT: OnceLock<bool> = OnceLock::new();
+static RMT: Mutex<[Option<Ws2812>; 8]> = Mutex::new([const { None }; 8]);
+/// The library's `qemu_picsimlab_get_internals`, for the GPIO matrix's output routing.
+static INTERNALS: OnceLock<InternalsFn> = OnceLock::new();
+/// The GPIO matrix's output signal of RMT channel 0 (ESP32: 87; ESP32-C3: 51).
+static RMT_SIGNAL0: OnceLock<u32> = OnceLock::new();
+const QEMU_INTERNAL_GPIO_OUT_SEL: c_int = 2;
+const OUT_SEL_GPIOS: usize = 40;
+
+/// One RMT symbol from the fork's RMT models (patches 0007 and 0011), or 0 when a
+/// transmission ended. A WS2812 bit is a high pulse then a low one: longer high for 1.
+extern "C" fn on_rmt_event(channel: u8, _config0: u32, value: u32) {
+    if !WANT_RMT.get().copied().unwrap_or(false) {
+        return;
+    }
+    let i = usize::from(channel);
+    if i >= 8 {
+        return;
+    }
+    let mut rmt = RMT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let frame = rmt[i].get_or_insert_with(Ws2812::default);
+    if value == 0 {
+        let bytes = std::mem::take(&mut frame.bytes);
+        *frame = Ws2812::default();
+        if !bytes.is_empty()
+            && let Some(tx) = EVENTS.get()
+        {
+            let _ = tx.send(Msg::Rmt { channel, bytes });
+        }
+        return;
+    }
+    let (high_first, d0, d1) = (value & 0x8000 != 0, value & 0x7fff, (value >> 16) & 0x7fff);
+    if !high_first || frame.bytes.len() >= 3 * 1024 {
+        return;
+    }
+    frame.byte = (frame.byte << 1) | u8::from(d0 > d1);
+    frame.bits += 1;
+    if frame.bits == 8 {
+        frame.bytes.push(frame.byte);
+        frame.byte = 0;
+        frame.bits = 0;
+    }
+}
+
+/// The GPIO an RMT channel is routed to, from the GPIO matrix's output selection.
+fn rmt_gpio(channel: u8) -> Option<u8> {
+    let internals = *INTERNALS.get()?;
+    let signal = RMT_SIGNAL0.get()? + u32::from(channel);
+    // SAFETY: the library returns its GPIO device's out_sel array (40 u32 on both
+    // chips), which lives as long as the machine; it is read only.
+    let table = unsafe { internals(QEMU_INTERNAL_GPIO_OUT_SEL) };
+    if table.is_null() {
+        return None;
+    }
+    (0..OUT_SEL_GPIOS)
+        .find(|&g| {
+            // SAFETY: g < 40, inside the array; a racy read of a register value is fine.
+            let sel = unsafe { std::ptr::read_volatile(table.add(g)) };
+            sel & 0x1ff == signal
+        })
+        .and_then(|g| u8::try_from(g).ok())
+}
 
 fn main() -> ExitCode {
     match run() {
@@ -276,10 +355,17 @@ fn run() -> Result<c_int, String> {
         let circuit: esp32bench_circuit::Circuit =
             serde_json::from_slice(&data).map_err(|e| format!("{path:?}: {e}"))?;
         let runtime = esp32bench_circuit::Runtime::new(&circuit).map_err(|e| e.to_string())?;
+        let _ = WANT_RMT.set(runtime.has_rmt());
         let _ = PARTS.set(Mutex::new(runtime));
     }
 
     let qemu = load(&lib)?;
+    let _ = INTERNALS.set(qemu.internals);
+    let _ = RMT_SIGNAL0.set(if lib.to_string_lossy().contains("riscv32") {
+        51
+    } else {
+        87
+    });
 
     // The pin map is read during machine set-up, so it must outlive qemu_init.
     let mut pinmap: Vec<i16> = Vec::with_capacity(gpios.len() + 1);
@@ -549,6 +635,11 @@ impl Worker {
                 });
                 effects.is_none_or(|e| self.apply(e))
             }
+            Msg::Rmt { channel, bytes } => {
+                let effects =
+                    rmt_gpio(channel).and_then(|gpio| parts_lock().map(|mut p| p.rmt(gpio, bytes)));
+                effects.is_none_or(|e| self.apply(e))
+            }
             Msg::Qemu(line) => {
                 if !self.send(&line) {
                     return false;
@@ -638,6 +729,9 @@ fn load(path: &std::ffi::OsStr) -> Result<Qemu, String> {
             set_pin: std::mem::transmute::<*mut c_void, SetPinFn>(sym(c"qemu_picsimlab_set_pin")?),
             bql_lock: std::mem::transmute::<*mut c_void, LockFn>(sym(c"bql_lock_impl")?),
             bql_unlock: std::mem::transmute::<*mut c_void, UnlockFn>(sym(c"bql_unlock")?),
+            internals: std::mem::transmute::<*mut c_void, InternalsFn>(sym(
+                c"qemu_picsimlab_get_internals",
+            )?),
         })
     }
 }

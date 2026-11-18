@@ -99,6 +99,13 @@ private:
                     return m;
                 }(),
                 [&] {
+                    QJsonObject m = model(u"ws2812"_s, u"WS2812 LED strip"_s, u"strip"_s, {u"din"_s}, {},
+                                          QJsonObject{{u"leds"_s, QJsonArray{}}});
+                    m.insert(u"props"_s, QJsonObject{{u"count"_s, QJsonObject{{u"type"_s, u"int"_s}, {u"default"_s, 8},
+                                                                                {u"label"_s, u"LEDs"_s}}}});
+                    return m;
+                }(),
+                [&] {
                     QJsonObject m = model(u"ds3231"_s, u"DS3231"_s, u"box"_s, {u"sqw"_s}, {}, QJsonObject{});
                     m.insert(u"optionalPins"_s, QJsonArray{u"sqw"_s});
                     m.insert(u"i2c"_s, QJsonObject{{u"addresses"_s, QJsonArray{104}}});
@@ -143,6 +150,35 @@ private:
     }
 
 private slots:
+    void drawsALedStrip()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        CircuitPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QTRY_VERIFY(panel.modelIds().contains(u"ws2812"_s));
+        panel.showBoard(u"neopixel"_s, u"esp32"_s, QJsonArray{u"16"_s, u"GND"_s});
+        QTRY_COMPARE(panel.parts().size(), 1);
+
+        // Stopped, the strip is drawn as long as its count says.
+        panel.addPart(u"ws2812"_s, QJsonObject{{u"din"_s, 16}}, QJsonObject{{u"count"_s, 3}}, {});
+        QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_COMPARE(panel.partStripLength(u"ws2812-1"_s), 3);
+        QCOMPARE(panel.partStripLength(u"led-1"_s), 0);
+
+        // Running: each LED shows the colour the core reports.
+        core.startSim(u"neopixel"_s, u"esp32"_s);
+        QTRY_VERIFY(core.simPartsActive());
+        const QJsonArray leds{QJsonArray{40, 0, 0}, QJsonArray{0, 0, 40}, QJsonArray{0, 0, 0}};
+        fake.parts(QJsonArray{QJsonObject{{u"id"_s, u"ws2812-1"_s}, {u"state"_s, QJsonObject{{u"leds"_s, leds}}}}});
+        QTRY_COMPARE(panel.partState(u"ws2812-1"_s).value(u"leds"_s).toArray(), leds);
+        QCOMPARE(panel.partStripLength(u"ws2812-1"_s), 3);
+        core.stopSim();
+        QTRY_VERIFY(!core.isSimRunning());
+    }
+
     void editsAndRunsParts()
     {
         FakeCore fake(path());
@@ -155,8 +191,8 @@ private slots:
         core.start();
         QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
         // The kinds of part come from the core, one menu entry each.
-        QTRY_COMPARE(panel.modelIds(), (QStringList{u"led"_s, u"button"_s, u"switch"_s, u"rgb-led"_s, u"bme280"_s, u"ssd1306"_s, u"ds3231"_s}));
-        QCOMPARE(panel.addPartButton()->menu()->actions().size(), 7);
+        QTRY_COMPARE(panel.modelIds(), (QStringList{u"led"_s, u"button"_s, u"switch"_s, u"rgb-led"_s, u"bme280"_s, u"ssd1306"_s, u"ws2812"_s, u"ds3231"_s}));
+        QCOMPARE(panel.addPartButton()->menu()->actions().size(), 8);
 
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"GND"_s});
         QTRY_COMPARE(panel.parts().size(), 1);

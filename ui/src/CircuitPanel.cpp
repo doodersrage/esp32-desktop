@@ -27,6 +27,8 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <algorithm>
+#include <cmath>
 #include <functional>
 
 using namespace Qt::StringLiterals;
@@ -36,6 +38,7 @@ constexpr qreal RowHeight = 44;
 constexpr qreal BoardWidth = 110;
 constexpr qreal PartX = 170;
 constexpr qreal PartSize = 30;
+constexpr qreal StripCell = 16;
 }
 
 // One part on the canvas, drawn by its model's look from the state the core reports.
@@ -101,6 +104,14 @@ public:
     }
     bool isDisplay() const { return m_look == u"display" && !m_display.isEmpty(); }
     bool isBox() const { return m_look == u"box"; }
+    bool isStrip() const { return m_look == u"strip"; }
+    // A strip's length (its `count` property), for drawing it before the first frame.
+    void setCount(int count)
+    {
+        prepareGeometryChange();
+        m_count = std::clamp(count, 1, 64);
+    }
+    int stripLength() const { return std::max<int>(m_count, m_state.value(u"leds"_s).toArray().size()); }
     // Controls a person sets with a number (a sensor's readings).
     QList<QJsonObject> sliders() const { return m_sliders; }
     // A display is drawn twice its size, so single pixels read.
@@ -112,6 +123,8 @@ public:
             return QRectF(-2, -2, screen().width() + 12, screen().height() + 30);
         if (isBox())
             return QRectF(-2, -2, 234, 30 + 18 * m_sliders.size());
+        if (isStrip())
+            return QRectF(-2, -2, StripCell * stripLength() + 4, PartSize + 22);
         return {-2, -2, PartSize + 160, PartSize + 4};
     }
 
@@ -171,6 +184,33 @@ public:
                             QCoreApplication::translate("PartItem", "%1: %2 %3").arg(c.value(u"label"_s).toString()).arg(v, 0, 'f', 2)
                                 .arg(c.value(u"unit"_s).toString()));
             }
+            return;
+        }
+        if (isStrip()) {
+            // The strip's backing, then one LED per cell in its colour. Brightness is
+            // shown on a square-root scale, so the dim colours sketches use read.
+            const int n = stripLength();
+            const QJsonArray leds = m_state.value(u"leds"_s).toArray();
+            p->setBrush(QColor(0x22, 0x22, 0x22));
+            p->drawRoundedRect(QRectF(0, 0, StripCell * n, PartSize), 4, 4);
+            p->setPen(Qt::NoPen);
+            for (int i = 0; i < n; ++i) {
+                const QJsonArray rgb = leds.at(i).toArray();
+                auto level = [&](int k) {
+                    const double v = std::clamp(rgb.at(k).toInt(), 0, 255) / 255.0;
+                    return int(std::lround(255 * std::sqrt(v)));
+                };
+                const bool lit = rgb.size() == 3 && (rgb.at(0).toInt() || rgb.at(1).toInt() || rgb.at(2).toInt());
+                p->setBrush(lit ? QColor(level(0), level(1), level(2)) : QColor(0x44, 0x44, 0x44));
+                p->drawEllipse(QRectF(StripCell * i + 2, PartSize / 2 - (StripCell - 4) / 2.0, StripCell - 4, StripCell - 4));
+            }
+            if (option->state & QStyle::State_Selected) {
+                p->setPen(QPen(pal.color(QPalette::Highlight), 1, Qt::DashLine));
+                p->setBrush(Qt::NoBrush);
+                p->drawRect(QRectF(-2, -2, StripCell * n + 4, PartSize + 4));
+            }
+            p->setPen(pal.color(QPalette::Text));
+            p->drawText(QRectF(0, PartSize + 2, StripCell * n, 18), Qt::AlignLeft | Qt::AlignVCenter, m_label);
             return;
         }
         if (m_look == u"led") {
@@ -236,6 +276,7 @@ private:
     QSize m_display;
     QImage m_picture;
     QList<QJsonObject> m_sliders;
+    int m_count = 0;
     QString m_momentary;
     QString m_toggle;
     QJsonObject m_initial;
@@ -351,6 +392,12 @@ QJsonObject CircuitPanel::partState(const QString &id) const
 {
     const PartItem *i = m_items.value(id);
     return i ? i->state() : QJsonObject();
+}
+
+int CircuitPanel::partStripLength(const QString &id) const
+{
+    const PartItem *i = m_items.value(id);
+    return i && i->isStrip() ? i->stripLength() : 0;
 }
 
 QImage CircuitPanel::partPicture(const QString &id) const
@@ -533,6 +580,10 @@ void CircuitPanel::rebuildScene()
         auto *item = new PartItem(id, model, label, [this, id](const QString &control, const QJsonValue &value) {
             m_core->controlPart(id, control, value);
         });
+        if (item->isStrip()) {
+            const QJsonObject countProp = model.value(u"props"_s).toObject().value(u"count"_s).toObject();
+            item->setCount(o.value(u"props"_s).toObject().value(u"count"_s).toInt(countProp.value(u"default"_s).toInt(8)));
+        }
         const qreal x = PartX + stack * 200;
         item->setPos(x, y - PartSize / 2);
         m_scene->addItem(item);

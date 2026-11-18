@@ -615,3 +615,73 @@ async fn esp32_ds3231_part_keeps_time() {
 async fn esp32c3_ds3231_part_keeps_time() {
     ds3231_part_keeps_time(Chip::Esp32c3).await;
 }
+
+/// WS2812 strips on RMT (patches 0007 and 0011): tests/firmware/arduino-periph sends
+/// 192 symbols with rmtWrite (bit i is 1 unless i is a multiple of 3, so the bytes
+/// run 0x6d 0xb6 0xdb) and one LED's worth with rgbLedWrite (red 0, green 0, blue 32).
+/// The host finds each channel's pin through the GPIO matrix, decodes the frames and
+/// gives them to strip parts on those pins.
+async fn ws2812_parts_light(chip: Chip) {
+    use esp32bench_sim::gpio::PinEvent;
+    let Some(build) = esp32bench_sim::lcgamboa::Build::find() else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let image = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "../../../tests/firmware/out/arduino-periph-{chip}.bin"
+    ));
+    if !image.is_file() {
+        eprintln!("skipping {chip}: arduino-periph firmware not built");
+        return;
+    }
+    // The sketch's RMT and RGB pins.
+    let (rmt_pin, rgb_pin) = if chip == Chip::Esp32c3 {
+        (5, 6)
+    } else {
+        (16, 17)
+    };
+    let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
+    let launch = esp32bench_sim::engine::lcgamboa_launch(chip, &build, Some(&host)).unwrap();
+    let mut cfg = launch.config(chip, image);
+    cfg.circuit = Some(format!(
+        r#"{{"schemaVersion":"1.2.0","parts":[
+            {{"id":"strip","kind":"ws2812","pin":{rmt_pin},"props":{{"count":2}}}},
+            {{"id":"rgb","kind":"ws2812","pin":{rgb_pin},"props":{{"count":1}}}}]}}"#
+    ));
+    let mut s = Session::start(cfg).await.unwrap();
+    let mut link = s.gpio.take().expect("no link to the host");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    let want_strip = serde_json::json!({ "leds": [[0xb6, 0x6d, 0xdb], [0xb6, 0x6d, 0xdb]] });
+    let want_rgb = serde_json::json!({ "leds": [[0, 0, 32]] });
+    let (mut strip, mut rgb) = (false, false);
+    let mut text = Vec::new();
+    while !(strip && rgb) {
+        tokio::select! {
+            chunk = s.uart.read_chunk() => {
+                if let Ok(Some(c)) = chunk { text.extend_from_slice(&c) }
+            }
+            ev = link.next_event() => match ev.unwrap().expect("host closed the link") {
+                PinEvent::PartError { id, message } => panic!("{chip}: {id}: {message}"),
+                PinEvent::Part { id, state } => {
+                    strip |= id == "strip" && state == want_strip;
+                    rgb |= id == "rgb" && state == want_rgb;
+                }
+                _ => {}
+            },
+            () = tokio::time::sleep_until(deadline) => panic!(
+                "{chip}: strip={strip} rgb={rgb}; uart:\n{}", String::from_utf8_lossy(&text)
+            ),
+        }
+    }
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn esp32_ws2812_parts_light() {
+    ws2812_parts_light(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn esp32c3_ws2812_parts_light() {
+    ws2812_parts_light(Chip::Esp32c3).await;
+}

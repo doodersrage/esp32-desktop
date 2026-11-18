@@ -32,12 +32,14 @@ const MARKER: &str = "installed";
 /// 7: RMT transmission on all three chips (WS2812 writes never finished).
 /// 8: light and deep sleep on a timer (sleep hung or ended in a watchdog reset).
 /// 9: an optimised library build (it was -O0) and quicker eFuse reads.
-pub const RECIPE: u32 = 9;
+/// 10: coprocessors (the FPU) enabled from reset (floats in global constructors).
+/// 11: RMT symbols and transmission ends reported to the host (WS2812 strip parts).
+pub const RECIPE: u32 = 11;
 
 /// Changes esp32bench makes to the pinned commit, in order. Each file says what and
 /// why. Kept in `core/crates/sim/patches/` and built into the program, so an installed
 /// app can build the fork without the repo.
-pub const PATCHES: [(&str, &str); 9] = [
+pub const PATCHES: [(&str, &str); 11] = [
     (
         "0001.patch",
         include_str!("../patches/0001-build-library-with-pixman.patch"),
@@ -70,6 +72,14 @@ pub const PATCHES: [(&str, &str); 9] = [
     (
         "0009.patch",
         include_str!("../patches/0009-faster-library-and-efuse.patch"),
+    ),
+    (
+        "0010.patch",
+        include_str!("../patches/0010-coprocessors-enabled-at-reset.patch"),
+    ),
+    (
+        "0011.patch",
+        include_str!("../patches/0011-rmt-symbols-to-the-host.patch"),
     ),
 ];
 
@@ -301,6 +311,8 @@ pub fn steps(jobs: usize) -> Vec<Step> {
                 "../patches/0007.patch",
                 "../patches/0008.patch",
                 "../patches/0009.patch",
+                "../patches/0010.patch",
+                "../patches/0011.patch",
             ],
             "src",
         ),

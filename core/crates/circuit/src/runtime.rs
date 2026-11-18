@@ -339,6 +339,29 @@ impl Runtime {
         self.take()
     }
 
+    /// The firmware sent a WS2812 frame on a GPIO (RMT, decoded by the host): the
+    /// bytes in the order they went out. Runs the `rmt(name, bytes)` hook of parts on
+    /// that pin; `bytes` is a blob.
+    pub fn rmt(&mut self, gpio: u8, bytes: Vec<u8>) -> Vec<Effect> {
+        for i in 0..self.parts.len() {
+            let names: Vec<String> = self.parts[i]
+                .pins
+                .iter()
+                .filter(|(_, g)| **g == gpio)
+                .map(|(n, _)| n.clone())
+                .collect();
+            for name in names {
+                self.call(i, "rmt", (name, rhai::Blob::from(bytes.clone())));
+            }
+        }
+        self.take()
+    }
+
+    /// Whether any part has an `rmt` hook.
+    pub fn has_rmt(&self) -> bool {
+        self.parts.iter().any(|p| p.hooks.contains("rmt"))
+    }
+
     /// A person worked a control: `value` is a bool for buttons and switches, a number
     /// for sliders.
     pub fn control(&mut self, id: &str, name: &str, value: Dynamic) -> Result<Vec<Effect>, Error> {
@@ -476,6 +499,30 @@ mod tests {
         );
         // An LED part has nothing to work.
         assert!(r.control("rgb", "press", Dynamic::from(true)).is_err());
+    }
+
+    #[test]
+    fn ws2812_strip_takes_its_colours_from_rmt_frames() {
+        let mut r = runtime(json!([
+            { "id": "strip", "kind": "ws2812", "pin": 16, "props": { "count": 3 } },
+            { "id": "rgb", "kind": "ws2812", "pin": 17, "props": { "count": 1, "rgbOrder": true } }
+        ]));
+        let e = r.init();
+        assert_eq!(
+            state(&e, "strip"),
+            Some(json!({ "leds": [[0, 0, 0], [0, 0, 0], [0, 0, 0]] }))
+        );
+        assert!(r.has_rmt());
+        // Green first: LED 0 red, LED 1 blue; the frame stops short of LED 2.
+        let e = r.rmt(16, vec![0, 255, 0, 0, 0, 40]);
+        assert_eq!(
+            state(&e, "strip"),
+            Some(json!({ "leds": [[255, 0, 0], [0, 0, 40], [0, 0, 0]] }))
+        );
+        // Not this strip's pin; and a strip wired red first.
+        assert!(state(&r.rmt(4, vec![1, 2, 3]), "strip").is_none());
+        let e = r.rmt(17, vec![10, 20, 30]);
+        assert_eq!(state(&e, "rgb"), Some(json!({ "leds": [[10, 20, 30]] })));
     }
 
     /// Feed an I2C write transaction to the part at (0, 0x3c).

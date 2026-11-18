@@ -1,0 +1,35 @@
+xtensa: coprocessors enabled from reset, as in Espressif's QEMU
+
+Upstream QEMU sets CPENABLE to 0xff at CPU reset only in user mode; in
+system mode it stays 0, so the FPU is off until software turns it on.
+ESP-IDF turns it on lazily, from the coprocessor exception, for a running
+task. Floating point before the scheduler starts, in a global constructor,
+therefore took an exception ESP-IDF treats as fatal ("Coprocessor
+exception"): the library's stepper-28byj sketch crashed at start-up on the
+S3 (AccelStepper's constructor). Espressif's QEMU starts both the ESP32
+and the S3 with CPENABLE at 0xff (read with GDB at the reset vector), and
+runs the sketch. Now the fork does too.
+
+Written for esp32bench (GPL-2.0-or-later). Changes QEMU's
+target/xtensa/cpu.c (GPL-2.0-or-later, as QEMU). Applied by esp32bench
+(core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu at
+885a6e7061fb70fac78a074a719423810bc19a17, after patch 0009.
+
+diff --git a/target/xtensa/cpu.c b/target/xtensa/cpu.c
+index b8b2915..9e54e65 100644
+--- a/target/xtensa/cpu.c
++++ b/target/xtensa/cpu.c
+@@ -118,8 +118,12 @@ static void xtensa_cpu_reset_hold(Object *obj, ResetType type)
+         !xtensa_abi_call0()) {
+         env->sregs[PS] |= PS_WOE;
+     }
+-    env->sregs[CPENABLE] = 0xff;
+ #endif
++    /* esp32bench: coprocessors (the FPU) enabled from reset in system mode too, as
++     * Espressif's QEMU does. ESP-IDF enables the FPU lazily for a running task, so
++     * floating point in a global constructor (before the scheduler) took a
++     * coprocessor exception it treats as fatal: AccelStepper's constructor on the S3. */
++    env->sregs[CPENABLE] = 0xff;
+     env->sregs[VECBASE] = env->config->vecbase;
+     env->sregs[IBREAKENABLE] = 0;
+     env->sregs[MEMCTL] = MEMCTL_IL0EN & env->config->memctl_mask;

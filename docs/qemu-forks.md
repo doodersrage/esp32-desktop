@@ -181,6 +181,11 @@ ESP-IDF enters sleep by setting `RTC_CNTL_STATE0`'s `SLEEP_EN`, then spins until
 
 Sessions on the fork's ESP32 and C3 put QEMU's user-mode network, `restrict=on`, on hub 0 beside the radio (`esp32bench-sim::network`). The fork's open access point `PICSimLabWifi` then hands out 10.0.2.15 by DHCP. `tests/firmware/arduino-wifi` checks the isolation on both chips: `example.com` does not resolve (the phase 0 worry that restricted mode forwards DNS did not hold with QEMU 9.2's libslirp), and TCP to 1.1.1.1 and to the gateway (the host) fails. Its web server answers on the forwarded loopback port (`lcgamboa_*_simulated_wifi_is_isolated_and_serves`). WPA2 is not modelled: the fork's radio is reverse-engineered at register level without the MAC's hardware crypto. Arduino requires WPA2 when a password is given and accepts an open network when it is empty, so the core gives library sketches an empty password through their settings block. Every ESP32 and C3 build of the library's Wi-Fi projects then passes; the S3 has no radio.
 
+### Floating point before the scheduler, and WS2812 parts (2026-11-18)
+
+- **Patch 0010 (recipe 10):** `stepper-28byj` crashed at start-up on the fork's S3 with "Coprocessor exception": AccelStepper's global constructor uses floats, and ESP-IDF enables the FPU lazily for a running task, so before the scheduler that exception is fatal. Upstream QEMU resets `CPENABLE` to `0xff` only in user mode; Espressif's QEMU starts both the ESP32 and the S3 with it at `0xff` (read with GDB at the reset vector), and the fork now does too. `arduino-periph` has a global constructor doing float arithmetic (`esp32bench-periph fpu=6`).
+- **Patch 0011 (recipe 11):** both RMT models report each symbol to the library's `picsimlab_rmt_event`, then 0 when a transmission ends. `esp32bench-qemu-host` decodes WS2812 bits per channel, finds the channel's pin from the GPIO matrix (`qemu_picsimlab_get_internals`' output selection: RMT channel *n* is signal 87 + *n* on the ESP32, 51 + *n* on the C3), and gives the frame to `ws2812` parts on that pin (`rmt` hook, `docs/parts.md`). `esp32_ws2812_parts_light` and `esp32c3_ws2812_parts_light` check a strip on `arduino-periph`'s `rmtWrite` pin and one on its `rgbLedWrite` pin.
+
 ## Open questions
 
 None at the moment.

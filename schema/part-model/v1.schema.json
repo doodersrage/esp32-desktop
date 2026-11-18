@@ -32,7 +32,8 @@
         "switch",
         "rgb-led",
         "display",
-        "box"
+        "box",
+        "strip"
       ],
       "description": "How the app draws it."
     },

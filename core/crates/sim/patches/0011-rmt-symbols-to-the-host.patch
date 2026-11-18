@@ -1,0 +1,63 @@
+rmt: report symbols and transmission ends to the host, ESP32 and C3
+
+So the host can show WS2812 (NeoPixel) strips, both RMT models give each
+symbol they send to the library's picsimlab_rmt_event callback, then 0
+when a transmission ends; no symbol is 0, since a zero duration ends the
+transmission. The ESP32 model (Espressif's hw/ssi/esp32_rmt.c, as
+lcgamboa extended it) already reported symbols and gains the end mark;
+hw/misc/esp32bench_rmt.c (patch 0007, C3 and S3) gains both. The host
+(esp32bench-qemu-host) decodes WS2812 bits, finds the channel's pin
+through the GPIO matrix's output selection, and hands the frame's bytes
+to strip parts on that pin.
+
+Written for esp32bench (GPL-2.0-or-later). Changes Espressif's
+hw/ssi/esp32_rmt.c (Copyright (c) 2019 Espressif Systems (Shanghai) Co.
+Ltd., GPL-2.0-or-later, notice kept) and hw/misc/esp32bench_rmt.c.
+Applied by esp32bench (core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu
+at 885a6e7061fb70fac78a074a719423810bc19a17, after patch 0010.
+
+diff --git a/hw/misc/esp32bench_rmt.c b/hw/misc/esp32bench_rmt.c
+index 07851eb..d938d00 100644
+--- a/hw/misc/esp32bench_rmt.c
++++ b/hw/misc/esp32bench_rmt.c
+@@ -24,6 +24,10 @@
+ #include "hw/qdev-properties.h"
+ #include "hw/misc/esp32bench_rmt.h"
+ 
++/* The host's RMT hook (lcgamboa's library builds; a no-op otherwise): each symbol
++ * sent, then 0 when a transmission ends, which no symbol is. */
++extern void (*picsimlab_rmt_event)(const uint8_t channel, const uint32_t config0, const uint32_t value);
++
+ /* Bits of a transmit channel's CONF0. */
+ #define CONF_TX_START    (1u << 0)
+ #define CONF_MEM_RD_RST  (1u << 1)
+@@ -135,8 +139,15 @@ static void transmit(void *opaque)
+         uint32_t v = s->mem[(base + t->pos % words) % ARRAY_SIZE(s->mem)];
+         uint32_t d0 = v & 0x7fff, d1 = (v >> 16) & 0x7fff;
+         ticks += d0 + d1;
++        if (d0 != 0 && d1 != 0) {
++            picsimlab_rmt_event(n, conf, v);
++        }
+         if (d0 == 0 || d1 == 0) {
+             /* The end marker: a zero duration in either half. */
++            if (d0 != 0) {
++                picsimlab_rmt_event(n, conf, v);
++            }
++            picsimlab_rmt_event(n, conf, 0);
+             t->pos = 0;
+             t->since_thr = 0;
+             if (conf & CONF_CONTI) {
+diff --git a/hw/ssi/esp32_rmt.c b/hw/ssi/esp32_rmt.c
+index 6951eaa..5252692 100644
+--- a/hw/ssi/esp32_rmt.c
++++ b/hw/ssi/esp32_rmt.c
+@@ -81,6 +81,9 @@ static void send_data(Esp32RmtState *s, int channel) {
+                 }
+                 picsimlab_rmt_event(channel, s->conf0[channel], v);
+             }
++            /* esp32bench: value 0, which no symbol has (a zero duration ends the
++             * transmission), marks the end for the host (WS2812 frames). */
++            picsimlab_rmt_event(channel, s->conf0[channel], 0);
+             s->int_raw|=(1<<(channel*3)); //set TX_END
+             s->int_raw&=~(1<<(channel+24)); //clearTHR
+             s->sent=0;
