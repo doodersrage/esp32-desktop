@@ -54,3 +54,20 @@ Recipe 6 models the C3's USB-Serial-JTAG serial port, and the app turns it on fo
 With the USB console on, the C3's ROM prints its reset banner on UART0 and on the USB port, and the console shows both; the sweep counts one reset per two banners on the C3.
 
 Crashes: deep sleep (`battery-sensor`, `deep-sleep`) and Bluetooth (`ble-scan`), which the simulator does not claim, and three intermittent ones that did not come back in five reruns each: `stepper-28byj` on the S3, `dht22` on the ESP32 DOIT (a load fault inside `digitalRead()`'s GPIO register read, in DHT's pulse timing), and `rfid-reader` on the C3. Most "started" builds wait for Wi-Fi by design; the rest are RMT (WS2812 LEDs) and sketches whose expected line needs a part.
+
+## After fork patches 0007 and 0008 (2026-11-18)
+
+Recipe 7 adds RMT transmission (WS2812 LEDs) on all three chips, recipe 8 light and deep sleep on a timer (`docs/qemu-forks.md`). The build crate now gives `huge_app` projects on the XIAO ESP32-S3 its 8 MB default scheme, which already has a 3.2 MB app: **builds 251 of 251** (`ble-scan` on the XIAO S3 was the failure). **Boots: 183 of 227 on recipe 7, 191 of 227 on recipe 8 (was 171).**
+
+| Board | Pass | Crash | Started |
+| --- | --- | --- | --- |
+| ESP32-DevKitC | 46 | 1 | 6 |
+| ESP32 DOIT | 41 | 1 | 5 |
+| ESP32-C3 DevKitM | 36 | 1 | 5 |
+| ESP32-C3 SuperMini | 36 | 1 | 4 |
+| ESP32-S3 DevKitC | 32 | 2 | 10 |
+
+- Now passing: `neopixel` and `fire-lamp` on every board (RMT), the C3 DevKitM builds that light its on-board RGB LED, and `deep-sleep` and `battery-sensor` everywhere (sleep).
+- Crashes: `ble-scan` on all five boards (Bluetooth, which the simulator does not claim), and `stepper-28byj` on the S3. That one now fails on every boot on the fork's S3 (Espressif's QEMU runs it): `AccelStepper::setAcceleration`, run from a global constructor before `setup()`, takes a coprocessor (FPU) exception that ESP-IDF treats as fatal at that stage. Not yet explained.
+- `dht22` on the ESP32 passed in this sweep; it can still trip the interrupt watchdog on a loaded host (see "DHT sensors and the interrupt watchdog" in `docs/qemu-forks.md`).
+- Started without the expected output: 27 builds wait for Wi-Fi by design, and on the S3 `esp-now`, `wifi-scan` and `wifi-portal` need a radio, which the fork's S3 does not model.

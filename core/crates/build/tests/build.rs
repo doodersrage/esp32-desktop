@@ -56,7 +56,7 @@ fn refuses_what_cannot_be_built() {
 }
 
 #[test]
-fn huge_app_partitions_only_where_the_board_has_them() {
+fn huge_app_projects_get_a_3_mb_app_on_every_board() {
     let mut m = example();
     let blink = m.projects.iter_mut().find(|p| p.id == "blink").unwrap();
     blink.partitions = Some("huge_app".into());
@@ -66,8 +66,18 @@ fn huge_app_partitions_only_where_the_board_has_them() {
 
     let (p, _) = plan(&m, "blink", "esp32").unwrap();
     assert!(p.fqbn.ends_with(",PartitionScheme=huge_app"));
+    // The XIAO ESP32-S3 has no huge_app entry; its 8 MB default has a 3.2 MB app.
+    let (p, _) = plan(&m, "blink", "xiao-esp32s3").unwrap();
+    assert!(
+        p.fqbn.ends_with(",PartitionScheme=default_8MB"),
+        "{}",
+        p.fqbn
+    );
+
+    let blink = m.projects.iter_mut().find(|p| p.id == "blink").unwrap();
+    blink.partitions = Some("min_spiffs".into());
     assert!(matches!(
-        plan(&m, "blink", "xiao-esp32s3"),
+        plan(&m, "blink", "esp32"),
         Err(Error::NoPartitionScheme { .. })
     ));
 }

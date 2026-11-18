@@ -50,21 +50,23 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
-/// Arduino-ESP32 board ids for each build target, and whether the board offers the
-/// `huge_app` partition scheme. Checked against core 3.3.12's boards.txt.
-const BOARDS: &[(&str, &str, bool)] = &[
-    ("esp32", "esp32:esp32:esp32", true),
-    ("esp32s3", "esp32:esp32:esp32s3", true),
-    ("esp32c3", "esp32:esp32:esp32c3", true),
-    ("esp32s2", "esp32:esp32:esp32s2", true),
-    ("esp32c6", "esp32:esp32:esp32c6", true),
-    ("xiao-esp32c3", "esp32:esp32:XIAO_ESP32C3", true),
-    ("xiao-esp32s3", "esp32:esp32:XIAO_ESP32S3", false),
-    ("esp32-cam", "esp32:esp32:esp32cam", true),
+/// Arduino-ESP32 board ids for each build target, and the partition scheme that gives
+/// a project needing `huge_app` (a 3 MB app) its room: `huge_app` itself, or on the
+/// XIAO ESP32-S3, which has no `huge_app` entry, its 8 MB default (a 3.2 MB app).
+/// Checked against core 3.3.12's boards.txt.
+const BOARDS: &[(&str, &str, &str)] = &[
+    ("esp32", "esp32:esp32:esp32", "huge_app"),
+    ("esp32s3", "esp32:esp32:esp32s3", "huge_app"),
+    ("esp32c3", "esp32:esp32:esp32c3", "huge_app"),
+    ("esp32s2", "esp32:esp32:esp32s2", "huge_app"),
+    ("esp32c6", "esp32:esp32:esp32c6", "huge_app"),
+    ("xiao-esp32c3", "esp32:esp32:XIAO_ESP32C3", "huge_app"),
+    ("xiao-esp32s3", "esp32:esp32:XIAO_ESP32S3", "default_8MB"),
+    ("esp32-cam", "esp32:esp32:esp32cam", "huge_app"),
     (
         "esp32c3-supermini",
         "esp32:esp32:nologo_esp32c3_super_mini",
-        true,
+        "huge_app",
     ),
 ];
 
@@ -143,7 +145,7 @@ pub fn plan(manifest: &Manifest, project: &str, board: &str) -> Result<(Plan, St
         .find(|b| b.id == board)
         .and_then(|b| b.build_as.clone())
         .unwrap_or_else(|| board.to_owned());
-    let &(_, base, huge_app) = BOARDS
+    let &(_, base, big_app) = BOARDS
         .iter()
         .find(|(id, _, _)| *id == target)
         .ok_or_else(|| Error::UnknownBoard(target.clone()))?;
@@ -152,14 +154,15 @@ pub fn plan(manifest: &Manifest, project: &str, board: &str) -> Result<(Plan, St
     // so one build serves both the board and the simulator.
     let mut fqbn = format!("{base}:FlashMode=dio");
     if let Some(scheme) = &p.partitions {
-        if scheme != "huge_app" || !huge_app {
+        if scheme != "huge_app" {
             return Err(Error::NoPartitionScheme {
                 project: project.to_owned(),
                 board: target,
                 scheme: scheme.clone(),
             });
         }
-        fqbn.push_str(",PartitionScheme=huge_app");
+        fqbn.push_str(",PartitionScheme=");
+        fqbn.push_str(big_app);
     }
 
     let plan = Plan {

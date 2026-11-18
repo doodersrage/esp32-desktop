@@ -1,0 +1,621 @@
+rmt: WS2812 writes finish on the ESP32, C3 and S3
+
+ESP-IDF 5's RMT driver (Arduino's rmtWrite, Adafruit_NeoPixel, the C3
+DevKitM's on-board RGB LED) waited forever for its first transmission to
+end, so the library's NeoPixel sketches stopped at their first LED write.
+
+ESP32 (hw/ssi/esp32_rmt.c, Espressif's model as lcgamboa extended it):
+the model held data back while any threshold or end bit was raised, even
+one whose interrupt was off. The driver turns the threshold interrupt off
+when it has encoded everything, without clearing the bit, so nothing ever
+went on. Now only an enabled interrupt holds data back, and turning it off
+lets held data go. The interrupt line follows INT_RAW & INT_ENA (it was
+lowered only by INT_CLR); channels other than 0 read their own memory
+block (the index wrapped to channel 0's); and transmission ends at a
+symbol with a zero duration in either half, whatever its level bits.
+
+C3 and S3: neither had an RMT model (an unimplemented-device stub), so
+hw/misc/esp32bench_rmt.c is new. It models the transmit side the driver
+uses: channel registers (TX_START, CONF_UPDATE and the reset bits clear
+themselves), RMT memory, the threshold interrupt every TX_LIM symbols,
+the end interrupt, loop mode with its count, TX_STOP, and symbol timing
+from the channel's clock. Nothing is output and receive channels only
+keep their registers. Register layouts from ESP-IDF's rmt_struct.h.
+
+Written for esp32bench (GPL-2.0-or-later). Changes Espressif's
+hw/ssi/esp32_rmt.c (Copyright (c) 2019 Espressif Systems (Shanghai) Co.
+Ltd., GPL-2.0-or-later, notice kept), lcgamboa's hw/riscv/esp32c3_picsimlab.c,
+Espressif's hw/xtensa/esp32s3.c and hw/misc/meson.build. Applied by
+esp32bench (core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu at
+885a6e7061fb70fac78a074a719423810bc19a17, after patch 0006.
+
+diff --git a/hw/misc/esp32bench_rmt.c b/hw/misc/esp32bench_rmt.c
+new file mode 100644
+index 0000000..07851eb
+--- /dev/null
++++ b/hw/misc/esp32bench_rmt.c
+@@ -0,0 +1,346 @@
++/*
++ * ESP32-C3 and ESP32-S3 RMT transmitter, for esp32bench
++ *
++ * Neither chip had an RMT model in this fork, so ESP-IDF's RMT driver waited
++ * forever for its first transmission to end: every WS2812 (NeoPixel) write, and
++ * the C3 DevKitM's on-board RGB LED, stopped the sketch. This models what the
++ * driver's transmit side relies on: the channel registers, RMT memory, the
++ * threshold interrupt every TX_LIM symbols (the driver refills memory on it),
++ * the end interrupt at a symbol with a zero duration, loop mode with its count,
++ * and TX_STOP. Symbols take the time their durations say at the channel's clock.
++ * Nothing is output; receive channels only keep their registers.
++ *
++ * Register layouts are from ESP-IDF's soc/esp32c3 and soc/esp32s3 rmt_struct.h.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 or
++ * (at your option) any later version.
++ */
++
++#include "qemu/osdep.h"
++#include "qemu/module.h"
++#include "qapi/error.h"
++#include "hw/irq.h"
++#include "hw/qdev-properties.h"
++#include "hw/misc/esp32bench_rmt.h"
++
++/* Bits of a transmit channel's CONF0. */
++#define CONF_TX_START    (1u << 0)
++#define CONF_MEM_RD_RST  (1u << 1)
++#define CONF_MEM_RST     (1u << 2)
++#define CONF_CONTI       (1u << 3)
++#define CONF_TX_STOP     (1u << 7)
++/* Then the divider (8..15) and MEM_SIZE from bit 16: 3 bits on the C3, 4 on the S3,
++ * which moves AFIFO_RST and CONF_UPDATE up by one on the S3. */
++#define CONF_SELF_CLEAR(l) (CONF_TX_START | CONF_MEM_RD_RST | CONF_MEM_RST | CONF_TX_STOP | \
++                            (3u << (19 + (l)->mem_size_bits)))
++
++/* Bits of a transmit channel's TX_LIM. */
++#define LIM_LIMIT(v)        ((v) & 0x1ff)
++#define LIM_LOOP_NUM(v)     (((v) >> 9) & 0x3ff)
++#define LIM_LOOP_CNT_EN     (1u << 19)
++#define LIM_LOOP_CNT_RESET  (1u << 20)
++
++/* Interrupt bits, the same on both chips for transmit channel n. */
++#define INT_TX_END(n)   (1u << (n))
++#define INT_TX_THR(n)   (1u << ((n) + 8))
++#define INT_TX_LOOP(n)  (1u << ((n) + 12))
++
++typedef struct Layout {
++    hwaddr conf;      /* transmit channels' CONF0, 4 bytes apart */
++    hwaddr int_raw;   /* INT_RAW, then INT_ST, INT_ENA, INT_CLR */
++    hwaddr tx_lim;    /* transmit channels' TX_LIM */
++    hwaddr sys_conf;
++    hwaddr mem;       /* RMT memory */
++    unsigned channels;
++    unsigned mem_size_bits;
++} Layout;
++
++static const Layout C3 = { 0x10, 0x38, 0x58, 0x68, 0x400, 4, 3 };
++static const Layout S3 = { 0x20, 0x70, 0xA0, 0xC0, 0x800, 8, 4 };
++
++static const Layout *layout(Esp32BenchRmtState *s)
++{
++    return s->tx_channels == 4 ? &S3 : &C3;
++}
++
++static uint32_t reg(Esp32BenchRmtState *s, hwaddr addr)
++{
++    return s->regs[addr / 4];
++}
++
++static void update_irq(Esp32BenchRmtState *s)
++{
++    qemu_set_irq(s->irq, (s->int_raw & s->int_ena) != 0);
++}
++
++/* Nanoseconds per tick of channel n: the group clock, its divider, the channel's. */
++static uint64_t tick_ns(Esp32BenchRmtState *s, int n)
++{
++    const Layout *l = layout(s);
++    uint32_t sys = reg(s, l->sys_conf);
++    uint32_t sel = (sys >> 24) & 3;           /* 1 APB 80 MHz, 2 RC_FAST, 3 XTAL 40 MHz */
++    uint64_t src_ps = sel == 3 ? 25000 : sel == 2 ? 57143 : 12500;
++    uint64_t group_div = ((sys >> 4) & 0xff) + 1;
++    uint64_t div = (reg(s, l->conf + 4 * n) >> 8) & 0xff;
++    if (div == 0) {
++        div = 256;
++    }
++    return src_ps * group_div * div / 1000;
++}
++
++static void schedule(Esp32BenchRmtTx *t, uint64_t ns)
++{
++    if (ns < 1000) {
++        ns = 1000;
++    }
++    timer_mod(&t->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + ns);
++}
++
++static void finish(Esp32BenchRmtTx *t)
++{
++    t->busy = false;
++    t->held = false;
++    timer_del(&t->timer);
++}
++
++/* Read symbols until the next threshold, the end, or a batch's worth. */
++static void transmit(void *opaque)
++{
++    Esp32BenchRmtTx *t = opaque;
++    Esp32BenchRmtState *s = t->rmt;
++    const Layout *l = layout(s);
++    int n = t->index;
++    uint32_t conf = reg(s, l->conf + 4 * n);
++    uint32_t lim_reg = reg(s, l->tx_lim + 4 * n);
++    uint32_t blocks = (conf >> 16) & ((1u << l->mem_size_bits) - 1);
++    uint32_t words = (blocks ? blocks : 1) * ESP32BENCH_RMT_BLOCK_WORDS;
++    uint32_t base = n * ESP32BENCH_RMT_BLOCK_WORDS;
++    uint32_t limit = LIM_LIMIT(lim_reg);
++    uint64_t ticks = 0;
++
++    if (!t->busy) {
++        return;
++    }
++    /* The model reads memory far faster than the guest refills it, so it waits
++     * while the driver has a threshold interrupt to take. A real channel would not,
++     * but the driver keeps up with it there. */
++    if (s->int_raw & s->int_ena & INT_TX_THR(n)) {
++        t->held = true;
++        return;
++    }
++    t->held = false;
++
++    for (uint32_t i = 0; i < words; i++) {
++        uint32_t v = s->mem[(base + t->pos % words) % ARRAY_SIZE(s->mem)];
++        uint32_t d0 = v & 0x7fff, d1 = (v >> 16) & 0x7fff;
++        ticks += d0 + d1;
++        if (d0 == 0 || d1 == 0) {
++            /* The end marker: a zero duration in either half. */
++            t->pos = 0;
++            t->since_thr = 0;
++            if (conf & CONF_CONTI) {
++                t->loops++;
++                if ((lim_reg & LIM_LOOP_CNT_EN) && t->loops >= LIM_LOOP_NUM(lim_reg)) {
++                    s->int_raw |= INT_TX_LOOP(n);
++                    t->loops = 0;
++                    update_irq(s);
++                    /* The S3 stops by itself when LOOP_STOP_EN (bit 21) is set;
++                     * otherwise the driver stops the channel on this interrupt. */
++                    if (l == &S3 && (lim_reg & (1u << 21))) {
++                        finish(t);
++                        s->int_raw |= INT_TX_END(n);
++                        update_irq(s);
++                        return;
++                    }
++                }
++                schedule(t, ticks * tick_ns(s, n));
++                return;
++            }
++            finish(t);
++            s->int_raw |= INT_TX_END(n);
++            update_irq(s);
++            return;
++        }
++        t->pos++;
++        t->since_thr++;
++        if (limit && t->since_thr >= limit) {
++            t->since_thr = 0;
++            s->int_raw |= INT_TX_THR(n);
++            update_irq(s);
++            break;
++        }
++    }
++    schedule(t, ticks * tick_ns(s, n));
++}
++
++/* Channels held for a threshold interrupt go on once it is cleared or turned off. */
++static void resume_held(Esp32BenchRmtState *s)
++{
++    for (int n = 0; n < s->tx_channels; n++) {
++        if (s->tx[n].held && !(s->int_raw & s->int_ena & INT_TX_THR(n))) {
++            s->tx[n].held = false;
++            schedule(&s->tx[n], 0);
++        }
++    }
++}
++
++static uint64_t esp32bench_rmt_read(void *opaque, hwaddr addr, unsigned int size)
++{
++    Esp32BenchRmtState *s = opaque;
++    const Layout *l = layout(s);
++
++    if (addr >= l->mem) {
++        hwaddr i = (addr - l->mem) / 4;
++        return i < l->channels * ESP32BENCH_RMT_BLOCK_WORDS ? s->mem[i] : 0;
++    }
++    if (addr == l->int_raw) {
++        return s->int_raw;
++    }
++    if (addr == l->int_raw + 4) {
++        return s->int_raw & s->int_ena;
++    }
++    if (addr == l->int_raw + 8) {
++        return s->int_ena;
++    }
++    if (addr == l->int_raw + 12) {
++        return 0;
++    }
++    return addr < sizeof(s->regs) ? reg(s, addr) : 0;
++}
++
++static void esp32bench_rmt_write(void *opaque, hwaddr addr, uint64_t value, unsigned int size)
++{
++    Esp32BenchRmtState *s = opaque;
++    const Layout *l = layout(s);
++
++    if (addr >= l->mem) {
++        hwaddr i = (addr - l->mem) / 4;
++        if (i < l->channels * ESP32BENCH_RMT_BLOCK_WORDS) {
++            s->mem[i] = value;
++        }
++        return;
++    }
++    if (addr == l->int_raw + 8) {
++        s->int_ena = value;
++        update_irq(s);
++        resume_held(s);
++        return;
++    }
++    if (addr == l->int_raw + 12) {
++        s->int_raw &= ~value;
++        update_irq(s);
++        resume_held(s);
++        return;
++    }
++    if (addr == l->int_raw || addr == l->int_raw + 4 || addr >= sizeof(s->regs)) {
++        return;
++    }
++    if (addr >= l->conf && addr < l->conf + 4 * s->tx_channels) {
++        Esp32BenchRmtTx *t = &s->tx[(addr - l->conf) / 4];
++        s->regs[addr / 4] = value & ~CONF_SELF_CLEAR(l);
++        if (value & (CONF_MEM_RD_RST | CONF_MEM_RST)) {
++            t->pos = 0;
++            t->since_thr = 0;
++        }
++        if (value & CONF_TX_STOP) {
++            finish(t);
++        }
++        if (value & CONF_TX_START) {
++            t->busy = true;
++            t->held = false;
++            t->pos = 0;
++            t->since_thr = 0;
++            t->loops = 0;
++            schedule(t, 0);
++        }
++        return;
++    }
++    if (addr >= l->tx_lim && addr < l->tx_lim + 4 * s->tx_channels) {
++        if (value & LIM_LOOP_CNT_RESET) {
++            s->tx[(addr - l->tx_lim) / 4].loops = 0;
++        }
++        s->regs[addr / 4] = value & ~LIM_LOOP_CNT_RESET;
++        return;
++    }
++    s->regs[addr / 4] = value;
++}
++
++static const MemoryRegionOps esp32bench_rmt_ops = {
++    .read = esp32bench_rmt_read,
++    .write = esp32bench_rmt_write,
++    .endianness = DEVICE_LITTLE_ENDIAN,
++    .valid.min_access_size = 4,
++    .valid.max_access_size = 4,
++};
++
++static void esp32bench_rmt_reset(DeviceState *dev)
++{
++    Esp32BenchRmtState *s = ESP32BENCH_RMT(dev);
++
++    for (int n = 0; n < ESP32BENCH_RMT_MAX_TX; n++) {
++        finish(&s->tx[n]);
++        s->tx[n].pos = 0;
++        s->tx[n].since_thr = 0;
++        s->tx[n].loops = 0;
++    }
++    memset(s->regs, 0, sizeof(s->regs));
++    memset(s->mem, 0, sizeof(s->mem));
++    s->int_raw = 0;
++    s->int_ena = 0;
++    qemu_irq_lower(s->irq);
++}
++
++static void esp32bench_rmt_realize(DeviceState *dev, Error **errp)
++{
++    Esp32BenchRmtState *s = ESP32BENCH_RMT(dev);
++
++    if (s->tx_channels != 2 && s->tx_channels != 4) {
++        error_setg(errp, "esp32bench.rmt: tx-channels must be 2 (C3) or 4 (S3)");
++        return;
++    }
++    for (int n = 0; n < ESP32BENCH_RMT_MAX_TX; n++) {
++        s->tx[n].rmt = s;
++        s->tx[n].index = n;
++        timer_init_ns(&s->tx[n].timer, QEMU_CLOCK_VIRTUAL, transmit, &s->tx[n]);
++    }
++}
++
++static void esp32bench_rmt_init(Object *obj)
++{
++    Esp32BenchRmtState *s = ESP32BENCH_RMT(obj);
++    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
++
++    memory_region_init_io(&s->iomem, obj, &esp32bench_rmt_ops, s, TYPE_ESP32BENCH_RMT, 0x1000);
++    sysbus_init_mmio(sbd, &s->iomem);
++    sysbus_init_irq(sbd, &s->irq);
++}
++
++static Property esp32bench_rmt_properties[] = {
++    DEFINE_PROP_UINT32("tx-channels", Esp32BenchRmtState, tx_channels, 2),
++    DEFINE_PROP_END_OF_LIST(),
++};
++
++static void esp32bench_rmt_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    dc->realize = esp32bench_rmt_realize;
++    device_class_set_legacy_reset(dc, esp32bench_rmt_reset);
++    device_class_set_props(dc, esp32bench_rmt_properties);
++}
++
++static const TypeInfo esp32bench_rmt_info = {
++    .name = TYPE_ESP32BENCH_RMT,
++    .parent = TYPE_SYS_BUS_DEVICE,
++    .instance_size = sizeof(Esp32BenchRmtState),
++    .instance_init = esp32bench_rmt_init,
++    .class_init = esp32bench_rmt_class_init,
++};
++
++static void esp32bench_rmt_register_types(void)
++{
++    type_register_static(&esp32bench_rmt_info);
++}
++
++type_init(esp32bench_rmt_register_types)
+diff --git a/hw/misc/meson.build b/hw/misc/meson.build
+index 6046a59..c10e491 100644
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -175,7 +175,8 @@ system_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
+   'esp32_phya.c',
+   'esp32_fe.c',
+   'esp32c3_pwrmng.c',
+-  'esp32c3_ledc.c'
++  'esp32c3_ledc.c',
++  'esp32bench_rmt.c'
+ ))
+ 
+ system_ss.add(when: 'CONFIG_XTENSA_ESP32S3', if_true: files(
+@@ -188,7 +189,8 @@ system_ss.add(when: 'CONFIG_XTENSA_ESP32S3', if_true: files(
+   'esp32s3_rng.c',
+   'esp32s3_pms.c',
+   'esp_hmac.c',
+-  'esp32s3_hmac.c'
++  'esp32s3_hmac.c',
++  'esp32bench_rmt.c'
+ ))
+ 
+ if gcrypt.found()
+diff --git a/hw/riscv/esp32c3_picsimlab.c b/hw/riscv/esp32c3_picsimlab.c
+index 725b4ac..e8a4b66 100644
+--- a/hw/riscv/esp32c3_picsimlab.c
++++ b/hw/riscv/esp32c3_picsimlab.c
+@@ -55,6 +55,7 @@
+ #include "hw/misc/esp32c3_ledc.h"
+ #include "hw/irq.h"
+ #include "hw/misc/unimp.h"
++#include "hw/misc/esp32bench_rmt.h"
+ #include "hw/i2c/esp32_i2c.h"
+ 
+ #include "hw/misc/esp32c3_wifi.h"
+@@ -875,6 +876,16 @@ static void esp32c3_machine_init(MachineState *machine)
+                            qdev_get_gpio_in(intmatrix_dev, ETS_USB_SERIAL_JTAG_INTR_SOURCE));
+     }
+ 
++    /* esp32bench: the RMT transmitter (hw/misc/esp32bench_rmt.c), for WS2812 LEDs */
++    {
++        DeviceState *rmt = qdev_new(TYPE_ESP32BENCH_RMT);
++        qdev_prop_set_uint32(rmt, "tx-channels", 2);
++        sysbus_realize_and_unref(SYS_BUS_DEVICE(rmt), &error_fatal);
++        memory_region_add_subregion_overlap(sys_mem, DR_REG_RMT_BASE,
++                                            sysbus_mmio_get_region(SYS_BUS_DEVICE(rmt), 0), 0);
++        sysbus_connect_irq(SYS_BUS_DEVICE(rmt), 0, qdev_get_gpio_in(intmatrix_dev, ETS_RMT_INTR_SOURCE));
++    }
++
+     /* IOMUX realization */
+     {
+         sysbus_realize(SYS_BUS_DEVICE(&ms->iomux), &error_fatal);
+@@ -1156,7 +1167,6 @@ static void esp32c3_machine_init(MachineState *machine)
+     esp32c3_add_unimp_device(sys_mem, "esp32c3.spi0", DR_REG_SPI0_BASE, 0x1000, 0);
+     esp32c3_add_unimp_device(sys_mem, "esp32c3.fe2", DR_REG_FE2_BASE, 0x1000, 0);
+     esp32c3_add_unimp_device(sys_mem, "esp32c3.uhci0", DR_REG_UHCI0_BASE, 0x1000, 0);
+-    esp32c3_add_unimp_device(sys_mem, "esp32c3.rmt", DR_REG_RMT_BASE, 0x1000, 0);
+     esp32c3_add_unimp_device(sys_mem, "esp32c3.ledc", DR_REG_LEDC_BASE, 0x1000, 0);
+     esp32c3_add_unimp_device(sys_mem, "esp32c3.spi2", DR_REG_SPI2_BASE, 0x1000, 0);
+     esp32c3_add_unimp_device(sys_mem, "esp32c3.twai", DR_REG_TWAI_BASE, 0x1000, 0);
+diff --git a/hw/ssi/esp32_rmt.c b/hw/ssi/esp32_rmt.c
+index 687c082..6951eaa 100644
+--- a/hw/ssi/esp32_rmt.c
++++ b/hw/ssi/esp32_rmt.c
+@@ -24,6 +24,13 @@
+ 
+ extern void (*picsimlab_rmt_event)(const uint8_t channel, const uint32_t config0, const uint32_t value);
+ 
++/* esp32bench: the interrupt line is high while an enabled interrupt is raised,
++ * as on the chip; it used to be lowered only by INT_CLR, so turning an interrupt
++ * off with INT_ENA left the line stuck high. */
++static void update_irq(Esp32RmtState *s) {
++    qemu_set_irq(s->irq, (s->int_raw & s->int_en) != 0);
++}
++
+ static void restart_timer(Esp32RmtState *s, int channel) {
+     timer_mod_anticipate_ns(&s->rmt_timer,qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)+1250*s->txlim[channel]);
+ }
+@@ -44,7 +51,10 @@ static void send_data(Esp32RmtState *s, int channel) {
+     // don't send data when interrupt hasn't been handled
+     // a real device can't do this but it's necessary because 
+     // qemu can't always keep up. 
+-    if(s->int_raw & (1<<(channel+24) | (1<<(channel*3)))) {
++    /* esp32bench: only an enabled interrupt holds up the data. ESP-IDF 5's driver
++     * turns the threshold interrupt off once it has encoded everything, so its raw
++     * bit stays set, and waiting on it stopped every WS2812 write. */
++    if(s->int_raw & s->int_en & (1<<(channel+24) | (1<<(channel*3)))) {
+         // send data when the interrupt is cleared
+         s->unsent_data=true;
+         if(DEBUG) printf("esp32_rmt_send_data waiting interrupt !!!!\n");
+@@ -57,18 +67,25 @@ static void send_data(Esp32RmtState *s, int channel) {
+ 
+     for (int i = 0; i < s->txlim[channel] ; i++) {    
+         int v;
+-        if(s->apb_conf & R_RMT_APB_CONF_MEM_TX_WRAP_EN_MASK){
+-            v = s->data[((i+s->sent)%memsize+channel*64)%memsize]; 
+-        }else{
+-            v = s->data[((i+s->sent)%memsize+channel*64)%ESP32_RMT_BUF_WORDS];
++        /* esp32bench: a channel's memory starts at block `channel` (the index
++         * wrapped to channel 0's before), and transmission ends at a symbol with a
++         * zero duration in either half, whatever its level bits say. */
++        if (memsize == 0) {
++            memsize = 64;
+         }
+-        if(v==0) { // stop sending when we see a zero
++        v = s->data[(channel*64 + (i+s->sent)%memsize) % ESP32_RMT_BUF_WORDS];
++        if((v & 0x7fff)==0 || (v & 0x7fff0000)==0) {
++            if((v & 0x7fff)!=0) { /* its first half still goes out */
++                if(ssc){
++                    ssc->transfer(slave,v);
++                }
++                picsimlab_rmt_event(channel, s->conf0[channel], v);
++            }
+             s->int_raw|=(1<<(channel*3)); //set TX_END
+             s->int_raw&=~(1<<(channel+24)); //clearTHR
+             s->sent=0;
+             s->conf1[channel] &= ~R_RMT_CHnCONF1_TX_START_MASK;
+-            if(s->int_en & (1<<(channel*3)))
+-                qemu_irq_raise(s->irq);
++            update_irq(s);
+             return;
+         }
+         if(ssc){
+@@ -78,8 +95,7 @@ static void send_data(Esp32RmtState *s, int channel) {
+     }
+     s->sent+=s->txlim[channel];
+     s->int_raw|=(1<<(channel+24)); //set THR
+-    if(s->int_en & (1<<(channel+24)))
+-        qemu_irq_raise(s->irq);
++    update_irq(s);
+     restart_timer(s,channel);
+ }
+ 
+@@ -162,12 +178,16 @@ static void esp32_rmt_write(void *opaque, hwaddr addr,
+         break;
+     case A_RMT_INT_ENA:
+         s->int_en=value;
++        update_irq(s);
++        /* esp32bench: data held for an interrupt that is now off goes out (the
++         * driver turns the threshold interrupt off when it has encoded it all). */
++        if(s->unsent_data){
++            esp32_rmt_timer_cb(s);
++        }
+         break;
+     case A_RMT_INT_CLR:
+         s->int_raw&=(~value);
+-        if((s->int_raw & s->int_en)==0) {
+-            qemu_irq_lower(s->irq);
+-        }
++        update_irq(s);
+         if(s->unsent_data){ 
+             esp32_rmt_timer_cb(s);
+         }
+diff --git a/hw/xtensa/esp32s3.c b/hw/xtensa/esp32s3.c
+index 571afb8..e408eec 100644
+--- a/hw/xtensa/esp32s3.c
++++ b/hw/xtensa/esp32s3.c
+@@ -29,6 +29,7 @@
+ #include "target/xtensa/cpu.h"
+ 
+ #include "hw/misc/esp32s3_rtc_cntl.h"
++#include "hw/misc/esp32bench_rmt.h"
+ #include "hw/xtensa/esp32s3_intc.h"
+ 
+ #include "hw/sd/dwc_sdmmc.h"
+@@ -490,6 +491,15 @@ static void esp32s3_soc_realize(DeviceState *dev, Error **errp)
+     esp32s3_soc_add_periph_device(sys_mem, &s->rtc_cntl, DR_REG_RTCCNTL_BASE);
+     esp32bench_add_sens(sys_mem);
+     esp32bench_add_ledc(sys_mem);
++    /* esp32bench: the RMT transmitter (hw/misc/esp32bench_rmt.c), for WS2812 LEDs */
++    {
++        DeviceState *rmt = qdev_new(TYPE_ESP32BENCH_RMT);
++        qdev_prop_set_uint32(rmt, "tx-channels", 4);
++        sysbus_realize_and_unref(SYS_BUS_DEVICE(rmt), &error_fatal);
++        memory_region_add_subregion_overlap(sys_mem, DR_REG_RMT_BASE,
++                                            sysbus_mmio_get_region(SYS_BUS_DEVICE(rmt), 0), 0);
++        sysbus_connect_irq(SYS_BUS_DEVICE(rmt), 0, qdev_get_gpio_in(intmatrix_dev, ETS_RMT_INTR_SOURCE));
++    }
+ 
+     qdev_connect_gpio_out_named(DEVICE(&s->rtc_cntl), ESP32S3_RTC_DIG_RESET_GPIO, 0,
+                                 qdev_get_gpio_in_named(dev, ESP32S3_RTC_DIG_RESET_GPIO, 0));
+@@ -954,7 +964,6 @@ static void esp32s3_machine_init(MachineState *machine)
+         memory_region_add_subregion_overlap(sys_mem, esp32s3_memmap[ESP32S3_MEMREGION_FRAMEBUF].base, &ss->rgb.vram, 0);
+     }
+ 
+-    esp32s3_soc_add_unimp_device(sys_mem, "esp32s3.rmt", DR_REG_RMT_BASE, 0x1000);
+     esp32s3_soc_add_unimp_device(sys_mem, "esp32s3.iomux", DR_REG_IO_MUX_BASE, 0x2000);
+ 
+     
+diff --git a/include/hw/misc/esp32bench_rmt.h b/include/hw/misc/esp32bench_rmt.h
+new file mode 100644
+index 0000000..01e6880
+--- /dev/null
++++ b/include/hw/misc/esp32bench_rmt.h
+@@ -0,0 +1,42 @@
++/*
++ * ESP32-C3 and ESP32-S3 RMT transmitter, for esp32bench
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 or
++ * (at your option) any later version.
++ */
++#pragma once
++
++#include "hw/sysbus.h"
++#include "qemu/timer.h"
++
++#define TYPE_ESP32BENCH_RMT "misc.esp32bench.rmt"
++OBJECT_DECLARE_SIMPLE_TYPE(Esp32BenchRmtState, ESP32BENCH_RMT)
++
++#define ESP32BENCH_RMT_MAX_TX      4
++#define ESP32BENCH_RMT_MAX_CH      8
++#define ESP32BENCH_RMT_BLOCK_WORDS 48
++#define ESP32BENCH_RMT_REG_WORDS   (0x100 / 4)
++
++typedef struct Esp32BenchRmtTx {
++    Esp32BenchRmtState *rmt;
++    int index;
++    QEMUTimer timer;
++    bool busy;
++    bool held;        /* waiting for the driver to take a threshold interrupt */
++    uint32_t pos;     /* symbols read since the start */
++    uint32_t since_thr;
++    uint32_t loops;
++} Esp32BenchRmtTx;
++
++struct Esp32BenchRmtState {
++    SysBusDevice parent_obj;
++    MemoryRegion iomem;
++    qemu_irq irq;
++    uint32_t tx_channels;   /* 2 on the C3, 4 on the S3: picks the register layout */
++    uint32_t regs[ESP32BENCH_RMT_REG_WORDS];
++    uint32_t mem[ESP32BENCH_RMT_MAX_CH * ESP32BENCH_RMT_BLOCK_WORDS];
++    uint32_t int_raw;
++    uint32_t int_ena;
++    Esp32BenchRmtTx tx[ESP32BENCH_RMT_MAX_TX];
++};

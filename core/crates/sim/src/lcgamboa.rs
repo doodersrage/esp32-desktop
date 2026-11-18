@@ -29,12 +29,14 @@ const MARKER: &str = "installed";
 /// 4: the CPU clock change fix (Arduino builds panicked at start-up).
 /// 5: S3 ADC and LEDC registers, C3 LEDC readback (sketches hung or aborted).
 /// 6: the C3's USB-Serial-JTAG console (the C3 SuperMini's Serial).
-pub const RECIPE: u32 = 6;
+/// 7: RMT transmission on all three chips (WS2812 writes never finished).
+/// 8: light and deep sleep on a timer (sleep hung or ended in a watchdog reset).
+pub const RECIPE: u32 = 8;
 
 /// Changes esp32bench makes to the pinned commit, in order. Each file says what and
 /// why. Kept in `core/crates/sim/patches/` and built into the program, so an installed
 /// app can build the fork without the repo.
-pub const PATCHES: [(&str, &str); 6] = [
+pub const PATCHES: [(&str, &str); 8] = [
     (
         "0001.patch",
         include_str!("../patches/0001-build-library-with-pixman.patch"),
@@ -59,6 +61,11 @@ pub const PATCHES: [(&str, &str); 6] = [
         "0006.patch",
         include_str!("../patches/0006-esp32c3-usb-serial-jtag-console.patch"),
     ),
+    (
+        "0007.patch",
+        include_str!("../patches/0007-rmt-transmitter.patch"),
+    ),
+    ("0008.patch", include_str!("../patches/0008-sleep.patch")),
 ];
 
 fn marker_text() -> String {
@@ -286,6 +293,8 @@ pub fn steps(jobs: usize) -> Vec<Step> {
                 "../patches/0004.patch",
                 "../patches/0005.patch",
                 "../patches/0006.patch",
+                "../patches/0007.patch",
+                "../patches/0008.patch",
             ],
             "src",
         ),

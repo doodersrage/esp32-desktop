@@ -348,11 +348,12 @@ async fn wifi_has_a_radio_but_no_network(chip: Chip) {
     s.shutdown().await.unwrap();
 }
 
-/// The ADC and LEDC calls the library's sketches make run through on the fork:
+/// The ADC, LEDC and RMT calls the library's sketches make run through on the fork:
 /// analogRead() (on the S3, ADC calibration ran before setup() and hung until patch
 /// 0004), tone() and analogWrite() (LEDC; aborted on the C3 and S3 until patches 0004
-/// and 0005).
-async fn arduino_adc_and_ledc_on_lcgamboa(chip: Chip) {
+/// and 0005), and rmtWrite() and rgbLedWrite() (RMT, as WS2812 LEDs use it; never
+/// finished until patch 0007).
+async fn arduino_peripherals_on_lcgamboa(chip: Chip) {
     let Some(image) = built_image("arduino-periph", chip) else {
         eprintln!("skipping {chip}: arduino-periph not built");
         return;
@@ -377,6 +378,8 @@ async fn arduino_adc_and_ledc_on_lcgamboa(chip: Chip) {
         "esp32bench-periph adc=",
         "esp32bench-periph tone",
         "esp32bench-periph pwm",
+        "esp32bench-periph rmt=1",
+        "esp32bench-periph rgb",
     ] {
         assert!(text.contains(marker), "{chip}: no {marker}:\n{text}");
     }
@@ -385,18 +388,72 @@ async fn arduino_adc_and_ledc_on_lcgamboa(chip: Chip) {
 }
 
 #[tokio::test]
-async fn lcgamboa_esp32_runs_adc_and_ledc() {
-    arduino_adc_and_ledc_on_lcgamboa(Chip::Esp32).await;
+async fn lcgamboa_esp32_runs_adc_ledc_and_rmt() {
+    arduino_peripherals_on_lcgamboa(Chip::Esp32).await;
 }
 
 #[tokio::test]
-async fn lcgamboa_esp32s3_runs_adc_and_ledc() {
-    arduino_adc_and_ledc_on_lcgamboa(Chip::Esp32s3).await;
+async fn lcgamboa_esp32s3_runs_adc_ledc_and_rmt() {
+    arduino_peripherals_on_lcgamboa(Chip::Esp32s3).await;
 }
 
 #[tokio::test]
-async fn lcgamboa_esp32c3_runs_adc_and_ledc() {
-    arduino_adc_and_ledc_on_lcgamboa(Chip::Esp32c3).await;
+async fn lcgamboa_esp32c3_runs_adc_ledc_and_rmt() {
+    arduino_peripherals_on_lcgamboa(Chip::Esp32c3).await;
+}
+
+/// Sleep on a timer, as battery sketches use it (patch 0008): light sleep returns,
+/// and deep sleep restarts the chip through the ROM with reset reason DEEPSLEEP_RESET,
+/// the wake-up cause "timer" and RTC memory kept (the sketch's boot count goes up).
+/// Before the patch, light sleep never returned and deep sleep ended in a watchdog
+/// reset with RTC memory lost.
+async fn arduino_sleep_on_lcgamboa(chip: Chip) {
+    let Some(image) = built_image("arduino-sleep", chip) else {
+        return;
+    };
+    let Ok(launch) = esp32bench_sim::engine::launch(chip, Some(esp32bench_sim::Engine::Lcgamboa))
+    else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let mut s = Session::start(launch.config(chip, image)).await.unwrap();
+    let mut text = Vec::new();
+    let found = s
+        .uart
+        .wait_for(b"esp32bench-sleep done", Duration::from_secs(30), |b| {
+            text.extend_from_slice(b)
+        })
+        .await
+        .unwrap();
+    let text = String::from_utf8_lossy(&text);
+    assert_eq!(found, WaitOutcome::Found, "{chip}:\n{text}");
+    for marker in [
+        "esp32bench-sleep boot=1 cause=0 reset=1",
+        "esp32bench-sleep light=",
+        // ESP_SLEEP_WAKEUP_TIMER, ESP_RST_DEEPSLEEP
+        "esp32bench-sleep boot=2 cause=4 reset=8",
+        "esp32bench-sleep boot=3 cause=4 reset=8",
+    ] {
+        assert!(text.contains(marker), "{chip}: no {marker}:\n{text}");
+    }
+    assert!(!text.contains("Guru Meditation"), "{chip}:\n{text}");
+    assert!(!text.contains("WDT"), "{chip}:\n{text}");
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32_sleeps_and_wakes() {
+    arduino_sleep_on_lcgamboa(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32s3_sleeps_and_wakes() {
+    arduino_sleep_on_lcgamboa(Chip::Esp32s3).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32c3_sleeps_and_wakes() {
+    arduino_sleep_on_lcgamboa(Chip::Esp32c3).await;
 }
 
 /// Boards without a USB-UART chip, like the C3 SuperMini, put `Serial` on the C3's

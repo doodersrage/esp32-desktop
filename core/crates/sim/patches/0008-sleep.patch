@@ -1,0 +1,885 @@
+rtc: light and deep sleep on a timer, ESP32, C3 and S3
+
+ESP-IDF enters sleep by setting RTC_CNTL_STATE0's SLEEP_EN, then spins
+until the chip powers down (deep sleep) or RTC_CNTL raises SLP_WAKEUP
+(light sleep). None of the RTC_CNTL models handled it: light sleep never
+returned and deep sleep spun until a watchdog reset the chip, with the
+reset reason and lost RTC memory of a watchdog reset. The library's
+battery sketches went round in reboots.
+
+Each chip's RTC_CNTL now keeps the registers the sleep code writes and
+reads back (SLP_TIMER0/1, STATE0, WAKEUP_STATE, the wake-up cause, INT_*,
+DIG_PWC), and on SLEEP_EN arms a timer for the wake-up time when the timer
+wake-up is enabled, converting RTC slow-clock ticks to virtual time.
+
+- Light sleep: the timer raises SLP_WAKEUP and the wake-up cause.
+- Deep sleep (DIG_PWC's DG_WRAP_PD_EN set): the CPUs are held and the
+  digital domain is reset, which stops the app's watchdogs; RTC memory
+  and RTC registers are kept. When the timer fires the chip boots through
+  the ROM with reset reason DEEPSLEEP_RESET and wake-up cause "timer".
+  ESP32: CPUs held through RTC_CNTL's cpu-stall lines, and waking resets
+  the digital domain again (its flash boot watchdog had been counting
+  while the CPUs were held), releasing them when that reset is done.
+  S3: the machine's cpu-stall input was empty; it now holds a CPU for
+  deep sleep and releases only a hold it set. C3: one system reset at
+  entry, with the CPU held halted (start_powered_off) until the timer
+  fires; the C3 model also gains RTC time (TIME_UPDATE, TIME_LOW0/HIGH0),
+  which it lacked.
+- The RTC memory CRC unit, which the ROM and ESP-IDF run around deep sleep
+  to decide whether to run the wake stub (RTC_CNTL 0x100/0x104 on the
+  ESP32, SYSTEM_RTC_FASTMEM_CONFIG/CRC on the C3), finishes at once with
+  a fixed result. Unmodelled, deep sleep hung before SLEEP_EN.
+
+Any other reset (power-on, the app's reset, a watchdog) ends sleep. Only
+the timer wakes the chip: GPIO, touch and ULP wake-ups are not modelled.
+
+Written for esp32bench (GPL-2.0-or-later). Changes Espressif's
+hw/misc/esp32_rtc_cntl.c, hw/misc/esp32s3_rtc_cntl.c, hw/misc/esp32c3_rtc_cntl.c,
+hw/riscv/esp32c3_clk.c and their headers (Copyright (c) 2019-2024 Espressif
+Systems (Shanghai) Co. Ltd., GPL-2.0-or-later, notices kept),
+Espressif's hw/xtensa/esp32s3.c and lcgamboa's hw/xtensa/esp32_picsimlab.c.
+Applied by esp32bench (core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu
+at 885a6e7061fb70fac78a074a719423810bc19a17, after patch 0007.
+
+diff --git a/hw/misc/esp32_rtc_cntl.c b/hw/misc/esp32_rtc_cntl.c
+index 5e43732..90a0e26 100644
+--- a/hw/misc/esp32_rtc_cntl.c
++++ b/hw/misc/esp32_rtc_cntl.c
+@@ -24,6 +24,82 @@
+ static void esp32_rtc_update_cpu_stall(Esp32RtcCntlState* s);
+ static void esp32_rtc_update_clk(Esp32RtcCntlState* s);
+ 
++/* esp32bench: sleep. ESP-IDF enters sleep by setting STATE0's SLEEP_EN, then spins
++ * until the chip powers down (deep sleep) or RTC_CNTL raises SLP_WAKEUP (light sleep).
++ * Unmodelled, deep sleep spun until a watchdog reset the chip, with the reset reason
++ * and RTC memory of a watchdog reset, and light sleep never returned. Here deep sleep
++ * holds both CPUs and resets the digital domain, which stops the app's watchdogs
++ * (RTC memory and RTC registers are kept). When the wake-up timer fires, the digital
++ * domain is reset again, as powering it up does (the flash boot watchdog starts
++ * afresh), with reset reason DEEPSLEEP_RESET, and the SoC lets the CPUs run once that
++ * reset is done (esp32bench_rtc_cntl_reset_done). Light sleep raises SLP_WAKEUP.
++ * Only the timer wakes the chip: GPIO, touch and ULP wake-ups are not modelled. */
++#define ESP32BENCH_TIMER_TRIG_EN  (1u << 3)
++
++static uint64_t esp32bench_rtc_ticks(Esp32RtcCntlState *s)
++{
++    return muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - s->time_base_ns,
++                    s->rtc_slowclk_freq, NANOSECONDS_PER_SECOND);
++}
++
++static void esp32bench_update_irq(Esp32RtcCntlState *s)
++{
++    qemu_set_irq(s->irq, (s->esp32bench_int_raw & s->esp32bench_int_ena) != 0);
++}
++
++static void esp32bench_sleep(Esp32RtcCntlState *s)
++{
++    uint32_t wake_ena = FIELD_EX32(s->esp32bench_wakeup_state, RTC_CNTL_WAKEUP_STATE, WAKEUP_ENA);
++    bool deep = FIELD_EX32(s->esp32bench_dig_pwc, RTC_CNTL_DIG_PWC, DG_WRAP_PD_EN);
++
++    if (wake_ena & ESP32BENCH_TIMER_TRIG_EN) {
++        uint64_t target = s->esp32bench_slp_timer[0] |
++                          ((uint64_t) (s->esp32bench_slp_timer[1] & 0xffff) << 32);
++        uint64_t now = esp32bench_rtc_ticks(s);
++        uint64_t ns = target > now ? muldiv64(target - now, NANOSECONDS_PER_SECOND,
++                                              s->rtc_slowclk_freq) : 0;
++        timer_mod(&s->esp32bench_wake_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + ns);
++    }
++    if (deep) {
++        s->esp32bench_deep_sleep = true;
++        for (int i = 0; i < ESP32_CPU_COUNT; ++i) {
++            s->reset_cause[i] = ESP32_DEEPSLEEP_RESET;
++            s->cpu_stall_state[i] = true;
++            qemu_set_irq(s->cpu_stall_req[i], 1);
++        }
++        qemu_irq_pulse(s->dig_reset_req);
++    }
++}
++
++static void esp32bench_wake(void *opaque)
++{
++    Esp32RtcCntlState *s = opaque;
++
++    s->esp32bench_wakeup_state = FIELD_DP32(s->esp32bench_wakeup_state, RTC_CNTL_WAKEUP_STATE,
++                                            WAKEUP_CAUSE, ESP32BENCH_TIMER_TRIG_EN);
++    if (s->esp32bench_deep_sleep) {
++        /* Waking is a reset of the digital domain, as on the chip: the flash boot
++         * watchdog starts afresh. The CPUs run once it is done. */
++        for (int i = 0; i < ESP32_CPU_COUNT; ++i) {
++            s->reset_cause[i] = ESP32_DEEPSLEEP_RESET;
++        }
++        s->esp32bench_wake_pending = true;
++        qemu_irq_pulse(s->dig_reset_req);
++    } else {
++        s->esp32bench_int_raw |= R_RTC_CNTL_INT_SLP_WAKEUP_MASK;
++        esp32bench_update_irq(s);
++    }
++}
++
++void esp32bench_rtc_cntl_reset_done(Esp32RtcCntlState *s)
++{
++    if (s->esp32bench_wake_pending) {
++        s->esp32bench_wake_pending = false;
++        s->esp32bench_deep_sleep = false;
++        esp32_rtc_update_cpu_stall(s);
++    }
++}
++
+ static uint64_t esp32_rtc_cntl_read(void *opaque, hwaddr addr, unsigned int size)
+ {
+     Esp32RtcCntlState *s = ESP32_RTC_CNTL(opaque);
+@@ -72,6 +148,42 @@ static uint64_t esp32_rtc_cntl_read(void *opaque, hwaddr addr, unsigned int size
+     case A_RTC_CNTL_STORE7:
+         r = s->scratch_reg[(addr - A_RTC_CNTL_STORE4) / 4 + 4];
+         break;
++
++    case A_RTC_CNTL_SLP_TIMER0:
++    case A_RTC_CNTL_SLP_TIMER1:
++        r = s->esp32bench_slp_timer[(addr - A_RTC_CNTL_SLP_TIMER0) / 4];
++        break;
++    case A_RTC_CNTL_STATE0:
++        r = s->esp32bench_state0;
++        break;
++    case A_RTC_CNTL_WAKEUP_STATE:
++        r = s->esp32bench_wakeup_state;
++        break;
++    case A_RTC_CNTL_INT_RAW:
++        r = s->esp32bench_int_raw;
++        break;
++    case A_RTC_CNTL_INT_ST:
++        r = s->esp32bench_int_raw & s->esp32bench_int_ena;
++        break;
++    case A_RTC_CNTL_INT_ENA:
++        r = s->esp32bench_int_ena;
++        break;
++    case A_RTC_CNTL_DIG_PWC:
++        r = s->esp32bench_dig_pwc;
++        break;
++    /* The RTC memory CRC unit, which the ROM runs before deep sleep and after it
++     * (set_rtc_memory_crc) to decide whether to run the wake stub. It finishes at
++     * once, with a fixed result: the ROM only compares it with the one stored before
++     * sleep, and RTC memory is always kept here. */
++    case A_RTC_CNTL_MEM_CRC_START:
++        r = s->esp32bench_mem_crc;
++        if (r & R_RTC_CNTL_MEM_CRC_START_START_MASK) {
++            r |= R_RTC_CNTL_MEM_CRC_START_FINISH_MASK;
++        }
++        break;
++    case A_RTC_CNTL_MEM_CRC_RES:
++        r = 0x45535042; /* "ESPB" */
++        break;
+     }
+     return r;
+ }
+@@ -142,6 +254,37 @@ static void esp32_rtc_cntl_write(void *opaque, hwaddr addr, uint64_t value,
+     case A_RTC_CNTL_STORE7:
+         s->scratch_reg[(addr - A_RTC_CNTL_STORE4) / 4 + 4] = value;
+         break;
++
++    case A_RTC_CNTL_SLP_TIMER0:
++    case A_RTC_CNTL_SLP_TIMER1:
++        s->esp32bench_slp_timer[(addr - A_RTC_CNTL_SLP_TIMER0) / 4] = value;
++        break;
++    case A_RTC_CNTL_STATE0:
++        s->esp32bench_state0 = value & ~R_RTC_CNTL_STATE0_SLEEP_EN_MASK;
++        if (value & R_RTC_CNTL_STATE0_SLEEP_EN_MASK) {
++            esp32bench_sleep(s);
++        }
++        break;
++    case A_RTC_CNTL_WAKEUP_STATE:
++        /* The cause is read-only: what woke the chip last. */
++        s->esp32bench_wakeup_state =
++            (value & R_RTC_CNTL_WAKEUP_STATE_WAKEUP_ENA_MASK) |
++            (s->esp32bench_wakeup_state & R_RTC_CNTL_WAKEUP_STATE_WAKEUP_CAUSE_MASK);
++        break;
++    case A_RTC_CNTL_INT_ENA:
++        s->esp32bench_int_ena = value;
++        esp32bench_update_irq(s);
++        break;
++    case A_RTC_CNTL_INT_CLR:
++        s->esp32bench_int_raw &= ~value;
++        esp32bench_update_irq(s);
++        break;
++    case A_RTC_CNTL_DIG_PWC:
++        s->esp32bench_dig_pwc = value;
++        break;
++    case A_RTC_CNTL_MEM_CRC_START:
++        s->esp32bench_mem_crc = value & ~R_RTC_CNTL_MEM_CRC_START_FINISH_MASK;
++        break;
+     }
+ }
+ 
+@@ -155,8 +298,9 @@ static void esp32_rtc_update_cpu_stall(Esp32RtcCntlState* s)
+ 
+     const uint32_t stall_magic_val = 0x86;
+ 
+-    s->cpu_stall_state[0] = procpu_stall == stall_magic_val;
+-    s->cpu_stall_state[1] = appcpu_stall == stall_magic_val;
++    /* esp32bench: in deep sleep both CPUs stay held. */
++    s->cpu_stall_state[0] = procpu_stall == stall_magic_val || s->esp32bench_deep_sleep;
++    s->cpu_stall_state[1] = appcpu_stall == stall_magic_val || s->esp32bench_deep_sleep;
+ 
+     qemu_set_irq(s->cpu_stall_req[0], s->cpu_stall_state[0]);
+     qemu_set_irq(s->cpu_stall_req[1], s->cpu_stall_state[1]);
+@@ -182,6 +326,16 @@ static void esp32_rtc_cntl_reset_hold(Object *obj, ResetType type)
+     Esp32RtcCntlState *s = ESP32_RTC_CNTL(obj);
+ 
+     s->time_base_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++    /* esp32bench: an RTC reset (power-on, a reset from the app) ends any sleep. */
++    timer_del(&s->esp32bench_wake_timer);
++    s->esp32bench_wake_pending = false;
++    if (s->esp32bench_deep_sleep) {
++        s->esp32bench_deep_sleep = false;
++        esp32_rtc_update_cpu_stall(s);
++    }
++    s->esp32bench_slp_timer[0] = s->esp32bench_slp_timer[1] = 0;
++    s->esp32bench_state0 = s->esp32bench_wakeup_state = s->esp32bench_dig_pwc = 0;
++    s->esp32bench_int_raw = s->esp32bench_int_ena = 0;
+ }
+ 
+ static void esp32_rtc_cntl_realize(DeviceState *dev, Error **errp)
+@@ -197,6 +351,7 @@ static void esp32_rtc_cntl_init(Object *obj)
+                           TYPE_ESP32_RTC_CNTL, ESP32_RTC_CNTL_SIZE);
+     sysbus_init_mmio(sbd, &s->iomem);
+     sysbus_init_irq(sbd, &s->irq);
++    timer_init_ns(&s->esp32bench_wake_timer, QEMU_CLOCK_VIRTUAL, esp32bench_wake, s);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->dig_reset_req, ESP32_RTC_DIG_RESET_GPIO, 1);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->cpu_reset_req[0], ESP32_RTC_CPU_RESET_GPIO, ESP32_CPU_COUNT);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->cpu_stall_req[0], ESP32_RTC_CPU_STALL_GPIO, ESP32_CPU_COUNT);
+diff --git a/hw/misc/esp32c3_rtc_cntl.c b/hw/misc/esp32c3_rtc_cntl.c
+index 14c045c..4759575 100644
+--- a/hw/misc/esp32c3_rtc_cntl.c
++++ b/hw/misc/esp32c3_rtc_cntl.c
+@@ -17,6 +17,8 @@
+ #include "hw/irq.h"
+ #include "hw/qdev-properties.h"
+ #include "hw/misc/esp32c3_rtc_cntl.h"
++#include "hw/core/cpu.h"
++#include "qemu/timer.h"
+ 
+ 
+ #define RTCCNTL_DEBUG     0
+@@ -36,6 +38,84 @@ static void esp32c3_reset_request(void *opaque, int n, int level)
+ }
+ 
+ 
++/* esp32bench: RTC time and sleep. The model had neither: RTC time read 0, and
++ * ESP-IDF's sleep code (which sets STATE0's SLEEP_EN, then spins until the chip
++ * powers down or RTC_CNTL raises SLP_WAKEUP) spun until the interrupt watchdog
++ * fired. Here RTC time counts at the slow clock; deep sleep resets the chip with
++ * reset reason DEEPSLEEP_RESET (which stops its watchdogs; RTC memory and these
++ * registers are kept), holds the CPU halted until the wake-up timer fires, then
++ * lets it boot; light sleep raises SLP_WAKEUP. Only the timer wakes the chip: GPIO
++ * and other wake-ups are not modelled. */
++#define ESP32BENCH_TIMER_TRIG_EN  (1u << 3)
++
++static uint32_t esp32bench_slowclk_hz(ESP32C3RtcCntlState *s)
++{
++    switch (FIELD_EX32(s->esp32bench_clk_conf, RTC_CNTL_RTC_CLK_CONF, ANA_CLK_RTC_SEL)) {
++    case 1:
++        return 32768;           /* XTAL32K */
++    case 2:
++        return 17500000 / 256;  /* RC_FAST_D256 */
++    default:
++        return 136000;          /* RC_SLOW */
++    }
++}
++
++static uint64_t esp32bench_rtc_ticks(ESP32C3RtcCntlState *s)
++{
++    return muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - s->esp32bench_time_base_ns,
++                    esp32bench_slowclk_hz(s), NANOSECONDS_PER_SECOND);
++}
++
++/* The CPU stays halted across resets while this is set: a CPU reset sets halted to
++ * start_powered_off, and every interrupt source has just been reset too. */
++static void esp32bench_hold_cpu(bool hold)
++{
++    CPUState *cs = first_cpu;
++    if (!cs) {
++        return;
++    }
++    cs->start_powered_off = hold;
++    if (!hold && cs->halted) {
++        cs->halted = 0;
++        qemu_cpu_kick(cs);
++    }
++}
++
++static void esp32bench_sleep(ESP32C3RtcCntlState *s)
++{
++    uint32_t wake_ena = FIELD_EX32(s->esp32bench_wakeup_state, RTC_CNTL_RTC_WAKEUP_STATE, RTC_WAKEUP_ENA);
++    bool deep = FIELD_EX32(s->esp32bench_dig_pwc, RTC_CNTL_DIG_PWC, DG_WRAP_PD_EN);
++
++    if (wake_ena & ESP32BENCH_TIMER_TRIG_EN) {
++        uint64_t target = s->esp32bench_slp_timer[0] |
++                          ((uint64_t) (s->esp32bench_slp_timer[1] & 0xffff) << 32);
++        uint64_t now = esp32bench_rtc_ticks(s);
++        uint64_t ns = target > now ? muldiv64(target - now, NANOSECONDS_PER_SECOND,
++                                              esp32bench_slowclk_hz(s)) : 0;
++        timer_mod(&s->esp32bench_wake_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + ns);
++    }
++    if (deep) {
++        s->esp32bench_deep_sleep = true;
++        s->esp32bench_sleep_reset = true;
++        s->reason = ESP32C3_DEEPSLEEP_RESET;
++        esp32bench_hold_cpu(true);
++        qemu_irq_raise(s->cpu_reset);
++    }
++}
++
++static void esp32bench_wake(void *opaque)
++{
++    ESP32C3RtcCntlState *s = opaque;
++
++    s->esp32bench_wakeup_cause = ESP32BENCH_TIMER_TRIG_EN;
++    if (s->esp32bench_deep_sleep) {
++        s->esp32bench_deep_sleep = false;
++        esp32bench_hold_cpu(false);
++    } else {
++        s->esp32bench_int_raw |= R_RTC_CNTL_INT_RAW_RTC_SLP_WAKEUP_INT_RAW_MASK;
++    }
++}
++
+ static uint64_t esp32c3_rtc_cntl_read(void* opaque, hwaddr addr, unsigned int size)
+ {
+     ESP32C3RtcCntlState *s = ESP32C3_RTC_CNTL(opaque);
+@@ -62,6 +142,41 @@ static uint64_t esp32c3_rtc_cntl_read(void* opaque, hwaddr addr, unsigned int si
+         case A_RTC_CNTL_RTC_STORE7:
+             r = s->scratch_reg[(addr - A_RTC_CNTL_RTC_STORE4) / 4 + 4];
+             break;
++
++        case A_RTC_CNTL_RTC_TIME_LOW0:
++            r = s->esp32bench_time & UINT32_MAX;
++            break;
++        case A_RTC_CNTL_RTC_TIME_HIGH0:
++            r = s->esp32bench_time >> 32;
++            break;
++        case A_RTC_CNTL_RTC_SLP_TIMER0:
++        case A_RTC_CNTL_RTC_SLP_TIMER1:
++            r = s->esp32bench_slp_timer[(addr - A_RTC_CNTL_RTC_SLP_TIMER0) / 4];
++            break;
++        case A_RTC_CNTL_RTC_STATE0:
++            r = s->esp32bench_state0;
++            break;
++        case A_RTC_CNTL_RTC_WAKEUP_STATE:
++            r = s->esp32bench_wakeup_state;
++            break;
++        case A_RTC_CNTL_RTC_SLP_WAKEUP_CAUSE:
++            r = s->esp32bench_wakeup_cause;
++            break;
++        case A_RTC_CNTL_INT_RAW_RTC:
++            r = s->esp32bench_int_raw;
++            break;
++        case A_RTC_CNTL_INT_ST_RTC:
++            r = s->esp32bench_int_raw & s->esp32bench_int_ena;
++            break;
++        case A_RTC_CNTL_INT_ENA_RTC:
++            r = s->esp32bench_int_ena;
++            break;
++        case A_RTC_CNTL_DIG_PWC:
++            r = s->esp32bench_dig_pwc;
++            break;
++        case A_RTC_CNTL_RTC_CLK_CONF:
++            r = s->esp32bench_clk_conf;
++            break;
+         default:
+ #if RTCCNTL_WARNING
+             /* Other registers are not supported yet */
+@@ -106,6 +221,43 @@ static void esp32c3_rtc_cntl_write(void* opaque, hwaddr addr, uint64_t value, un
+             s->scratch_reg[(addr - A_RTC_CNTL_RTC_STORE4) / 4 + 4] = value;
+             break;
+ 
++        case A_RTC_CNTL_RTC_TIME_UPDATE:
++            if (FIELD_EX32(value, RTC_CNTL_RTC_TIME_UPDATE, RTC_TIME_UPDATE)) {
++                s->esp32bench_time = esp32bench_rtc_ticks(s);
++            }
++            break;
++        case A_RTC_CNTL_RTC_SLP_TIMER0:
++        case A_RTC_CNTL_RTC_SLP_TIMER1:
++            s->esp32bench_slp_timer[(addr - A_RTC_CNTL_RTC_SLP_TIMER0) / 4] = value;
++            break;
++        case A_RTC_CNTL_RTC_STATE0:
++            s->esp32bench_state0 = value & ~R_RTC_CNTL_RTC_STATE0_SLEEP_EN_MASK;
++            if (value & R_RTC_CNTL_RTC_STATE0_SLEEP_EN_MASK) {
++                esp32bench_sleep(s);
++            }
++            break;
++        case A_RTC_CNTL_RTC_WAKEUP_STATE:
++            s->esp32bench_wakeup_state = value;
++            break;
++        case A_RTC_CNTL_INT_ENA_RTC:
++            s->esp32bench_int_ena = value;
++            break;
++        case A_RTC_CNTL_INT_ENA_RTC_W1TS:
++            s->esp32bench_int_ena |= value;
++            break;
++        case A_RTC_CNTL_INT_ENA_RTC_W1TC:
++            s->esp32bench_int_ena &= ~value;
++            break;
++        case A_RTC_CNTL_INT_CLR_RTC:
++            s->esp32bench_int_raw &= ~value;
++            break;
++        case A_RTC_CNTL_DIG_PWC:
++            s->esp32bench_dig_pwc = value;
++            break;
++        case A_RTC_CNTL_RTC_CLK_CONF:
++            s->esp32bench_clk_conf = value;
++            break;
++
+         default:
+ #if RTCCNTL_WARNING
+             /* Other registers are not supported yet */
+@@ -131,9 +283,25 @@ static void esp32c3_rtc_cntl_reset_hold(Object *obj, ResetType type)
+ 
+     if (first_boot) {
+         s->reason = ESP32C3_POWERON_RESET;
++        s->esp32bench_time_base_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+         first_boot = false;
+     }
+ 
++    /* esp32bench: the reset that starts deep sleep keeps RTC state; any other reset
++     * (from the app, a watchdog, the firmware) ends sleep and lets the CPU run. */
++    if (s->esp32bench_sleep_reset) {
++        s->esp32bench_sleep_reset = false;
++    } else {
++        timer_del(&s->esp32bench_wake_timer);
++        if (s->esp32bench_deep_sleep) {
++            s->esp32bench_deep_sleep = false;
++            esp32bench_hold_cpu(false);
++        }
++        s->esp32bench_slp_timer[0] = s->esp32bench_slp_timer[1] = 0;
++        s->esp32bench_state0 = s->esp32bench_wakeup_state = s->esp32bench_dig_pwc = 0;
++        s->esp32bench_wakeup_cause = s->esp32bench_int_raw = s->esp32bench_int_ena = 0;
++    }
++
+     qemu_irq_lower(s->cpu_reset);
+ }
+ 
+@@ -154,6 +322,7 @@ static void esp32c3_rtc_cntl_init(Object *obj)
+     memory_region_init_io(&s->iomem, obj, &esp_rtc_cntl_ops, s,
+                           TYPE_ESP32C3_RTC_CNTL, ESP32C3_RTC_CNTL_IO_SIZE);
+     sysbus_init_mmio(sbd, &s->iomem);
++    timer_init_ns(&s->esp32bench_wake_timer, QEMU_CLOCK_VIRTUAL, esp32bench_wake, s);
+ 
+     /* Initialize ESP32C3_COUNT_RESET input lines, each representing a reset source (reason) */
+     qdev_init_gpio_in(DEVICE(s), esp32c3_reset_request, ESP32C3_COUNT_RESET);
+diff --git a/hw/misc/esp32s3_rtc_cntl.c b/hw/misc/esp32s3_rtc_cntl.c
+index 76076c7..50ace0e 100644
+--- a/hw/misc/esp32s3_rtc_cntl.c
++++ b/hw/misc/esp32s3_rtc_cntl.c
+@@ -24,6 +24,68 @@
+ static void esp32s3_rtc_update_cpu_stall(Esp32s3RtcCntlState* s);
+ static void esp32s3_rtc_update_clk(Esp32s3RtcCntlState* s);
+ 
++/* esp32bench: sleep, as for the ESP32 (hw/misc/esp32_rtc_cntl.c). ESP-IDF enters
++ * sleep by setting STATE0's SLEEP_EN, then spins until the chip powers down (deep
++ * sleep) or RTC_CNTL raises SLP_WAKEUP (light sleep). Unmodelled, deep sleep spun
++ * until a watchdog reset the chip, with the reset reason and RTC memory of a watchdog
++ * reset, and light sleep never returned. Here deep sleep holds both CPUs (the
++ * machine's cpu-stall input, hw/xtensa/esp32s3.c), resets the digital domain (which
++ * stops its watchdogs; RTC memory and RTC registers are kept) and, when the wake-up
++ * timer fires, lets the chip boot with reset reason DEEPSLEEP_RESET; light sleep
++ * raises SLP_WAKEUP. Only the timer wakes the chip: GPIO, touch and ULP wake-ups are
++ * not modelled. */
++#define ESP32BENCH_TIMER_TRIG_EN  (1u << 3)
++
++static uint64_t esp32bench_rtc_ticks(Esp32s3RtcCntlState *s)
++{
++    return muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - s->time_base_ns,
++                    s->rtc_slowclk_freq, NANOSECONDS_PER_SECOND);
++}
++
++static void esp32bench_update_irq(Esp32s3RtcCntlState *s)
++{
++    qemu_set_irq(s->irq, (s->esp32bench_int_raw & s->esp32bench_int_ena) != 0);
++}
++
++static void esp32bench_sleep(Esp32s3RtcCntlState *s)
++{
++    uint32_t wake_ena = FIELD_EX32(s->esp32bench_wakeup_state, RTC_CNTL_WAKEUP_STATE, WAKEUP_ENA);
++    bool deep = FIELD_EX32(s->esp32bench_dig_pwc, RTC_CNTL_DIG_PWC, DG_WRAP_PD_EN);
++
++    if (wake_ena & ESP32BENCH_TIMER_TRIG_EN) {
++        uint64_t target = s->esp32bench_slp_timer[0] |
++                          ((uint64_t) (s->esp32bench_slp_timer[1] & 0xffff) << 32);
++        uint64_t now = esp32bench_rtc_ticks(s);
++        uint64_t ns = target > now ? muldiv64(target - now, NANOSECONDS_PER_SECOND,
++                                              s->rtc_slowclk_freq) : 0;
++        timer_mod(&s->esp32bench_wake_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + ns);
++    }
++    if (deep) {
++        s->esp32bench_deep_sleep = true;
++        for (int i = 0; i < ESP32S3_CPU_COUNT; ++i) {
++            s->reset_cause[i] = ESP32_DEEPSLEEP_RESET;
++            qemu_set_irq(s->cpu_stall_req[i], 1);
++        }
++        qemu_irq_pulse(s->dig_reset_req);
++    }
++}
++
++static void esp32bench_wake(void *opaque)
++{
++    Esp32s3RtcCntlState *s = opaque;
++
++    s->esp32bench_wakeup_cause = ESP32BENCH_TIMER_TRIG_EN;
++    if (s->esp32bench_deep_sleep) {
++        s->esp32bench_deep_sleep = false;
++        for (int i = 0; i < ESP32S3_CPU_COUNT; ++i) {
++            qemu_set_irq(s->cpu_stall_req[i], 0);
++        }
++    } else {
++        s->esp32bench_int_raw |= R_RTC_CNTL_INT_SLP_WAKEUP_MASK;
++        esp32bench_update_irq(s);
++    }
++}
++
+ static uint64_t esp32s3_rtc_cntl_read(void *opaque, hwaddr addr, unsigned int size)
+ {
+     Esp32s3RtcCntlState *s = ESP32S3_RTC_CNTL(opaque);
+@@ -72,6 +134,32 @@ static uint64_t esp32s3_rtc_cntl_read(void *opaque, hwaddr addr, unsigned int si
+     case A_RTC_CNTL_STORE7:
+         r = s->scratch_reg[(addr - A_RTC_CNTL_STORE4) / 4 + 4];
+         break;
++
++    case A_RTC_CNTL_SLP_TIMER0:
++    case A_RTC_CNTL_SLP_TIMER1:
++        r = s->esp32bench_slp_timer[(addr - A_RTC_CNTL_SLP_TIMER0) / 4];
++        break;
++    case A_RTC_CNTL_STATE0:
++        r = s->esp32bench_state0;
++        break;
++    case A_RTC_CNTL_WAKEUP_STATE:
++        r = s->esp32bench_wakeup_state;
++        break;
++    case A_RTC_CNTL_SLP_WAKEUP_CAUSE:
++        r = s->esp32bench_wakeup_cause;
++        break;
++    case A_RTC_CNTL_INT_RAW:
++        r = s->esp32bench_int_raw;
++        break;
++    case A_RTC_CNTL_INT_ST:
++        r = s->esp32bench_int_raw & s->esp32bench_int_ena;
++        break;
++    case A_RTC_CNTL_INT_ENA:
++        r = s->esp32bench_int_ena;
++        break;
++    case A_RTC_CNTL_DIG_PWC:
++        r = s->esp32bench_dig_pwc;
++        break;
+     }
+     return r;
+ }
+@@ -142,6 +230,39 @@ static void esp32s3_rtc_cntl_write(void *opaque, hwaddr addr, uint64_t value,
+     case A_RTC_CNTL_STORE7:
+         s->scratch_reg[(addr - A_RTC_CNTL_STORE4) / 4 + 4] = value;
+         break;
++
++    case A_RTC_CNTL_SLP_TIMER0:
++    case A_RTC_CNTL_SLP_TIMER1:
++        s->esp32bench_slp_timer[(addr - A_RTC_CNTL_SLP_TIMER0) / 4] = value;
++        break;
++    case A_RTC_CNTL_STATE0:
++        s->esp32bench_state0 = value & ~R_RTC_CNTL_STATE0_SLEEP_EN_MASK;
++        if (value & R_RTC_CNTL_STATE0_SLEEP_EN_MASK) {
++            esp32bench_sleep(s);
++        }
++        break;
++    case A_RTC_CNTL_WAKEUP_STATE:
++        s->esp32bench_wakeup_state = value;
++        break;
++    case A_RTC_CNTL_INT_ENA:
++        s->esp32bench_int_ena = value;
++        esp32bench_update_irq(s);
++        break;
++    case A_RTC_CNTL_INT_ENA_W1TS:
++        s->esp32bench_int_ena |= value;
++        esp32bench_update_irq(s);
++        break;
++    case A_RTC_CNTL_INT_ENA_W1TC:
++        s->esp32bench_int_ena &= ~value;
++        esp32bench_update_irq(s);
++        break;
++    case A_RTC_CNTL_INT_CLR:
++        s->esp32bench_int_raw &= ~value;
++        esp32bench_update_irq(s);
++        break;
++    case A_RTC_CNTL_DIG_PWC:
++        s->esp32bench_dig_pwc = value;
++        break;
+     }
+ }
+ 
+@@ -182,6 +303,17 @@ static void esp32s3_rtc_cntl_reset_hold(Object *obj, ResetType type)
+     Esp32s3RtcCntlState *s = ESP32S3_RTC_CNTL(obj);
+ 
+     s->time_base_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++    /* esp32bench: an RTC reset (power-on, a reset from the app) ends any sleep. */
++    timer_del(&s->esp32bench_wake_timer);
++    if (s->esp32bench_deep_sleep) {
++        s->esp32bench_deep_sleep = false;
++        for (int i = 0; i < ESP32S3_CPU_COUNT; ++i) {
++            qemu_set_irq(s->cpu_stall_req[i], 0);
++        }
++    }
++    s->esp32bench_slp_timer[0] = s->esp32bench_slp_timer[1] = 0;
++    s->esp32bench_state0 = s->esp32bench_wakeup_state = s->esp32bench_dig_pwc = 0;
++    s->esp32bench_wakeup_cause = s->esp32bench_int_raw = s->esp32bench_int_ena = 0;
+ }
+ 
+ static void esp32s3_rtc_cntl_realize(DeviceState *dev, Error **errp)
+@@ -197,6 +329,7 @@ static void esp32s3_rtc_cntl_init(Object *obj)
+                           TYPE_ESP32S3_RTC_CNTL, ESP32S3_RTC_CNTL_SIZE);
+     sysbus_init_mmio(sbd, &s->iomem);
+     sysbus_init_irq(sbd, &s->irq);
++    timer_init_ns(&s->esp32bench_wake_timer, QEMU_CLOCK_VIRTUAL, esp32bench_wake, s);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->dig_reset_req, ESP32S3_RTC_DIG_RESET_GPIO, 1);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->cpu_reset_req[0], ESP32S3_RTC_CPU_RESET_GPIO, ESP32S3_CPU_COUNT);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->cpu_stall_req[0], ESP32S3_RTC_CPU_STALL_GPIO, ESP32S3_CPU_COUNT);
+diff --git a/hw/riscv/esp32c3_clk.c b/hw/riscv/esp32c3_clk.c
+index 10aa7f4..1850e40 100644
+--- a/hw/riscv/esp32c3_clk.c
++++ b/hw/riscv/esp32c3_clk.c
+@@ -47,6 +47,16 @@ static uint32_t esp32c3_clock_get_ext_dev_enc_dec_ctrl(ESP32C3ClockState *s)
+     return s->sys_ext_dev_enc_dec_ctrl;
+ }
+ 
++/* esp32bench: the RTC memory CRC unit (SYSTEM_RTC_FASTMEM_CONFIG/CRC), which ESP-IDF
++ * runs before deep sleep and the ROM after it, to decide whether to run the wake
++ * stub. Unmodelled, the "finished" bit never set and deep sleep hung until the
++ * interrupt watchdog fired. It finishes at once with a fixed result: only the two
++ * results are compared, and RTC memory is always kept here. */
++#define ESP32BENCH_FASTMEM_CONFIG  0x48
++#define ESP32BENCH_FASTMEM_CRC     0x4c
++#define ESP32BENCH_CRC_START       (1u << 8)
++#define ESP32BENCH_CRC_FINISH      (1u << 31)
++
+ static uint64_t esp32c3_clock_read(void *opaque, hwaddr addr, unsigned int size)
+ {
+     ESP32C3ClockState *s = ESP32C3_CLOCK(opaque);
+@@ -68,6 +78,15 @@ static uint64_t esp32c3_clock_read(void *opaque, hwaddr addr, unsigned int size)
+         case A_SYSTEM_EXTERNAL_DEVICE_ENCRYPT_DECRYPT_CONTROL:
+             r = s->sys_ext_dev_enc_dec_ctrl;
+             break;
++        case ESP32BENCH_FASTMEM_CONFIG:
++            r = s->esp32bench_fastmem_config;
++            if (r & ESP32BENCH_CRC_START) {
++                r |= ESP32BENCH_CRC_FINISH;
++            }
++            break;
++        case ESP32BENCH_FASTMEM_CRC:
++            r = 0x45535042; /* "ESPB" */
++            break;
+         default:
+ #if CLOCK_WARNING
+             warn_report("[CLOCK] Unsupported read from %08lx\n", addr);
+@@ -92,6 +111,9 @@ static void esp32c3_clock_write(void *opaque, hwaddr addr, uint64_t value,
+         case A_SYSTEM_EXTERNAL_DEVICE_ENCRYPT_DECRYPT_CONTROL:
+             s->sys_ext_dev_enc_dec_ctrl = value;
+             break;
++        case ESP32BENCH_FASTMEM_CONFIG:
++            s->esp32bench_fastmem_config = value & ~ESP32BENCH_CRC_FINISH;
++            break;
+         default:
+ #if CLOCK_WARNING
+             warn_report("[CLOCK] Unsupported write to %08lx (%08lx)\n", addr, value);
+diff --git a/hw/xtensa/esp32_picsimlab.c b/hw/xtensa/esp32_picsimlab.c
+index 099efea..8c14f4e 100644
+--- a/hw/xtensa/esp32_picsimlab.c
++++ b/hw/xtensa/esp32_picsimlab.c
+@@ -402,6 +402,8 @@ static void esp32_soc_reset(DeviceState *dev)
+         cpu_reset(CPU(&s->cpu[1]));
+     }
+     s->requested_reset = 0;
++    /* esp32bench: after the reset that wakes the chip from deep sleep, the CPUs run */
++    esp32bench_rtc_cntl_reset_done(&s->rtc_cntl);
+ }
+ 
+ static void esp32_cpu_stall(void* opaque, int n, int level)
+diff --git a/hw/xtensa/esp32s3.c b/hw/xtensa/esp32s3.c
+index e408eec..05c0441 100644
+--- a/hw/xtensa/esp32s3.c
++++ b/hw/xtensa/esp32s3.c
+@@ -228,6 +228,17 @@ static void esp32s3_soc_reset(DeviceState *dev)
+ 
+ static void esp32s3_cpu_stall(void* opaque, int n, int level)
+ {
++    /* esp32bench: RTC_CNTL holds the CPUs in deep sleep (hw/misc/esp32s3_rtc_cntl.c)
++     * and lets them go when the chip wakes. Other stall requests are still ignored. */
++    static bool held[ESP32S3_CPU_COUNT];
++    Esp32s3SocState *s = ESP32S3_SOC(opaque);
++    if (level && s->rtc_cntl.esp32bench_deep_sleep && !held[n]) {
++        held[n] = true;
++        xtensa_runstall(&s->cpu[n].env, true);
++    } else if (!level && held[n]) {
++        held[n] = false;
++        xtensa_runstall(&s->cpu[n].env, false);
++    }
+ }
+ 
+ static void esp32s3_clk_update(void* opaque, int n, int level)
+diff --git a/include/hw/misc/esp32_rtc_cntl.h b/include/hw/misc/esp32_rtc_cntl.h
+index 32c240e..5c713cc 100644
+--- a/include/hw/misc/esp32_rtc_cntl.h
++++ b/include/hw/misc/esp32_rtc_cntl.h
+@@ -3,6 +3,7 @@
+ #include "hw/hw.h"
+ #include "hw/sysbus.h"
+ #include "hw/registerfields.h"
++#include "qemu/timer.h"
+ 
+ #define TYPE_ESP32_RTC_CNTL "misc.esp32.rtc_cntl"
+ #define ESP32_RTC_CNTL(obj) OBJECT_CHECK(Esp32RtcCntlState, (obj), TYPE_ESP32_RTC_CNTL)
+@@ -73,8 +74,26 @@ typedef struct Esp32RtcCntlState {
+     uint32_t scratch_reg[ESP32_RTC_CNTL_SCRATCH_REG_COUNT];
+     Esp32ResetCause reset_cause[ESP32_CPU_COUNT];
+     bool stat_vector_sel[ESP32_CPU_COUNT];
++
++    /* esp32bench: sleep. The registers ESP-IDF's sleep code writes and reads back,
++     * whether the chip is in deep sleep (CPUs held until it wakes), and the timer
++     * that wakes it. */
++    uint32_t esp32bench_slp_timer[2];
++    uint32_t esp32bench_state0;
++    uint32_t esp32bench_wakeup_state;
++    uint32_t esp32bench_int_raw;
++    uint32_t esp32bench_int_ena;
++    uint32_t esp32bench_dig_pwc;
++    uint32_t esp32bench_mem_crc;
++    bool esp32bench_deep_sleep;
++    bool esp32bench_wake_pending;
++    QEMUTimer esp32bench_wake_timer;
+ } Esp32RtcCntlState;
+ 
++/* esp32bench: the SoC calls this at the end of a digital reset; after the reset that
++ * wakes the chip from deep sleep, it lets the CPUs run. */
++void esp32bench_rtc_cntl_reset_done(Esp32RtcCntlState *s);
++
+ REG32(RTC_CNTL_OPTIONS0, 0x00)
+     FIELD(RTC_CNTL_OPTIONS0, SW_SYS_RESET, 31, 1)
+     FIELD(RTC_CNTL_OPTIONS0, SW_PROCPU_RESET, 5, 1)
+@@ -82,6 +101,25 @@ REG32(RTC_CNTL_OPTIONS0, 0x00)
+     FIELD(RTC_CNTL_OPTIONS0, SW_STALL_PROCPU_C0, 2, 2)
+     FIELD(RTC_CNTL_OPTIONS0, SW_STALL_APPCPU_C0, 0, 2)
+ 
++REG32(RTC_CNTL_SLP_TIMER0, 0x04)
++REG32(RTC_CNTL_SLP_TIMER1, 0x08)
++REG32(RTC_CNTL_STATE0, 0x18)
++    FIELD(RTC_CNTL_STATE0, SLEEP_EN, 31, 1)
++REG32(RTC_CNTL_WAKEUP_STATE, 0x38)
++    FIELD(RTC_CNTL_WAKEUP_STATE, WAKEUP_ENA, 11, 11)
++    FIELD(RTC_CNTL_WAKEUP_STATE, WAKEUP_CAUSE, 0, 11)
++REG32(RTC_CNTL_INT_ENA, 0x3c)
++REG32(RTC_CNTL_INT_RAW, 0x40)
++REG32(RTC_CNTL_INT_ST, 0x44)
++REG32(RTC_CNTL_INT_CLR, 0x48)
++    FIELD(RTC_CNTL_INT, SLP_WAKEUP, 0, 1)
++REG32(RTC_CNTL_MEM_CRC_START, 0x100)
++    FIELD(RTC_CNTL_MEM_CRC_START, FINISH, 31, 1)
++    FIELD(RTC_CNTL_MEM_CRC_START, START, 8, 1)
++REG32(RTC_CNTL_MEM_CRC_RES, 0x104)
++REG32(RTC_CNTL_DIG_PWC, 0x84)
++    FIELD(RTC_CNTL_DIG_PWC, DG_WRAP_PD_EN, 31, 1)
++
+ REG32(RTC_CNTL_TIME_UPDATE, 0xc)
+     FIELD(RTC_CNTL_TIME_UPDATE, UPDATE, 31, 1)
+     FIELD(RTC_CNTL_TIME_UPDATE, VALID, 30, 1)
+diff --git a/include/hw/misc/esp32c3_rtc_cntl.h b/include/hw/misc/esp32c3_rtc_cntl.h
+index d355202..60a554a 100644
+--- a/include/hw/misc/esp32c3_rtc_cntl.h
++++ b/include/hw/misc/esp32c3_rtc_cntl.h
+@@ -3,6 +3,7 @@
+ #include "hw/hw.h"
+ #include "hw/sysbus.h"
+ #include "hw/registerfields.h"
++#include "qemu/timer.h"
+ 
+ #define TYPE_ESP32C3_RTC_CNTL "misc.esp32c3.rtc_cntl"
+ #define ESP32C3_RTC_CNTL(obj) OBJECT_CHECK(ESP32C3RtcCntlState, (obj), TYPE_ESP32C3_RTC_CNTL)
+@@ -55,6 +56,23 @@ typedef struct ESP32C3RtcCntlState {
+     /* IRQ used to notify the machine that we need a reset */
+     qemu_irq cpu_reset;
+ 
++    /* esp32bench: RTC time and sleep. The registers ESP-IDF's sleep code writes and
++     * reads back, the RTC timer's start, whether the chip is in deep sleep (the CPU
++     * held until it wakes) and the timer that wakes it. */
++    int64_t esp32bench_time_base_ns;
++    uint64_t esp32bench_time;
++    uint32_t esp32bench_slp_timer[2];
++    uint32_t esp32bench_state0;
++    uint32_t esp32bench_wakeup_state;
++    uint32_t esp32bench_wakeup_cause;
++    uint32_t esp32bench_int_raw;
++    uint32_t esp32bench_int_ena;
++    uint32_t esp32bench_dig_pwc;
++    uint32_t esp32bench_clk_conf;
++    bool esp32bench_deep_sleep;
++    bool esp32bench_sleep_reset;
++    QEMUTimer esp32bench_wake_timer;
++
+ } ESP32C3RtcCntlState;
+ 
+ 
+diff --git a/include/hw/misc/esp32s3_rtc_cntl.h b/include/hw/misc/esp32s3_rtc_cntl.h
+index 45bd7e2..8989ddd 100644
+--- a/include/hw/misc/esp32s3_rtc_cntl.h
++++ b/include/hw/misc/esp32s3_rtc_cntl.h
+@@ -13,6 +13,7 @@
+ #include "hw/hw.h"
+ #include "hw/sysbus.h"
+ #include "hw/registerfields.h"
++#include "qemu/timer.h"
+ #include "hw/misc/esp32s3_reg.h"
+ 
+ #define TYPE_ESP32S3_RTC_CNTL "misc.esp32s3.rtc_cntl"
+@@ -84,8 +85,38 @@ typedef struct Esp32s3RtcCntlState {
+     uint32_t scratch_reg[ESP32S3_RTC_CNTL_SCRATCH_REG_COUNT];
+     Esp32s3ResetCause reset_cause[ESP32S3_CPU_COUNT];
+     bool stat_vector_sel[ESP32S3_CPU_COUNT];
++
++    /* esp32bench: sleep. The registers ESP-IDF's sleep code writes and reads back,
++     * whether the chip is in deep sleep (CPUs held until it wakes), and the timer
++     * that wakes it. */
++    uint32_t esp32bench_slp_timer[2];
++    uint32_t esp32bench_state0;
++    uint32_t esp32bench_wakeup_state;
++    uint32_t esp32bench_wakeup_cause;
++    uint32_t esp32bench_int_raw;
++    uint32_t esp32bench_int_ena;
++    uint32_t esp32bench_dig_pwc;
++    bool esp32bench_deep_sleep;
++    QEMUTimer esp32bench_wake_timer;
+ } Esp32s3RtcCntlState;
+ 
++REG32(RTC_CNTL_SLP_TIMER0, 0x04)
++REG32(RTC_CNTL_SLP_TIMER1, 0x08)
++REG32(RTC_CNTL_STATE0, 0x18)
++    FIELD(RTC_CNTL_STATE0, SLEEP_EN, 31, 1)
++REG32(RTC_CNTL_WAKEUP_STATE, 0x3c)
++    FIELD(RTC_CNTL_WAKEUP_STATE, WAKEUP_ENA, 15, 17)
++REG32(RTC_CNTL_INT_ENA, 0x40)
++REG32(RTC_CNTL_INT_RAW, 0x44)
++REG32(RTC_CNTL_INT_ST, 0x48)
++REG32(RTC_CNTL_INT_CLR, 0x4c)
++    FIELD(RTC_CNTL_INT, SLP_WAKEUP, 0, 1)
++REG32(RTC_CNTL_DIG_PWC, 0x90)
++    FIELD(RTC_CNTL_DIG_PWC, DG_WRAP_PD_EN, 31, 1)
++REG32(RTC_CNTL_SLP_WAKEUP_CAUSE, 0x130)
++REG32(RTC_CNTL_INT_ENA_W1TS, 0x138)
++REG32(RTC_CNTL_INT_ENA_W1TC, 0x13c)
++
+ REG32(RTC_CNTL_OPTIONS0, 0x00)
+     FIELD(RTC_CNTL_OPTIONS0, SW_SYS_RESET, 31, 1)
+     FIELD(RTC_CNTL_OPTIONS0, SW_PROCPU_RESET, 5, 1)
+diff --git a/include/hw/riscv/esp32c3_clk.h b/include/hw/riscv/esp32c3_clk.h
+index 5701606..95d828e 100644
+--- a/include/hw/riscv/esp32c3_clk.h
++++ b/include/hw/riscv/esp32c3_clk.h
+@@ -57,6 +57,8 @@ typedef struct ESP32C3ClockState {
+     uint32_t levels;
+ 
+     uint32_t sys_ext_dev_enc_dec_ctrl;
++    /* esp32bench: SYSTEM_RTC_FASTMEM_CONFIG, the RTC memory CRC unit's start. */
++    uint32_t esp32bench_fastmem_config;
+ } ESP32C3ClockState;
+ 
+ typedef struct ESP32C3ClockClass {
