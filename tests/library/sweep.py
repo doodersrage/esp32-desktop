@@ -22,7 +22,7 @@ Boot results:
 Prebuilt projects (firmware ships ready-made) are listed, not built or booted.
 
 Usage: sweep.py --cli core/target/debug/esp32bench --expect expect.json --out DIR
-       [--only ID ...] [--skip-build] [--jobs N]
+       [--only ID ...] [--skip-build] [--jobs N] [--sim-arg=--icount]
 """
 
 import argparse
@@ -80,6 +80,9 @@ def image_for(project, board):
     return found[0] if found else None
 
 
+SIM_ARGS = []  # extra `sim run` options, e.g. --icount (set from the command line)
+
+
 def boot(cli, project, board, chip, expect):
     img = image_for(project, board)
     if img is None:
@@ -90,7 +93,7 @@ def boot(cli, project, board, chip, expect):
     # timeout stop it. Arguments go through "$@", never into the script text.
     code, out, _ = run(
         ["bash", "-c", 'sleep "$1" | timeout --signal=INT "$1" "$2" sim run --chip "$3" "${@:5}" "$4"',
-         "sweep", str(seconds), cli, chip, str(img)] + (["--usb-console"] if board in USB_SERIAL else []),
+         "sweep", str(seconds), cli, chip, str(img)] + (["--usb-console"] if board in USB_SERIAL else []) + SIM_ARGS,
         seconds + 30,
     )
     text = out.decode("utf-8", "replace")
@@ -126,7 +129,9 @@ def main():
     ap.add_argument("--only", nargs="*")
     ap.add_argument("--skip-build", action="store_true")
     ap.add_argument("--jobs", type=int, default=4, help="simulations at once")
+    ap.add_argument("--sim-arg", action="append", default=[], help="pass this option to `sim run` (repeat)")
     a = ap.parse_args()
+    SIM_ARGS.extend(a.sim_arg)
 
     m = json.load(open(a.manifest))
     expect = json.load(open(a.expect))

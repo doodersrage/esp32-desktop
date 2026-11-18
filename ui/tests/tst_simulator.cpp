@@ -11,6 +11,9 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QTemporaryDir>
+#include <QCheckBox>
+#include <QSettings>
+#include <QStandardPaths>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -20,6 +23,7 @@ class FakeCore : public QObject {
 public:
     QStringList calls;
     QList<QByteArray> written;
+    bool lastIcount = false; // the last sim.start's icount
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -50,7 +54,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.20.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.21.0"_s}});
             return;
         }
         calls << m;
@@ -73,6 +77,7 @@ private:
             }
             reply(id, r);
             output("esp32bench-hello ready\n");
+            lastIcount = p.value(u"icount"_s).toBool();
         } else if (m == u"sim.write") {
             written << QByteArray::fromBase64(p.value(u"data"_s).toString().toLatin1());
             reply(id, QJsonObject{});
@@ -95,6 +100,7 @@ private:
     QString path() const { return m_dir.filePath(u"core.sock"_s); }
 
 private slots:
+    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
     void runsWithConsoleInputResetAndStop()
     {
         FakeCore fake(path());
@@ -159,6 +165,33 @@ private slots:
         core.stopSim();
         QTRY_VERIFY(!core.isSimRunning());
         QVERIFY(panel.networkText().isEmpty());
+    }
+
+    void sendsChipLikeTimingWhenChosen()
+    {
+        QSettings().remove(u"simulator/icount"_s);
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        SimulatorPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+
+        QVERIFY(!panel.icountBox()->isChecked());
+        core.startSim(u"blink"_s, u"esp32"_s);
+        QTRY_VERIFY(core.isSimRunning());
+        QVERIFY(!fake.lastIcount);
+        core.stopSim();
+        QTRY_VERIFY(!core.isSimRunning());
+
+        panel.icountBox()->setChecked(true);
+        QVERIFY(QSettings().value(u"simulator/icount"_s).toBool());
+        core.startSim(u"blink"_s, u"esp32"_s);
+        QTRY_VERIFY(core.isSimRunning());
+        QVERIFY(fake.lastIcount);
+        core.stopSim();
+        QTRY_VERIFY(!core.isSimRunning());
+        QSettings().remove(u"simulator/icount"_s);
     }
 
     void showsWhyABoardCannotBeSimulated()

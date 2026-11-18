@@ -29,6 +29,11 @@
         "type": "boolean",
         "default": true,
         "description": "Join a library sketch to the simulated network through its settings block (SET wifi_ssid, SET wifi_pass, SAVE), when the sketch reports its Wi-Fi unset."
+      },
+      "icount": {
+        "type": "boolean",
+        "default": false,
+        "description": "Count time in instructions (QEMU's -icount, 4 ns per instruction): timing like the chip's, the same however busy this computer is, at some cost in speed (an ESP32 boots in about 2 s instead of 0.5 s)."
       }
     }
   },
@@ -96,6 +101,10 @@
             "description": "The firmware's port 80, from this computer: http://127.0.0.1:<port>/."
           }
         }
+      },
+      "icount": {
+        "type": "boolean",
+        "description": "Whether the simulation counts time in instructions."
       }
     }
   },

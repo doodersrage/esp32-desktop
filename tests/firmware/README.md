@@ -10,6 +10,7 @@ Small firmware projects that the core's QEMU boot tests run. The ESP-IDF version
 | `i2c-scan` | Scans I2C bus 0 and reads registers 0x10–0x11 from 0x3C | `esp32bench-i2c scan done count=<n>`, `esp32bench-i2c read ...` |
 | `arduino-periph` | Arduino sketch: analogRead, tone, analogWrite, a 192-symbol rmtWrite and rgbLedWrite (ADC, LEDC and RMT, which library sketches use) | `esp32bench-periph done`, `esp32bench-periph rmt=1` |
 | `arduino-sleep` | Arduino sketch: 200 ms of light sleep, then deep sleep on a timer twice, counting boots in RTC memory | `esp32bench-sleep boot=<n> cause=<c> reset=<r>`, `esp32bench-sleep done` |
+| `arduino-wifi` | Arduino sketch: takes its Wi-Fi settings from a settings block like the library's, joins the simulated network, checks it reaches nothing (DNS, out, host) and serves a page on port 80 | `esp32bench-wifi serving`, `esp32bench-wifi dns=0` |
 | `wifi-sta` | Joins the open network `PICSimLabWifi`. Only lcgamboa's QEMU fork emulates it, on ESP32 and C3 | `esp32bench-wifi got ip <ip>` |
 
 ## Building

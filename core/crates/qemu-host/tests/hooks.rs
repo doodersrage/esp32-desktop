@@ -87,6 +87,7 @@ async fn start(
         efuse: None,
         usb_console: false,
         network: None,
+        icount: false,
     };
     Some((Session::start(cfg).await.unwrap(), sock))
 }

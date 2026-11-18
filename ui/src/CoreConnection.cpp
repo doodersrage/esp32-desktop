@@ -563,7 +563,9 @@ void CoreConnection::startSim(const QString &project, const QString &board, bool
         return; // one simulator at a time
     m_simSub = -1;
     m_debugging = false;
-    m_client->call(u"sim.start"_s, {{u"project"_s, project}, {u"board"_s, board}, {u"debug"_s, debug}}, this,
+    m_client->call(u"sim.start"_s,
+                   {{u"project"_s, project}, {u"board"_s, board}, {u"debug"_s, debug}, {u"icount"_s, m_simIcount}},
+                   this,
                    [this, project, board](const RpcReply &r) {
                        if (!r.ok) {
                            m_simSub = 0;

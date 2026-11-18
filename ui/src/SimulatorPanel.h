@@ -7,6 +7,7 @@
 
 class ConsoleView;
 class CoreConnection;
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -25,6 +26,7 @@ public:
     QPushButton *stopButton() const { return m_stop; }
     QPushButton *resetButton() const { return m_reset; }
     QPushButton *runAgainButton() const { return m_again; }
+    QCheckBox *icountBox() const { return m_icount; }
 
 private:
     void send();
@@ -41,6 +43,8 @@ private:
     QString m_lastProject;
     QString m_lastBoard;
     QPushButton *m_clear;
+    // Chip-like timing (sim.start's icount), kept in QSettings; applies to the next run.
+    QCheckBox *m_icount;
     ConsoleView *m_output;
     QLineEdit *m_input;
     QComboBox *m_ending;

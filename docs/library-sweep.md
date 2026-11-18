@@ -71,3 +71,17 @@ Recipe 7 adds RMT transmission (WS2812 LEDs) on all three chips, recipe 8 light 
 - Crashes: `ble-scan` on all five boards (Bluetooth, which the simulator does not claim), and `stepper-28byj` on the S3. That one now fails on every boot on the fork's S3 (Espressif's QEMU runs it): `AccelStepper::setAcceleration`, run from a global constructor before `setup()`, takes a coprocessor (FPU) exception that ESP-IDF treats as fatal at that stage. Not yet explained.
 - `dht22` on the ESP32 passed in this sweep; it can still trip the interrupt watchdog on a loaded host (see "DHT sensors and the interrupt watchdog" in `docs/qemu-forks.md`).
 - Started without the expected output: 27 builds wait for Wi-Fi by design, and on the S3 `esp-now`, `wifi-scan` and `wifi-portal` need a radio, which the fork's S3 does not model.
+
+## Simulated Wi-Fi and an optimised library (2026-11-18)
+
+Sessions on the fork's ESP32 and C3 now have the simulated Wi-Fi network, and the core joins library sketches to it through their settings block (`docs/qemu-forks.md`); a restart from the settings block's `SAVE` is not counted as a crash. Recipe 9 builds the fork's library optimised (it was `-O0`). **211 of 227 boots pass (was 191).** With `--sim-arg=--icount` (time counted in instructions) 209 pass: the same, except `sd-logger` on both ESP32 boards, whose card probe polls SPI until 500 ms pass and takes minutes under `-icount`.
+
+| Board | Pass | Crash | Started |
+| --- | --- | --- | --- |
+| ESP32-DevKitC | 52 | 1 | 0 |
+| ESP32 DOIT | 46 | 1 | 0 |
+| ESP32-C3 DevKitM | 41 | 1 | 0 |
+| ESP32-C3 SuperMini | 40 | 1 | 0 |
+| ESP32-S3 DevKitC | 32 | 2 | 10 |
+
+Every ESP32 and C3 build passes except `ble-scan` (Bluetooth, which the simulator does not claim). On the S3, the ten Wi-Fi builds start without a radio (the fork models none for the S3), and `stepper-28byj` crashes at start-up (an FPU exception in a global constructor; Espressif's QEMU runs it). `dht22` passed in both sweeps and survived 20 sessions at once.

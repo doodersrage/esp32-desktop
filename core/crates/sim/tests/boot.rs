@@ -59,6 +59,7 @@ fn setup(chip: Chip) -> Option<(SessionConfig, &'static [u8])> {
         efuse: None,
         usb_console: false,
         network: None,
+        icount: false,
     };
     Some((cfg, marker))
 }
@@ -93,6 +94,7 @@ async fn lcgamboa_boot_reset_and_quit(chip: Chip) {
         efuse: None,
         usb_console: false,
         network: None,
+        icount: false,
     };
     boot_reset_and_quit_with(cfg, marker).await;
 }
@@ -186,6 +188,7 @@ async fn arduino_hello_boots() {
             efuse: None,
             usb_console: false,
             network: None,
+            icount: false,
         };
         let mut s = Session::start(cfg).await.unwrap();
         let t = Duration::from_secs(30);
@@ -528,6 +531,53 @@ async fn lcgamboa_esp32_simulated_wifi_is_isolated_and_serves() {
 #[tokio::test]
 async fn lcgamboa_esp32c3_simulated_wifi_is_isolated_and_serves() {
     simulated_wifi_on_lcgamboa(Chip::Esp32c3).await;
+}
+
+/// With `icount` (QEMU's -icount: time counted in instructions) an Arduino sketch
+/// still boots and keeps time: its once-a-second tick comes. On the library build this
+/// needed patch 0009 (an -O0 library and a 100 ms eFuse read made boot look hung).
+async fn icount_on_lcgamboa(chip: Chip) {
+    let Some(image) = built_image("hello-arduino", chip) else {
+        return;
+    };
+    let Ok(launch) = esp32bench_sim::engine::launch(chip, Some(esp32bench_sim::Engine::Lcgamboa))
+    else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let mut cfg = launch.config(chip, image);
+    cfg.icount = true;
+    let mut s = Session::start(cfg).await.unwrap();
+    let mut text = Vec::new();
+    let found = s
+        .uart
+        .wait_for(b"esp32bench-arduino tick 1", Duration::from_secs(30), |b| {
+            text.extend_from_slice(b)
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        found,
+        WaitOutcome::Found,
+        "{chip}:\n{}",
+        String::from_utf8_lossy(&text)
+    );
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32_runs_with_icount() {
+    icount_on_lcgamboa(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32s3_runs_with_icount() {
+    icount_on_lcgamboa(Chip::Esp32s3).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32c3_runs_with_icount() {
+    icount_on_lcgamboa(Chip::Esp32c3).await;
 }
 
 /// Boards without a USB-UART chip, like the C3 SuperMini, put `Serial` on the C3's

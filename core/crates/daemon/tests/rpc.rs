@@ -1255,6 +1255,43 @@ async fn sim_runs_a_build_with_console_and_reset() {
     }
 }
 
+/// sim.start with icount: true runs QEMU counting time in instructions; the build
+/// still boots and talks, and the result says so.
+#[tokio::test]
+async fn sim_counts_time_in_instructions_when_asked() {
+    let Some(hello) = firmware("hello-esp32.bin") else {
+        eprintln!("skipping: hello firmware not built");
+        return;
+    };
+    if esp32bench_sim::install::find_qemu(esp32bench_sim::Arch::Xtensa).is_err() {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    }
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&hello, out.join("blink.ino.merged.bin")).unwrap();
+
+    let r = c
+        .call(
+            "sim.start",
+            json!({ "project": "blink", "board": "esp32", "icount": true, "network": false }),
+        )
+        .await
+        .unwrap();
+    assert_valid(&method_def("sim.start")["result"], &r, "sim.start result");
+    assert_eq!(r["icount"], true);
+    let sub = r["subscription"].clone();
+    sim_wait_for(&mut c, &sub, "esp32bench-hello ready").await;
+    let qemu = std::fs::read_dir("/proc")
+        .unwrap()
+        .filter_map(|e| std::fs::read_to_string(e.ok()?.path().join("cmdline")).ok())
+        .any(|c| c.contains("esp32bench") && c.contains("-icount\0shift=2,sleep=on"));
+    assert!(qemu, "no QEMU running with -icount");
+}
+
 /// On lcgamboa's fork, sim.start gives the firmware the simulated Wi-Fi network and
 /// joins a library sketch to it (its settings block reports Wi-Fi unset); the
 /// sketch's web page answers on the result's webUrl. With network: false there is

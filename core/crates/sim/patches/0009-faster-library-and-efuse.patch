@@ -1,0 +1,55 @@
+Faster simulation: an optimised library build, and quicker eFuse reads
+
+build_libqemu-esp32.sh configured the GPIO and I2C library with
+--enable-debug, which builds QEMU at -O0 with debug-only checks. Without
+it (debug info kept) the library is optimised like the executables: an
+Arduino sketch boots on the ESP32 in 0.52 s instead of 0.87 s, and a busy
+loop of GPIO reads runs several times faster. That alone stopped the DHT
+library's interrupts-off read loop from tripping the interrupt watchdog
+on a loaded host (20 sessions at once, none crashed).
+
+hw/nvram/esp32_efuse.c: an eFuse read or program completed 100 ms of
+virtual time after it started (its comment said 10 ms). Real reads take
+microseconds. Under -icount, where virtual time advances only as
+instructions run, the ROM's poll of EFUSE_CMD took seconds of wall time
+to cover 100 ms and boot looked hung. Now 1 ms; at 10 us the first boot
+reported a software reset instead of power-on.
+
+Written for esp32bench (GPL-2.0-or-later). Changes lcgamboa's
+build_libqemu-esp32.sh and Espressif's hw/nvram/esp32_efuse.c (Copyright
+(c) 2019 Espressif Systems (Shanghai) Co. Ltd., GPL-2.0-or-later, notice
+kept). Applied by esp32bench
+(core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu at
+885a6e7061fb70fac78a074a719423810bc19a17, after patch 0008.
+
+diff --git a/build_libqemu-esp32.sh b/build_libqemu-esp32.sh
+index 969e6bb..c5d0374 100755
+--- a/build_libqemu-esp32.sh
++++ b/build_libqemu-esp32.sh
+@@ -17,7 +17,7 @@ flags="$(./configure --help | perl -ne 'print if s/^  ([a-z][\w-]*) .*/\1/' | ta
+ 
+ ${2:-.}/configure --target-list=$target --extra-cflags=-fPIC --disable-slirp $flags --enable-tcg \
+ 	--enable-system --disable-werror --disable-alsa  \
+-        --enable-debug --enable-debug-info \
++        --enable-debug-info \
+         --enable-gcrypt --enable-slirp --enable-pixman 
+ 	#--enable-gtk
+ 
+diff --git a/hw/nvram/esp32_efuse.c b/hw/nvram/esp32_efuse.c
+index 2a1241f..2bebd7d 100644
+--- a/hw/nvram/esp32_efuse.c
++++ b/hw/nvram/esp32_efuse.c
+@@ -223,7 +223,12 @@ static void esp32_efuse_update_irq(Esp32EfuseState *s)
+ static void esp32_efuse_op_timer_start(Esp32EfuseState *s)
+ {
+     uint64_t ns_now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+-    uint64_t interval_ns = 100000000; /* 10 ms, make this depend on EFUSE_CLK register */
++    /* esp32bench: 1 ms. It was 100 ms (its comment said 10 ms). With -icount, where
++     * virtual time moves only as instructions run, the ROM's poll of EFUSE_CMD (an
++     * MMIO access each time round) took seconds of wall time to cover 100 ms. Much
++     * shorter (10 us) and the first boot reported a software reset instead of
++     * power-on. */
++    uint64_t interval_ns = 1000000;
+     timer_mod_anticipate_ns(&s->op_timer, ns_now + interval_ns);
+ }
+ 

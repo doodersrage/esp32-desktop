@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 20;
+    static constexpr int ProtocolMinor = 21;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -109,6 +109,10 @@ public:
     // With debug, QEMU starts paused with GDB attached: debugStarted follows simStarted,
     // then the debug* calls below work until the simulator stops.
     void startSim(const QString &project, const QString &board, bool debug = false);
+    // Whether simulations started from now on count time in instructions (sim.start's
+    // icount): chip-like timing, independent of this computer's load, but slower.
+    void setSimIcount(bool on) { m_simIcount = on; }
+    bool simIcount() const { return m_simIcount; }
     void stopSim();
     void writeSim(const QByteArray &bytes);
     void resetSim();
@@ -247,6 +251,7 @@ private:
     QList<int> m_simPins;
     bool m_simPartsActive = false;
     QJsonObject m_simNetwork;
+    bool m_simIcount = false;
     bool m_autoStart = false;
     bool m_autoStartTried = false;
     QList<QPair<QString, QJsonObject>> m_earlySimEvents;

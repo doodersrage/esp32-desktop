@@ -282,6 +282,10 @@ struct SessionArgs {
     /// network's name and an empty password, and SAVE.
     #[arg(long)]
     no_join_wifi: bool,
+    /// Count time in instructions (QEMU's -icount): timing like the chip's and
+    /// independent of this computer's load, at some cost in speed.
+    #[arg(long)]
+    icount: bool,
     /// Set by `sim run --circuit`: the circuit for the host to run.
     #[arg(skip)]
     circuit: Option<String>,
@@ -1232,6 +1236,7 @@ async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
             efuse: None,
             usb_console: false,
             network: None,
+            icount: false,
         },
         None => {
             let launch = esp32bench_sim::engine::launch(a.chip, a.engine)?;
@@ -1258,6 +1263,7 @@ async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
     };
     config.gdb_port = a.gdb;
     config.start_paused = start_paused;
+    config.icount = a.icount;
     if a.machine.is_some() {
         config.machine = a.machine;
     }

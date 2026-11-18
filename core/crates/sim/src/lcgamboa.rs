@@ -31,12 +31,13 @@ const MARKER: &str = "installed";
 /// 6: the C3's USB-Serial-JTAG console (the C3 SuperMini's Serial).
 /// 7: RMT transmission on all three chips (WS2812 writes never finished).
 /// 8: light and deep sleep on a timer (sleep hung or ended in a watchdog reset).
-pub const RECIPE: u32 = 8;
+/// 9: an optimised library build (it was -O0) and quicker eFuse reads.
+pub const RECIPE: u32 = 9;
 
 /// Changes esp32bench makes to the pinned commit, in order. Each file says what and
 /// why. Kept in `core/crates/sim/patches/` and built into the program, so an installed
 /// app can build the fork without the repo.
-pub const PATCHES: [(&str, &str); 8] = [
+pub const PATCHES: [(&str, &str); 9] = [
     (
         "0001.patch",
         include_str!("../patches/0001-build-library-with-pixman.patch"),
@@ -66,6 +67,10 @@ pub const PATCHES: [(&str, &str); 8] = [
         include_str!("../patches/0007-rmt-transmitter.patch"),
     ),
     ("0008.patch", include_str!("../patches/0008-sleep.patch")),
+    (
+        "0009.patch",
+        include_str!("../patches/0009-faster-library-and-efuse.patch"),
+    ),
 ];
 
 fn marker_text() -> String {
@@ -295,6 +300,7 @@ pub fn steps(jobs: usize) -> Vec<Step> {
                 "../patches/0006.patch",
                 "../patches/0007.patch",
                 "../patches/0008.patch",
+                "../patches/0009.patch",
             ],
             "src",
         ),

@@ -86,6 +86,7 @@ impl Launch {
             efuse: self.efuse.clone(),
             usb_console: false,
             network: None,
+            icount: false,
         }
     }
 }

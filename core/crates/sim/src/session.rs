@@ -59,7 +59,15 @@ pub struct SessionConfig {
     /// The simulated Wi-Fi network ([`crate::network`]): only where the launch has a
     /// radio for it ([`crate::Launch::network`]). None: the radio sees no network.
     pub network: Option<crate::network::Network>,
+    /// Count time in instructions (`-icount`): virtual time advances 4 ns per guest
+    /// instruction (about 250 MIPS, like a 240 MHz core), and the guest's idle time
+    /// passes in real time. Timing then no longer depends on the host's speed or load.
+    pub icount: bool,
 }
+
+/// QEMU's `-icount` value for [`SessionConfig::icount`]: 2^2 ns per instruction, and
+/// sleep while the guest is idle so its timers keep to real time.
+pub const ICOUNT: &str = "shift=2,sleep=on";
 
 /// Files a session uses, all inside one private runtime directory.
 #[derive(Debug, Clone)]
@@ -157,6 +165,9 @@ pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
     }
     if let Some(n) = &cfg.network {
         args.extend(n.qemu_args());
+    }
+    if cfg.icount {
+        args.extend(["-icount".into(), ICOUNT.into()]);
     }
     args.extend(cfg.extra_args.iter().cloned());
     args
@@ -452,6 +463,7 @@ mod tests {
             efuse: None,
             usb_console: false,
             network: None,
+            icount: false,
         }
     }
 

@@ -4,7 +4,9 @@
 #include "CoreConnection.h"
 #include "Labels.h"
 
+#include <QCheckBox>
 #include <QComboBox>
+#include <QSettings>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QJsonObject>
@@ -26,6 +28,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     , m_stop(new QPushButton(QIcon::fromTheme(u"media-playback-stop"_s), tr("Stop"), this))
     , m_again(new QPushButton(QIcon::fromTheme(u"media-playback-start"_s), tr("Run again"), this))
     , m_clear(new QPushButton(QIcon::fromTheme(u"edit-clear"_s), tr("Clear"), this))
+    , m_icount(new QCheckBox(tr("Chip-like timing"), this))
     , m_output(new ConsoleView(this))
     , m_input(new QLineEdit(this))
     , m_ending(new QComboBox(this))
@@ -54,6 +57,16 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
             m_core->startSim(m_lastProject, m_lastBoard);
     });
     connect(m_clear, &QPushButton::clicked, m_output, &ConsoleView::clear);
+    m_icount->setToolTip(tr("Count time in instructions, as the chip does: timing no longer depends on how "
+                            "busy this computer is. Simulations run slower (an ESP32 takes about two seconds "
+                            "to boot), and a sketch that waits in a loop reading hardware, such as an SD card "
+                            "library looking for a card, can take minutes. Applies from the next run."));
+    m_icount->setChecked(QSettings().value(u"simulator/icount"_s, false).toBool());
+    m_core->setSimIcount(m_icount->isChecked());
+    connect(m_icount, &QCheckBox::toggled, this, [this](bool on) {
+        QSettings().setValue(u"simulator/icount"_s, on);
+        m_core->setSimIcount(on);
+    });
     connect(m_send, &QPushButton::clicked, this, &SimulatorPanel::send);
     connect(m_input, &QLineEdit::returnPressed, this, &SimulatorPanel::send);
 
@@ -62,6 +75,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     top->addWidget(m_reset);
     top->addWidget(m_stop);
     top->addWidget(m_again);
+    top->addWidget(m_icount);
     top->addWidget(m_clear);
     auto *bottom = new QHBoxLayout;
     bottom->addWidget(m_input, 1);

@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.20.0";
+pub const PROTOCOL: &str = "0.21.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -694,6 +694,10 @@ struct SimStartParams {
     /// Join a library sketch to that network through its settings block.
     #[serde(default = "yes", rename = "joinWifi")]
     join_wifi: bool,
+    /// Count time in instructions (QEMU's -icount): chip-like timing, independent of
+    /// this computer's load.
+    #[serde(default)]
+    icount: bool,
 }
 
 async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
@@ -794,6 +798,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
         );
     }
     let network = config.network;
+    config.icount = p.icount;
     let mut joiner = (network.is_some() && p.join_wifi).then(esp32bench_sim::network::Joiner::new);
     if launch_parts {
         config.circuit =
@@ -1051,6 +1056,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
         "engine": engine,
         "pins": pins,
         "partsActive": launch_parts,
+        "icount": p.icount,
         "network": network.map(|n| json!({
             "ssid": esp32bench_sim::network::SSID,
             "webUrl": n.web_url(),
