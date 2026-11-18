@@ -1,6 +1,6 @@
 # Plan: Arch-native ESP32 workbench and simulator
 
-Last updated: 2026-11-17 (phase 4 done; phase 5 started: the -git package builds)
+Last updated: 2026-11-18 (0.1.3 released; the simulator section reflects fork recipe 12: Wi-Fi on all three chips, 222 of 227 library builds pass)
 
 ## Summary
 
@@ -57,12 +57,12 @@ The simulator is firmware-level, not circuit-level. It runs on lcgamboa's fork o
 - **Firmware:** ESP-IDF v6.0.2 and ESP32 Arduino core 3.3.12 builds boot on all three. Older IDF 4.4 builds (Arduino core 2.x) fail flash init on S3 and C3.
 - **Console, reset and debugging:** UART0 in and out over a socket, QMP reset, and GDB breakpoints and stepping work on all three chips.
 - **Wi-Fi:** station and soft-AP on ESP32, C3 and (since patch 0012, with the C3's radio models) S3, against the fork's one open access point (`PICSimLabWifi`). Decided 2026-11-18 (the owner): sessions get a simulated network that reaches nothing. QEMU's user-mode network in restricted mode sits on the radio's hub, so the firmware gets an address by DHCP and nothing else: no name lookups (checked: restricted mode drops them), no connections out or to the host (`tests/firmware/arduino-wifi`). The firmware's port 80 is forwarded to a free port on loopback so its web page opens on the desktop. Library sketches take their Wi-Fi settings over serial (the esp32bench.dev settings block), and the core answers with the simulated network's name and an empty password; WPA2 is not modelled (the fork's radio has no hardware crypto), and Arduino accepts an open network when the password is empty. `sim.start` can turn either off (`network`, `joinWifi`). Without a radio the fork's Wi-Fi start-up crashes, so sessions without the network keep the radio on an empty hub port; the C3 needs an eFuse image for its radio.
-- **GPIO and I2C:** through the library build and a per-session host process, on ESP32 and C3 only. GPIO outputs are reported for GPIO 0–31 only. I2C answers are synchronous, so part models run inside the host process.
-- **S3:** boots, console and GDB only. No Wi-Fi, GPIO or I2C hooks, so no virtual parts.
+- **GPIO, I2C and RMT frames:** through the library build and a per-session host process, on ESP32 and C3 only. GPIO outputs are reported for GPIO 0–31 only. I2C answers are synchronous, so part models run inside the host process.
+- **S3:** boots, with console, GDB and (since patch 0012) Wi-Fi. No GPIO or I2C hooks (it runs on the fork's executable, not its library), so no virtual parts.
 - **eFuses:** blank unless an eFuse image is supplied (the MAC reads as zeros). C3 Wi-Fi needs one.
-- **Display:** QEMU's virtual RGB panel (firmware using Espressif's `esp_lcd_qemu_rgb`) shows in the app on all three chips, read through QMP `screendump`. Real display parts (SSD1306, ST7789...) are not modelled; that is phase 4 work.
-- **Patches:** the fork is built with two esp32bench patches (`core/crates/sim/patches/`): pixman in the library build, and the "QEMU" signature register on `esp32-picsimlab`, both for the display.
-- **Unverified:** BLE, ADC (`qemu_picsimlab_set_apin` exists), SPI and RMT hooks, and secure boot or flash encryption.
+- **Display:** QEMU's virtual RGB panel (firmware using Espressif's `esp_lcd_qemu_rgb`) shows in the app on all three chips, read through QMP `screendump`. An SSD1306 OLED is a virtual part (phase 4); other displays (ST7789...) are not modelled.
+- **Patches:** the fork is built with twelve esp32bench patches (`core/crates/sim/patches/`, listed in `CLAUDE.md` and explained in [qemu-forks.md](qemu-forks.md)): the display, the CPU clock, ADC and LEDC registers, the C3's USB serial console, RMT (WS2812), sleep, an optimised library, the FPU at reset, RMT frames for parts, and the S3's radio.
+- **Peripherals:** ADC conversions complete but read 0 (no analog simulation); LEDC and RMT run (WS2812 strips are parts); light and deep sleep wake on a timer. Not modelled: Bluetooth (neither fork has a controller), SPI parts, and secure boot or flash encryption.
 - **Arch dependencies:** `libgcrypt glib2 pixman libslirp`, all in the official repos.
 
 ## Architecture
