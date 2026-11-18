@@ -142,7 +142,8 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     head->addWidget(m_build, 0, Qt::AlignTop);
     head->addWidget(m_openSite, 0, Qt::AlignTop);
     auto *boardRow = new QFormLayout;
-    boardRow->addRow(tr("Board:"), m_board);
+    m_boardLabel = new QLabel(tr("Board:"), page);
+    boardRow->addRow(m_boardLabel, m_board);
     auto *pageLayout = new QVBoxLayout(page);
     pageLayout->addLayout(head);
     pageLayout->addWidget(m_summary);
@@ -242,10 +243,10 @@ void ProjectView::showLocal(const QJsonObject &result)
     m_board->clear();
     for (const QJsonValue &v : boards) {
         const QJsonObject b = v.toObject();
-        m_board->addItem(tr("%1 (%2)").arg(b.value(u"name"_s).toString(),
-                                           Labels::chipName(b.value(u"chip"_s).toString())),
-                         b.value(u"id"_s).toString());
+        // An ESP-IDF build is for a chip, and runs on any board with it.
+        m_board->addItem(Labels::chipName(b.value(u"chip"_s).toString()), b.value(u"id"_s).toString());
     }
+    m_boardLabel->setText(tr("Chip:"));
     m_board->setEnabled(m_builds.size() > 1);
     const int start = qMax(0, m_board->findData(keepBoard));
     m_board->setCurrentIndex(start);
@@ -272,6 +273,7 @@ void ProjectView::showResult(const QJsonObject &result)
     m_openSite->setIcon(QIcon::fromTheme(u"internet-web-browser"_s));
     m_build->setToolTip(tr("Build this project for the selected board with arduino-cli"));
     m_tabs->show();
+    m_boardLabel->setText(tr("Board:"));
 
     m_title->setText(p.value(u"name"_s).toString());
     const QString level = p.value(u"level"_s).toString();

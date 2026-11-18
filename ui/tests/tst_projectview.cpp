@@ -121,7 +121,8 @@ private slots:
         QCOMPARE(view.title(), u"blinky"_s);
         QVERIFY(view.summaryText().contains(u"ESP-IDF 6.0.2"_s));
         QCOMPARE(view.boardPicker()->count(), 3);
-        QVERIFY(view.boardPicker()->itemText(1).contains(u"ESP32-S3"_s));
+        // Chips, not boards: an ESP-IDF build runs on any board with the chip.
+        QCOMPARE(view.boardPicker()->itemText(1), u"ESP32-S3"_s);
         QVERIFY(view.tabs()->isHidden());
         QCOMPARE(view.openButton()->text(), u"Open folder"_s);
         QVERIFY(!view.buildButton()->isHidden());

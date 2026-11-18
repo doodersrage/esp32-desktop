@@ -71,6 +71,7 @@ private:
     QPushButton *m_openSite;
     QPushButton *m_build;
     QComboBox *m_board;
+    QLabel *m_boardLabel;
     QTabWidget *m_tabs;
     QTreeWidget *m_parts;
     QLabel *m_libraries;
