@@ -20,6 +20,7 @@ public:
 
     QString outputText() const;
     QString statusText() const;
+    QString networkText() const;
     QLineEdit *input() const { return m_input; }
     QPushButton *stopButton() const { return m_stop; }
     QPushButton *resetButton() const { return m_reset; }
@@ -31,6 +32,8 @@ private:
 
     CoreConnection *m_core;
     QLabel *m_status;
+    // The simulated Wi-Fi network and the link to the sketch's web page.
+    QLabel *m_network;
     QPushButton *m_reset;
     QPushButton *m_stop;
     QPushButton *m_again;

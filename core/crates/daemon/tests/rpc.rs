@@ -1255,6 +1255,87 @@ async fn sim_runs_a_build_with_console_and_reset() {
     }
 }
 
+/// On lcgamboa's fork, sim.start gives the firmware the simulated Wi-Fi network and
+/// joins a library sketch to it (its settings block reports Wi-Fi unset); the
+/// sketch's web page answers on the result's webUrl. With network: false there is
+/// none.
+#[tokio::test]
+async fn sim_joins_a_sketch_to_the_simulated_wifi() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let Some(wifi) = firmware("arduino-wifi-esp32.bin") else {
+        eprintln!("skipping: arduino-wifi firmware not built");
+        return;
+    };
+    if expected_engine() != "lcgamboa" {
+        eprintln!("skipping: the simulated network needs lcgamboa's QEMU");
+        return;
+    }
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&wifi, out.join("blink.ino.merged.bin")).unwrap();
+
+    let r = c
+        .call(
+            "sim.start",
+            json!({ "project": "blink", "board": "esp32", "network": false }),
+        )
+        .await
+        .unwrap();
+    assert_valid(&method_def("sim.start")["result"], &r, "sim.start result");
+    assert!(r["network"].is_null(), "{r}");
+    c.call(
+        "core.unsubscribe",
+        json!({ "subscription": r["subscription"] }),
+    )
+    .await
+    .unwrap();
+
+    let r = c
+        .call("sim.start", json!({ "project": "blink", "board": "esp32" }))
+        .await
+        .unwrap();
+    assert_valid(&method_def("sim.start")["result"], &r, "sim.start result");
+    assert_eq!(r["network"]["ssid"], "PICSimLabWifi");
+    let url = r["network"]["webUrl"].as_str().unwrap().to_owned();
+    let port: u16 = url
+        .trim_start_matches("http://127.0.0.1:")
+        .trim_end_matches('/')
+        .parse()
+        .unwrap();
+    let sub = r["subscription"].clone();
+    let (mut joined, mut text) = (false, String::new());
+    while !text.contains("esp32bench-wifi serving") {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(40), c.next_notification())
+            .await
+            .unwrap_or_else(|_| panic!("not serving: {text}"))
+            .unwrap();
+        let event = n["method"].as_str().unwrap();
+        assert_valid(&method_def(event)["params"], &n["params"], event);
+        assert_eq!(&n["params"]["subscription"], &sub);
+        match event {
+            "sim.wifiJoined" => {
+                assert_eq!(n["params"]["ssid"], "PICSimLabWifi");
+                joined = true;
+            }
+            "sim.output" => text.push_str(n["params"]["text"].as_str().unwrap()),
+            _ => {}
+        }
+    }
+    assert!(joined, "no sim.wifiJoined: {text}");
+    assert!(text.contains("esp32bench-wifi ip=10.0.2.15"), "{text}");
+    assert!(text.contains("esp32bench-wifi out=0"), "{text}");
+    let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    tcp.write_all(b"GET / HTTP/1.0\r\n\r\n").await.unwrap();
+    let mut reply = String::new();
+    tcp.read_to_string(&mut reply).await.unwrap();
+    assert!(reply.contains("esp32bench-web ok"), "{reply}");
+}
+
 /// Wait for a debug event named `event`, checking every notification on the way
 /// against its schema (UART output keeps arriving meanwhile).
 async fn debug_wait(c: &mut Client, sub: &Value, event: &str) -> Value {

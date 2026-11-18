@@ -100,6 +100,8 @@ def boot(cli, project, board, chip, expect):
     # simulator's console shows both: two reset lines per boot.
     if chip == "esp32c3":
         resets = (resets + 1) // 2
+    # Joining the simulated Wi-Fi saves the sketch's settings, and SAVE restarts it.
+    resets -= len(re.findall(r"^SAVED\r?$", text, re.M))
     if crashed is None and resets > 1:
         crashed = f"rebooted ({resets} resets)"
     patterns = e.get("patterns", [])

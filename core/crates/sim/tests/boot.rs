@@ -58,6 +58,7 @@ fn setup(chip: Chip) -> Option<(SessionConfig, &'static [u8])> {
         circuit: None,
         efuse: None,
         usb_console: false,
+        network: None,
     };
     Some((cfg, marker))
 }
@@ -91,6 +92,7 @@ async fn lcgamboa_boot_reset_and_quit(chip: Chip) {
         circuit: None,
         efuse: None,
         usb_console: false,
+        network: None,
     };
     boot_reset_and_quit_with(cfg, marker).await;
 }
@@ -183,6 +185,7 @@ async fn arduino_hello_boots() {
             circuit: None,
             efuse: None,
             usb_console: false,
+            network: None,
         };
         let mut s = Session::start(cfg).await.unwrap();
         let t = Duration::from_secs(30);
@@ -454,6 +457,77 @@ async fn lcgamboa_esp32s3_sleeps_and_wakes() {
 #[tokio::test]
 async fn lcgamboa_esp32c3_sleeps_and_wakes() {
     arduino_sleep_on_lcgamboa(Chip::Esp32c3).await;
+}
+
+/// The simulated Wi-Fi network (`esp32bench_sim::network`): the session joins
+/// `tests/firmware/arduino-wifi` through its settings block, as the app does for
+/// library sketches; the sketch gets an address by DHCP, cannot resolve names or
+/// connect anywhere (out to the internet or to the host), and its web server answers
+/// on the session's forwarded port.
+async fn simulated_wifi_on_lcgamboa(chip: Chip) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let Some(image) = built_image("arduino-wifi", chip) else {
+        return;
+    };
+    let Ok(launch) = esp32bench_sim::engine::launch(chip, Some(esp32bench_sim::Engine::Lcgamboa))
+    else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let mut cfg = launch.config(chip, image);
+    cfg.network = Some(esp32bench_sim::network::Network::on_a_free_port().unwrap());
+    let mut s = Session::start(cfg).await.unwrap();
+    let web = s.network().unwrap().web_port;
+    let mut joiner = esp32bench_sim::network::Joiner::new();
+    let mut text = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(40);
+    while !String::from_utf8_lossy(&text).contains("esp32bench-wifi serving") {
+        let chunk = tokio::time::timeout_at(deadline, s.uart.read_chunk())
+            .await
+            .unwrap_or_else(|_| panic!("{chip}: not serving:\n{}", String::from_utf8_lossy(&text)))
+            .unwrap()
+            .unwrap();
+        if let Some(lines) = joiner.feed(&chunk) {
+            s.uart.write(&lines).await.unwrap();
+        }
+        text.extend_from_slice(&chunk);
+    }
+    let text = String::from_utf8_lossy(&text);
+    assert!(
+        joiner.done(),
+        "{chip}: never asked for its settings:\n{text}"
+    );
+    for marker in [
+        "esp32bench-wifi ip=10.0.2.15",
+        "esp32bench-wifi dns=0",
+        "esp32bench-wifi out=0",
+        "esp32bench-wifi host=0",
+    ] {
+        assert!(text.contains(marker), "{chip}: no {marker}:\n{text}");
+    }
+    let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", web))
+        .await
+        .unwrap();
+    tcp.write_all(b"GET / HTTP/1.0\r\nHost: x\r\n\r\n")
+        .await
+        .unwrap();
+    let mut reply = String::new();
+    tokio::time::timeout(Duration::from_secs(10), tcp.read_to_string(&mut reply))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(reply.contains("esp32bench-web ok"), "{chip}: {reply}");
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32_simulated_wifi_is_isolated_and_serves() {
+    simulated_wifi_on_lcgamboa(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32c3_simulated_wifi_is_isolated_and_serves() {
+    simulated_wifi_on_lcgamboa(Chip::Esp32c3).await;
 }
 
 /// Boards without a USB-UART chip, like the C3 SuperMini, put `Serial` on the C3's

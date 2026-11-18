@@ -234,7 +234,7 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
     } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.parts" || method == u"sim.partPicture"
-               || method == u"sim.exited"
+               || method == u"sim.exited" || method == u"sim.wifiJoined"
                || method.startsWith(u"debug.")) {
         if (sub == m_simSub)
             handleSimEvent(method, params);
@@ -576,6 +576,7 @@ void CoreConnection::startSim(const QString &project, const QString &board, bool
                        m_debugging = o.value(u"debug"_s).toBool();
                        m_simPins.clear();
                        m_simPartsActive = o.value(u"partsActive"_s).toBool();
+                       m_simNetwork = o.value(u"network"_s).toObject();
                        for (const QJsonValue &g : o.value(u"pins"_s).toArray())
                            m_simPins << g.toInt();
                        emit simStarted(project, board, o.value(u"chip"_s).toString());
@@ -593,6 +594,10 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
 {
     if (method == u"sim.output") {
         emit simOutput(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        return;
+    }
+    if (method == u"sim.wifiJoined") {
+        emit simWifiJoined(params.value(u"ssid"_s).toString());
         return;
     }
     if (method == u"sim.partPicture") {
@@ -646,6 +651,7 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
     m_debugging = false;
     m_simPins.clear();
     m_simPartsActive = false;
+    m_simNetwork = {};
     emit simStopped(params.value(u"reason"_s).toString());
 }
 
@@ -657,6 +663,7 @@ void CoreConnection::stopSim()
     m_debugging = false;
     m_simPins.clear();
     m_simPartsActive = false;
+    m_simNetwork = {};
     m_client->call(u"core.unsubscribe"_s, {{u"subscription"_s, sub}}, this, [](const RpcReply &) {});
     emit simStopped(tr("Stopped."));
 }

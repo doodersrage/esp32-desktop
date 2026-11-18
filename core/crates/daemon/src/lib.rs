@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.19.0";
+pub const PROTOCOL: &str = "0.20.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -688,6 +688,12 @@ struct SimStartParams {
     board: String,
     #[serde(default)]
     debug: bool,
+    /// The simulated Wi-Fi network, where the machine has a radio for it.
+    #[serde(default = "yes")]
+    network: bool,
+    /// Join a library sketch to that network through its settings block.
+    #[serde(default = "yes", rename = "joinWifi")]
+    join_wifi: bool,
 }
 
 async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
@@ -779,6 +785,16 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
     config.bridge = pins.clone();
     // Boards whose Serial is the chip's USB (the C3 SuperMini) need the USB console.
     config.usb_console = launch.usb_console && esp32bench_build::serial_on_usb(&p.board);
+    // The simulated Wi-Fi network: restricted, nothing outside reachable; the
+    // sketch's port 80 forwarded to a free port on loopback.
+    if launch.network && p.network {
+        config.network = Some(
+            esp32bench_sim::network::Network::on_a_free_port()
+                .map_err(|e| RpcError::internal(e.to_string()))?,
+        );
+    }
+    let network = config.network;
+    let mut joiner = (network.is_some() && p.join_wifi).then(esp32bench_sim::network::Joiner::new);
     if launch_parts {
         config.circuit =
             Some(serde_json::to_string(&circuit).map_err(|e| RpcError::internal(e.to_string()))?);
@@ -942,6 +958,14 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                             if !sent {
                                 break;
                             }
+                            // A library sketch asking for its Wi-Fi settings: give it
+                            // the simulated network's (sim.wifiJoined says so).
+                            if let Some(lines) = joiner.as_mut().and_then(|j| j.feed(&bytes)) {
+                                let _ = session.uart.write(&lines).await;
+                                sub.send("sim.wifiJoined", json!({
+                                    "ssid": esp32bench_sim::network::SSID,
+                                }));
+                            }
                         }
                         Ok(None) => {
                             sub.send("sim.exited", json!({ "reason": "QEMU closed the UART" }));
@@ -1027,6 +1051,10 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
         "engine": engine,
         "pins": pins,
         "partsActive": launch_parts,
+        "network": network.map(|n| json!({
+            "ssid": esp32bench_sim::network::SSID,
+            "webUrl": n.web_url(),
+        })),
     }))
 }
 

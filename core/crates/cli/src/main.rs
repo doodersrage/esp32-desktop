@@ -272,6 +272,16 @@ struct SessionArgs {
     /// there (the C3 SuperMini's). lcgamboa's fork only.
     #[arg(long)]
     usb_console: bool,
+    /// No simulated Wi-Fi network. By default sessions on lcgamboa's ESP32 and C3
+    /// have one: an open access point, PICSimLabWifi, with an address by DHCP and
+    /// nothing outside reachable; the sketch's port 80 is forwarded to a local port.
+    #[arg(long)]
+    no_network: bool,
+    /// Do not join library sketches to the simulated network. By default, when a
+    /// sketch's settings block reports its Wi-Fi unset, the console sends it the
+    /// network's name and an empty password, and SAVE.
+    #[arg(long)]
+    no_join_wifi: bool,
     /// Set by `sim run --circuit`: the circuit for the host to run.
     #[arg(skip)]
     circuit: Option<String>,
@@ -899,7 +909,18 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 bail!("--paused needs --gdb, or nothing can resume the target");
             }
             let chip = session.chip;
+            let join_wifi = !session.no_join_wifi;
             let mut s = start(session, paused).await?;
+            if let Some(n) = s.network() {
+                eprintln!(
+                    "network: simulated Wi-Fi `{}` (open; nothing outside reachable); \
+                     the sketch's web page: {}",
+                    esp32bench_sim::network::SSID,
+                    n.web_url()
+                );
+            }
+            let mut joiner =
+                (s.network().is_some() && join_wifi).then(esp32bench_sim::network::Joiner::new);
             if let Some(addr) = s.gdb_addr() {
                 eprintln!("GDB stub on {addr}");
                 // The same GDB the app's debugger uses.
@@ -972,7 +993,17 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         }
                     }
                     chunk = s.uart.read_chunk() => match chunk? {
-                        Some(bytes) => { out.write_all(&bytes)?; out.flush()?; }
+                        Some(bytes) => {
+                            out.write_all(&bytes)?;
+                            out.flush()?;
+                            if let Some(lines) = joiner.as_mut().and_then(|j| j.feed(&bytes)) {
+                                eprintln!(
+                                    "[joining the simulated Wi-Fi: setting the sketch's network to {}, no password]",
+                                    esp32bench_sim::network::SSID
+                                );
+                                s.uart.write(&lines).await?;
+                            }
+                        }
                         None => break,
                     },
                     line = stdin.next_line(), if stdin_open => match line? {
@@ -1200,6 +1231,7 @@ async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
             circuit: None,
             efuse: None,
             usb_console: false,
+            network: None,
         },
         None => {
             let launch = esp32bench_sim::engine::launch(a.chip, a.engine)?;
@@ -1218,6 +1250,9 @@ async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
             config.bridge = a.pins;
             config.circuit = a.circuit;
             config.usb_console = a.usb_console;
+            if launch.network && !a.no_network {
+                config.network = Some(esp32bench_sim::network::Network::on_a_free_port()?);
+            }
             config
         }
     };

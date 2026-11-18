@@ -50,7 +50,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.19.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.20.0"_s}});
             return;
         }
         calls << m;
@@ -62,7 +62,16 @@ private:
                 return;
             }
             output("ets Jul 29 2019\r\n"); // before the reply
-            reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}});
+            QJsonObject r{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}};
+            if (p.value(u"project"_s).toString() == u"web-led"_s) {
+                r[u"network"_s] = QJsonObject{{u"ssid"_s, u"PICSimLabWifi"_s},
+                                              {u"webUrl"_s, u"http://127.0.0.1:41823/"_s}};
+                reply(id, r);
+                send({{u"jsonrpc"_s, u"2.0"_s}, {u"method"_s, u"sim.wifiJoined"_s},
+                      {u"params"_s, QJsonObject{{u"subscription"_s, 5}, {u"ssid"_s, u"PICSimLabWifi"_s}}}});
+                return;
+            }
+            reply(id, r);
             output("esp32bench-hello ready\n");
         } else if (m == u"sim.write") {
             written << QByteArray::fromBase64(p.value(u"data"_s).toString().toLatin1());
@@ -125,6 +134,31 @@ private slots:
         QVERIFY(panel.runAgainButton()->isHidden());
         core.stopSim();
         QTRY_VERIFY(!core.isSimRunning());
+    }
+
+    void showsTheSimulatedNetwork()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        SimulatorPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+
+        core.startSim(u"blink"_s, u"esp32"_s);
+        QTRY_VERIFY(core.isSimRunning());
+        QVERIFY(panel.networkText().isEmpty());
+        core.stopSim();
+        QTRY_VERIFY(!core.isSimRunning());
+
+        core.startSim(u"web-led"_s, u"esp32"_s);
+        QTRY_VERIFY(core.isSimRunning());
+        QVERIFY(panel.networkText().contains(u"PICSimLabWifi"_s));
+        QVERIFY(panel.networkText().contains(u"href=\"http://127.0.0.1:41823/\""_s));
+        QTRY_VERIFY(panel.outputText().contains(u"simulated Wi-Fi settings"_s));
+        core.stopSim();
+        QTRY_VERIFY(!core.isSimRunning());
+        QVERIFY(panel.networkText().isEmpty());
     }
 
     void showsWhyABoardCannotBeSimulated()

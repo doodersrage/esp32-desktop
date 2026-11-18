@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 19;
+    static constexpr int ProtocolMinor = 20;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -120,6 +120,9 @@ public:
     void setSimPin(int gpio, bool level);
     // Whether the running simulation's virtual parts work (sim.start's partsActive).
     bool simPartsActive() const { return m_simSub > 0 && m_simPartsActive; }
+    // The running simulation's simulated Wi-Fi network (sim.start's network: ssid,
+    // webUrl); empty when it has none.
+    QJsonObject simNetwork() const { return m_simSub > 0 ? m_simNetwork : QJsonObject(); }
     // sim.control: work a part's control (a button's press, a switch's toggle, a
     // slider's number).
     void controlPart(const QString &id, const QString &control, const QJsonValue &value);
@@ -179,6 +182,8 @@ signals:
     // Simulator.
     void simStarted(const QString &project, const QString &board, const QString &chip);
     void simOutput(const QByteArray &bytes);
+    // sim.wifiJoined: the core gave a library sketch the simulated network's settings.
+    void simWifiJoined(const QString &ssid);
     // A new picture on the simulator's virtual RGB panel (sim.frame).
     void simFrame(const QImage &image);
     // sim.pins: pins that changed, each {gpio, level?, output?}.
@@ -241,6 +246,7 @@ private:
     bool m_debugging = false;
     QList<int> m_simPins;
     bool m_simPartsActive = false;
+    QJsonObject m_simNetwork;
     bool m_autoStart = false;
     bool m_autoStartTried = false;
     QList<QPair<QString, QJsonObject>> m_earlySimEvents;

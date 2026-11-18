@@ -64,6 +64,9 @@ pub struct Launch {
     /// ([`SessionConfig::usb_console`]). Sessions turn it on only for boards that need it:
     /// with it on, an IDF boot's UART0 output sometimes stopped (about one in five).
     pub usb_console: bool,
+    /// Whether the machine has a Wi-Fi radio for the simulated network
+    /// ([`SessionConfig::network`]): the fork's ESP32 and C3.
+    pub network: bool,
 }
 
 impl Launch {
@@ -82,6 +85,7 @@ impl Launch {
             circuit: None,
             efuse: self.efuse.clone(),
             usb_console: false,
+            network: None,
         }
     }
 }
@@ -126,12 +130,14 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
             hooks: false,
             efuse: None,
             usb_console: false,
+            network: false,
         });
     }
     let host = host?;
     let mut args = args;
-    // A Wi-Fi radio with no network behind it: an empty hub port, so frames go
-    // nowhere (no DHCP, no DNS, no route out; rule 4). Without a radio the fork's Wi-Fi
+    // A Wi-Fi radio on hub 0. Alone there, its frames go nowhere; a session that asks
+    // for the simulated network ([`crate::network`]) puts the restricted user-mode
+    // network on the same hub. Without a radio the fork's Wi-Fi
     // start-up crashes (esp_phy_enable). The C3's radio reads its MAC address from the
     // eFuses before the eFuse device is ready, and aborts unless they come from a file:
     // `efuse` below.
@@ -156,6 +162,7 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
         hooks: true,
         efuse: (chip == Chip::Esp32c3).then(lcgamboa::esp32c3_efuse),
         usb_console: chip == Chip::Esp32c3,
+        network: true,
     })
 }
 
@@ -176,6 +183,7 @@ pub fn launch(chip: Chip, want: Option<Engine>) -> Result<Launch, Error> {
             hooks: false,
             efuse: None,
             usb_console: false,
+            network: false,
         })
     };
     match want {

@@ -56,6 +56,9 @@ pub struct SessionConfig {
     /// Wire the C3's USB-Serial-JTAG serial port to the console (lcgamboa's fork, patch
     /// 0006). Boards without a USB-UART chip, like the C3 SuperMini, print there.
     pub usb_console: bool,
+    /// The simulated Wi-Fi network ([`crate::network`]): only where the launch has a
+    /// radio for it ([`crate::Launch::network`]). None: the radio sees no network.
+    pub network: Option<crate::network::Network>,
 }
 
 /// Files a session uses, all inside one private runtime directory.
@@ -152,6 +155,9 @@ pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
             "driver=misc.esp32c3.usb_serial_jtag,property=chardev,value=esp32bench-usb".into(),
         ]);
     }
+    if let Some(n) = &cfg.network {
+        args.extend(n.qemu_args());
+    }
     args.extend(cfg.extra_args.iter().cloned());
     args
 }
@@ -164,6 +170,7 @@ pub struct Session {
     pub uart: Uart,
     paths: SessionPaths,
     gdb: Option<SocketAddr>,
+    network: Option<crate::network::Network>,
 }
 
 impl Session {
@@ -236,11 +243,17 @@ impl Session {
             gpio,
             paths,
             gdb: cfg.gdb_port.map(|p| SocketAddr::from(([127, 0, 0, 1], p))),
+            network: cfg.network,
         })
     }
 
     pub fn paths(&self) -> &SessionPaths {
         &self.paths
+    }
+
+    /// The simulated Wi-Fi network, when the session has one.
+    pub fn network(&self) -> Option<crate::network::Network> {
+        self.network
     }
 
     pub fn gdb_addr(&self) -> Option<SocketAddr> {
@@ -438,6 +451,7 @@ mod tests {
             circuit: None,
             efuse: None,
             usb_console: false,
+            network: None,
         }
     }
 

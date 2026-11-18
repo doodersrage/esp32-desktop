@@ -1,0 +1,30 @@
+{
+  "event": "sim.wifiJoined",
+  "description": "The core gave a library sketch the simulated network's Wi-Fi settings (sim.start's joinWifi): its settings block reported them unset, so the core sent SET wifi_ssid, SET wifi_pass (empty) and SAVE, and the sketch restarts to join. Sent at most once per simulation.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "ssid"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "ssid": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "ssid": "PICSimLabWifi"
+      }
+    }
+  ]
+}
