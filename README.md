@@ -2,20 +2,26 @@
 
 A native Linux desktop workbench and simulator for ESP32 boards, built for KDE Plasma on Arch Linux. It is the desktop companion to [esp32bench.dev](https://esp32bench.dev/).
 
-**Status:** version 0.1.1 is out. Phases 1 and 3 are done and phase 2 is feature complete (the automatic reset of UART-bridge dev boards is still untried): the app browses and builds the esp32bench.dev library, monitors, inspects and flashes real boards, and runs builds in lcgamboa's QEMU with a console, GDB debugging and the virtual display. Phase 4 (virtual parts) is done: LEDs, buttons, switches, an RGB LED, an SSD1306 OLED, BME280, MPU-6050 and DS3231 on ESP32 and C3. Packaging (phase 5) is in progress.
+**Status:** version 0.1.2 is out, for Arch Linux with KDE Plasma only. It browses and builds the esp32bench.dev library, flashes, inspects and monitors real boards, and runs builds in a simulator. The automatic reset of boards with a USB-UART bridge (CP210x, CH340) is still untested on hardware.
 
-## What it will do
+## What it does
 
-- Browse and build the esp32bench.dev project library with `arduino-cli` or `idf.py`.
-- Flash, monitor and debug real boards.
-- Run ESP32, ESP32-S3 and ESP32-C3 firmware in QEMU, with a console and GDB.
+- Browse the esp32bench.dev project library and build projects with `arduino-cli`, asking before anything downloaded is built or flashed. Links on esp32bench.dev open a project in the app.
+- Flash, inspect, erase and monitor real boards over USB, without root.
+- Run ESP32, ESP32-S3 and ESP32-C3 builds in a simulator (lcgamboa's QEMU fork, built on your computer by the setup step), with a console, reset, GDB debugging and the virtual display. Of the library's 227 simulated builds, 212 print what they print on a real board.
+- Place virtual parts on the ESP32 and C3: LEDs, buttons, switches, an RGB LED, a NeoPixel strip, an SSD1306 OLED, and BME280, MPU-6050 and DS3231 modules on I2C.
+- Give simulated sketches a Wi-Fi network that reaches nothing outside: they get an address, and their web pages open on your computer. Library sketches are joined to it for you.
+
+The simulator is firmware-level: no Bluetooth, no analog inputs (they read 0), no Wi-Fi on the S3, and no encrypted networks. Light and deep sleep wake on a timer only.
+
+Report problems at [github.com/doodersrage/esp32-desktop/issues](https://github.com/doodersrage/esp32-desktop/issues).
 
 ## How it is built
 
 - **UI:** Qt 6 Widgets in C++.
 - **Core:** a Rust daemon and CLI. The UI talks to it with JSON-RPC over a Unix socket.
 - **Simulation:** [lcgamboa's QEMU fork](https://github.com/lcgamboa/qemu), which adds Wi-Fi and GPIO and I2C hooks to Espressif's QEMU.
-- **Packaging:** a PKGBUILD for the AUR.
+- **Packaging:** PKGBUILDs (`packaging/`), and a pacman package with each release.
 
 ## Documents
 
@@ -28,8 +34,8 @@ A native Linux desktop workbench and simulator for ESP32 boards, built for KDE P
 On Arch Linux, install the package from the [latest release](https://github.com/doodersrage/esp32-desktop/releases/latest):
 
 ```sh
-curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.1/esp32bench-bin-0.1.1-1-x86_64.pkg.tar.zst
-sudo pacman -U esp32bench-bin-0.1.1-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.2/esp32bench-bin-0.1.2-1-x86_64.pkg.tar.zst
+sudo pacman -U esp32bench-bin-0.1.2-1-x86_64.pkg.tar.zst
 ```
 
 pacman installs the dependencies from the official repos. The package is not signed, so it is installed from the downloaded file. To build it yourself, run `makepkg -si` in `packaging/esp32bench-bin/` (the release's files) or `packaging/esp32bench-git/` (the latest source). The packages are not on the AUR: its registration is closed for now.
