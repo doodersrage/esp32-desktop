@@ -60,6 +60,10 @@ pub struct Launch {
     pub hooks: bool,
     /// An eFuse image the machine needs ([`SessionConfig::efuse`]).
     pub efuse: Option<Vec<u8>>,
+    /// Whether this engine can wire the C3's USB serial port
+    /// ([`SessionConfig::usb_console`]). Sessions turn it on only for boards that need it:
+    /// with it on, an IDF boot's UART0 output sometimes stopped (about one in five).
+    pub usb_console: bool,
 }
 
 impl Launch {
@@ -77,6 +81,7 @@ impl Launch {
             bridge: Vec::new(),
             circuit: None,
             efuse: self.efuse.clone(),
+            usb_console: false,
         }
     }
 }
@@ -120,6 +125,7 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
             env: Vec::new(),
             hooks: false,
             efuse: None,
+            usb_console: false,
         });
     }
     let host = host?;
@@ -149,6 +155,7 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
         )],
         hooks: true,
         efuse: (chip == Chip::Esp32c3).then(lcgamboa::esp32c3_efuse),
+        usb_console: chip == Chip::Esp32c3,
     })
 }
 
@@ -168,6 +175,7 @@ pub fn launch(chip: Chip, want: Option<Engine>) -> Result<Launch, Error> {
             env: Vec::new(),
             hooks: false,
             efuse: None,
+            usb_console: false,
         })
     };
     match want {
@@ -212,6 +220,9 @@ mod tests {
                 &l.args[2..],
                 ["-nic", &format!("hubport,hubid=0,model={nic}")]
             );
+            // The C3's USB serial port can be wired (patch 0006), but only on request.
+            assert_eq!(l.usb_console, chip == Chip::Esp32c3);
+            assert!(!l.config(chip, "x".into()).usb_console);
             // The C3's radio needs an eFuse image: chip revision v0.3 and a MAC.
             if chip == Chip::Esp32c3 {
                 let e = l.efuse.as_deref().unwrap();

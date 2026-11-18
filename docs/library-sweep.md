@@ -38,3 +38,19 @@ The same builds booted again on recipe 5 (S3 ADC and LEDC registers, C3 LEDC rea
 - `stepper-28byj` on the ESP32 passed this time; it stays listed as intermittent, with its S3 build.
 
 Left: the SuperMini console (39 builds), RMT for WS2812 LEDs, Wi-Fi waiting by design, deep sleep (4) and Bluetooth (5), which the simulator does not claim, and the intermittent stepper crash on the S3.
+
+## After fork patch 0006 (2026-11-18)
+
+Recipe 6 models the C3's USB-Serial-JTAG serial port, and the app turns it on for boards whose `Serial` is there (the C3 SuperMini; `sim run --usb-console`, which the sweep passes for that board). **171 of 227 boots pass (was 141).** The SuperMini went from 0 to 32 passing, as many as the C3 DevKitM; its other builds start and wait for the same reasons as on the DevKitM (Wi-Fi, RMT).
+
+| Board | Pass | Crash | Started |
+| --- | --- | --- | --- |
+| ESP32-DevKitC | 42 | 3 | 8 |
+| ESP32 DOIT | 37 | 4 | 6 |
+| ESP32-C3 DevKitM | 31 | 3 | 8 |
+| ESP32-C3 SuperMini | 32 | 2 | 7 |
+| ESP32-S3 DevKitC | 29 | 2 | 13 |
+
+With the USB console on, the C3's ROM prints its reset banner on UART0 and on the USB port, and the console shows both; the sweep counts one reset per two banners on the C3.
+
+Crashes: deep sleep (`battery-sensor`, `deep-sleep`) and Bluetooth (`ble-scan`), which the simulator does not claim, and three intermittent ones that did not come back in five reruns each: `stepper-28byj` on the S3, `dht22` on the ESP32 DOIT (a load fault inside `digitalRead()`'s GPIO register read, in DHT's pulse timing), and `rfid-reader` on the C3. Most "started" builds wait for Wi-Fi by design; the rest are RMT (WS2812 LEDs) and sketches whose expected line needs a part.

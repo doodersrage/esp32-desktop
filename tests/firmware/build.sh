@@ -4,6 +4,9 @@
 #
 # Usage: tests/firmware/build.sh [project]   (default: hello)
 #
+# Arduino sketches are also built for the C3 with Serial on its USB-Serial-JTAG, as
+# the C3 SuperMini does: <project>-esp32c3-usb.bin.
+#
 # ESP-IDF projects need IDF_PATH pointing at a checkout of the version in IDF_VERSION.
 # Arduino sketches (a directory with <project>.ino) need arduino-cli with the ESP32
 # core version in ARDUINO_ESP32_VERSION installed.
@@ -34,6 +37,13 @@ if [[ -f "$src/$project.ino" ]]; then
         arduino-cli compile --fqbn "$fqbn" --build-path "$build" "$src"
         cp "$build/$project.ino.merged.bin" "$out/$project-$chip.bin"
     done
+    # And as boards without a USB-UART chip (the C3 SuperMini) build it: Serial on
+    # the chip's USB-Serial-JTAG (CDC on boot), written as <project>-esp32c3-usb.bin.
+    build="$here/build/$project-esp32c3-usb"
+    echo "== $project for esp32c3 with Serial on USB (Arduino core $want)"
+    arduino-cli compile --fqbn "esp32:esp32:esp32c3:FlashMode=dio,FlashSize=4M,CDCOnBoot=cdc" \
+        --build-path "$build" "$src"
+    cp "$build/$project.ino.merged.bin" "$out/$project-esp32c3-usb.bin"
     echo "images in $out"
     exit 0
 fi

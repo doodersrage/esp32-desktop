@@ -1,4 +1,6 @@
-//! UART0 over QEMU's socket chardev. Output is raw bytes; callers decode at the edge.
+//! The console: UART0 over QEMU's socket chardev, and on the C3 on lcgamboa's fork also
+//! its USB-Serial-JTAG serial port (boards like the C3 SuperMini have no USB-UART chip,
+//! so their `Serial` is that). Output is raw bytes; callers decode at the edge.
 
 use std::time::Duration;
 
@@ -36,28 +38,63 @@ pub enum WaitOutcome {
 
 pub struct Uart {
     stream: UnixStream,
+    /// The USB-Serial-JTAG serial port, when the machine has one wired.
+    usb: Option<UnixStream>,
 }
 
 impl Uart {
     pub fn new(stream: UnixStream) -> Self {
-        Uart { stream }
+        Uart { stream, usb: None }
     }
 
-    /// Send bytes to the firmware's UART0 RX.
+    /// Also read from (and write to) the chip's USB serial port.
+    pub fn with_usb(mut self, usb: UnixStream) -> Self {
+        self.usb = Some(usb);
+        self
+    }
+
+    /// Send bytes to the firmware: UART0's RX, and the USB serial port's OUT endpoint
+    /// when there is one. A sketch reads whichever its `Serial` is.
     pub async fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
         self.stream.write_all(bytes).await?;
+        if let Some(usb) = &mut self.usb
+            && usb.write_all(bytes).await.is_err()
+        {
+            self.usb = None;
+        }
         Ok(())
     }
 
-    /// Read the next chunk. `None` means QEMU closed the socket.
+    /// Read the next chunk, from either port. `None` means QEMU closed UART0's socket.
     pub async fn read_chunk(&mut self) -> Result<Option<Vec<u8>>, Error> {
         let mut buf = vec![0u8; 4096];
-        let n = self.stream.read(&mut buf).await?;
-        if n == 0 {
-            return Ok(None);
+        loop {
+            let n = match &mut self.usb {
+                None => self.stream.read(&mut buf).await?,
+                Some(usb) => {
+                    let mut ubuf = vec![0u8; 4096];
+                    tokio::select! {
+                        n = self.stream.read(&mut buf) => n?,
+                        n = usb.read(&mut ubuf) => match n {
+                            Ok(n) if n > 0 => {
+                                ubuf.truncate(n);
+                                return Ok(Some(ubuf));
+                            }
+                            // The USB side closed: carry on with UART0 alone.
+                            _ => {
+                                self.usb = None;
+                                continue;
+                            }
+                        },
+                    }
+                }
+            };
+            if n == 0 {
+                return Ok(None);
+            }
+            buf.truncate(n);
+            return Ok(Some(buf));
         }
-        buf.truncate(n);
-        Ok(Some(buf))
     }
 
     /// Read until `marker` appears, a panic banner appears, the socket closes, or

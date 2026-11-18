@@ -28,12 +28,13 @@ const MARKER: &str = "installed";
 /// 3: patches as files (PATCHES); esp32-picsimlab reads "QEMU" for the RGB driver.
 /// 4: the CPU clock change fix (Arduino builds panicked at start-up).
 /// 5: S3 ADC and LEDC registers, C3 LEDC readback (sketches hung or aborted).
-pub const RECIPE: u32 = 5;
+/// 6: the C3's USB-Serial-JTAG console (the C3 SuperMini's Serial).
+pub const RECIPE: u32 = 6;
 
 /// Changes esp32bench makes to the pinned commit, in order. Each file says what and
 /// why. Kept in `core/crates/sim/patches/` and built into the program, so an installed
 /// app can build the fork without the repo.
-pub const PATCHES: [(&str, &str); 5] = [
+pub const PATCHES: [(&str, &str); 6] = [
     (
         "0001.patch",
         include_str!("../patches/0001-build-library-with-pixman.patch"),
@@ -53,6 +54,10 @@ pub const PATCHES: [(&str, &str); 5] = [
     (
         "0005.patch",
         include_str!("../patches/0005-esp32c3-ledc-readback.patch"),
+    ),
+    (
+        "0006.patch",
+        include_str!("../patches/0006-esp32c3-usb-serial-jtag-console.patch"),
     ),
 ];
 
@@ -280,6 +285,7 @@ pub fn steps(jobs: usize) -> Vec<Step> {
                 "../patches/0003.patch",
                 "../patches/0004.patch",
                 "../patches/0005.patch",
+                "../patches/0006.patch",
             ],
             "src",
         ),

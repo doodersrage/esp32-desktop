@@ -57,6 +57,7 @@ fn setup(chip: Chip) -> Option<(SessionConfig, &'static [u8])> {
         bridge: Vec::new(),
         circuit: None,
         efuse: None,
+        usb_console: false,
     };
     Some((cfg, marker))
 }
@@ -89,6 +90,7 @@ async fn lcgamboa_boot_reset_and_quit(chip: Chip) {
         bridge: Vec::new(),
         circuit: None,
         efuse: None,
+        usb_console: false,
     };
     boot_reset_and_quit_with(cfg, marker).await;
 }
@@ -180,6 +182,7 @@ async fn arduino_hello_boots() {
             bridge: Vec::new(),
             circuit: None,
             efuse: None,
+            usb_console: false,
         };
         let mut s = Session::start(cfg).await.unwrap();
         let t = Duration::from_secs(30);
@@ -394,4 +397,57 @@ async fn lcgamboa_esp32s3_runs_adc_and_ledc() {
 #[tokio::test]
 async fn lcgamboa_esp32c3_runs_adc_and_ledc() {
     arduino_adc_and_ledc_on_lcgamboa(Chip::Esp32c3).await;
+}
+
+/// Boards without a USB-UART chip, like the C3 SuperMini, put `Serial` on the C3's
+/// USB-Serial-JTAG. On the fork (patch 0006) that is part of the console: the sketch's
+/// output arrives, and a line sent comes back through `Serial`.
+#[tokio::test]
+async fn lcgamboa_esp32c3_usb_console_both_ways() {
+    let chip = Chip::Esp32c3;
+    let image = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/firmware/out/hello-arduino-esp32c3-usb.bin");
+    if !image.is_file() {
+        eprintln!("skipping: hello-arduino-esp32c3-usb not built");
+        return;
+    }
+    let Ok(launch) = esp32bench_sim::engine::launch(chip, Some(esp32bench_sim::Engine::Lcgamboa))
+    else {
+        eprintln!("skipping: lcgamboa's QEMU is not built");
+        return;
+    };
+    let mut cfg = launch.config(chip, image);
+    cfg.usb_console = true;
+    let mut s = Session::start(cfg).await.unwrap();
+    let mut text = Vec::new();
+    let found = s
+        .uart
+        .wait_for(b"esp32bench-arduino ready", Duration::from_secs(30), |b| {
+            text.extend_from_slice(b)
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        found,
+        WaitOutcome::Found,
+        "{}",
+        String::from_utf8_lossy(&text)
+    );
+    s.uart.write(b"over usb\n").await.unwrap();
+    let found = s
+        .uart
+        .wait_for(
+            b"esp32bench-arduino echo over usb",
+            Duration::from_secs(10),
+            |b| text.extend_from_slice(b),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        found,
+        WaitOutcome::Found,
+        "{}",
+        String::from_utf8_lossy(&text)
+    );
+    s.shutdown().await.unwrap();
 }

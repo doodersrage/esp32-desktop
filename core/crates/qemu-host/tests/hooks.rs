@@ -85,6 +85,7 @@ async fn start(
         bridge: Vec::new(),
         circuit: None,
         efuse: None,
+        usb_console: false,
     };
     Some((Session::start(cfg).await.unwrap(), sock))
 }

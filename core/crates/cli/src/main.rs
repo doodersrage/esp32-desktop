@@ -268,6 +268,10 @@ struct SessionArgs {
     /// and a stdin line `:set <gpio> <0|1>` drives one. E.g. `--pins 2,4`.
     #[arg(long, value_delimiter = ',')]
     pins: Vec<u8>,
+    /// Also show the C3's USB serial port in the console, for builds whose Serial is
+    /// there (the C3 SuperMini's). lcgamboa's fork only.
+    #[arg(long)]
+    usb_console: bool,
     /// Set by `sim run --circuit`: the circuit for the host to run.
     #[arg(skip)]
     circuit: Option<String>,
@@ -1195,6 +1199,7 @@ async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
             bridge: Vec::new(),
             circuit: None,
             efuse: None,
+            usb_console: false,
         },
         None => {
             let launch = esp32bench_sim::engine::launch(a.chip, a.engine)?;
@@ -1206,9 +1211,13 @@ async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
                      with `esp32bench toolchain install qemu-lcgamboa`)"
                 );
             }
+            if a.usb_console && !launch.usb_console {
+                bail!("--usb-console needs an ESP32-C3 on lcgamboa's QEMU");
+            }
             let mut config = launch.config(a.chip, a.image);
             config.bridge = a.pins;
             config.circuit = a.circuit;
+            config.usb_console = a.usb_console;
             config
         }
     };

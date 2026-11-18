@@ -142,7 +142,15 @@ The first library sweep (`docs/library-sweep.md`) booted every ESP32, S3 and C3 
 - **Fix:** patch 0004 gives the S3 SENS and LEDC ranges as registers that keep what is written, a conversion that completes at once and reads 0 (analog inputs are not simulated), and `DUTY_R` mirroring `DUTY`. Patch 0005 makes the C3's LEDC registers read back the same way, keeping its duty reporting. Recipe 5.
 - **Evidence:** `tests/firmware/arduino-periph` (analogRead, tone, analogWrite) completes on all three chips with the patches (`lcgamboa_*_runs_adc_and_ledc` in `core/crates/sim/tests/boot.rs`); without them the C3 and S3 tests fail.
 
-Still open from the sweep: RMT (WS2812 writes block on all three chips; the ESP32 model exists but the current driver does not complete with it, and the C3 and S3 have none), and the C3's USB-Serial-JTAG console (a stub on both forks, so the C3 SuperMini's output is not seen).
+### The C3's USB serial console (added 2026-11-18)
+
+Boards without a USB-UART chip, like the C3 SuperMini, put Arduino's `Serial` on the C3's USB-Serial-JTAG (USB CDC on boot). Both forks model that peripheral as an empty stub, so 41 library builds ran silently. Patch 0006 models its serial side: EP1 writes go to the device's chardev on `WR_DONE` or when the FIFO fills (raising `SERIAL_IN_EMPTY`), chardev input arrives on EP1 with `SERIAL_OUT_RECV_PKT`, the interrupt is wired to the matrix, and `FRAM_NUM` advances with virtual time like a host's start-of-frame, which ESP-IDF's connection monitor and Arduino's `HWCDC` check before sending. A session that wants it passes `-chardev socket,id=esp32bench-usb,...` and `-global driver=misc.esp32c3.usb_serial_jtag,property=chardev,value=esp32bench-usb`, and the core merges that socket into the console (`esp32bench-sim::uart`), sending input to both ports.
+
+- **A trap on the way:** QEMU never accepted the device's socket. The fork's main loop runs its own GLib context, `g_main_context_default_l`, not the default one, and devices must register chardev handlers on it, as the fork's UARTs do. Found by tracing `tcp_chr_accept`.
+- **Enabled per board, not for every C3 session:** with the USB console wired, about one ESP-IDF boot in five on the C3 lost its UART0 output partway through start-up (the firmware kept running), in `esp32c3_session_bridges_pins`. Without it, 0 in 20. Not explained: blocking vs non-blocking chardev writes, a never-full IN FIFO, `-serial` vs `-chardev` wiring and waiting for the accept before starting the CPU made no difference. So the daemon turns it on only for boards whose builds put `Serial` on USB (`esp32bench_build::serial_on_usb`: the C3 SuperMini), and `sim run` has `--usb-console`. Those sessions were reliable (25 of 25).
+- **Test:** `tests/firmware/hello-arduino` is also built for the C3 with Serial on USB (`hello-arduino-esp32c3-usb.bin`), and `lcgamboa_esp32c3_usb_console_both_ways` sees its output and gets an echo back. Recipe 6.
+
+Still open from the sweep: RMT (WS2812 writes block on all three chips; the ESP32 model exists but the current driver does not complete with it, and the C3 and S3 have none).
 
 ## Open questions
 

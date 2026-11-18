@@ -18,8 +18,6 @@ Boot results:
               parts that the simulation does not have; see `needs`)
   crash       a panic, abort or reboot
   no-image    the build produced no image to boot
-  started (console on USB, not simulated)
-              a board whose Serial is the chip's own USB, which QEMU does not model
 
 Prebuilt projects (firmware ships ready-made) are listed, not built or booted.
 
@@ -40,9 +38,9 @@ from pathlib import Path
 # Boards the plan keeps workbench-only (built, not simulated), whatever their chip.
 WORKBENCH_ONLY = {"xiao-esp32s3", "xiao-esp32c3", "esp32-cam"}
 SIMULATED_CHIPS = {"esp32", "esp32s3", "esp32c3"}
-# Boards whose builds send Serial over the chip's own USB (USB CDC on boot): they have
-# no USB-UART chip. The simulator shows UART0 only, so their output is not seen.
-USB_CONSOLE = {"esp32c3-supermini"}
+# Boards whose builds put Serial on the chip's USB (no USB-UART chip), as the app
+# knows them (esp32bench-build's serial_on_usb): booted with --usb-console.
+USB_SERIAL = {"esp32c3-supermini"}
 CRASH = [
     re.compile(p)
     for p in (
@@ -91,20 +89,22 @@ def boot(cli, project, board, chip, expect):
     # The console ends when stdin closes, so feed it a silent `sleep` and let the
     # timeout stop it. Arguments go through "$@", never into the script text.
     code, out, _ = run(
-        ["bash", "-c", 'sleep "$1" | timeout --signal=INT "$1" "$2" sim run --chip "$3" "$4"',
-         "sweep", str(seconds), cli, chip, str(img)],
+        ["bash", "-c", 'sleep "$1" | timeout --signal=INT "$1" "$2" sim run --chip "$3" "${@:5}" "$4"',
+         "sweep", str(seconds), cli, chip, str(img)] + (["--usb-console"] if board in USB_SERIAL else []),
         seconds + 30,
     )
     text = out.decode("utf-8", "replace")
     crashed = next((c.pattern for c in CRASH if c.search(text)), None)
     resets = len(RESET.findall(text))
+    # The C3's ROM prints its banner on UART0 and on its USB serial port, and the
+    # simulator's console shows both: two reset lines per boot.
+    if chip == "esp32c3":
+        resets = (resets + 1) // 2
     if crashed is None and resets > 1:
         crashed = f"rebooted ({resets} resets)"
     patterns = e.get("patterns", [])
     matched = bool(patterns) and all(re.search(p, text) for p in patterns)
     result = "crash" if crashed else ("pass" if matched else "started")
-    if result == "started" and board in USB_CONSOLE:
-        result = "started (console on USB, not simulated)"
     lines = [l for l in text.splitlines() if l.strip()]
     return {
         "result": result,

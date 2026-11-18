@@ -777,6 +777,8 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
     let launch_parts = launch.hooks && !circuit.parts.is_empty();
     let mut config = launch.config(chip, image);
     config.bridge = pins.clone();
+    // Boards whose Serial is the chip's USB (the C3 SuperMini) need the USB console.
+    config.usb_console = launch.usb_console && esp32bench_build::serial_on_usb(&p.board);
     if launch_parts {
         config.circuit =
             Some(serde_json::to_string(&circuit).map_err(|e| RpcError::internal(e.to_string()))?);

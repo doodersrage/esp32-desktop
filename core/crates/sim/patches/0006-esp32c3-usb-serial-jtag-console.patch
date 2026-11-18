@@ -1,0 +1,276 @@
+esp32c3: the USB-Serial-JTAG's serial port, as a console
+
+Boards without a USB-UART chip, like the ESP32-C3 SuperMini, put Arduino's
+Serial on the C3's USB-Serial-JTAG (USB CDC on boot). lcgamboa's and
+Espressif's models of it are empty stubs, so in the simulator those
+sketches ran silently: 41 of the library's builds.
+
+This models the serial (CDC-ACM) side. Bytes written to EP1 go to the
+device's chardev when the firmware flushes (WR_DONE) or the 64-byte FIFO
+fills (a host drains it without waiting), raising SERIAL_IN_EMPTY; the IN
+side always reports free space. Bytes from the chardev arrive on EP1's OUT
+side with SERIAL_OUT_RECV_PKT. The interrupt (INT_RAW/ST/ENA/CLR) goes to
+the interrupt matrix, and the USB frame counter (FRAM_NUM) advances with
+virtual time, as a host's start-of-frame would, so ESP-IDF's connection
+monitor and Arduino's HWCDC see a host attached. JTAG is not emulated.
+
+The chardev is the device's "chardev" property, set with
+-global driver=misc.esp32c3.usb_serial_jtag,property=chardev,value=<id>.
+Its handlers use the fork's own main context (g_main_context_default_l),
+as the fork's UARTs do: with the default context QEMU never accepted the
+chardev's socket.
+
+esp32bench enables it only for boards whose Serial is on USB: with it
+wired, about one IDF boot in five on the C3 lost its UART0 output partway
+through (cause not found; see docs/qemu-forks.md).
+
+Written for esp32bench (GPL-2.0-or-later), changing Espressif's
+hw/misc/esp32c3_jtag.c and its header (Copyright (c) 2023 Espressif
+Systems (Shanghai) Co. Ltd., GPL-2.0-or-later, notice kept) and
+lcgamboa's hw/riscv/esp32c3_picsimlab.c. Applied by esp32bench
+(core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu at
+885a6e7061fb70fac78a074a719423810bc19a17, after patch 0005.
+
+diff --git a/hw/misc/esp32c3_jtag.c b/hw/misc/esp32c3_jtag.c
+index 82ee697..f36ba76 100644
+--- a/hw/misc/esp32c3_jtag.c
++++ b/hw/misc/esp32c3_jtag.c
+@@ -3,6 +3,11 @@
+  *
+  * Copyright (c) 2023 Espressif Systems (Shanghai) Co. Ltd.
+  *
++ * The serial (CDC-ACM) side added for esp32bench: bytes the firmware sends on the IN
++ * endpoint go to a chardev, and bytes from the chardev arrive on the OUT endpoint.
++ * The USB frame counter advances with virtual time, so firmware sees a host attached
++ * (ESP-IDF's connection monitor and Arduino's HWCDC check it). JTAG is not emulated.
++ *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License version 2 or
+  * (at your option) any later version.
+@@ -11,22 +16,128 @@
+ #include "qemu/log.h"
+ #include "qemu/module.h"
+ #include "qemu/error-report.h"
++#include "qemu/timer.h"
+ #include "hw/hw.h"
++#include "hw/irq.h"
+ #include "hw/sysbus.h"
++#include "hw/qdev-properties-system.h"
+ #include "hw/misc/esp32c3_jtag.h"
+ 
++extern GMainContext *g_main_context_default_l;
++
++#define USJ_EP1             0x00
++#define USJ_EP1_CONF        0x04
++#define USJ_INT_RAW         0x08
++#define USJ_INT_ST          0x0c
++#define USJ_INT_ENA         0x10
++#define USJ_INT_CLR         0x14
++#define USJ_FRAM_NUM        0x24
++
++#define USJ_WR_DONE             (1u << 0)
++#define USJ_IN_EP_DATA_FREE     (1u << 1)
++#define USJ_OUT_EP_DATA_AVAIL   (1u << 2)
++
++#define USJ_INT_SOF             (1u << 1)
++#define USJ_INT_OUT_RECV_PKT    (1u << 2)
++#define USJ_INT_IN_EMPTY        (1u << 3)
++
++static void esp32c3_jtag_update_irq(ESP32C3UsbJtagState *s)
++{
++    qemu_set_irq(s->irq, (s->int_raw & s->int_ena) != 0);
++}
++
++/* The host takes the IN packet: send what is buffered, and the FIFO is empty again. */
++static void esp32c3_jtag_send(ESP32C3UsbJtagState *s)
++{
++    if (s->tx_len && qemu_chr_fe_backend_connected(&s->chr)) {
++        qemu_chr_fe_write_all(&s->chr, s->tx, s->tx_len);
++    }
++    s->tx_len = 0;
++    s->int_raw |= USJ_INT_IN_EMPTY;
++    esp32c3_jtag_update_irq(s);
++}
+ 
+ static uint64_t esp32c3_jtag_read(void *opaque, hwaddr addr, unsigned int size)
+ {
+     ESP32C3UsbJtagState *s = ESP32C3_JTAG(opaque);
+-    (void) s;
+-    return 0;
++    switch (addr) {
++    case USJ_EP1: {
++        uint32_t r = 0;
++        if (s->rx_pos < s->rx_len) {
++            r = s->rx[s->rx_pos++];
++            if (s->rx_pos == s->rx_len) {
++                s->rx_pos = s->rx_len = 0;
++                qemu_chr_fe_accept_input(&s->chr);
++            }
++        }
++        return r;
++    }
++    case USJ_EP1_CONF:
++        return USJ_IN_EP_DATA_FREE
++             | (s->rx_pos < s->rx_len ? USJ_OUT_EP_DATA_AVAIL : 0);
++    case USJ_INT_RAW:
++        return s->int_raw;
++    case USJ_INT_ST:
++        return s->int_raw & s->int_ena;
++    case USJ_INT_ENA:
++        return s->int_ena;
++    case USJ_FRAM_NUM:
++        /* A full-speed host sends a start-of-frame every millisecond. */
++        return qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) & 0x7ff;
++    default:
++        return addr < ESP32C3_JTAG_REGS_SIZE ? s->regs[addr / 4] : 0;
++    }
+ }
+ 
+ static void esp32c3_jtag_write(void *opaque, hwaddr addr, uint64_t value, unsigned int size)
+ {
+     ESP32C3UsbJtagState *s = ESP32C3_JTAG(opaque);
+-    (void) s;
++    switch (addr) {
++    case USJ_EP1:
++        s->tx[s->tx_len++] = value & 0xff;
++        /* A host drains a full FIFO without waiting for WR_DONE, so the IN side
++         * is never full. ESP-IDF mirrors its logs here (the C3's secondary
++         * console) and must never be left waiting for space. */
++        if (s->tx_len == ESP32C3_JTAG_FIFO) {
++            esp32c3_jtag_send(s);
++        }
++        break;
++    case USJ_EP1_CONF:
++        if (value & USJ_WR_DONE) {
++            esp32c3_jtag_send(s);
++        }
++        break;
++    case USJ_INT_ENA:
++        s->int_ena = value;
++        esp32c3_jtag_update_irq(s);
++        break;
++    case USJ_INT_CLR:
++        s->int_raw &= ~value;
++        esp32c3_jtag_update_irq(s);
++        break;
++    default:
++        if (addr < ESP32C3_JTAG_REGS_SIZE) {
++            s->regs[addr / 4] = value;
++        }
++        break;
++    }
++}
++
++static int esp32c3_jtag_can_receive(void *opaque)
++{
++    ESP32C3UsbJtagState *s = ESP32C3_JTAG(opaque);
++    return s->rx_len == 0 ? ESP32C3_JTAG_FIFO : 0;
++}
++
++static void esp32c3_jtag_receive(void *opaque, const uint8_t *buf, int size)
++{
++    ESP32C3UsbJtagState *s = ESP32C3_JTAG(opaque);
++    size = MIN(size, ESP32C3_JTAG_FIFO);
++    memcpy(s->rx, buf, size);
++    s->rx_len = size;
++    s->rx_pos = 0;
++    s->int_raw |= USJ_INT_OUT_RECV_PKT;
++    esp32c3_jtag_update_irq(s);
+ }
+ 
+ static const MemoryRegionOps esp32c3_jtag_ops = {
+@@ -37,14 +148,20 @@ static const MemoryRegionOps esp32c3_jtag_ops = {
+ 
+ static void esp32c3_jtag_reset_hold(Object *obj, ResetType type)
+ {
+-    (void) obj;
+-    (void) type;
++    ESP32C3UsbJtagState *s = ESP32C3_JTAG(obj);
++    memset(s->regs, 0, sizeof(s->regs));
++    s->tx_len = s->rx_len = s->rx_pos = 0;
++    s->int_ena = 0;
++    s->int_raw = USJ_INT_IN_EMPTY;  /* the IN FIFO starts empty */
++    esp32c3_jtag_update_irq(s);
+ }
+ 
+ static void esp32c3_jtag_realize(DeviceState *dev, Error **errp)
+ {
+-    (void) dev;
+-    (void) errp;
++    ESP32C3UsbJtagState *s = ESP32C3_JTAG(dev);
++    /* The fork's main loop runs its own context, as its UARTs use. */
++    qemu_chr_fe_set_handlers(&s->chr, esp32c3_jtag_can_receive, esp32c3_jtag_receive,
++                             NULL, NULL, s, g_main_context_default_l, true);
+ }
+ 
+ static void esp32c3_jtag_init(Object *obj)
+@@ -55,8 +172,14 @@ static void esp32c3_jtag_init(Object *obj)
+     memory_region_init_io(&s->iomem, obj, &esp32c3_jtag_ops, s,
+                           TYPE_ESP32C3_JTAG, ESP32C3_JTAG_REGS_SIZE);
+     sysbus_init_mmio(sbd, &s->iomem);
++    sysbus_init_irq(sbd, &s->irq);
+ }
+ 
++static Property esp32c3_jtag_properties[] = {
++    DEFINE_PROP_CHR("chardev", ESP32C3UsbJtagState, chr),
++    DEFINE_PROP_END_OF_LIST(),
++};
++
+ static void esp32c3_jtag_class_init(ObjectClass *klass, void *data)
+ {
+     DeviceClass *dc = DEVICE_CLASS(klass);
+@@ -64,6 +187,7 @@ static void esp32c3_jtag_class_init(ObjectClass *klass, void *data)
+ 
+     rc->phases.hold = esp32c3_jtag_reset_hold;
+     dc->realize = esp32c3_jtag_realize;
++    device_class_set_props(dc, esp32c3_jtag_properties);
+ }
+ 
+ static const TypeInfo esp32c3_jtag_info = {
+diff --git a/hw/riscv/esp32c3_picsimlab.c b/hw/riscv/esp32c3_picsimlab.c
+index 913143a..725b4ac 100644
+--- a/hw/riscv/esp32c3_picsimlab.c
++++ b/hw/riscv/esp32c3_picsimlab.c
+@@ -870,6 +870,9 @@ static void esp32c3_machine_init(MachineState *machine)
+         sysbus_realize(SYS_BUS_DEVICE(&ms->jtag), &error_fatal);
+         MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ms->jtag), 0);
+         memory_region_add_subregion_overlap(sys_mem, DR_REG_USB_SERIAL_JTAG_BASE, mr, 0);
++        /* esp32bench: its interrupt, for the serial side's IN-empty and OUT events */
++        sysbus_connect_irq(SYS_BUS_DEVICE(&ms->jtag), 0,
++                           qdev_get_gpio_in(intmatrix_dev, ETS_USB_SERIAL_JTAG_INTR_SOURCE));
+     }
+ 
+     /* IOMUX realization */
+diff --git a/include/hw/misc/esp32c3_jtag.h b/include/hw/misc/esp32c3_jtag.h
+index 8ac6ebb..3f7d321 100644
+--- a/include/hw/misc/esp32c3_jtag.h
++++ b/include/hw/misc/esp32c3_jtag.h
+@@ -12,15 +12,28 @@
+ #include "hw/hw.h"
+ #include "hw/sysbus.h"
+ #include "hw/registerfields.h"
++#include "chardev/char-fe.h"
+ 
+ #define TYPE_ESP32C3_JTAG "misc.esp32c3.usb_serial_jtag"
+ #define ESP32C3_JTAG(obj) OBJECT_CHECK(ESP32C3UsbJtagState, (obj), TYPE_ESP32C3_JTAG)
+ 
+ #define ESP32C3_JTAG_REGS_SIZE (0x84)
++#define ESP32C3_JTAG_FIFO      64
+ 
+ 
+ typedef struct ESP32C3UsbJtagState {
+     SysBusDevice parent_object;
+     MemoryRegion iomem;
++    /* esp32bench: the CDC-ACM serial side */
++    CharBackend chr;
++    qemu_irq irq;
++    uint32_t int_raw;
++    uint32_t int_ena;
++    uint32_t regs[ESP32C3_JTAG_REGS_SIZE / 4];
++    uint8_t tx[ESP32C3_JTAG_FIFO];
++    uint32_t tx_len;
++    uint8_t rx[ESP32C3_JTAG_FIFO];
++    uint32_t rx_len;
++    uint32_t rx_pos;
+ } ESP32C3UsbJtagState;
+ 

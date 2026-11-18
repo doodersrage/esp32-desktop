@@ -53,6 +53,9 @@ pub struct SessionConfig {
     /// An eFuse image for the chip, copied into the session's directory (QEMU writes
     /// to it) and given to the machine's eFuse device. None: the machine's defaults.
     pub efuse: Option<Vec<u8>>,
+    /// Wire the C3's USB-Serial-JTAG serial port to the console (lcgamboa's fork, patch
+    /// 0006). Boards without a USB-UART chip, like the C3 SuperMini, print there.
+    pub usb_console: bool,
 }
 
 /// Files a session uses, all inside one private runtime directory.
@@ -65,6 +68,7 @@ pub struct SessionPaths {
     pub qmp: PathBuf,
     pub stderr: PathBuf,
     pub efuse: PathBuf,
+    pub usb: PathBuf,
 }
 
 impl SessionPaths {
@@ -76,6 +80,7 @@ impl SessionPaths {
             qmp: dir.join("qmp.sock"),
             stderr: dir.join("qemu.stderr"),
             efuse: dir.join("efuse.bin"),
+            usb: dir.join("usb.sock"),
             dir,
         }
     }
@@ -133,6 +138,18 @@ pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
             drive,
             "-global".into(),
             format!("driver={device},property=drive,value=efuse").into(),
+        ]);
+    }
+    if cfg.usb_console {
+        // The USB-Serial-JTAG's serial port (patch 0006) on its own socket, by name.
+        let mut chardev = OsString::from("socket,id=esp32bench-usb,path=");
+        chardev.push(&paths.usb);
+        chardev.push(",server=on,wait=off");
+        args.extend([
+            "-chardev".into(),
+            chardev,
+            "-global".into(),
+            "driver=misc.esp32c3.usb_serial_jtag,property=chardev,value=esp32bench-usb".into(),
         ]);
     }
     args.extend(cfg.extra_args.iter().cloned());
@@ -194,7 +211,8 @@ impl Session {
         }
         let mut child = cmd.spawn()?;
 
-        let (qmp, uart) = match connect(&mut child, &paths, cfg.start_paused).await {
+        let (qmp, uart) = match connect(&mut child, &paths, cfg.start_paused, cfg.usb_console).await
+        {
             Ok(c) => c,
             // A socket error during start-up usually means QEMU died; report why.
             Err(e) => return Err(exit_error(&mut child, &paths.stderr).await.unwrap_or(e)),
@@ -330,11 +348,16 @@ async fn connect(
     child: &mut Child,
     paths: &SessionPaths,
     start_paused: bool,
+    usb_console: bool,
 ) -> Result<(Qmp, Uart), Error> {
     let qmp_stream = connect_when_ready(child, &paths.qmp, &paths.stderr).await?;
     let mut qmp = Qmp::handshake(qmp_stream).await?;
     let uart_stream = connect_when_ready(child, &paths.uart, &paths.stderr).await?;
-    let uart = Uart::new(uart_stream);
+    let mut uart = Uart::new(uart_stream);
+    if usb_console {
+        let usb = connect_when_ready(child, &paths.usb, &paths.stderr).await?;
+        uart = uart.with_usb(usb);
+    }
     if !start_paused {
         qmp.execute("cont", None).await?;
     }
@@ -414,6 +437,7 @@ mod tests {
             bridge: Vec::new(),
             circuit: None,
             efuse: None,
+            usb_console: false,
         }
     }
 
@@ -467,6 +491,31 @@ mod tests {
             !strs(qemu_args(&c, &paths))
                 .iter()
                 .any(|a| a.contains("efuse"))
+        );
+    }
+
+    #[test]
+    fn usb_console_is_a_named_chardev_on_the_device() {
+        let paths = SessionPaths::in_dir("/run/s".into());
+        let mut c = cfg(Chip::Esp32c3, None);
+        c.usb_console = true;
+        let args = strs(qemu_args(&c, &paths));
+        let at = args.iter().position(|a| a == "-chardev").unwrap();
+        assert_eq!(
+            args[at + 1],
+            "socket,id=esp32bench-usb,path=/run/s/usb.sock,server=on,wait=off"
+        );
+        assert_eq!(
+            args[at + 3],
+            "driver=misc.esp32c3.usb_serial_jtag,property=chardev,value=esp32bench-usb"
+        );
+        // UART0 stays the only -serial.
+        assert_eq!(args.iter().filter(|a| *a == "-serial").count(), 1);
+        c.usb_console = false;
+        assert!(
+            !strs(qemu_args(&c, &paths))
+                .iter()
+                .any(|a| a.contains("usb.sock"))
         );
     }
 

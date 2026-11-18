@@ -84,6 +84,13 @@ pub struct Plan {
 }
 
 /// Ids from downloaded data become path components; allow only `[a-z0-9-]`.
+/// Whether builds for `board` put Arduino's `Serial` on the chip's USB-Serial-JTAG
+/// (USB CDC on boot) rather than UART0: boards with no USB-UART chip. The simulator
+/// then needs the USB console (lcgamboa's fork, patch 0006).
+pub fn serial_on_usb(board: &str) -> bool {
+    board == "esp32c3-supermini"
+}
+
 pub fn safe_id(id: &str) -> Result<(), Error> {
     let ok = !id.is_empty()
         && id.len() <= 64
@@ -456,6 +463,14 @@ mod tests {
             assert!(safe_id(bad).is_err(), "{bad:?} accepted");
         }
         safe_id("i2c-scan").unwrap();
+    }
+
+    #[test]
+    fn only_boards_without_a_usb_uart_put_serial_on_usb() {
+        assert!(serial_on_usb("esp32c3-supermini"));
+        for b in ["esp32", "esp32-doit", "esp32s3", "esp32c3"] {
+            assert!(!serial_on_usb(b), "{b}");
+        }
     }
 
     #[test]
