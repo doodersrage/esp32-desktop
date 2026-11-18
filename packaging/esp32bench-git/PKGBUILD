@@ -2,18 +2,19 @@
 
 pkgname=esp32bench-git
 _repo=esp32-desktop
-pkgver=r52.2c85f88
+pkgver=r53.11ba4a2
 pkgrel=1
 pkgdesc='ESP32 workbench and simulator: build, flash, monitor and simulate ESP32 projects'
 arch=('x86_64')
 url='https://github.com/doodersrage/esp32-desktop'
 license=('GPL-2.0-or-later')
 depends=(
-  'gcc-libs'
   'glibc'
+  'libgcc'
+  'libstdc++'
   'hicolor-icon-theme'
   'qt6-base'
-  'qt6-svg'        # the app icon
+  'qt6-svg'        # the app icon: a plugin Qt loads at run time, so namcap cannot see it
   'systemd-libs'   # libudev: board detection and hotplug
 )
 makedepends=('cargo' 'cmake' 'git' 'ninja')
