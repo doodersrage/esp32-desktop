@@ -63,7 +63,7 @@ jobs:
     container: archlinux:latest
     steps:
       - name: Install build dependencies
-        run: pacman -Syu --noconfirm --needed git base-devel cmake ninja qt6-base qt6-tools
+        run: pacman -Syu --noconfirm --needed git base-devel cmake ninja qt6-base qt6-tools qt6-declarative
 
       - uses: actions/checkout@v4
 
@@ -94,6 +94,7 @@ jobs:
 
       # A UI string added or changed without refreshing ui/translations/ would go
       # untranslated with the tests still passing: the .ts files must match the sources.
+      # (lupdate needs libQt6Qml, from qt6-declarative, installed above.)
       - name: Translations up to date
         if: steps.has.outputs.ui == 'true'
         run: |
