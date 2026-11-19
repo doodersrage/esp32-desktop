@@ -12,6 +12,7 @@
 #include "DebugPanel.h"
 #include "DisplayPanel.h"
 #include "PinsPanel.h"
+#include "TracePanel.h"
 #include "CircuitPanel.h"
 
 #include <algorithm>
@@ -84,6 +85,22 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     tabifyDockWidget(m_serialDock, m_simDock);
     connect(core, &CoreConnection::simStarted, this, [this] {
         m_simDock->show();
+        m_simDock->raise();
+    });
+
+    // The pins' signal trace, beside the simulator's console; there (not raised) when
+    // a simulation has pin access.
+    m_traceDock = new QDockWidget(tr("Trace"), this);
+    m_traceDock->setObjectName(u"traceDock"_s);
+    m_trace = new TracePanel(core, m_traceDock);
+    m_traceDock->setWidget(m_trace);
+    addDockWidget(Qt::BottomDockWidgetArea, m_traceDock);
+    tabifyDockWidget(m_simDock, m_traceDock);
+    m_simDock->raise();
+    m_traceDock->hide();
+    connect(core, &CoreConnection::simStarted, this, [this] {
+        if (!m_core->simPins().isEmpty())
+            m_traceDock->show();
         m_simDock->raise();
     });
 
@@ -294,6 +311,7 @@ void MainWindow::buildMenus()
     view->addAction(m_buildDock->toggleViewAction());
     view->addAction(m_serialDock->toggleViewAction());
     view->addAction(m_simDock->toggleViewAction());
+    view->addAction(m_traceDock->toggleViewAction());
     view->addAction(m_debugDock->toggleViewAction());
     view->addAction(m_displayDock->toggleViewAction());
     view->addAction(m_pinsDock->toggleViewAction());

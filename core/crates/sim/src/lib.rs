@@ -16,6 +16,7 @@ pub mod network;
 pub mod pin;
 pub mod qmp;
 pub mod session;
+pub mod trace;
 pub mod uart;
 
 pub use chip::{Arch, Chip};

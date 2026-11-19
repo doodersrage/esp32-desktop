@@ -2,8 +2,10 @@
 //! and driving them as inputs.
 //!
 //! Line protocol (see `crates/qemu-host/src/main.rs`): the host sends
-//! `out <gpio> <0|1>` when the firmware drives a pin and `dir <gpio> <0|1>` when a
-//! pin's output driver is switched on (1) or off (0); it also sends `i2c ...` lines,
+//! `out <gpio> <0|1> [<ns>]` when the firmware drives a pin, `in <gpio> <0|1> [<ns>]`
+//! when it has driven an input, with the simulation's time in nanoseconds, and
+//! `dir <gpio> <0|1>` when a pin's output driver is switched on (1) or off (0); it
+//! also sends `i2c ...` lines,
 //! ignored here. With a circuit it also sends `part <id> <JSON state>`, `picture <id>
 //! <width> <height> <base64 pixels>` and `parterror <id> <message>`. We send
 //! `set <gpio> <0|1>` to drive an input and `control <id> <name> <JSON value>` to work
@@ -24,8 +26,19 @@ pub const MAX_OUTPUT_GPIO: u8 = 31;
 /// What the host reports: pins, and the parts of a circuit.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PinEvent {
-    /// The firmware drove `gpio` to `level`.
-    Level { gpio: u8, level: bool },
+    /// The firmware drove `gpio` to `level`, at `time_ns` of simulated time (None from
+    /// a host that does not say).
+    Level {
+        gpio: u8,
+        level: bool,
+        time_ns: Option<u64>,
+    },
+    /// The host drove input `gpio` to `level` (for `set` or a part), at `time_ns`.
+    Input {
+        gpio: u8,
+        level: bool,
+        time_ns: Option<u64>,
+    },
     /// The firmware switched `gpio`'s output driver on (an output) or off (an input).
     Direction { gpio: u8, output: bool },
     /// A part's whole state changed.
@@ -86,11 +99,25 @@ pub fn parse_line(line: &str) -> Option<PinEvent> {
         "1" => true,
         _ => return None,
     };
+    let time_ns = match (kind, it.next()) {
+        (_, None) => None,
+        ("out" | "in", Some(t)) => Some(t.parse().ok()?),
+        _ => return None,
+    };
     if it.next().is_some() {
         return None;
     }
     match kind {
-        "out" => Some(PinEvent::Level { gpio, level: value }),
+        "out" => Some(PinEvent::Level {
+            gpio,
+            level: value,
+            time_ns,
+        }),
+        "in" => Some(PinEvent::Input {
+            gpio,
+            level: value,
+            time_ns,
+        }),
         "dir" => Some(PinEvent::Direction {
             gpio,
             output: value,
@@ -167,14 +194,24 @@ mod tests {
             parse_line("out 2 1"),
             Some(PinEvent::Level {
                 gpio: 2,
-                level: true
+                level: true,
+                time_ns: None
             })
         );
         assert_eq!(
-            parse_line("out 2 0"),
+            parse_line("out 2 0 1500"),
             Some(PinEvent::Level {
                 gpio: 2,
-                level: false
+                level: false,
+                time_ns: Some(1500)
+            })
+        );
+        assert_eq!(
+            parse_line("in 4 1 2000000"),
+            Some(PinEvent::Input {
+                gpio: 4,
+                level: true,
+                time_ns: Some(2_000_000)
             })
         );
         assert_eq!(
@@ -196,7 +233,9 @@ mod tests {
             "out 2",
             "out x 1",
             "out 2 7",
-            "out 2 1 9",
+            "out 2 1 x",
+            "out 2 1 9 9",
+            "dir 4 1 9",
             "",
             "set 4 1",
             "picture oled 2 2 AAA=",

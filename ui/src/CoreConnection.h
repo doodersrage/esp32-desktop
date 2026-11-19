@@ -129,6 +129,12 @@ public:
     // no pin access. setSimPin drives one of them.
     QList<int> simPins() const { return m_simPins; }
     void setSimPin(int gpio, bool level);
+    // sim.traceSave: write the signal trace of the running simulation, or of the last
+    // one if none runs, to `path` as VCD. traceSaved or requestFailed follows.
+    void saveTrace(const QString &path);
+    // Whether there is a simulation whose trace saveTrace can write: running or the
+    // last one, with pin access.
+    bool canSaveTrace() const { return m_traceSub > 0; }
     // Whether the running simulation's virtual parts work (sim.start's partsActive).
     bool simPartsActive() const { return m_simSub > 0 && m_simPartsActive; }
     // The running simulation's simulated Wi-Fi network (sim.start's network: ssid,
@@ -205,6 +211,10 @@ signals:
     void simFrame(const QImage &image);
     // sim.pins: pins that changed, each {gpio, level?, output?}.
     void simPinsChanged(const QJsonArray &pins);
+    // sim.trace: every pin change since the last, in order, each {t (ns), gpio, level,
+    // input?}; `skipped` more did not fit in the event.
+    void simTrace(const QJsonArray &edges, qint64 skipped);
+    void traceSaved(const QString &path, qint64 edges, qint64 dropped);
     // sim.parts: parts whose state changed, each {id, on}.
     void simPartsChanged(const QJsonArray &parts);
     // sim.partPicture: a display part's picture, lit pixels white on black.
@@ -262,6 +272,9 @@ private:
     qint64 m_simSub = 0; // running sim.start subscription, -1 while starting, or 0
     bool m_debugging = false;
     QList<int> m_simPins;
+    // The simulation whose trace saveTrace writes: the running one, else the last
+    // one with pin access; 0 for none.
+    qint64 m_traceSub = 0;
     bool m_simPartsActive = false;
     QJsonObject m_simNetwork;
     bool m_simIcount = false;

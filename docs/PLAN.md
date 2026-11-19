@@ -128,7 +128,7 @@ Phase 4 builds on lcgamboa's library hooks, which phase 0 proved for GPIO and I2
 
 - **First-run setup:** toolchains are several gigabytes. A setup wizard detects what is installed, shows download sizes, and supports several IDF and Arduino core versions side by side.
 - **Translations:** the site ships in five languages, and so does the app (2026-11-19): English, Spanish, German, French and Brazilian Portuguese, in `ui/translations/` (Qt Linguist files compiled into the binary, loaded for the desktop's language). The core's own messages (errors, install hints, part names) are still English.
-- **Signal trace view:** with GPIO hooks, a logic-analyzer panel for simulated pins is cheap to add. Export VCD so traces open in PulseView.
+- **Signal trace view:** done 2026-11-19: a Trace dock draws the bridged pins in simulated time (QEMU's virtual clock), and the core exports the trace as VCD for PulseView (`sim.traceSave`, `sim run --trace`).
 - **Part model format:** decided: a JSON description plus a Rhai script per model ([parts.md](parts.md)).
 - **Project format:** a plain, git-friendly on-disk layout for local projects, compatible with the site's manifest.
 - **Repo layout:** a separate repo from the site, with the shared schema published as its own package.

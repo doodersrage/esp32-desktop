@@ -16,6 +16,7 @@ class SimulatorPanel;
 class DebugPanel;
 class DisplayPanel;
 class PinsPanel;
+class TracePanel;
 class CircuitPanel;
 class QDockWidget;
 class QLabel;
@@ -38,6 +39,7 @@ public:
     DebugPanel *debugger() const { return m_debugger; }
     DisplayPanel *display() const { return m_display; }
     PinsPanel *pins() const { return m_pins; }
+    TracePanel *trace() const { return m_trace; }
     CircuitPanel *circuit() const { return m_circuit; }
     void showSetup();
     // Open an esp32bench:// link: select the project (and board) it names. It is
@@ -84,6 +86,8 @@ private:
     PinsPanel *m_pins = nullptr;
     QDockWidget *m_circuitDock = nullptr;
     CircuitPanel *m_circuit = nullptr;
+    QDockWidget *m_traceDock = nullptr;
+    TracePanel *m_trace = nullptr;
     QString m_autoStartError;
     SimulatorPanel *m_sim = nullptr;
     BoardInfoDialog *m_boardInfo = nullptr;

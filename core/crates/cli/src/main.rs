@@ -527,6 +527,11 @@ enum SimCmd {
         /// `:release <id>` and `:control <id> <name> <value>` work them.
         #[arg(long)]
         circuit: Option<PathBuf>,
+        /// Record the bridged pins' changes (`--pins`, `--circuit`) with their
+        /// simulated times, and write them here as a VCD file when the run ends; it
+        /// opens in PulseView or GTKWave.
+        #[arg(long)]
+        trace: Option<PathBuf>,
     },
     /// Boot an image and pass if a marker appears on UART0 before the timeout.
     BootTest {
@@ -961,7 +966,14 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             paused,
             frames,
             circuit,
+            trace,
         }) => {
+            if trace.is_some() && session.pins.is_empty() && circuit.is_none() {
+                bail!("--trace records bridged pins: add --pins or --circuit");
+            }
+            let mut recorder = trace
+                .as_ref()
+                .map(|_| esp32bench_sim::trace::Trace::default());
             let circuit = match &circuit {
                 Some(path) => {
                     let c: esp32bench_circuit::Circuit =
@@ -1025,8 +1037,14 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                             Some(g) => g.next_event().await,
                             None => std::future::pending().await,
                         }
-                    } => match ev? {
-                        Some(esp32bench_sim::gpio::PinEvent::Level { gpio, level }) => {
+                    } => match ev?.inspect(|ev| {
+                        if let Some(r) = recorder.as_mut() {
+                            r.record(ev);
+                        }
+                    }) {
+                        // An input the host drove: only for the trace.
+                        Some(esp32bench_sim::gpio::PinEvent::Input { .. }) => {}
+                        Some(esp32bench_sim::gpio::PinEvent::Level { gpio, level, .. }) => {
                             eprintln!("[gpio {gpio} = {}]", u8::from(level));
                         }
                         Some(esp32bench_sim::gpio::PinEvent::Direction { gpio, output }) => {
@@ -1118,6 +1136,15 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 }
             }
             s.shutdown().await?;
+            if let (Some(path), Some(r)) = (&trace, &recorder) {
+                std::fs::write(path, r.to_vcd(env!("CARGO_PKG_VERSION")))
+                    .with_context(|| format!("writing {}", path.display()))?;
+                eprintln!(
+                    "trace: {} pin changes written to {}",
+                    r.len(),
+                    path.display()
+                );
+            }
         }
         Cmd::Sim(SimCmd::BootTest {
             session,

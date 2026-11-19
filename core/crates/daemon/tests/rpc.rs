@@ -1815,10 +1815,11 @@ async fn sim_bridges_the_projects_pins() {
     }
     assert_eq!(r["pins"], json!([2, 4]));
 
-    // GPIO 2 toggles: seen high and low, as an output.
+    // GPIO 2 toggles: seen high and low, as an output, and in the trace with times.
     let (mut high, mut low) = (false, false);
     let mut text = String::new();
-    while !(high && low) {
+    let mut traced: Vec<Value> = Vec::new();
+    while !(high && low && traced.iter().filter(|e| e["gpio"] == 2).count() >= 2) {
         let n = tokio::time::timeout(std::time::Duration::from_secs(20), c.next_notification())
             .await
             .expect("GPIO 2 did not toggle")
@@ -1827,6 +1828,9 @@ async fn sim_bridges_the_projects_pins() {
         assert_valid(&method_def(method)["params"], &n["params"], method);
         if method == "sim.output" {
             text.push_str(n["params"]["text"].as_str().unwrap());
+        }
+        if method == "sim.trace" {
+            traced.extend(n["params"]["edges"].as_array().unwrap().iter().cloned());
         }
         if method != "sim.pins" {
             continue;
@@ -1847,7 +1851,8 @@ async fn sim_bridges_the_projects_pins() {
     )
     .await
     .unwrap();
-    while !text.contains("esp32bench-gpio in 4=1") {
+    let input_traced = |t: &[Value]| t.iter().any(|e| e["gpio"] == 4 && e["input"] == true);
+    while !(text.contains("esp32bench-gpio in 4=1") && input_traced(&traced)) {
         let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
             .await
             .unwrap_or_else(|_| panic!("firmware never read GPIO 4 high: {text}"))
@@ -1855,7 +1860,12 @@ async fn sim_bridges_the_projects_pins() {
         if n["method"] == "sim.output" {
             text.push_str(n["params"]["text"].as_str().unwrap());
         }
+        if n["method"] == "sim.trace" {
+            traced.extend(n["params"]["edges"].as_array().unwrap().iter().cloned());
+        }
     }
+    let times: Vec<u64> = traced.iter().map(|e| e["t"].as_u64().unwrap()).collect();
+    assert!(times.windows(2).all(|w| w[0] <= w[1]), "{times:?}");
     // Only the project's pins.
     match c
         .call(
@@ -1870,6 +1880,53 @@ async fn sim_bridges_the_projects_pins() {
     c.call("core.unsubscribe", json!({ "subscription": sub }))
         .await
         .unwrap();
+    // The trace is still there once the simulation has ended.
+    let vcd = d.path().join("blink.vcd");
+    let params = json!({ "subscription": sub, "path": vcd });
+    assert_valid(
+        &method_def("sim.traceSave")["params"],
+        &params,
+        "sim.traceSave params",
+    );
+    let r = c.call("sim.traceSave", params).await.unwrap();
+    assert_valid(
+        &method_def("sim.traceSave")["result"],
+        &r,
+        "sim.traceSave result",
+    );
+    assert!(r["edges"].as_u64().unwrap() >= 3, "{r}");
+    let text = std::fs::read_to_string(&vcd).unwrap();
+    assert!(text.contains("$timescale 1 ns $end"), "{text}");
+    assert!(
+        text.contains(" GPIO2 $end") && text.contains(" GPIO4 $end"),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn sim_trace_save_checks_its_arguments() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    match c
+        .call(
+            "sim.traceSave",
+            json!({ "subscription": 99, "path": "/tmp/x.vcd" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("saved the trace of no simulation: {other:?}"),
+    }
+    match c
+        .call(
+            "sim.traceSave",
+            json!({ "subscription": 99, "path": "x.vcd" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("accepted a relative path: {other:?}"),
+    }
 }
 
 #[tokio::test]

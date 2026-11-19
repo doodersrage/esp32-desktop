@@ -23,8 +23,11 @@
 //!
 //! Socket protocol, one line per message:
 //!
-//! - host to client: `out <gpio> <0|1>` when the firmware drives a pin,
-//!   `dir <gpio> <value>` when a pin's direction changes, and
+//! - host to client: `out <gpio> <0|1> <ns>` when the firmware drives a pin,
+//!   `in <gpio> <0|1> <ns>` when the host has driven an input (for `set` or a part),
+//!   where `<ns>` is the simulation's time in nanoseconds (QEMU's virtual clock;
+//!   left out if the library has none), `dir <gpio> <value>` when a pin's direction
+//!   changes, and
 //!   `i2c <bus> <addr> <ack|nack>` when the firmware starts a transfer.
 //!   With a circuit: `part <id> <state as JSON>`, `picture <id> <width> <height>
 //!   <base64, one byte per pixel>` (at most 20 a second per part) and
@@ -66,6 +69,7 @@ type SetApinFn = unsafe extern "C" fn(c_int, c_int);
 type LockFn = unsafe extern "C" fn(*const c_char, c_int);
 type UnlockFn = unsafe extern "C" fn();
 type InternalsFn = unsafe extern "C" fn(c_int) -> *mut u32;
+type ClockFn = unsafe extern "C" fn(c_int) -> i64;
 
 /// Functions resolved from the QEMU library.
 struct Qemu {
@@ -78,6 +82,9 @@ struct Qemu {
     bql_lock: LockFn,
     bql_unlock: UnlockFn,
     internals: InternalsFn,
+    /// `qemu_clock_get_ns`, for the simulated time of pin changes; None if the
+    /// library does not export it.
+    clock: Option<ClockFn>,
 }
 
 /// Messages to the bridge's worker thread: lines from QEMU's callbacks, and effects
@@ -101,6 +108,23 @@ static PARTS: OnceLock<Mutex<esp32bench_circuit::Runtime>> = OnceLock::new();
 /// Host pin index (1-based, as in the pin map) to GPIO number.
 static GPIOS: OnceLock<Vec<i16>> = OnceLock::new();
 
+/// QEMU's clock read for pin change times (see `virtual_ns`).
+static CLOCK: OnceLock<ClockFn> = OnceLock::new();
+/// `QEMU_CLOCK_VIRTUAL` in include/qemu/timer.h: the guest's time, which with
+/// -icount counts instructions.
+const QEMU_CLOCK_VIRTUAL: c_int = 1;
+
+/// The simulation's time in nanoseconds, as " <ns>" to end a pin line; empty when the
+/// library has no clock to read.
+fn virtual_ns() -> String {
+    match CLOCK.get() {
+        // SAFETY: the library's own function, taking a QEMUClockType; reading the
+        // virtual clock takes no lock (it is a seqlock read in cpus.c).
+        Some(f) => format!(" {}", unsafe { f(QEMU_CLOCK_VIRTUAL) }.max(0)),
+        None => String::new(),
+    }
+}
+
 fn gpio_for(index: c_int) -> Option<i16> {
     let i = usize::try_from(index).ok()?.checked_sub(1)?;
     GPIOS.get()?.get(i).copied()
@@ -120,7 +144,11 @@ fn parts_lock() -> Option<std::sync::MutexGuard<'static, esp32bench_circuit::Run
 
 extern "C" fn on_write_pin(pin: c_int, value: c_int) {
     if let Some(gpio) = gpio_for(pin) {
-        emit(format!("out {gpio} {}", i32::from(value != 0)));
+        emit(format!(
+            "out {gpio} {}{}",
+            i32::from(value != 0),
+            virtual_ns()
+        ));
     }
 }
 
@@ -485,6 +513,9 @@ fn run() -> Result<c_int, String> {
 
     let qemu = load(&lib)?;
     let _ = INTERNALS.set(qemu.internals);
+    if let Some(clock) = qemu.clock {
+        let _ = CLOCK.set(clock);
+    }
     let _ = RISCV.set(lib.to_string_lossy().contains("riscv32"));
     let _ = RMT_SIGNAL0.set(if lib.to_string_lossy().contains("riscv32") {
         51
@@ -660,7 +691,7 @@ impl Worker {
 
     /// Drive a bridged GPIO as an input. This is not a QEMU thread, so take the lock:
     /// qemu_picsimlab_set_pin does not.
-    fn drive(&self, gpio: i16, level: bool) {
+    fn drive(&mut self, gpio: i16, level: bool) {
         let Some(index) = GPIOS.get().and_then(|g| g.iter().position(|x| *x == gpio)) else {
             eprintln!("esp32bench-qemu-host: GPIO {gpio} is not bridged");
             return;
@@ -671,11 +702,15 @@ impl Worker {
         };
         // SAFETY: these are the library's own functions, called with the lock held
         // around the IRQ change as QEMU requires for non-QEMU threads.
-        unsafe {
+        let time = unsafe {
             (self.bql_lock)(c"esp32bench-qemu-host".as_ptr(), 0);
             (self.set_pin)(index, c_int::from(level));
+            let t = virtual_ns();
             (self.bql_unlock)();
-        }
+            t
+        };
+        // For the core's signal trace: the level the pin was driven to, and when.
+        self.send(&format!("in {gpio} {}{time}", u8::from(level)));
     }
 
     fn apply(&mut self, effects: Vec<esp32bench_circuit::Effect>) -> bool {
@@ -882,6 +917,9 @@ fn load(path: &std::ffi::OsStr) -> Result<Qemu, String> {
             internals: std::mem::transmute::<*mut c_void, InternalsFn>(sym(
                 c"qemu_picsimlab_get_internals",
             )?),
+            clock: sym(c"qemu_clock_get_ns")
+                .ok()
+                .map(|p| std::mem::transmute::<*mut c_void, ClockFn>(p)),
         })
     }
 }

@@ -1,0 +1,67 @@
+{
+  "method": "sim.traceSave",
+  "description": "Write a simulation's signal trace to a file as VCD (IEEE 1364 value change dump; PulseView and GTKWave open it): every change of its bridged pins (sim.start's `pins`) with its simulated time in nanoseconds, from QEMU's virtual clock, both the firmware's outputs and the inputs parts or sim.setPin drove. Works while the simulation runs and after it ends, for the latest few simulations on this connection. The core keeps the latest million changes; older ones are dropped and counted in `dropped`. Simulations without pin access (the S3, Espressif's QEMU) record nothing.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Absolute path of the file to write; replaced if it exists."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "edges",
+      "dropped"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "edges": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Pin changes written."
+      },
+      "dropped": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Earlier changes no longer kept."
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "path": "/home/user/blink.vcd"
+      },
+      "result": {
+        "path": "/home/user/blink.vcd",
+        "edges": 120,
+        "dropped": 0
+      }
+    }
+  ]
+}

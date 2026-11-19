@@ -728,6 +728,10 @@
         <translation>Simulateur</translation>
     </message>
     <message>
+        <source>Trace</source>
+        <translation>Chronogramme</translation>
+    </message>
+    <message>
         <source>Display</source>
         <translation>Écran</translation>
     </message>
@@ -1425,6 +1429,112 @@ SHA-256 du code : %2</translation>
     <message>
         <source>Simulator error: %1</source>
         <translation>Erreur du simulateur : %1</translation>
+    </message>
+</context>
+<context>
+    <name>TracePanel</name>
+    <message>
+        <source>Hold</source>
+        <translation>Figer</translation>
+    </message>
+    <message>
+        <source>Save VCD…</source>
+        <translation>Enregistrer en VCD…</translation>
+    </message>
+    <message>
+        <source>100 µs</source>
+        <translation>100 µs</translation>
+    </message>
+    <message>
+        <source>1 ms</source>
+        <translation>1 ms</translation>
+    </message>
+    <message>
+        <source>10 ms</source>
+        <translation>10 ms</translation>
+    </message>
+    <message>
+        <source>100 ms</source>
+        <translation>100 ms</translation>
+    </message>
+    <message>
+        <source>1 s</source>
+        <translation>1 s</translation>
+    </message>
+    <message>
+        <source>10 s</source>
+        <translation>10 s</translation>
+    </message>
+    <message>
+        <source>How much simulated time the trace shows</source>
+        <translation>Durée de temps simulé affichée</translation>
+    </message>
+    <message>
+        <source>Stop following new changes, to look at the picture</source>
+        <translation>Ne plus suivre les nouveaux changements, pour examiner l’image</translation>
+    </message>
+    <message>
+        <source>Write every recorded pin change to a VCD file, for PulseView or GTKWave</source>
+        <translation>Écrire chaque changement de broche enregistré dans un fichier VCD, pour PulseView ou GTKWave</translation>
+    </message>
+    <message>
+        <source>Saved %1 pin changes to %2 (the earliest %3 were no longer kept).</source>
+        <translation>%1 changements de broche enregistrés dans %2 (les %3 plus anciens n’étaient plus conservés).</translation>
+    </message>
+    <message>
+        <source>Saved %1 pin changes to %2.</source>
+        <translation>%1 changements de broche enregistrés dans %2.</translation>
+    </message>
+    <message>
+        <source>Could not save the trace: %1</source>
+        <translation>Impossible d’enregistrer le chronogramme : %1</translation>
+    </message>
+    <message>
+        <source>No simulation. Pin changes of a simulation with pin access are traced here.</source>
+        <translation>Aucune simulation. Les changements des broches d’une simulation avec accès aux broches s’affichent ici.</translation>
+    </message>
+    <message>
+        <source>No pin access in this simulation, so there is nothing to trace.</source>
+        <translation>Cette simulation n’a pas accès aux broches : il n’y a rien à tracer.</translation>
+    </message>
+    <message>
+        <source>Tracing in simulated time.</source>
+        <translation>Tracé en temps simulé.</translation>
+    </message>
+    <message>
+        <source>The simulation has stopped; its trace can still be saved.</source>
+        <translation>La simulation est arrêtée ; son chronogramme peut encore être enregistré.</translation>
+    </message>
+    <message>
+        <source>Save trace</source>
+        <translation>Enregistrer le chronogramme</translation>
+    </message>
+    <message>
+        <source>Value change dumps (*.vcd)</source>
+        <translation>Fichiers VCD (*.vcd)</translation>
+    </message>
+    <message>
+        <source>Saving…</source>
+        <translation>Enregistrement…</translation>
+    </message>
+</context>
+<context>
+    <name>TraceView</name>
+    <message>
+        <source>%1 s</source>
+        <translation>%1 s</translation>
+    </message>
+    <message>
+        <source>%1 ms</source>
+        <translation>%1 ms</translation>
+    </message>
+    <message>
+        <source>%1 µs</source>
+        <translation>%1 µs</translation>
+    </message>
+    <message>
+        <source>GPIO %1</source>
+        <translation>GPIO %1</translation>
     </message>
 </context>
 <context>

@@ -1,0 +1,72 @@
+{
+  "event": "sim.trace",
+  "description": "Changes of the simulation's bridged pins since the last event, in order, each with its simulated time `t` in nanoseconds (QEMU's virtual clock: the guest's time, which with `icount` follows the instructions run). Unlike sim.pins this keeps every edge, so a signal trace can be drawn from it; `input` marks a level the host drove (a part or sim.setPin) rather than the firmware. Batched like sim.pins, at most every 50 ms; at most 4096 edges per event, the rest counted in `skipped` (sim.traceSave still has them).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "edges"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "edges": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "t",
+            "gpio",
+            "level"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "t": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "gpio": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 48
+            },
+            "level": {
+              "type": "boolean"
+            },
+            "input": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "skipped": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "edges": [
+          {
+            "t": 1250000000,
+            "gpio": 2,
+            "level": true
+          },
+          {
+            "t": 1250400000,
+            "gpio": 4,
+            "level": false,
+            "input": true
+          }
+        ]
+      }
+    }
+  ]
+}

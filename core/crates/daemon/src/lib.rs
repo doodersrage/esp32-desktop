@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.22.0";
+pub const PROTOCOL: &str = "0.23.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -52,6 +52,9 @@ pub struct State {
     pub circuits_root: PathBuf,
     /// Running simulators by (connection, subscription), to send them commands.
     sims: std::sync::Mutex<HashMap<(u64, u64), tokio::sync::mpsc::UnboundedSender<SimCmd>>>,
+    /// Signal traces of the latest simulations by (connection, subscription), kept
+    /// after a session ends so sim.traceSave still works; at most TRACES_KEPT.
+    traces: std::sync::Mutex<std::collections::VecDeque<((u64, u64), SharedTrace)>>,
     /// Local ESP-IDF projects the user opened (local.open).
     pub local: esp32bench_build::idf::Registry,
     /// ESP-IDF to use instead of detecting one (tests).
@@ -70,6 +73,13 @@ pub struct FlashPlan {
 }
 
 type SharedPort = Arc<std::sync::Mutex<esp32bench_serial::Port>>;
+type SharedTrace = Arc<std::sync::Mutex<esp32bench_sim::trace::Trace>>;
+
+/// How many simulations' traces sim.traceSave can still reach.
+const TRACES_KEPT: usize = 8;
+/// Edges per sim.trace event at most; the rest are counted as `skipped` (all are
+/// still recorded for sim.traceSave).
+const TRACE_BATCH_MAX: usize = 4096;
 
 /// Removes a serial port from the table when its subscription ends, however it ends,
 /// which drops the Port and closes the device.
@@ -111,6 +121,7 @@ impl State {
                 .unwrap_or_else(|| PathBuf::from(".arduino15")),
             flash_consent: esp32bench_build::Consent::new(),
             sims: std::sync::Mutex::new(HashMap::new()),
+            traces: std::sync::Mutex::new(std::collections::VecDeque::new()),
             circuits_root: esp32bench_sim::install::data_dir()
                 .map(|d| d.join("circuits"))
                 .unwrap_or_else(|_| PathBuf::from("esp32bench-circuits")),
@@ -167,7 +178,7 @@ pub fn router(state: Arc<State>) -> Router {
         state.clone(),
         state.clone(),
     );
-    let (c1, c2, c3) = (state.clone(), state.clone(), state);
+    let (c1, c2, c3, c4) = (state.clone(), state.clone(), state.clone(), state);
     Router::new()
         .method("sim.start", move |p, ctx| {
             let s = s13.clone();
@@ -188,6 +199,10 @@ pub fn router(state: Arc<State>) -> Router {
         .method("sim.control", move |p, ctx| {
             let s = c1.clone();
             async move { sim_control(p, ctx, s).await }
+        })
+        .method("sim.traceSave", move |p, ctx| {
+            let s = c4.clone();
+            async move { sim_trace_save(p, ctx, s).await }
         })
         .method(
             "circuit.models",
@@ -980,6 +995,14 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .insert(key, tx);
+        let trace: SharedTrace = Arc::default();
+        {
+            let mut traces = state.traces.lock().unwrap_or_else(|p| p.into_inner());
+            if traces.len() == TRACES_KEPT {
+                traces.pop_front();
+            }
+            traces.push_back((key, trace.clone()));
+        }
         let entry = SimEntry {
             state: state.clone(),
             key,
@@ -999,6 +1022,9 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             let mut pin_state: std::collections::BTreeMap<u8, (Option<bool>, Option<bool>)> =
                 std::collections::BTreeMap::new();
             let mut pin_changed: std::collections::BTreeSet<u8> = std::collections::BTreeSet::new();
+            // Edges since the last sim.trace event, and how many did not fit in it.
+            let mut trace_batch: Vec<Value> = Vec::new();
+            let mut trace_skipped: u64 = 0;
             let mut pin_flush = tokio::time::Instant::now();
             loop {
                 let wait = display.as_ref().map(esp32bench_sim::display::Display::interval);
@@ -1032,8 +1058,27 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                     } => match ev {
                         Ok(Some(ev)) => {
                             use esp32bench_sim::gpio::PinEvent;
+                            let edge = trace.lock().unwrap_or_else(|p| p.into_inner()).record(&ev);
+                            if let Some(e) = edge {
+                                if trace_batch.is_empty() && trace_skipped == 0
+                                    && pin_changed.is_empty() && parts_changed.is_empty()
+                                {
+                                    pin_flush = tokio::time::Instant::now() + PIN_BATCH;
+                                }
+                                if trace_batch.len() < TRACE_BATCH_MAX {
+                                    let mut item = json!({ "t": e.time_ns, "gpio": e.gpio, "level": e.level });
+                                    if e.input {
+                                        item["input"] = json!(true);
+                                    }
+                                    trace_batch.push(item);
+                                } else {
+                                    trace_skipped += 1;
+                                }
+                            }
                             let gpio_num = match ev {
-                                PinEvent::Level { gpio, level } => {
+                                // Inputs the host drove are only for the trace.
+                                PinEvent::Input { .. } => continue,
+                                PinEvent::Level { gpio, level, .. } => {
                                     pin_state.entry(gpio).or_default().0 = Some(level);
                                     gpio
                                 }
@@ -1078,7 +1123,15 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                         // The host closed the link: no more pin events this session.
                         Ok(None) | Err(_) => gpio = None,
                     },
-                    () = tokio::time::sleep_until(pin_flush), if !pin_changed.is_empty() || !parts_changed.is_empty() => {
+                    () = tokio::time::sleep_until(pin_flush), if !pin_changed.is_empty() || !parts_changed.is_empty()
+                        || !trace_batch.is_empty() || trace_skipped > 0 => {
+                        if !trace_batch.is_empty() || trace_skipped > 0 {
+                            let mut params = json!({ "edges": std::mem::take(&mut trace_batch) });
+                            if trace_skipped > 0 {
+                                params["skipped"] = json!(std::mem::take(&mut trace_skipped));
+                            }
+                            sub.send("sim.trace", params);
+                        }
                         if !parts_changed.is_empty() {
                             let changed: Vec<Value> =
                                 std::mem::take(&mut parts_changed).into_values().collect();
@@ -1211,6 +1264,43 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             "webUrl": n.web_url(),
         })),
     }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TraceSaveParams {
+    subscription: u64,
+    path: PathBuf,
+}
+
+/// Write a simulation's signal trace (running or ended) to `path` as VCD.
+async fn sim_trace_save(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: TraceSaveParams = parse_params(params)?;
+    if !p.path.is_absolute() {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    let key = (ctx.connection_id(), p.subscription);
+    let trace = state
+        .traces
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, t)| t.clone())
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                format!("no recent simulator {} on this connection", p.subscription),
+            )
+        })?;
+    let (vcd, edges, dropped) = {
+        let t = trace.lock().unwrap_or_else(|p| p.into_inner());
+        (t.to_vcd(env!("CARGO_PKG_VERSION")), t.len(), t.dropped())
+    };
+    tokio::fs::write(&p.path, vcd)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("writing {}: {e}", p.path.display())))?;
+    Ok(json!({ "path": p.path, "edges": edges, "dropped": dropped }))
 }
 
 fn sim_sender(

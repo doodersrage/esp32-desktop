@@ -123,9 +123,11 @@ async fn round_trip(chip: Chip, machine: &str, lib_var: &str) {
             .await
             .unwrap_or_else(|_| panic!("{chip}: GPIO 2 did not toggle; seen {seen:?}"))
             .unwrap();
-        match ev.as_str() {
-            "out 2 0" => seen.0 = true,
-            "out 2 1" => seen.1 = true,
+        // `out <gpio> <level> <simulated ns>`
+        let words: Vec<&str> = ev.split(' ').collect();
+        match words.as_slice() {
+            ["out", "2", "0", t] if t.parse::<u64>().is_ok() => seen.0 = true,
+            ["out", "2", "1", t] if t.parse::<u64>().is_ok() => seen.1 = true,
             _ => {}
         }
     }
@@ -307,13 +309,12 @@ async fn session_bridges_pins(chip: Chip) {
     let mut gpio = s.gpio.take().expect("no pin link");
     let mut events = Vec::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
-    while !(events.contains(&PinEvent::Level {
-        gpio: 2,
-        level: true,
-    }) && events.contains(&PinEvent::Level {
-        gpio: 2,
-        level: false,
-    })) {
+    let seen = |events: &[PinEvent], want: bool| {
+        events
+            .iter()
+            .any(|e| matches!(e, PinEvent::Level { gpio: 2, level, .. } if *level == want))
+    };
+    while !(seen(&events, true) && seen(&events, false)) {
         let ev = tokio::time::timeout_at(deadline, gpio.next_event())
             .await
             .expect("GPIO 2 did not toggle")
@@ -328,14 +329,53 @@ async fn session_bridges_pins(chip: Chip) {
         }),
         "{events:?}"
     );
-    // Drive the input and watch the firmware report it.
+    // Each edge has the simulation's time, which does not go backwards.
+    let times: Vec<u64> = events
+        .iter()
+        .filter_map(|e| match e {
+            PinEvent::Level { time_ns, .. } => Some(time_ns.expect("an edge without a time")),
+            _ => None,
+        })
+        .collect();
+    assert!(times.windows(2).all(|w| w[0] <= w[1]), "{times:?}");
+    assert!(times.last().is_some_and(|t| *t > 0), "{times:?}");
+    // Drive the input: the host reports it, timed, for the trace...
     gpio.set(4, true).await.unwrap();
+    let input = loop {
+        let ev = tokio::time::timeout(Duration::from_secs(10), gpio.next_event())
+            .await
+            .expect("the host did not report the driven input")
+            .unwrap()
+            .expect("host closed the link");
+        if let PinEvent::Input {
+            gpio: 4,
+            level,
+            time_ns,
+        } = ev
+        {
+            break (level, time_ns);
+        }
+    };
+    assert!(input.0);
+    assert!(
+        input.1.is_some_and(|t| t >= times[times.len() - 1]),
+        "{input:?}"
+    );
+    // ...and the firmware sees it.
+    let mut text = Vec::new();
     let found = s
         .uart
-        .wait_for(b"esp32bench-gpio in 4=1", Duration::from_secs(10), |_| {})
+        .wait_for(b"esp32bench-gpio in 4=1", Duration::from_secs(10), |c| {
+            text.extend_from_slice(c)
+        })
         .await
         .unwrap();
-    assert_eq!(found, WaitOutcome::Found);
+    assert_eq!(
+        found,
+        WaitOutcome::Found,
+        "{chip}: {}",
+        String::from_utf8_lossy(&text)
+    );
     gpio.set(4, false).await.unwrap();
     let found = s
         .uart

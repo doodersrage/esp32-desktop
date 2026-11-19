@@ -36,6 +36,7 @@ CoreConnection::CoreConnection(QObject *parent)
         m_earlyInstallEvents.clear();
         m_earlyBoardEvents.clear();
         m_earlySimEvents.clear();
+        m_traceSub = 0; // the core keeps traces per connection
         if (m_simSub != 0) {
             m_simSub = 0;
             m_simPins.clear();
@@ -233,7 +234,7 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
-    } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.parts" || method == u"sim.partPicture"
+    } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.trace" || method == u"sim.parts" || method == u"sim.partPicture"
                || method == u"sim.exited" || method == u"sim.wifiJoined"
                || method.startsWith(u"debug.")) {
         if (sub == m_simSub)
@@ -627,6 +628,7 @@ void CoreConnection::startSim(const QString &project, const QString &board, bool
                        m_simNetwork = o.value(u"network"_s).toObject();
                        for (const QJsonValue &g : o.value(u"pins"_s).toArray())
                            m_simPins << g.toInt();
+                       m_traceSub = m_simPins.isEmpty() ? 0 : m_simSub;
                        emit simStarted(project, board, o.value(u"chip"_s).toString());
                        if (m_debugging)
                            emit debugStarted();
@@ -666,6 +668,10 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
     }
     if (method == u"sim.pins") {
         emit simPinsChanged(params.value(u"pins"_s).toArray());
+        return;
+    }
+    if (method == u"sim.trace") {
+        emit simTrace(params.value(u"edges"_s).toArray(), params.value(u"skipped"_s).toInteger());
         return;
     }
     if (method == u"sim.frame") {
@@ -714,6 +720,22 @@ void CoreConnection::stopSim()
     m_simNetwork = {};
     m_client->call(u"core.unsubscribe"_s, {{u"subscription"_s, sub}}, this, [](const RpcReply &) {});
     emit simStopped(tr("Stopped."));
+}
+
+void CoreConnection::saveTrace(const QString &path)
+{
+    if (m_traceSub <= 0)
+        return;
+    m_client->call(u"sim.traceSave"_s, {{u"subscription"_s, m_traceSub}, {u"path"_s, path}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"sim.traceSave"_s, r.errorMessage);
+                           return;
+                       }
+                       const QJsonObject o = r.result.toObject();
+                       emit traceSaved(o.value(u"path"_s).toString(), o.value(u"edges"_s).toInteger(),
+                                       o.value(u"dropped"_s).toInteger());
+                   });
 }
 
 void CoreConnection::writeSim(const QByteArray &bytes)

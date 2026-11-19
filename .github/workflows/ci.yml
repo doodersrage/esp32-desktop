@@ -91,3 +91,12 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build/ui --output-on-failure
+
+      # A UI string added or changed without refreshing ui/translations/ would go
+      # untranslated with the tests still passing: the .ts files must match the sources.
+      - name: Translations up to date
+        if: steps.has.outputs.ui == 'true'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          cmake --build build/ui --target update_translations
+          git diff --exit-code -- ui/translations

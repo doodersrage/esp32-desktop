@@ -11,6 +11,7 @@ A native Linux desktop workbench and simulator for ESP32 boards, for Arch, Debia
 - Flash, inspect, erase and monitor real boards over USB, without root.
 - Run ESP32, ESP32-S3 and ESP32-C3 builds in a simulator (lcgamboa's QEMU fork, built on your computer by the setup step), with a console, reset, GDB debugging and the virtual display. Of the library's 227 simulated builds, 222 print what they print on a real board; the rest use Bluetooth.
 - Place virtual parts on the ESP32 and C3: LEDs, buttons, switches, an RGB LED, a NeoPixel strip, an SSD1306 OLED, and BME280, MPU-6050 and DS3231 modules on I2C.
+- Trace the simulated pins like a logic analyzer, in simulated time, and save the trace as a VCD file for PulseView or GTKWave (ESP32 and C3).
 - Give simulated sketches (ESP32, S3 and C3) a Wi-Fi network that reaches nothing outside: they get an address, and their web pages open on your computer. Library sketches are joined to it for you.
 - In English, Spanish, German, French and Brazilian Portuguese, following the desktop's language.
 
