@@ -1,6 +1,6 @@
 # esp32-desktop
 
-Native Qt 6 workbench and simulator for ESP32 boards, for Linux: Arch, Debian, Ubuntu and Fedora (developed on KDE Plasma). Desktop companion to esp32bench.dev.
+Native Qt 6 workbench and simulator for ESP32 boards, for Linux: Arch, Debian, Ubuntu and Fedora (developed on KDE Plasma), with macOS and Windows to follow (phase 6). Desktop companion to esp32bench.dev.
 
 The plan is in `docs/PLAN.md`. Read it before any design work. It is the source of truth for scope, decisions and phase order.
 
@@ -48,7 +48,7 @@ Do not reopen these without the owner asking. Each has its reasoning in `docs/PL
 - GPLv2-or-later. QEMU is GPLv2, so GPLv3 is ruled out.
 - lcgamboa's QEMU fork for the simulator, pinned to a commit and built from source. GPIO and I2C go through its library build in a per-session host process.
 - The app name is `esp32bench` (CLI, crates, data and runtime directories, `ESP32BENCH_*` variables). The repo stays `esp32-desktop`.
-- Supported platforms for v1 are Arch, Debian 13, Ubuntu 24.04 and 26.04 LTS, and Fedora 44 and 45, on any desktop (the owner widened this from Arch with Plasma on 2026-11-19). Each release has packages for all of them (`.pkg.tar.zst`, `.deb`, `.rpm`), built and install-tested by `.github/workflows/packages.yml`.
+- Supported platforms for v1 are Arch, Debian 13, Ubuntu 24.04 and 26.04 LTS, and Fedora 44 and 45, on any desktop (the owner widened this from Arch with Plasma on 2026-11-19). Each release has packages for all of them (`.pkg.tar.zst`, `.deb`, `.rpm`), built and install-tested by `.github/workflows/packages.yml`. macOS and Windows are target platforms too (the owner added them on 2026-11-19): not supported until phase 6 is done, macOS first.
 - The serial monitor is a plain text view (`QPlainTextEdit`), not QTermWidget.
 - Virtual parts are placed in the app first, saved per project and board on this computer, in a versioned circuit format the shared manifest may adopt later.
 - Simulations get a simulated Wi-Fi network that reaches nothing (restricted user-mode networking; only the firmware's port 80 forwarded to loopback).
@@ -56,7 +56,8 @@ Do not reopen these without the owner asking. Each has its reasoning in `docs/PL
 
 ## Decisions that are open
 
-None at the moment.
+- How the simulator reaches macOS and Windows: built from source by the setup step as on Linux, or shipped prebuilt per platform by CI. Phase 6's spike decides it.
+- Signing and notarisation on macOS and Windows: they need paid accounts, so the owner decides. Until then packages there are unsigned.
 
 When work resolves one of these, update `docs/PLAN.md` in the same change.
 
@@ -70,7 +71,7 @@ When work resolves one of these, update `docs/PLAN.md` in the same change.
 6. **Simulator claims stay honest.** The simulator is firmware-level. Do not describe an unsupported peripheral or board as working. Boards outside ESP32, S3 and C3 are workbench-only.
 7. **Translatable strings.** Every user-visible string in the UI goes through `tr()`.
 8. **Pin versions.** QEMU builds, IDF versions and Arduino core versions used in tests are pinned in the repo, never "latest".
-9. **Stay in v1 scope.** No built-in code editor, analog simulation, Windows or macOS support, or Flatpak. Raise it with the owner instead of building it.
+9. **Stay in v1 scope.** No built-in code editor, analog simulation, or Flatpak. Raise it with the owner instead of building it.
 
 ## Licensing
 
