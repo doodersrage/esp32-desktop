@@ -15,7 +15,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
   build-essential cmake ninja-build pkg-config curl ca-certificates git \
-  qt6-base-dev qt6-base-dev-tools libudev-dev dpkg-dev file > /dev/null
+  qt6-base-dev qt6-base-dev-tools qt6-tools-dev qt6-l10n-tools libudev-dev dpkg-dev file > /dev/null
 
 # Rust from rustup: the distributions' own (Debian 13: 1.85) are older than the
 # workspace needs (let chains, 1.88).

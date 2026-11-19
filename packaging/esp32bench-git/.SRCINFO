@@ -9,6 +9,7 @@ pkgbase = esp32bench-git
 	makedepends = cmake
 	makedepends = git
 	makedepends = ninja
+	makedepends = qt6-tools
 	depends = curl
 	depends = tar
 	depends = xz

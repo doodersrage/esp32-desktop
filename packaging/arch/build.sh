@@ -9,7 +9,7 @@ set -euo pipefail
 repo=$1
 out=$2
 
-pacman -Syu --noconfirm --needed base-devel cargo cmake ninja git qt6-base qt6-svg \
+pacman -Syu --noconfirm --needed base-devel cargo cmake ninja git qt6-base qt6-svg qt6-tools \
   systemd-libs hicolor-icon-theme > /dev/null
 
 work=$(mktemp -d)

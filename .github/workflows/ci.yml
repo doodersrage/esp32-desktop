@@ -59,11 +59,11 @@ jobs:
   ui:
     name: Qt UI
     runs-on: ubuntu-latest
-    # Build on Arch, the only supported platform.
+    # Build on Arch.
     container: archlinux:latest
     steps:
       - name: Install build dependencies
-        run: pacman -Syu --noconfirm --needed git base-devel cmake ninja qt6-base
+        run: pacman -Syu --noconfirm --needed git base-devel cmake ninja qt6-base qt6-tools
 
       - uses: actions/checkout@v4
 

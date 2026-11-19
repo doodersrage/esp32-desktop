@@ -1,5 +1,6 @@
 #include "CoreConnection.h"
 #include "MainWindow.h"
+#include "Translations.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -48,6 +49,7 @@ int main(int argc, char *argv[])
     QApplication::setApplicationVersion(QStringLiteral(ESP32BENCH_UI_VERSION));
     QApplication::setDesktopFileName(u"esp32bench"_s);
     QApplication::setWindowIcon(QIcon::fromTheme(u"esp32bench"_s, QIcon(u":/esp32bench.svg"_s)));
+    Translations::install(app);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QApplication::translate("main", "ESP32 workbench and simulator"));

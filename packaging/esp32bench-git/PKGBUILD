@@ -20,7 +20,7 @@ depends=(
   'qt6-svg'        # the app icon: a plugin Qt loads at run time, so namcap cannot see it
   'systemd-libs'   # libudev: board detection and hotplug
 )
-makedepends=('cargo' 'cmake' 'git' 'ninja')
+makedepends=('cargo' 'cmake' 'git' 'ninja' 'qt6-tools')
 optdepends=(
   'qt6-wayland: run natively on Wayland desktops other than Plasma (Plasma installs it)'
   'arduino-cli: build Arduino sketches from the project library'

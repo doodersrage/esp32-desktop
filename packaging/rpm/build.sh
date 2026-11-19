@@ -9,7 +9,7 @@ repo=$1
 out=$2
 
 dnf install -y -q gcc gcc-c++ cmake ninja-build pkgconf-pkg-config curl git tar \
-  qt6-qtbase-devel systemd-devel rpm-build > /dev/null
+  qt6-qtbase-devel qt6-qttools-devel qt6-linguist systemd-devel rpm-build > /dev/null
 
 # Rust from rustup, the same toolchain the Debian and Ubuntu packages use.
 if ! command -v cargo > /dev/null; then

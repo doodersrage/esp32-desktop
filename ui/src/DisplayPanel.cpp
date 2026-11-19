@@ -18,8 +18,8 @@ DisplayPanel::DisplayPanel(CoreConnection *core, QWidget *parent)
     m_status->setWordWrap(true);
     m_status->setText(tr("No picture. Firmware that draws on QEMU's virtual RGB panel "
                          "(esp_lcd_qemu_rgb) shows here while it runs in the simulator."));
-    m_status->setToolTip(tr("Display parts such as SSD1306 or ST7789 modules are not simulated; "
-                            "only QEMU's own virtual panel is shown."));
+    m_status->setToolTip(tr("Only QEMU's own virtual panel shows here. An SSD1306 OLED placed in the Circuit "
+                            "dock draws on the canvas there; ST7789 modules are not simulated."));
     m_picture->setAlignment(Qt::AlignCenter);
     m_picture->setMinimumSize(1, 1);
     m_picture->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
