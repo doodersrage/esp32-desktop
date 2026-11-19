@@ -60,7 +60,11 @@ jobs:
           git apply --verbose ../core/crates/sim/patches/*.patch
       - name: Build the library (the fork's script)
         working-directory: fork
-        run: sh build_libqemu-esp32.sh
+        run: |
+          sh -x build_libqemu-esp32.sh > ../libbuild.log 2>&1 || { tail -60 ../libbuild.log; exit 1; }
+          echo "--- what the script linked:"; grep -E "^\+ (eval|CMD=)" ../libbuild.log | cut -c1-400
+          echo "--- last lines of ninja's xtensa output:"; tail -n 3 build/qemu-system-xtensa_.rsp | cut -c1-400
+          ls -la build/*.dylib build/qemu-system-* 2>&1 | head
       - name: Hooks tests against the library
         env:
           ESP32BENCH_TEST_QEMU_LIB_XTENSA: ${{ github.workspace }}/fork/build/libqemu-xtensa.dylib
@@ -73,7 +77,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-logs
-          path: hooks.log
+          path: |
+            hooks.log
+            libbuild.log
           if-no-files-found: ignore
 
   windows:
@@ -85,6 +91,10 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
+      # Patches must keep their line endings, and so must the fork's files.
+      - name: No line-ending conversion
+        shell: pwsh
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
@@ -103,6 +113,7 @@ jobs:
             mingw-w64-ucrt-x86_64-libslirp
       - name: Fetch the fork and apply esp32bench's patches
         run: |
+          git config --global core.autocrlf false
           mkdir fork && cd fork
           git init -q && git remote add origin "$FORK_REPO"
           git fetch -q --depth 1 origin "$FORK_COMMIT" && git checkout -q FETCH_HEAD
