@@ -1,7 +1,7 @@
 # Maintainer: esp32bench maintainers <https://github.com/doodersrage/esp32-desktop>
 
 pkgname=esp32bench-bin
-pkgver=0.1.4
+pkgver=0.1.5
 pkgrel=1
 pkgdesc='ESP32 workbench and simulator: build, flash, monitor and simulate ESP32 projects (prebuilt)'
 arch=('x86_64')
@@ -39,7 +39,7 @@ provides=('esp32bench')
 conflicts=('esp32bench')
 # Built on Arch from the v$pkgver tag: the same files the esp32bench-git package installs.
 source=("$url/releases/download/v$pkgver/esp32bench-$pkgver-$CARCH.tar.gz")
-sha256sums=('06850a25ce61f9d94cc1d9483d1f65478112736198c42afef063697af66e3bc4')
+sha256sums=('65710284e002e6b61b7631972739449144562a10868da2eae59cb2a34ad2b1b0')
 
 package() {
   cd "esp32bench-$pkgver-$CARCH"

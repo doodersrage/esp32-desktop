@@ -3,7 +3,9 @@
 # runs it in each supported release), against that release's Qt and libraries.
 #
 # Usage: build.sh <repo, read-only is fine> <output dir>
-# The package is named esp32bench_<version>-1~<distro><release>_amd64.deb.
+# The package's version is <version>-1~<distro><release> (the ~ sorts it before a
+# plain -1); its file is esp32bench_<version>-1.<distro><release>_amd64.deb, because
+# GitHub turns ~ into . in release asset names.
 set -euo pipefail
 
 repo=$1
@@ -88,5 +90,6 @@ POSTINST
 chmod 755 "$pkg/DEBIAN/postinst"
 
 mkdir -p "$out"
-dpkg-deb --root-owner-group --build "$pkg" "$out/esp32bench_${debver}_amd64.deb"
-echo "built $out/esp32bench_${debver}_amd64.deb"
+debfile="$out/esp32bench_${version}-1.${ID}${VERSION_ID}_amd64.deb"
+dpkg-deb --root-owner-group --build "$pkg" "$debfile"
+echo "built $debfile"

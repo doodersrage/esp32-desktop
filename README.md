@@ -43,11 +43,11 @@ sudo pacman -U esp32bench-bin-0.1.5-1-x86_64.pkg.tar.zst
 
 To build it yourself, run `makepkg -si` in `packaging/esp32bench-bin/` (the release's files) or `packaging/esp32bench-git/` (the latest source). The packages are not on the AUR: its registration is closed for now.
 
-**Debian 13, Ubuntu 24.04 and 26.04, Fedora 44 and 45:** download the file for your release, `esp32bench_0.1.5-1~debian13_amd64.deb`, `…~ubuntu24.04_amd64.deb`, `…~ubuntu26.04_amd64.deb`, or `esp32bench-0.1.5-1.fc44.x86_64.rpm` / `….fc45.x86_64.rpm`, and install it with your package manager, which fetches the dependencies. For example:
+**Debian 13, Ubuntu 24.04 and 26.04, Fedora 44 and 45:** download the file for your release, `esp32bench_0.1.5-1.debian13_amd64.deb`, `….ubuntu24.04_amd64.deb`, `….ubuntu26.04_amd64.deb`, or `esp32bench-0.1.5-1.fc44.x86_64.rpm` / `….fc45.x86_64.rpm`, and install it with your package manager, which fetches the dependencies. For example:
 
 ```sh
-curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.5/esp32bench_0.1.5-1~ubuntu26.04_amd64.deb
-sudo apt install ./esp32bench_0.1.5-1~ubuntu26.04_amd64.deb
+curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.5/esp32bench_0.1.5-1.ubuntu26.04_amd64.deb
+sudo apt install ./esp32bench_0.1.5-1.ubuntu26.04_amd64.deb
 
 curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.5/esp32bench-0.1.5-1.fc45.x86_64.rpm
 sudo dnf install ./esp32bench-0.1.5-1.fc45.x86_64.rpm
