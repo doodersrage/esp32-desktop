@@ -2,7 +2,7 @@
 
 A native Linux desktop workbench and simulator for ESP32 boards, for Arch, Debian, Ubuntu and Fedora. It is the desktop companion to [esp32bench.dev](https://esp32bench.dev/).
 
-**Status:** version 0.1.4 is out, for Arch Linux. From the next release there are also packages for Debian 13, Ubuntu 24.04 and 26.04 and Fedora 44 and 45, built and install-tested on each; real boards have been checked on Arch only so far. It browses and builds the esp32bench.dev library and your own ESP-IDF projects, flashes, inspects and monitors real boards, and runs builds in a simulator. The automatic reset of boards with a USB-UART bridge (CP210x, CH340) is still untested on hardware.
+**Status:** version 0.1.5 is out, with packages for Arch, Debian 13, Ubuntu 24.04 and 26.04 and Fedora 44 and 45, each built and install-tested on its release; real boards have been checked on Arch only so far. It browses and builds the esp32bench.dev library and your own ESP-IDF projects, flashes, inspects and monitors real boards, and runs builds in a simulator. The automatic reset of boards with a USB-UART bridge (CP210x, CH340) is still untested on hardware.
 
 ## What it does
 
@@ -22,7 +22,7 @@ Report problems at [github.com/doodersrage/esp32-desktop/issues](https://github.
 - **UI:** Qt 6 Widgets in C++.
 - **Core:** a Rust daemon and CLI. The UI talks to it with JSON-RPC over a Unix socket.
 - **Simulation:** [lcgamboa's QEMU fork](https://github.com/lcgamboa/qemu), which adds Wi-Fi and GPIO and I2C hooks to Espressif's QEMU.
-- **Packaging:** PKGBUILDs (`packaging/`), and a pacman package with each release.
+- **Packaging:** PKGBUILDs, Debian and Fedora package scripts (`packaging/`); each release has a pacman package, `.deb`s and `.rpm`s, built and install-tested in CI.
 
 ## Documents
 
@@ -37,17 +37,20 @@ Packages are attached to each [release](https://github.com/doodersrage/esp32-des
 **Arch Linux:**
 
 ```sh
-curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.4/esp32bench-bin-0.1.4-1-x86_64.pkg.tar.zst
-sudo pacman -U esp32bench-bin-0.1.4-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.5/esp32bench-bin-0.1.5-1-x86_64.pkg.tar.zst
+sudo pacman -U esp32bench-bin-0.1.5-1-x86_64.pkg.tar.zst
 ```
 
 To build it yourself, run `makepkg -si` in `packaging/esp32bench-bin/` (the release's files) or `packaging/esp32bench-git/` (the latest source). The packages are not on the AUR: its registration is closed for now.
 
-**Debian 13, Ubuntu 24.04 and 26.04, Fedora 44 and 45** (from the next release on): download the file for your release, `esp32bench_<version>-1~debian13_amd64.deb`, `…~ubuntu24.04_amd64.deb`, `…~ubuntu26.04_amd64.deb`, or `esp32bench-<version>-1.fc44.x86_64.rpm` / `….fc45.x86_64.rpm`, and install it with your package manager, which fetches the dependencies:
+**Debian 13, Ubuntu 24.04 and 26.04, Fedora 44 and 45:** download the file for your release, `esp32bench_0.1.5-1~debian13_amd64.deb`, `…~ubuntu24.04_amd64.deb`, `…~ubuntu26.04_amd64.deb`, or `esp32bench-0.1.5-1.fc44.x86_64.rpm` / `….fc45.x86_64.rpm`, and install it with your package manager, which fetches the dependencies. For example:
 
 ```sh
-sudo apt install ./esp32bench_<version>-1~ubuntu26.04_amd64.deb     # Debian, Ubuntu
-sudo dnf install ./esp32bench-<version>-1.fc45.x86_64.rpm           # Fedora
+curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.5/esp32bench_0.1.5-1~ubuntu26.04_amd64.deb
+sudo apt install ./esp32bench_0.1.5-1~ubuntu26.04_amd64.deb
+
+curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.5/esp32bench-0.1.5-1.fc45.x86_64.rpm
+sudo dnf install ./esp32bench-0.1.5-1.fc45.x86_64.rpm
 ```
 
 Each package is built on its own release and installed and checked there by CI before it is attached. Real boards have been tested on Arch so far.
