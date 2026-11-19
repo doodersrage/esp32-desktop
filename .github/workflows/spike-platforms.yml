@@ -1,0 +1,143 @@
+name: Spike macOS and Windows
+
+# Phase 6's spike (docs/PLAN.md): does lcgamboa's QEMU fork, with esp32bench's
+# patches, build on macOS and Windows, and do the simulator's hooks work there?
+# macOS: build the fork's library the way its own script does, and run the host's
+# hooks tests against it. Windows (MSYS2, UCRT64): build the fork's executables and
+# boot test firmware on them; then try the library as a DLL. Run by hand only.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORK_REPO: https://github.com/lcgamboa/qemu.git
+  FORK_COMMIT: 885a6e7061fb70fac78a074a719423810bc19a17
+
+jobs:
+  firmware:
+    name: Test firmware (ESP-IDF v6.0.2)
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: bash
+        run: |
+          git config --global --add safe.directory '*'
+          export IDF_PATH=/opt/esp/idf
+          for p in hello gpio i2c-scan; do bash tests/firmware/build.sh "$p"; done
+          ls -la tests/firmware/out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            tests/firmware/out/hello-*.bin
+            tests/firmware/out/gpio-*.bin
+            tests/firmware/out/i2c-scan-*.bin
+          if-no-files-found: error
+
+  macos:
+    name: macOS
+    needs: firmware
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: tests/firmware/out
+      - name: Build dependencies
+        run: brew install ninja meson pkgconf glib pixman libgcrypt libslirp
+      - name: Fetch the fork and apply esp32bench's patches
+        run: |
+          mkdir fork && cd fork
+          git init -q && git remote add origin "$FORK_REPO"
+          git fetch -q --depth 1 origin "$FORK_COMMIT" && git checkout -q FETCH_HEAD
+          git apply --verbose ../core/crates/sim/patches/*.patch
+      - name: Build the library (the fork's script)
+        working-directory: fork
+        run: sh build_libqemu-esp32.sh
+      - name: Hooks tests against the library
+        env:
+          ESP32BENCH_TEST_QEMU_LIB_XTENSA: ${{ github.workspace }}/fork/build/libqemu-xtensa.dylib
+          ESP32BENCH_TEST_QEMU_LIB_RISCV32: ${{ github.workspace }}/fork/build/libqemu-riscv32.dylib
+        run: |
+          ls -la fork/build/*.dylib
+          cargo test --manifest-path core/Cargo.toml -p esp32bench-qemu-host --test hooks -- --nocapture 2>&1 | tee hooks.log
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-logs
+          path: hooks.log
+          if-no-files-found: ignore
+
+  windows:
+    name: Windows
+    needs: firmware
+    runs-on: windows-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: tests/firmware/out
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git make diffutils
+            mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-pixman mingw-w64-ucrt-x86_64-libgcrypt
+            mingw-w64-ucrt-x86_64-libslirp
+      - name: Fetch the fork and apply esp32bench's patches
+        run: |
+          mkdir fork && cd fork
+          git init -q && git remote add origin "$FORK_REPO"
+          git fetch -q --depth 1 origin "$FORK_COMMIT" && git checkout -q FETCH_HEAD
+          git apply --verbose ../core/crates/sim/patches/*.patch
+      - name: Build the executables
+        working-directory: fork
+        run: |
+          mkdir build-exe && cd build-exe
+          ../configure --target-list=xtensa-softmmu,riscv32-softmmu --enable-slirp \
+            --enable-gcrypt --disable-werror
+          make -j"$(nproc)"
+      - name: Boot test firmware on the executables
+        run: |
+          set -o pipefail
+          ok=0
+          for t in "xtensa esp32 esp32-picsimlab" "xtensa esp32s3 esp32s3" "riscv32 esp32c3 esp32c3-picsimlab"; do
+            set -- $t
+            log="boot-$2.log"
+            timeout 60 fork/build-exe/qemu-system-$1.exe -L fork/pc-bios -machine "$3" \
+              -display none -monitor none -nic none -nographic \
+              -drive "file=tests/firmware/out/hello-$2.bin,if=mtd,format=raw" > "$log" 2>&1 || true
+            if grep -a -q "esp32bench-hello ready" "$log"; then echo "$2: boots"; else echo "$2: did not boot"; tail -20 "$log"; ok=1; fi
+          done
+          exit $ok
+      - name: Try the library as a DLL
+        if: always()
+        working-directory: fork
+        continue-on-error: true
+        run: |
+          sh build_libqemu-esp32.sh 2>&1 | tail -40
+          ls -la build/*.dll build/*.so 2>/dev/null || true
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-logs
+          path: boot-*.log
+          if-no-files-found: ignore
