@@ -1,0 +1,527 @@
+esp32s3: PICSimLab's host hooks, I2C controllers, its own GPIO registers
+
+The S3 had no PICSimLab machine, so esp32bench ran it on the executable
+with no pin, I2C or analog access. This gives the library's `esp32s3`
+machine the same hooks the ESP32's has, so a host can see and drive its
+pins, answer its I2C buses and set its analog inputs:
+
+- The GPIO model now has the S3's own register map (ESP-IDF's
+  soc/esp32s3 gpio_struct.h). It reused the ESP32's, whose pin,
+  input-select and output-select registers are elsewhere (0x88, 0x130,
+  0x530 against the S3's 0x74, 0x154, 0x554), so GPIO interrupt set-up
+  and the GPIO matrix wrote the wrong registers. Bank 0 is laid out as on
+  the C3; bank 1 adds OUT1, ENABLE1, IN1 and STATUS1. Interrupt status
+  is per core: PCPU_INT for core 0, CPUSDIO_INT for core 1. The GPIO
+  interrupt is now connected to the interrupt matrix. The shared state
+  keeps 40 pins, so GPIO 40-48 are not modelled, and as on the ESP32
+  only GPIO 0-31 report output changes.
+- Two I2C controllers (the C3's controller model, which the S3 shares),
+  each with PICSimLab's bus device, which hands every transfer to the
+  host. Without a host it answers nothing, as an empty bus.
+- The SENS registers' one-shot conversions (patch 0004) read the value
+  the host set for the channel (qemu_picsimlab_set_apin: ADC1 channel n
+  at index n, ADC2 at n + 10), else 0.
+- When a host has registered a pin map, the machine connects the bridged
+  pins' output and direction lines to its callbacks, and points
+  qemu_picsimlab_set_pin, set_apin and get_internals (defined in
+  esp32_picsimlab.c, which the same library holds) at this machine
+  through three hook pointers. Without a pin map (the executable) nothing
+  changes.
+
+Written for esp32bench (GPL-2.0-or-later). Changes Espressif's
+hw/gpio/esp32s3_gpio.c, include/hw/gpio/esp32_gpio.h and
+hw/xtensa/esp32s3.c (Copyright (c) 2019-2023 Espressif Systems
+(Shanghai) Co. Ltd., GPL-2.0-or-later) and lcgamboa's
+hw/xtensa/esp32_picsimlab.c (GPL-2.0-or-later); notices kept. Applied by
+esp32bench (core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu at
+885a6e7061fb70fac78a074a719423810bc19a17, after patch 0014.
+
+diff --git a/hw/gpio/esp32s3_gpio.c b/hw/gpio/esp32s3_gpio.c
+index 0a0e477..e673b73 100644
+--- a/hw/gpio/esp32s3_gpio.c
++++ b/hw/gpio/esp32s3_gpio.c
+@@ -19,11 +19,230 @@
+ #include "hw/qdev-properties.h"
+ #include "hw/gpio/esp32s3_gpio.h"
+ 
++/*
++ * esp32bench: the S3's own register map (ESP-IDF's soc/esp32s3 gpio_struct.h). The
++ * ESP32's model it used before has the pin, input-select and output-select registers
++ * at other offsets (0x88, 0x130, 0x530), so interrupt set-up and the GPIO matrix
++ * landed in the wrong registers. Bank 0 (GPIO 0-31) is laid out as on the C3; bank 1
++ * (GPIO 32-48) adds OUT1, ENABLE1, IN1 and STATUS1. The parent's state keeps 40
++ * pins, so GPIO 40-48 are not modelled; like the ESP32's, only GPIO 0-31 report
++ * output changes.
++ *
++ * Interrupt enables in GPIO_PINn_REG: bit 13 is the PRO CPU (core 0), whose status
++ * is PCPU_INT; bit 15 is the APP CPU (core 1), whose status is CPUSDIO_INT. The
++ * parent's set_gpio() records them in gpio_acpu_int and gpio_pcpu_int.
++ */
++#define S3_PIN_BASE        0x74
++#define S3_IN_SEL_BASE     0x154
++#define S3_OUT_SEL_BASE    0x554
++#define S3_MODELLED_PINS   40
++
++static void esp32s3_gpio_clear_status(Esp32GpioState *s, uint32_t value, int bank)
++{
++    uint32_t in = bank ? s->gpio_in1 : s->gpio_in;
++    int clearirq = 1;
++    for (int i = 0; i < 32; i++) {
++        int pin = i + 32 * bank;
++        if (!((1u << i) & value) || pin >= S3_MODELLED_PINS) {
++            continue;
++        }
++        int int_type = (s->gpio_pin[pin] >> 7) & 7;
++        if ((int_type == 4 && !(in & (1u << i))) ||
++            (int_type == 5 && (in & (1u << i)))) {
++            clearirq = 0;
++        }
++    }
++    if (!clearirq) {
++        return;
++    }
++    if (bank) {
++        s->gpio_status1 &= ~value;
++        s->gpio_pcpu_int1 &= ~value;
++        s->gpio_acpu_int1 &= ~value;
++    } else {
++        s->gpio_status &= ~value;
++        s->gpio_pcpu_int &= ~value;
++        s->gpio_acpu_int &= ~value;
++    }
++    qemu_set_irq(s->irq, 0);
++}
++
++static uint64_t esp32s3_gpio_read(void *opaque, hwaddr addr, unsigned int size)
++{
++    Esp32GpioState *s = ESP32_GPIO(opaque);
++    uint64_t r = 0;
++    switch (addr) {
++    case 0x04: /* GPIO_OUT_REG */
++        r = s->gpio_out;
++        break;
++    case 0x10: /* GPIO_OUT1_REG */
++        r = s->gpio_out1;
++        break;
++    case 0x20: /* GPIO_ENABLE_REG */
++        r = s->gpio_enable;
++        break;
++    case 0x2c: /* GPIO_ENABLE1_REG */
++        r = s->gpio_enable1;
++        break;
++    case 0x38: /* GPIO_STRAP_REG */
++        r = s->strap_mode;
++        break;
++    case 0x3c: /* GPIO_IN_REG */
++        qemu_set_irq(s->gpios_sync[0], -1); /* request sync */
++        r = s->gpio_in;
++        break;
++    case 0x40: /* GPIO_IN1_REG */
++        qemu_set_irq(s->gpios_sync[0], -1);
++        r = s->gpio_in1;
++        break;
++    case 0x44: /* GPIO_STATUS_REG */
++        r = s->gpio_status;
++        break;
++    case 0x50: /* GPIO_STATUS1_REG */
++        r = s->gpio_status1;
++        break;
++    case 0x5c: /* GPIO_PCPU_INT_REG: core 0 */
++        r = s->gpio_acpu_int;
++        break;
++    case 0x64: /* GPIO_CPUSDIO_INT_REG: core 1 */
++        r = s->gpio_pcpu_int;
++        break;
++    case 0x68: /* GPIO_PCPU_INT1_REG */
++        r = s->gpio_acpu_int1;
++        break;
++    case 0x70: /* GPIO_CPUSDIO_INT1_REG */
++        r = s->gpio_pcpu_int1;
++        break;
++    default:
++        break;
++    }
++    if (addr >= S3_PIN_BASE && addr < S3_PIN_BASE + 4 * S3_MODELLED_PINS) {
++        r = s->gpio_pin[(addr - S3_PIN_BASE) / 4];
++    } else if (addr >= S3_IN_SEL_BASE && addr < S3_IN_SEL_BASE + 4 * 256) {
++        r = s->gpio_in_sel[(addr - S3_IN_SEL_BASE) / 4];
++    } else if (addr >= S3_OUT_SEL_BASE && addr < S3_OUT_SEL_BASE + 4 * S3_MODELLED_PINS) {
++        r = s->gpio_out_sel[(addr - S3_OUT_SEL_BASE) / 4];
++    }
++    return r;
++}
++
++static void esp32s3_gpio_write(void *opaque, hwaddr addr, uint64_t value,
++                               unsigned int size)
++{
++    Esp32GpioState *s = ESP32_GPIO(opaque);
++    uint32_t oldvalue = s->gpio_out;
++    uint32_t oldenable = s->gpio_enable;
++    switch (addr) {
++    case 0x04: /* GPIO_OUT_REG */
++        s->gpio_out = value;
++        break;
++    case 0x08: /* GPIO_OUT_W1TS_REG */
++        s->gpio_out |= value;
++        break;
++    case 0x0c: /* GPIO_OUT_W1TC_REG */
++        s->gpio_out &= ~value;
++        break;
++    case 0x10: /* GPIO_OUT1_REG */
++        s->gpio_out1 = value;
++        break;
++    case 0x14: /* GPIO_OUT1_W1TS_REG */
++        s->gpio_out1 |= value;
++        break;
++    case 0x18: /* GPIO_OUT1_W1TC_REG */
++        s->gpio_out1 &= ~value;
++        break;
++    case 0x20: /* GPIO_ENABLE_REG */
++        s->gpio_enable = value;
++        break;
++    case 0x24: /* GPIO_ENABLE_W1TS_REG */
++        s->gpio_enable |= value;
++        break;
++    case 0x28: /* GPIO_ENABLE_W1TC_REG */
++        s->gpio_enable &= ~value;
++        break;
++    case 0x2c: /* GPIO_ENABLE1_REG */
++        s->gpio_enable1 = value;
++        break;
++    case 0x30: /* GPIO_ENABLE1_W1TS_REG */
++        s->gpio_enable1 |= value;
++        break;
++    case 0x34: /* GPIO_ENABLE1_W1TC_REG */
++        s->gpio_enable1 &= ~value;
++        break;
++    case 0x38: /* GPIO_STRAP_REG */
++        s->strap_mode = value;
++        break;
++    case 0x44: /* GPIO_STATUS_REG */
++        s->gpio_status = value;
++        break;
++    case 0x48: /* GPIO_STATUS_W1TS_REG */
++        s->gpio_status |= value;
++        break;
++    case 0x4c: /* GPIO_STATUS_W1TC_REG */
++        esp32s3_gpio_clear_status(s, value, 0);
++        break;
++    case 0x50: /* GPIO_STATUS1_REG */
++        s->gpio_status1 = value;
++        break;
++    case 0x54: /* GPIO_STATUS1_W1TS_REG */
++        s->gpio_status1 |= value;
++        break;
++    case 0x58: /* GPIO_STATUS1_W1TC_REG */
++        esp32s3_gpio_clear_status(s, value, 1);
++        break;
++    default:
++        break;
++    }
++    if (addr >= S3_PIN_BASE && addr < S3_PIN_BASE + 4 * S3_MODELLED_PINS) {
++        s->gpio_pin[(addr - S3_PIN_BASE) / 4] = value;
++    } else if (addr >= S3_IN_SEL_BASE && addr < S3_IN_SEL_BASE + 4 * 256) {
++        int n = (addr - S3_IN_SEL_BASE) / 4;
++        s->gpio_in_sel[n] = value;
++        qemu_set_irq(s->gpios_sync[0], (0x1000 | n)); /* report in sel cfg change */
++    } else if (addr >= S3_OUT_SEL_BASE && addr < S3_OUT_SEL_BASE + 4 * S3_MODELLED_PINS) {
++        int n = (addr - S3_OUT_SEL_BASE) / 4;
++        s->gpio_out_sel[n] = value;
++        qemu_set_irq(s->gpios_sync[0], (0x2000 | n)); /* report out sel cfg change */
++    }
++
++    if (s->gpio_out != oldvalue || s->gpio_enable != oldenable) {
++        uint32_t diff = (s->gpio_out ^ oldvalue) | (s->gpio_enable ^ oldenable);
++        for (int i = 0; i < 32; i++) {
++            if ((diff & (1u << i)) && (s->gpio_enable & (1u << i))) {
++                qemu_set_irq(s->gpios[i], (s->gpio_out & (1u << i)) ? 1 : 0);
++                if (s->gpio_out & (1u << i)) {
++                    s->gpio_in |= (1u << i);
++                } else {
++                    s->gpio_in &= ~(1u << i);
++                }
++            }
++        }
++    }
++    if (s->gpio_enable != oldenable) {
++        uint32_t diff = s->gpio_enable ^ oldenable;
++        for (int i = 0; i < 32; i++) {
++            if (diff & (1u << i)) {
++                qemu_set_irq(s->gpios_dir[i], (s->gpio_enable & (1u << i)) ? 1 : 0);
++            }
++        }
++    }
++}
++
++static const MemoryRegionOps esp32s3_gpio_ops = {
++    .read = esp32s3_gpio_read,
++    .write = esp32s3_gpio_write,
++    .endianness = DEVICE_LITTLE_ENDIAN,
++};
+ 
+ static void esp32s3_gpio_init(Object *obj)
+ {
++    ESP32S3GPIOState *s = ESP32S3_GPIO(obj);
+     /* Set the default value for the property */
+     object_property_set_int(obj, "strap_mode", ESP32S3_STRAP_MODE_FLASH_BOOT, &error_fatal);
++    /* esp32bench: replace the parent's ESP32 register map with the S3's (the parent
++     * registered the region with the bus already; this is the same object). */
++    memory_region_init_io(&s->parent.iomem, obj, &esp32s3_gpio_ops, s, TYPE_ESP32S3_GPIO,
++                          0x1000);
+ }
+ 
+ /* If we need to override any function from the parent (reset, realize, ...), it shall be done
+diff --git a/hw/xtensa/esp32_picsimlab.c b/hw/xtensa/esp32_picsimlab.c
+index b0f5061..e4ac43f 100644
+--- a/hw/xtensa/esp32_picsimlab.c
++++ b/hw/xtensa/esp32_picsimlab.c
+@@ -131,7 +131,17 @@ void qemu_picsimlab_uart_receive(const int id, const uint8_t *buf, int size);
+ #define QEMU_INTERNAL_UART1_BAUD 8
+ #define QEMU_INTERNAL_UART2_BAUD 9
+ 
++/* esp32bench: another machine in this library (the S3, hw/xtensa/esp32s3.c) sets
++ * these to take the host's pin and analog writes and its internals queries, which
++ * otherwise go to this machine's state. */
++void (*esp32bench_set_pin_hook)(int pin, int value);
++void (*esp32bench_set_apin_hook)(int chn, int value);
++uint32_t *(*esp32bench_internals_hook)(int cfg);
++
+ uint32_t *qemu_picsimlab_get_internals(int cfg) {
++  if (esp32bench_internals_hook) {
++    return esp32bench_internals_hook(cfg);
++  }
+   switch (cfg) {
+   case QEMU_INTERNAL_STRAP:
+     return &global_s->gpio.strap_mode;
+@@ -219,6 +229,13 @@ void (*picsimlab_uart_tx_event)(const uint8_t id, const uint8_t value) = place_h
+ static const short int * pinmap = NULL;
+ void (*picsimlab_rmt_event)(const uint8_t channel, const uint32_t config0, const uint32_t value) = place_holder5;
+ 
++/* esp32bench: the pin map the host registered, for that machine. */
++const short int *esp32bench_picsimlab_pinmap(void);
++const short int *esp32bench_picsimlab_pinmap(void)
++{
++  return pinmap;
++}
++
+ void qemu_picsimlab_register_callbacks(void * arg)
+ {
+   const callbacks_t * callbacks = (const callbacks_t *) arg;
+@@ -234,6 +251,10 @@ void qemu_picsimlab_register_callbacks(void * arg)
+ 
+ void qemu_picsimlab_set_pin(int pin,int value)
+ {
++   if (esp32bench_set_pin_hook) {
++      esp32bench_set_pin_hook(pin, value);
++      return;
++   }
+    //qemu_mutex_lock_iothread ();
+    if (value){
+       qemu_irq_raise (pin_irq[pin]);
+@@ -246,6 +267,10 @@ void qemu_picsimlab_set_pin(int pin,int value)
+ 
+ void qemu_picsimlab_set_apin(int chn,int value)
+ {
++   if (esp32bench_set_apin_hook) {
++      esp32bench_set_apin_hook(chn, value);
++      return;
++   }
+    Esp32SensState *s = ESP32_SENS(&(global_s->sens));  
+    s->ADC_values[chn] = value;
+ }
+diff --git a/hw/xtensa/esp32s3.c b/hw/xtensa/esp32s3.c
+index e61f3a6..1f26362 100644
+--- a/hw/xtensa/esp32s3.c
++++ b/hw/xtensa/esp32s3.c
+@@ -22,6 +22,7 @@
+ #include "hw/misc/unimp.h"
+ #include "hw/irq.h"
+ #include "hw/i2c/i2c.h"
++#include "hw/i2c/esp32_i2c.h"
+ #include "hw/qdev-properties.h"
+ 
+ #include "qemu/osdep.h"
+@@ -129,6 +130,7 @@ typedef struct Esp32s3SocState {
+     Esp32s3IntMatrixState intmatrix;
+     ESP32S3UARTState uart[ESP32S3_UART_COUNT];
+     ESP32S3GPIOState gpio;
++    Esp32I2CState i2c[2]; /* esp32bench: the C3's controller design, as on the S3 */
+     Esp32s3RngState rng;
+     Esp32S3TWAIState twai;
+ 
+@@ -269,7 +271,12 @@ static void esp32s3_soc_add_periph_device(MemoryRegion *dest, void* dev, hwaddr
+  * 0, and ESP-IDF's ADC calibration, which runs before setup() in any sketch that
+  * links the ADC driver, polls SENS_SAR_MEAS1_CTRL2_REG's MEAS1_DONE_SAR forever.
+  * Here every register keeps what is written, and a one-shot conversion on ADC1 or
+- * ADC2 is done at once and reads 0: analog inputs are not simulated. */
++ * ADC2 is done at once and reads the channel's value: what the PICSimLab host set
++ * with qemu_picsimlab_set_apin (channels 0-9 ADC1, 10-19 ADC2), else 0. The channel
++ * is the lowest bit set in SAR1_EN_PAD / SAR2_EN_PAD (bits 19-28). */
++#define ESP32BENCH_ADC_CHANNELS     20
++static uint16_t esp32bench_adc_values[ESP32BENCH_ADC_CHANNELS];
++#define ESP32BENCH_EN_PAD_SHIFT     19
+ #define ESP32BENCH_SENS_BASE        0x60008800
+ #define ESP32BENCH_SENS_SIZE        0x400
+ #define ESP32BENCH_SAR_MEAS1_CTRL2  0x0C
+@@ -284,7 +291,13 @@ static uint64_t esp32bench_sens_read(void *opaque, hwaddr addr, unsigned int siz
+     uint32_t *regs = opaque;
+     uint32_t v = regs[addr / 4];
+     if (addr == ESP32BENCH_SAR_MEAS1_CTRL2 || addr == ESP32BENCH_SAR_MEAS2_CTRL2) {
+-        v = (v & ~ESP32BENCH_MEAS_DATA) | ESP32BENCH_MEAS_DONE;
++        uint32_t pads = (v >> ESP32BENCH_EN_PAD_SHIFT) & 0x3ff;
++        uint32_t data = 0;
++        if (pads) {
++            int channel = ctz32(pads) + (addr == ESP32BENCH_SAR_MEAS2_CTRL2 ? 10 : 0);
++            data = esp32bench_adc_values[channel];
++        }
++        v = (v & ~ESP32BENCH_MEAS_DATA) | ESP32BENCH_MEAS_DONE | data;
+     }
+     /* The internal temperature sensor, which the Wi-Fi PHY reads at start-up:
+      * always ready, reading about 25 degC (raw 104 in ESP-IDF's S3 conversion). */
+@@ -355,6 +368,96 @@ static void esp32bench_add_sens(MemoryRegion *sys_mem)
+     memory_region_add_subregion_overlap(sys_mem, ESP32BENCH_SENS_BASE, mr, 1);
+ }
+ 
++/* esp32bench: PICSimLab's host hooks on the S3, as hw/xtensa/esp32_picsimlab.c gives
++ * the ESP32: the host's callbacks see the bridged pins (the pin map it registered)
++ * change, and its qemu_picsimlab_set_pin / set_apin / get_internals reach this
++ * machine's GPIO and ADC. The callbacks and those functions live in
++ * esp32_picsimlab.c, which this library also holds; outside the library (the
++ * executable) no pin map is registered and nothing here is connected. */
++extern void (*picsimlab_write_pin)(int pin, int value);
++extern void (*picsimlab_dir_pin)(int pin, int value);
++extern const short int *esp32bench_picsimlab_pinmap(void);
++extern void (*esp32bench_set_pin_hook)(int pin, int value);
++extern void (*esp32bench_set_apin_hook)(int chn, int value);
++extern uint32_t *(*esp32bench_internals_hook)(int cfg);
++
++static Esp32s3SocState *esp32bench_s3;
++static qemu_irq esp32bench_s3_pin_in[100];
++
++static void esp32bench_s3_out(void *opaque, int n, int level)
++{
++    picsimlab_write_pin(n, level);
++}
++
++static void esp32bench_s3_dir(void *opaque, int n, int dir)
++{
++    picsimlab_dir_pin(n, dir);
++}
++
++static void esp32bench_s3_sync(void *opaque, int n, int level)
++{
++    picsimlab_dir_pin(-1, level);
++}
++
++static void esp32bench_s3_set_pin(int pin, int value)
++{
++    if (pin > 0 && pin < 100 && esp32bench_s3_pin_in[pin]) {
++        qemu_set_irq(esp32bench_s3_pin_in[pin], value ? 1 : 0);
++    }
++}
++
++static void esp32bench_s3_set_apin(int chn, int value)
++{
++    if (chn >= 0 && chn < ESP32BENCH_ADC_CHANNELS) {
++        esp32bench_adc_values[chn] = value & ESP32BENCH_MEAS_DATA;
++    }
++}
++
++/* The PICSimLab internals the host reads: as the ESP32's numbering (0 strap,
++ * 1 GPIO in_sel, 2 GPIO out_sel); the rest are not modelled on this machine. */
++static uint32_t *esp32bench_s3_internals(int cfg)
++{
++    Esp32GpioState *g = &esp32bench_s3->gpio.parent;
++    switch (cfg) {
++    case 0:
++        return &g->strap_mode;
++    case 1:
++        return g->gpio_in_sel;
++    case 2:
++        return g->gpio_out_sel;
++    default:
++        return NULL;
++    }
++}
++
++static void esp32bench_s3_wire_picsimlab(Esp32s3SocState *ss)
++{
++    const short int *pinmap = esp32bench_picsimlab_pinmap();
++    if (!pinmap) {
++        return;
++    }
++    esp32bench_s3 = ss;
++    esp32bench_set_pin_hook = esp32bench_s3_set_pin;
++    esp32bench_set_apin_hook = esp32bench_s3_set_apin;
++    esp32bench_internals_hook = esp32bench_s3_internals;
++    DeviceState *gpio = DEVICE(&ss->gpio);
++    qemu_irq *sync = qemu_allocate_irqs(esp32bench_s3_sync, NULL, 1);
++    qdev_connect_gpio_out_named(gpio, ESP32_GPIOS_SYNC, 0, sync[0]);
++    qemu_irq *dir = qemu_allocate_irqs(esp32bench_s3_dir, NULL, pinmap[0] + 1);
++    qemu_irq *out = qemu_allocate_irqs(esp32bench_s3_out, NULL, pinmap[0] + 1);
++    for (int pin = 1; pin < pinmap[0] + 1 && pin < 100; pin++) {
++        int gpio_num = pinmap[pin];
++        if (gpio_num < 0 || gpio_num >= 40) {
++            continue;
++        }
++        if (gpio_num < 32) {
++            qdev_connect_gpio_out_named(gpio, ESP32_GPIOS, gpio_num, out[pin]);
++            qdev_connect_gpio_out_named(gpio, ESP32_GPIOS_DIR, gpio_num, dir[pin]);
++        }
++        esp32bench_s3_pin_in[pin] = qdev_get_gpio_in_named(gpio, ESP32_GPIOS_IN, gpio_num);
++    }
++}
++
+ static void esp32s3_init_spi_flash(Esp32s3SocState *ms, BlockBackend* blk)
+ {
+     DeviceState *spi_master = DEVICE(&ms->spi1);
+@@ -801,6 +904,10 @@ static void esp32s3_machine_init(MachineState *machine)
+     object_initialize_child(OBJECT(ss), "efuse", &ss->efuse, TYPE_ESP32S3_EFUSE);
+     object_initialize_child(OBJECT(ss), "jtag", &ss->jtag, TYPE_ESP32C3_JTAG);
+     object_initialize_child(OBJECT(ss), "gpio", &ss->gpio, TYPE_ESP32S3_GPIO);
++    object_initialize_child(OBJECT(ss), "i2c0", &ss->i2c[0], TYPE_ESP32_I2C);
++    object_initialize_child(OBJECT(ss), "i2c1", &ss->i2c[1], TYPE_ESP32_I2C);
++    ss->i2c[0].model = I2C_MODEL_ESP32C3;
++    ss->i2c[1].model = I2C_MODEL_ESP32C3;
+     object_initialize_child(OBJECT(ss), "rng", &ss->rng, TYPE_ESP32S3_RNG);
+ 
+     object_initialize_child(OBJECT(ss), "clock", &ss->clock, TYPE_ESP32S3_CLOCK);
+@@ -934,6 +1041,26 @@ static void esp32s3_machine_init(MachineState *machine)
+         sysbus_realize(SYS_BUS_DEVICE(&ss->gpio), &error_fatal);
+         MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->gpio), 0);
+         memory_region_add_subregion_overlap(sys_mem, DR_REG_GPIO_BASE, mr, 0);
++        sysbus_connect_irq(SYS_BUS_DEVICE(&ss->gpio), 0,
++                           qdev_get_gpio_in(intmatrix_dev, ETS_GPIO_INTR_SOURCE));
++        esp32bench_s3_wire_picsimlab(ss);
++    }
++
++    /* esp32bench: the two I2C controllers, each with PICSimLab's bus device, which
++     * passes every transfer to the host (hw/i2c/picsimlab_i2c.c; its address is the
++     * bus number). Without a host it answers nothing, as an empty bus. */
++    {
++        const hwaddr base[] = {DR_REG_I2C_EXT_BASE, DR_REG_I2C1_EXT_BASE};
++        const int irq[] = {ETS_I2C_EXT0_INTR_SOURCE, ETS_I2C_EXT1_INTR_SOURCE};
++        for (int i = 0; i < 2; i++) {
++            sysbus_realize(SYS_BUS_DEVICE(&ss->i2c[i]), &error_fatal);
++            MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->i2c[i]), 0);
++            memory_region_add_subregion_overlap(sys_mem, base[i], mr, 0);
++            sysbus_connect_irq(SYS_BUS_DEVICE(&ss->i2c[i]), 0,
++                               qdev_get_gpio_in(intmatrix_dev, irq[i]));
++            I2CBus *bus = I2C_BUS(qdev_get_child_bus(DEVICE(&ss->i2c[i]), "i2c"));
++            i2c_slave_create_simple(bus, "picsimlab_i2c", i);
++        }
+     }
+ 
+     {
+diff --git a/include/hw/gpio/esp32_gpio.h b/include/hw/gpio/esp32_gpio.h
+index e1b8a86..9714364 100644
+--- a/include/hw/gpio/esp32_gpio.h
++++ b/include/hw/gpio/esp32_gpio.h
+@@ -31,6 +31,7 @@ typedef struct Esp32GpioState {
+     uint32_t gpio_acpu_int;
+     uint32_t gpio_acpu_int1;
+     uint32_t gpio_enable;
++    uint32_t gpio_enable1; /* esp32bench: the S3's GPIO_ENABLE1_REG */
+     uint32_t gpio_pin[40];
+     uint32_t gpio_in_sel[256];
+     uint32_t gpio_out_sel[40];

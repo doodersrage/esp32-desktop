@@ -1,0 +1,45 @@
+esp32s3: the RTC slow clock runs at the rate its calibration reports
+
+ESP-IDF learns the RTC slow clock's frequency by calibrating it against
+the crystal with the timer groups (hw/timer/esp_timg.c), which report
+the S3's RC_SLOW at 136 kHz. The S3's RTC_CNTL model ran it at the
+ESP32's 150 kHz (and RC_FAST / 256 at the ESP32's 8 MHz / 256), so the
+sleep timer and RTC_CNTL_TIME ran about 10% fast against what ESP-IDF
+had measured. ESP-IDF corrects its clock from the RTC counter after a
+light sleep, so the error showed as wake-ups off by milliseconds:
+ESP-IDF's esp_timer example woke 3 ms late with -icount and its +-1 ms
+check failed. The model now uses the calibration's frequencies for all
+three sources; the example wakes after 499.7 ms with -icount.
+
+Written for esp32bench (GPL-2.0-or-later). Changes Espressif's
+hw/misc/esp32s3_rtc_cntl.c (Copyright (c) 2023 Espressif Systems
+(Shanghai) Co. Ltd., GPL-2.0-or-later, notices kept). Applied by
+esp32bench (core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu at
+885a6e7061fb70fac78a074a719423810bc19a17, after patch 0015.
+
+diff --git a/hw/misc/esp32s3_rtc_cntl.c b/hw/misc/esp32s3_rtc_cntl.c
+index 50ace0e..d5bab4f 100644
+--- a/hw/misc/esp32s3_rtc_cntl.c
++++ b/hw/misc/esp32s3_rtc_cntl.c
+@@ -20,6 +20,7 @@
+ #include "hw/qdev-properties.h"
+ #include "hw/misc/esp32s3_reg.h"
+ #include "hw/misc/esp32s3_rtc_cntl.h"
++#include "hw/timer/esp_timg.h"
+ 
+ static void esp32s3_rtc_update_cpu_stall(Esp32s3RtcCntlState* s);
+ static void esp32s3_rtc_update_clk(Esp32s3RtcCntlState* s);
+@@ -285,7 +286,12 @@ static void esp32s3_rtc_update_cpu_stall(Esp32s3RtcCntlState* s)
+ 
+ static void esp32s3_rtc_update_clk(Esp32s3RtcCntlState* s)
+ {
+-    const uint32_t slowclk_freq[] = {150000, 32768, 8000000/256};
++    /* esp32bench: the frequencies the timer groups' calibration reports for each
++     * source (hw/timer/esp_timg.c), which is how ESP-IDF learns them. They were the
++     * ESP32's (150 kHz RC_SLOW, 8 MHz / 256), so the sleep timer and RTC_CNTL_TIME
++     * ran about 10% fast against the calibrated 136 kHz, and light sleep ended off
++     * by milliseconds. */
++    const uint32_t slowclk_freq[] = {ESP_RC_SLOW_FREQ, ESP_XTAL32K_FREQ, ESP_RC_FAST_DIV_FREQ};
+     const uint32_t fastclk_freq[] = {s->xtal_apb_freq / 4, 8000000};
+     s->rtc_slowclk_freq = slowclk_freq[s->rtc_slowclk];
+     s->rtc_fastclk_freq = fastclk_freq[s->rtc_fastclk];

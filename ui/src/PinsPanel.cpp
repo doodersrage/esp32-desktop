@@ -72,8 +72,8 @@ void PinsPanel::started()
 {
     const QList<int> pins = m_core->simPins();
     if (pins.isEmpty()) {
-        clearRows(tr("No pin access in this simulation. Pins are bridged on ESP32 and ESP32-C3 boards "
-                     "once lcgamboa's QEMU is installed (Tools > Toolchain setup), for projects that use GPIOs."));
+        clearRows(tr("No pin access in this simulation. Pins are bridged once lcgamboa's QEMU is installed "
+                     "(Tools > Toolchain setup), for projects that use GPIOs."));
         return;
     }
     clearRows(tr("GPIOs this project uses. Outputs are reported for GPIO 0 to 31."));

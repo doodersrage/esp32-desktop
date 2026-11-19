@@ -1,10 +1,11 @@
 //! Which QEMU a simulation runs on, and how to start it.
 //!
-//! lcgamboa's fork is the simulator (docs/PLAN.md). ESP32 and ESP32-C3 run through
-//! `esp32bench-qemu-host` with the fork's library build, so GPIO and I2C behave like
-//! a board with nothing attached (the fork's plain executables ACK every I2C address).
-//! The ESP32-S3 has no PICSimLab machine and runs on the fork's executable. Until the
-//! fork is built, simulations run on Espressif's prebuilt QEMU instead.
+//! lcgamboa's fork is the simulator (docs/PLAN.md). The ESP32, ESP32-S3 and ESP32-C3
+//! run through `esp32bench-qemu-host` with the fork's library build, so GPIO and I2C
+//! behave like a board with nothing attached (the fork's plain executables ACK every
+//! I2C address). The S3 has no PICSimLab machine of its own: its `esp32s3` machine
+//! takes the same hooks (patch 0015). Until the fork is built, simulations run on
+//! Espressif's prebuilt QEMU instead.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -20,7 +21,7 @@ pub const HOST_ENV: &str = "ESP32BENCH_QEMU_HOST";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
-    /// lcgamboa's fork (through the host process for ESP32 and C3).
+    /// lcgamboa's fork (through the host process and its library).
     Lcgamboa,
     /// Espressif's prebuilt QEMU, used until the fork is built.
     Espressif,
@@ -56,7 +57,7 @@ pub struct Launch {
     pub args: Vec<OsString>,
     pub env: Vec<(OsString, OsString)>,
     /// Whether GPIOs can be bridged ([`SessionConfig::bridge`]): only through the host
-    /// with the fork's library, so not on the S3 or Espressif's QEMU.
+    /// with the fork's library, so not on Espressif's QEMU.
     pub hooks: bool,
     /// An eFuse image the machine needs ([`SessionConfig::efuse`]).
     pub efuse: Option<Vec<u8>>,
@@ -65,7 +66,7 @@ pub struct Launch {
     /// with it on, an IDF boot's UART0 output sometimes stopped (about one in five).
     pub usb_console: bool,
     /// Whether the machine has a Wi-Fi radio for the simulated network
-    /// ([`SessionConfig::network`]): the fork's ESP32 and C3.
+    /// ([`SessionConfig::network`]): the fork's ESP32, S3 and C3.
     pub network: bool,
 }
 
@@ -121,23 +122,6 @@ fn host_candidates(dir: &Path) -> Vec<PathBuf> {
 pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option<Launch> {
     let args = build.qemu_args();
     let machine = Some(lcgamboa::machine(chip).to_owned());
-    if chip == Chip::Esp32s3 {
-        // The S3 runs on the fork's executable. Its radio is the C3's model (patch
-        // 0012), on hub 0 as for the others.
-        let mut args = args;
-        args.extend(["-nic".into(), "hubport,hubid=0,model=esp32c3_wifi".into()]);
-        return Some(Launch {
-            engine: Engine::Lcgamboa,
-            qemu: build.executable(chip.arch()),
-            machine,
-            args,
-            env: Vec::new(),
-            hooks: false,
-            efuse: None,
-            usb_console: false,
-            network: true,
-        });
-    }
     let host = host?;
     let mut args = args;
     // A Wi-Fi radio on hub 0. Alone there, its frames go nowhere; a session that asks
@@ -145,7 +129,7 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
     // network on the same hub. Without a radio the fork's Wi-Fi
     // start-up crashes (esp_phy_enable). The C3's radio reads its MAC address from the
     // eFuses before the eFuse device is ready, and aborts unless they come from a file:
-    // `efuse` below.
+    // `efuse` below. The S3's radio is the C3's model (patch 0012).
     let model = if chip == Chip::Esp32 {
         "esp32_wifi"
     } else {
@@ -169,7 +153,8 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
             Chip::Esp32c3 => Some(lcgamboa::esp32c3_efuse()),
             // The ADC reference voltage, for ADC calibration (analogReadMilliVolts).
             Chip::Esp32 => Some(lcgamboa::esp32_efuse()),
-            Chip::Esp32s3 => None,
+            // ADC calibration's version (analogReadMilliVolts).
+            Chip::Esp32s3 => Some(lcgamboa::esp32s3_efuse()),
         },
         usb_console: chip == Chip::Esp32c3,
         network: true,
@@ -276,15 +261,23 @@ mod tests {
     }
 
     #[test]
-    fn s3_runs_on_the_fork_executable() {
-        let l = lcgamboa_launch(Chip::Esp32s3, &build(), None).unwrap();
-        assert!(l.qemu.ends_with("src/build-exe/qemu-system-xtensa"));
+    fn s3_runs_through_the_host_with_hooks() {
+        let host = Path::new("/usr/lib/esp32bench/esp32bench-qemu-host");
+        let l = lcgamboa_launch(Chip::Esp32s3, &build(), Some(host)).unwrap();
+        assert_eq!(l.qemu, host);
         assert_eq!(l.machine.as_deref(), Some("esp32s3"));
-        assert!(l.env.is_empty());
-        assert!(!l.hooks, "the fork has no GPIO hooks on the S3");
+        assert!(l.hooks, "patch 0015 gives the S3 the library's hooks");
+        assert!(Path::new(&l.env[0].1).ends_with("libqemu-xtensa.so"));
+        assert_eq!(
+            l.efuse.as_deref().map(|e| e[64]),
+            Some(1),
+            "ADC calibration V1"
+        );
+        assert!(!l.usb_console);
         // The C3's radio model, on hub 0 (patch 0012); the network is the session's.
         assert_eq!(&l.args[2..], ["-nic", "hubport,hubid=0,model=esp32c3_wifi"]);
         assert!(l.network);
+        assert_eq!(lcgamboa_launch(Chip::Esp32s3, &build(), None), None);
     }
 
     #[test]

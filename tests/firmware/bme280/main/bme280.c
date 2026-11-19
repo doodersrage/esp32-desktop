@@ -1,6 +1,6 @@
 // Reads a BME280 at 0x76 on I2C bus 0 with the datasheet's reference compensation
 // (section 4.2.3) and prints temperature, humidity and pressure twice a second, for the
-// virtual BME280 part's tests. Pins: SDA 21, SCL 22 on ESP32; 8 and 9 on the C3.
+// virtual BME280 part's tests. Pins: SDA 21, SCL 22 on ESP32; 8 and 9 on the C3 and S3.
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -9,7 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#if CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
 #define SDA 8
 #define SCL 9
 #else

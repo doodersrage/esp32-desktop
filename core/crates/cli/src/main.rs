@@ -279,7 +279,7 @@ struct SessionArgs {
     /// or espressif. Default: lcgamboa when it is built, as the app does.
     #[arg(long, conflicts_with = "qemu")]
     engine: Option<esp32bench_sim::Engine>,
-    /// GPIOs to bridge (lcgamboa's fork, ESP32 and C3): their changes print on stderr,
+    /// GPIOs to bridge (lcgamboa's fork): their changes print on stderr,
     /// and a stdin line `:set <gpio> <0|1>` drives one. E.g. `--pins 2,4`.
     #[arg(long, value_delimiter = ',')]
     pins: Vec<u8>,
@@ -287,7 +287,7 @@ struct SessionArgs {
     /// there (the C3 SuperMini's). lcgamboa's fork only.
     #[arg(long)]
     usb_console: bool,
-    /// No simulated Wi-Fi network. By default sessions on lcgamboa's ESP32 and C3
+    /// No simulated Wi-Fi network. By default sessions on lcgamboa's ESP32, S3 and C3
     /// have one: an open access point, PICSimLabWifi, with an address by DHCP and
     /// nothing outside reachable; the sketch's port 80 is forwarded to a local port.
     #[arg(long)]
@@ -1341,9 +1341,8 @@ async fn start(a: SessionArgs, start_paused: bool) -> Result<Session> {
             eprintln!("engine: {}", launch.engine.as_str());
             if (!a.pins.is_empty() || a.circuit.is_some()) && !launch.hooks {
                 bail!(
-                    "--pins needs an ESP32 or ESP32-C3 on lcgamboa's QEMU: the S3 has no \
-                     pin hooks, and Espressif's QEMU has none at all (install the fork \
-                     with `esp32bench toolchain install qemu-lcgamboa`)"
+                    "--pins needs lcgamboa's QEMU: Espressif's has no pin hooks (install \
+                     the fork with `esp32bench toolchain install qemu-lcgamboa`)"
                 );
             }
             if a.usb_console && !launch.usb_console {

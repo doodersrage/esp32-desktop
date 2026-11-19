@@ -101,3 +101,7 @@ Patch 0012 gives the S3 a Wi-Fi radio from the C3's models, and S3 sessions get 
 | ESP32-C3 DevKitM | 41 | 1 | 0 |
 | ESP32-C3 SuperMini | 40 | 1 | 0 |
 | ESP32-S3 DevKitC | 43 | 1 | 0 |
+
+## Recipe 14: the S3 on the library (2026-11-19)
+
+Patches 0015 and 0016 move the S3 from the fork's executable to its library, with its own GPIO register map, two I2C controllers answered by the host, analog inputs and a corrected RTC slow clock (`docs/qemu-forks.md`). The whole sweep was run again on recipe 14 with the existing builds (`build/sweeps/r14`): **222 of 227 pass**, every build with the same result as on recipe 13, so none of the S3's 43 boots changed. The five failures are still `ble-scan` on every board (Bluetooth).

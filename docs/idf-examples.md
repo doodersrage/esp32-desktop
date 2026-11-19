@@ -8,7 +8,7 @@ Which of ESP-IDF's own examples run in the simulator, as a user opening them as 
 | `peripherals/adc/oneshot_read` | Runs; reads 0 V with no part on the pins | Runs; reads 0 | Runs; reads 0 V |
 | `peripherals/gpio/generic_gpio` | Runs, interrupts counted | Runs | Runs |
 | `peripherals/timer_group/gptimer` | Runs | Runs | Runs |
-| `system/esp_timer` (recipe 13) | Timers run; light sleep wakes, 1.6 ms late, so the example's +1 ms check aborts; with chip-like timing (`--icount`) it passes | Wakes 1.3 ms late (3 ms with chip-like timing): the check aborts | Wakes 1.1 ms late; passes with chip-like timing |
+| `system/esp_timer` (recipe 13) | Timers run; light sleep wakes, 1.6 ms late, so the example's +1 ms check aborts; with chip-like timing (`--icount`) it passes | Wakes 1.9 ms late; since recipe 14 (patch 0016) passes with chip-like timing (499.7 ms) | Wakes 1.1 ms late; passes with chip-like timing |
 | `system/deep_sleep` | Wakes from the 20 s timer (run for 32 s) | Wakes | Wakes |
 | `storage/nvs/nvs_rw_value` | Writes and reads back | Same | Same |
 | `system/freertos/real_time_stats` | Runs | Runs | Runs |

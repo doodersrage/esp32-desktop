@@ -210,8 +210,8 @@
         <translation>Läuft: Die Bauteile folgen der Firmware. Halte die Maus auf einem Taster, um ihn zu drücken; klick auf einen Schalter, um ihn umzulegen.</translation>
     </message>
     <message>
-        <source>These parts do not work in this simulation: it has no pin access (ESP32-S3, or lcgamboa&apos;s QEMU not installed).</source>
-        <translation>Diese Bauteile funktionieren in dieser Simulation nicht: Sie hat keinen Zugriff auf die Pins (ESP32-S3, oder lcgamboas QEMU ist nicht installiert).</translation>
+        <source>These parts do not work in this simulation: it has no pin access (lcgamboa&apos;s QEMU is not installed).</source>
+        <translation>Diese Bauteile funktionieren in dieser Simulation nicht: Sie hat keinen Zugriff auf die Pins (lcgamboas QEMU ist nicht installiert).</translation>
     </message>
     <message>
         <source>Parts take effect the next time the project runs in the simulator.</source>
@@ -944,8 +944,8 @@ Code-SHA-256: %2</translation>
         <translation>Führe ein Projekt im Simulator aus, um seine Pins zu sehen.</translation>
     </message>
     <message>
-        <source>No pin access in this simulation. Pins are bridged on ESP32 and ESP32-C3 boards once lcgamboa&apos;s QEMU is installed (Tools &gt; Toolchain setup), for projects that use GPIOs.</source>
-        <translation>Kein Zugriff auf die Pins in dieser Simulation. Pins werden bei ESP32- und ESP32-C3-Boards verbunden, sobald lcgamboas QEMU installiert ist (Werkzeuge &gt; Toolchain einrichten), für Projekte, die GPIOs nutzen.</translation>
+        <source>No pin access in this simulation. Pins are bridged once lcgamboa&apos;s QEMU is installed (Tools &gt; Toolchain setup), for projects that use GPIOs.</source>
+        <translation>Kein Zugriff auf die Pins in dieser Simulation. Pins werden verbunden, sobald lcgamboas QEMU installiert ist (Werkzeuge &gt; Toolchain einrichten), für Projekte, die GPIOs nutzen.</translation>
     </message>
     <message>
         <source>GPIOs this project uses. Outputs are reported for GPIO 0 to 31.</source>
@@ -1371,8 +1371,8 @@ Code-SHA-256: %2</translation>
         <translation>Senden</translation>
     </message>
     <message>
-        <source>The simulator runs the firmware. Parts placed in the Circuit dock run with it on the ESP32 and ESP32-C3; there is no Bluetooth.</source>
-        <translation>Der Simulator führt die Firmware aus. Bauteile aus dem Schaltungs-Dock laufen beim ESP32 und ESP32-C3 mit; Bluetooth gibt es nicht.</translation>
+        <source>The simulator runs the firmware. Parts placed in the Circuit dock run with it; there is no Bluetooth.</source>
+        <translation>Der Simulator führt die Firmware aus. Bauteile aus dem Schaltungs-Dock laufen mit; Bluetooth gibt es nicht.</translation>
     </message>
     <message>
         <source>A simulated Wi-Fi access point. The firmware gets an address from it and nothing else: no internet, no name lookups, no other computers. Port 80 of the firmware opens on this computer.</source>

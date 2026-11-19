@@ -35,8 +35,8 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     , m_send(new QPushButton(tr("Send"), this))
 {
     m_status->setWordWrap(true);
-    m_status->setToolTip(tr("The simulator runs the firmware. Parts placed in the Circuit dock run "
-                            "with it on the ESP32 and ESP32-C3; there is no Bluetooth."));
+    m_status->setToolTip(tr("The simulator runs the firmware. Parts placed in the Circuit dock run with it; "
+                            "there is no Bluetooth."));
     m_network->setWordWrap(true);
     m_network->setTextFormat(Qt::RichText);
     m_network->setOpenExternalLinks(true);

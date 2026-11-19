@@ -39,12 +39,15 @@ const MARKER: &str = "installed";
 /// 13: light sleep stops the watchdogs (ESP-IDF's light sleep panicked); cheap ESP32
 ///     cache toggles (SPIFFS_check never finished); ESP32 eFuse operations end only
 ///     once seen busy (on a loaded host the ROM reset the chip at boot).
-pub const RECIPE: u32 = 13;
+/// 14: the S3 takes the library's host hooks (pins, I2C, analog inputs), with its own
+///     GPIO register map and two I2C controllers; its RTC slow clock runs at the
+///     calibrated 136 kHz (light sleep woke milliseconds late).
+pub const RECIPE: u32 = 14;
 
 /// Changes esp32bench makes to the pinned commit, in order. Each file says what and
 /// why. Kept in `core/crates/sim/patches/` and built into the program, so an installed
 /// app can build the fork without the repo.
-pub const PATCHES: [(&str, &str); 14] = [
+pub const PATCHES: [(&str, &str); 16] = [
     (
         "0001.patch",
         include_str!("../patches/0001-build-library-with-pixman.patch"),
@@ -97,6 +100,14 @@ pub const PATCHES: [(&str, &str); 14] = [
     (
         "0014.patch",
         include_str!("../patches/0014-esp32-efuse-busy-before-done.patch"),
+    ),
+    (
+        "0015.patch",
+        include_str!("../patches/0015-esp32s3-host-hooks.patch"),
+    ),
+    (
+        "0016.patch",
+        include_str!("../patches/0016-esp32s3-rtc-slow-clock.patch"),
     ),
 ];
 
@@ -196,9 +207,23 @@ pub fn esp32_efuse() -> Vec<u8> {
     b
 }
 
+/// An eFuse image for the fork's ESP32-S3: blank, as the model is without one,
+/// except BLK_VERSION_MAJOR = 1 (BLOCK2 bits 128-129, EFUSE_RD_SYS_PART1_DATA4 at
+/// 0x6C), which tells ESP-IDF the chip carries ADC calibration ("ADC calib V1"), as
+/// factory-tested S3s do. The calibration offsets themselves are left 0, so ESP-IDF
+/// uses its typical values. Without it ESP-IDF's curve fitting refuses to calibrate,
+/// and Arduino's analogReadMilliVolts() returns 0. Same layout as the C3's: the
+/// file starts at EFUSE_RD_WR_DIS (0x2C).
+pub fn esp32s3_efuse() -> Vec<u8> {
+    let mut b = vec![0u8; 1024];
+    b[64..68].copy_from_slice(&1u32.to_le_bytes());
+    b
+}
+
 /// The machine to run each chip on with this fork. Its plain `esp32` machine aborts
-/// at start-up at the pinned commit, and only the PICSimLab machines have the GPIO
-/// and I2C hooks; the S3 has none (docs/qemu-forks.md).
+/// at start-up at the pinned commit. The PICSimLab machines have the GPIO and I2C
+/// hooks; the S3 has no such machine, and its own takes the hooks (patch 0015,
+/// docs/qemu-forks.md).
 pub fn machine(chip: crate::Chip) -> &'static str {
     match chip {
         crate::Chip::Esp32 => "esp32-picsimlab",
@@ -363,6 +388,8 @@ pub fn steps(jobs: usize) -> Vec<Step> {
                 "../patches/0012.patch",
                 "../patches/0013.patch",
                 "../patches/0014.patch",
+                "../patches/0015.patch",
+                "../patches/0016.patch",
             ],
             "src",
         ),

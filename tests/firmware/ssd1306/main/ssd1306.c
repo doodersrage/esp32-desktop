@@ -1,6 +1,6 @@
 // Drives an SSD1306 (128 x 64, I2C address 0x3C) the way Adafruit_SSD1306 does, for
 // the virtual display part's tests: the top page (rows 0-7) lit, and one pixel at
-// x=64, y=32. Pins: SDA 21, SCL 22 on ESP32; 8 and 9 on the C3 (bus 0 either way).
+// x=64, y=32. Pins: SDA 21, SCL 22 on ESP32; 8 and 9 on the C3 and S3 (bus 0 either way).
 
 #include <stdio.h>
 #include <string.h>
@@ -9,7 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#if CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
 #define SDA 8
 #define SCL 9
 #else

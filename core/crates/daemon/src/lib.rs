@@ -934,7 +934,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
         None
     };
     // The GPIOs the project uses, from the library (never from the caller), bridged
-    // when the engine has the fork's hooks (ESP32 and C3 on lcgamboa's library).
+    // when the engine has the fork's hooks (lcgamboa's library).
     // And the pins of the parts placed on this board in the app.
     let circuit = esp32bench_circuit::load(&state.circuits_root, &p.project, &p.board)
         .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;

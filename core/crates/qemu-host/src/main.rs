@@ -293,19 +293,55 @@ static WANT_RMT: OnceLock<bool> = OnceLock::new();
 static RMT: Mutex<[Option<Ws2812>; 8]> = Mutex::new([const { None }; 8]);
 /// The library's `qemu_picsimlab_get_internals`, for the GPIO matrix's output routing.
 static INTERNALS: OnceLock<InternalsFn> = OnceLock::new();
-/// The GPIO matrix's output signal of RMT channel 0 (ESP32: 87; ESP32-C3: 51).
-static RMT_SIGNAL0: OnceLock<u32> = OnceLock::new();
 const QEMU_INTERNAL_GPIO_OUT_SEL: c_int = 2;
-/// Whether the library is the ESP32-C3's (RISC-V); else the ESP32's.
-static RISCV: OnceLock<bool> = OnceLock::new();
+
+/// The chip being simulated: the RISC-V library is the C3's; the xtensa library runs
+/// the ESP32 or, with `-machine esp32s3`, the S3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Soc {
+    Esp32,
+    Esp32c3,
+    Esp32s3,
+}
+
+impl Soc {
+    fn detect(lib: &std::ffi::OsStr, args: &[CString]) -> Soc {
+        if lib.to_string_lossy().contains("riscv32") {
+            Soc::Esp32c3
+        } else if args.iter().any(|a| a.to_bytes().starts_with(b"esp32s3")) {
+            Soc::Esp32s3
+        } else {
+            Soc::Esp32
+        }
+    }
+
+    /// The GPIO matrix's output signal of RMT channel 0 (ESP-IDF's gpio_sig_map.h).
+    fn rmt_signal0(self) -> u32 {
+        match self {
+            Soc::Esp32 => 87,
+            Soc::Esp32c3 => 51,
+            Soc::Esp32s3 => 81,
+        }
+    }
+}
+
+static SOC: OnceLock<Soc> = OnceLock::new();
+
+fn soc() -> Soc {
+    SOC.get().copied().unwrap_or(Soc::Esp32)
+}
 
 /// The index `qemu_picsimlab_set_apin` takes for a GPIO's ADC channel, from the
 /// fork's ADC models: on the ESP32 (hw/misc/esp32_sens.c) ADC1 channel n is n and
 /// ADC2 channel n is n + 8; on the C3 (hw/misc/esp32c3_saradc.c) ADC1 channel n is
 /// n. The C3's one ADC2 pin (GPIO5) shares index 0 with GPIO0 there, so it is left out.
-fn adc_index(gpio: u8, riscv: bool) -> Option<c_int> {
-    if riscv {
-        return (gpio <= 4).then_some(c_int::from(gpio));
+/// On the S3 (hw/xtensa/esp32s3.c's SENS registers, patch 0015) ADC1 channel n is
+/// GPIO n + 1 and index n, ADC2 channel n is GPIO n + 11 and index n + 10.
+fn adc_index(gpio: u8, soc: Soc) -> Option<c_int> {
+    match soc {
+        Soc::Esp32c3 => return (gpio <= 4).then_some(c_int::from(gpio)),
+        Soc::Esp32s3 => return (1..=20).contains(&gpio).then(|| c_int::from(gpio - 1)),
+        Soc::Esp32 => {}
     }
     const ADC1: [u8; 8] = [36, 37, 38, 39, 32, 33, 34, 35];
     const ADC2: [u8; 10] = [4, 0, 2, 15, 13, 12, 14, 27, 25, 26];
@@ -394,8 +430,44 @@ const ESP32C3_ADC: &[(u16, u16)] = &[
 /// The 12-bit reading for a voltage at the pin: the one the chip's calibration turns
 /// back into that voltage, so firmware reads what the part puts out, as on a real
 /// chip. Below the curve it reads 0; above it, 4095 (the ADC saturates).
-fn adc_reading(volts: f64, riscv: bool) -> c_int {
-    let table = if riscv { ESP32C3_ADC } else { ESP32_ADC };
+/// The S3's, measured the same way with the eFuse image the session gives it
+/// (`lcgamboa::esp32s3_efuse`: calibration V1, offsets 0, so ESP-IDF's typical
+/// curve). That curve turns readings above about 3923 into more than 5 V, which no
+/// chip reads, so the table ends at 3.3 V for a full-scale 4095 instead.
+const ESP32S3_ADC: &[(u16, u16)] = &[
+    (0, 0),
+    (174, 171),
+    (349, 338),
+    (523, 501),
+    (697, 662),
+    (872, 822),
+    (1046, 980),
+    (1221, 1140),
+    (1395, 1297),
+    (1569, 1456),
+    (1744, 1618),
+    (1918, 1777),
+    (2092, 1936),
+    (2267, 2095),
+    (2441, 2249),
+    (2616, 2401),
+    (2790, 2546),
+    (2964, 2685),
+    (3139, 2813),
+    (3313, 2932),
+    (3487, 3036),
+    (3662, 3123),
+    (3836, 3189),
+    (3923, 3215),
+    (4095, 3300),
+];
+
+fn adc_reading(volts: f64, soc: Soc) -> c_int {
+    let table = match soc {
+        Soc::Esp32 => ESP32_ADC,
+        Soc::Esp32c3 => ESP32C3_ADC,
+        Soc::Esp32s3 => ESP32S3_ADC,
+    };
     // NaN reads as 0 V.
     let mv = if volts.is_nan() { 0.0 } else { volts * 1000.0 };
     let (first, last) = (table[0], table[table.len() - 1]);
@@ -456,7 +528,7 @@ extern "C" fn on_rmt_event(channel: u8, _config0: u32, value: u32) {
 /// The GPIO an RMT channel is routed to, from the GPIO matrix's output selection.
 fn rmt_gpio(channel: u8) -> Option<u8> {
     let internals = *INTERNALS.get()?;
-    let signal = RMT_SIGNAL0.get()? + u32::from(channel);
+    let signal = soc().rmt_signal0() + u32::from(channel);
     // SAFETY: the library returns its GPIO device's out_sel array (40 u32 on both
     // chips), which lives as long as the machine; it is read only.
     let table = unsafe { internals(QEMU_INTERNAL_GPIO_OUT_SEL) };
@@ -516,12 +588,6 @@ fn run() -> Result<c_int, String> {
     if let Some(clock) = qemu.clock {
         let _ = CLOCK.set(clock);
     }
-    let _ = RISCV.set(lib.to_string_lossy().contains("riscv32"));
-    let _ = RMT_SIGNAL0.set(if lib.to_string_lossy().contains("riscv32") {
-        51
-    } else {
-        87
-    });
 
     // The pin map is read during machine set-up, so it must outlive qemu_init.
     let mut pinmap: Vec<i16> = Vec::with_capacity(gpios.len() + 1);
@@ -559,6 +625,7 @@ fn run() -> Result<c_int, String> {
     let args: Vec<CString> = std::env::args_os()
         .map(|a| CString::new(a.as_bytes()).map_err(|_| "argument contains NUL".to_string()))
         .collect::<Result<_, _>>()?;
+    let _ = SOC.set(Soc::detect(&lib, &args));
     let mut argv: Vec<*mut c_char> = args.iter().map(|a| a.as_ptr().cast_mut()).collect();
     argv.push(std::ptr::null_mut());
     let argc = c_int::try_from(args.len()).map_err(|_| "too many arguments".to_string())?;
@@ -723,14 +790,13 @@ impl Worker {
                     true
                 }
                 Effect::Analog { id, gpio, volts } => {
-                    let riscv = RISCV.get().copied().unwrap_or(false);
-                    match adc_index(gpio, riscv) {
+                    match adc_index(gpio, soc()) {
                         Some(index) => {
                             // SAFETY: the library's own function, with the lock held as for
                             // set_pin; it only stores the value for the next conversion.
                             unsafe {
                                 (self.bql_lock)(c"esp32bench-qemu-host".as_ptr(), 0);
-                                (self.set_apin)(index, adc_reading(volts, riscv));
+                                (self.set_apin)(index, adc_reading(volts, soc()));
                                 (self.bql_unlock)();
                             }
                             true
@@ -991,28 +1057,41 @@ mod tests {
     #[test]
     fn maps_gpios_to_adc_channels() {
         // ESP32: ADC1 channel 6 is GPIO34, ADC2 channel 7 is GPIO27; GPIO5 has none.
-        assert_eq!(adc_index(36, false), Some(0));
-        assert_eq!(adc_index(34, false), Some(6));
-        assert_eq!(adc_index(27, false), Some(8 + 7));
-        assert_eq!(adc_index(26, false), Some(8 + 9));
-        assert_eq!(adc_index(5, false), None);
+        assert_eq!(adc_index(36, Soc::Esp32), Some(0));
+        assert_eq!(adc_index(34, Soc::Esp32), Some(6));
+        assert_eq!(adc_index(27, Soc::Esp32), Some(8 + 7));
+        assert_eq!(adc_index(26, Soc::Esp32), Some(8 + 9));
+        assert_eq!(adc_index(5, Soc::Esp32), None);
         // C3: ADC1 on GPIO0 to 4 only.
-        assert_eq!(adc_index(3, true), Some(3));
-        assert_eq!(adc_index(5, true), None);
+        assert_eq!(adc_index(3, Soc::Esp32c3), Some(3));
+        assert_eq!(adc_index(5, Soc::Esp32c3), None);
+        // S3: ADC1 channel n on GPIO n + 1, ADC2 channel n on GPIO n + 11.
+        assert_eq!(adc_index(1, Soc::Esp32s3), Some(0));
+        assert_eq!(adc_index(4, Soc::Esp32s3), Some(3));
+        assert_eq!(adc_index(11, Soc::Esp32s3), Some(10));
+        assert_eq!(adc_index(20, Soc::Esp32s3), Some(19));
+        assert_eq!(adc_index(0, Soc::Esp32s3), None);
+        assert_eq!(adc_index(21, Soc::Esp32s3), None);
         // Calibrated readings: what the chip reads back is what the part put out.
-        assert_eq!(adc_reading(0.0, false), 0);
+        assert_eq!(adc_reading(0.0, Soc::Esp32), 0);
         assert_eq!(
-            adc_reading(0.1, false),
+            adc_reading(0.1, Soc::Esp32),
             0,
             "the ESP32 reads 0 below about 0.14 V"
         );
-        assert_eq!(adc_reading(1.792, false), 2048);
-        assert_eq!(adc_reading(3.3, false), 4095, "saturated");
-        assert_eq!(adc_reading(1.398, true), 2048);
-        assert_eq!(adc_reading(3.3, true), 4095);
-        let mid = adc_reading(1.65, false);
+        assert_eq!(adc_reading(1.792, Soc::Esp32), 2048);
+        assert_eq!(adc_reading(3.3, Soc::Esp32), 4095, "saturated");
+        assert_eq!(adc_reading(1.398, Soc::Esp32c3), 2048);
+        assert_eq!(adc_reading(3.3, Soc::Esp32c3), 4095);
+        let mid = adc_reading(1.65, Soc::Esp32);
         assert!((1850..1900).contains(&mid), "{mid}");
-        for t in [ESP32_ADC, ESP32C3_ADC] {
+        let s3 = adc_reading(2.015, Soc::Esp32s3);
+        assert!(
+            (2178..=2182).contains(&s3),
+            "measured 2180 at 2015 mV: {s3}"
+        );
+        assert_eq!(adc_reading(3.3, Soc::Esp32s3), 4095);
+        for t in [ESP32_ADC, ESP32C3_ADC, ESP32S3_ADC] {
             assert!(t.windows(2).all(|w| w[0].0 < w[1].0 && w[0].1 < w[1].1));
         }
     }

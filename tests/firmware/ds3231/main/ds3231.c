@@ -1,7 +1,7 @@
 // Sets a DS3231 at 0x68 on I2C bus 0 to 2026-02-28 23:59:58, arms alarm 1 for :00 of
 // every minute with its interrupt, and prints the time and the alarm flag twice a
 // second, for the virtual DS3231 part's tests. SQW/INT is read on GPIO 25 (ESP32) or
-// 4 (C3). Pins: SDA 21, SCL 22 on ESP32; 8 and 9 on the C3.
+// 4 (C3, S3). Pins: SDA 21, SCL 22 on ESP32; 8 and 9 on the C3 and S3.
 
 #include <stdio.h>
 
@@ -10,7 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#if CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
 #define SDA 8
 #define SCL 9
 #define INT_PIN 4

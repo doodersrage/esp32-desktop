@@ -210,8 +210,8 @@
         <translation>Rodando: as peças seguem o firmware. Segure o botão do mouse sobre um botão para pressioná-lo; clique em uma chave para virá-la.</translation>
     </message>
     <message>
-        <source>These parts do not work in this simulation: it has no pin access (ESP32-S3, or lcgamboa&apos;s QEMU not installed).</source>
-        <translation>Estas peças não funcionam nesta simulação: ela não tem acesso aos pinos (ESP32-S3, ou o QEMU do lcgamboa não está instalado).</translation>
+        <source>These parts do not work in this simulation: it has no pin access (lcgamboa&apos;s QEMU is not installed).</source>
+        <translation>Estas peças não funcionam nesta simulação: ela não tem acesso aos pinos (o QEMU do lcgamboa não está instalado).</translation>
     </message>
     <message>
         <source>Parts take effect the next time the project runs in the simulator.</source>
@@ -944,8 +944,8 @@ SHA-256 do código: %2</translation>
         <translation>Rode um projeto no simulador para ver os pinos dele.</translation>
     </message>
     <message>
-        <source>No pin access in this simulation. Pins are bridged on ESP32 and ESP32-C3 boards once lcgamboa&apos;s QEMU is installed (Tools &gt; Toolchain setup), for projects that use GPIOs.</source>
-        <translation>Sem acesso aos pinos nesta simulação. Os pinos são conectados nas placas ESP32 e ESP32-C3 depois que o QEMU do lcgamboa é instalado (Ferramentas &gt; Configurar ferramentas), em projetos que usam GPIOs.</translation>
+        <source>No pin access in this simulation. Pins are bridged once lcgamboa&apos;s QEMU is installed (Tools &gt; Toolchain setup), for projects that use GPIOs.</source>
+        <translation>Sem acesso aos pinos nesta simulação. Os pinos são conectados depois que o QEMU do lcgamboa é instalado (Ferramentas &gt; Configurar ferramentas), em projetos que usam GPIOs.</translation>
     </message>
     <message>
         <source>GPIOs this project uses. Outputs are reported for GPIO 0 to 31.</source>
@@ -1371,8 +1371,8 @@ SHA-256 do código: %2</translation>
         <translation>Enviar</translation>
     </message>
     <message>
-        <source>The simulator runs the firmware. Parts placed in the Circuit dock run with it on the ESP32 and ESP32-C3; there is no Bluetooth.</source>
-        <translation>O simulador roda o firmware. As peças colocadas no painel Circuito rodam com ele no ESP32 e no ESP32-C3; não há Bluetooth.</translation>
+        <source>The simulator runs the firmware. Parts placed in the Circuit dock run with it; there is no Bluetooth.</source>
+        <translation>O simulador roda o firmware. As peças colocadas no painel Circuito rodam com ele; não há Bluetooth.</translation>
     </message>
     <message>
         <source>A simulated Wi-Fi access point. The firmware gets an address from it and nothing else: no internet, no name lookups, no other computers. Port 80 of the firmware opens on this computer.</source>

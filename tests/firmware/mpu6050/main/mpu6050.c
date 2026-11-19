@@ -1,7 +1,7 @@
 // Reads an MPU-6050 at 0x68 on I2C bus 0 as the library's projects do (wake it, then
 // one 14-byte burst from ACCEL_XOUT_H) and prints the raw accelerometer counts and the
 // temperature in 0.01 degC, twice a second, for the virtual MPU-6050 part's tests.
-// Pins: SDA 21, SCL 22 on ESP32; 8 and 9 on the C3.
+// Pins: SDA 21, SCL 22 on ESP32; 8 and 9 on the C3 and S3.
 
 #include <stdio.h>
 
@@ -9,7 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#if CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
 #define SDA 8
 #define SCL 9
 #else

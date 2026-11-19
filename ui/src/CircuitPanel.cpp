@@ -474,7 +474,7 @@ void CircuitPanel::updateStatus()
                               ? tr("Running: parts follow the firmware. Hold the mouse on a button to press it; "
                                    "click a switch to flip it.")
                               : tr("These parts do not work in this simulation: it has no pin access "
-                                   "(ESP32-S3, or lcgamboa's QEMU not installed)."));
+                                   "(lcgamboa's QEMU is not installed)."));
     } else {
         m_status->setText(tr("Parts take effect the next time the project runs in the simulator."));
     }

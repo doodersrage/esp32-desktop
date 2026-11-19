@@ -173,6 +173,11 @@ async fn esp32c3_gpio_round_trip() {
     .await;
 }
 
+#[tokio::test]
+async fn esp32s3_gpio_round_trip() {
+    round_trip(Chip::Esp32s3, "esp32s3", "ESP32BENCH_TEST_QEMU_LIB_XTENSA").await;
+}
+
 /// The firmware scans I2C bus 0 and reads two registers from 0x3C. The host models
 /// one device there; register n holds n + 0x40.
 async fn i2c_device(chip: Chip, machine: &str, lib_var: &str) {
@@ -238,6 +243,11 @@ async fn esp32c3_i2c_device() {
     .await;
 }
 
+#[tokio::test]
+async fn esp32s3_i2c_device() {
+    i2c_device(Chip::Esp32s3, "esp32s3", "ESP32BENCH_TEST_QEMU_LIB_XTENSA").await;
+}
+
 /// The simulator's own launch (no pins, no socket, no devices): an I2C scan finds
 /// nothing, as on a board with nothing attached. The fork's plain executables would
 /// ACK every address, and Espressif's QEMU shows a TMP105 at 0x48 on the ESP32.
@@ -284,6 +294,11 @@ async fn esp32_empty_bus_scans_empty() {
 #[tokio::test]
 async fn esp32c3_empty_bus_scans_empty() {
     empty_bus_scans_empty(Chip::Esp32c3).await;
+}
+
+#[tokio::test]
+async fn esp32s3_empty_bus_scans_empty() {
+    empty_bus_scans_empty(Chip::Esp32s3).await;
 }
 
 /// The simulator's own pin link (`SessionConfig::bridge` and `Session::gpio`): the
@@ -396,6 +411,11 @@ async fn esp32c3_session_bridges_pins() {
     session_bridges_pins(Chip::Esp32c3).await;
 }
 
+#[tokio::test]
+async fn esp32s3_session_bridges_pins() {
+    session_bridges_pins(Chip::Esp32s3).await;
+}
+
 /// The SSD1306 part model on a real I2C bus: tests/firmware/ssd1306 sends Adafruit's
 /// init sequence and a frame in 32-byte chunks, and the host's part draws it.
 async fn ssd1306_part_draws(chip: Chip) {
@@ -458,6 +478,11 @@ async fn esp32_ssd1306_part_draws() {
 #[tokio::test]
 async fn esp32c3_ssd1306_part_draws() {
     ssd1306_part_draws(Chip::Esp32c3).await;
+}
+
+#[tokio::test]
+async fn esp32s3_ssd1306_part_draws() {
+    ssd1306_part_draws(Chip::Esp32s3).await;
 }
 
 /// The last `esp32bench-bme280 t=.. h=.. p=..` line in `text`, as (t, h, p).
@@ -537,6 +562,11 @@ async fn esp32c3_bme280_part_reads() {
     bme280_part_reads(Chip::Esp32c3).await;
 }
 
+#[tokio::test]
+async fn esp32s3_bme280_part_reads() {
+    bme280_part_reads(Chip::Esp32s3).await;
+}
+
 /// The MPU-6050 part model on a real I2C bus: tests/firmware/mpu6050 wakes it and
 /// reads the 14-byte burst; flat it reads +1 g on z, and tilting it moves gravity.
 async fn mpu6050_part_reads(chip: Chip) {
@@ -597,6 +627,11 @@ async fn esp32c3_mpu6050_part_reads() {
     mpu6050_part_reads(Chip::Esp32c3).await;
 }
 
+#[tokio::test]
+async fn esp32s3_mpu6050_part_reads() {
+    mpu6050_part_reads(Chip::Esp32s3).await;
+}
+
 /// The DS3231 part model: tests/firmware/ds3231 sets the time to a second before
 /// midnight on 2026-02-28 and arms alarm 1; the clock rolls into March, and the
 /// host's tick fires the alarm and pulls SQW/INT low on a GPIO the firmware reads.
@@ -611,7 +646,7 @@ async fn ds3231_part_keeps_time(chip: Chip) {
         eprintln!("skipping {chip}: ds3231 firmware not built");
         return;
     }
-    let int_pin: u8 = if chip == Chip::Esp32c3 { 4 } else { 25 };
+    let int_pin: u8 = if chip == Chip::Esp32 { 25 } else { 4 };
     let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
     let launch = esp32bench_sim::engine::lcgamboa_launch(chip, &build, Some(&host)).unwrap();
     let mut cfg = launch.config(chip, image);
@@ -654,6 +689,11 @@ async fn esp32_ds3231_part_keeps_time() {
 #[tokio::test]
 async fn esp32c3_ds3231_part_keeps_time() {
     ds3231_part_keeps_time(Chip::Esp32c3).await;
+}
+
+#[tokio::test]
+async fn esp32s3_ds3231_part_keeps_time() {
+    ds3231_part_keeps_time(Chip::Esp32s3).await;
 }
 
 /// WS2812 strips on RMT (patches 0007 and 0011): tests/firmware/arduino-periph sends
@@ -726,6 +766,11 @@ async fn esp32c3_ws2812_parts_light() {
     ws2812_parts_light(Chip::Esp32c3).await;
 }
 
+#[tokio::test]
+async fn esp32s3_ws2812_parts_light() {
+    ws2812_parts_light(Chip::Esp32s3).await;
+}
+
 /// The potentiometer part on an ADC pin: tests/firmware/adc reads ADC1 with ESP-IDF's
 /// one-shot driver (as analogRead() does) and prints each new reading with ESP-IDF's
 /// calibrated millivolts. The firmware reads back the wiper's voltage: half of 3.3 V
@@ -742,7 +787,11 @@ async fn potentiometer_reads(chip: Chip) {
         return;
     }
     // ADC1 channel 6 on the ESP32, channel 3 on the C3.
-    let gpio = if chip == Chip::Esp32 { 34 } else { 3 };
+    let gpio = match chip {
+        Chip::Esp32 => 34,
+        Chip::Esp32c3 => 3,
+        Chip::Esp32s3 => 4,
+    };
     let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
     let launch = esp32bench_sim::engine::lcgamboa_launch(chip, &build, Some(&host)).unwrap();
     let mut cfg = launch.config(chip, image);
@@ -808,6 +857,11 @@ async fn esp32_potentiometer_reads() {
 #[tokio::test]
 async fn esp32c3_potentiometer_reads() {
     potentiometer_reads(Chip::Esp32c3).await;
+}
+
+#[tokio::test]
+async fn esp32s3_potentiometer_reads() {
+    potentiometer_reads(Chip::Esp32s3).await;
 }
 
 /// A potentiometer on a pin with no ADC says so, rather than reading 0 silently.
