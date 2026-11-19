@@ -31,6 +31,10 @@
 //!   `parterror <id> <message>`.
 //! - client to host: `set <gpio> <0|1>` to drive an input pin, and with a circuit
 //!   `control <id> <name> <value as JSON>` to work a part.
+//!
+//! Analog inputs: parts set a pin's voltage (`analog()` in a part script) and the
+//! host stores the chip's 12-bit reading for that pin's ADC channel through the
+//! library's `qemu_picsimlab_set_apin`; `analogRead()` then returns it.
 
 use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_int, c_void};
@@ -58,6 +62,7 @@ type MainLoopFn = unsafe extern "C" fn() -> c_int;
 type CleanupFn = unsafe extern "C" fn(c_int);
 type RegisterFn = unsafe extern "C" fn(*const c_void);
 type SetPinFn = unsafe extern "C" fn(c_int, c_int);
+type SetApinFn = unsafe extern "C" fn(c_int, c_int);
 type LockFn = unsafe extern "C" fn(*const c_char, c_int);
 type UnlockFn = unsafe extern "C" fn();
 type InternalsFn = unsafe extern "C" fn(c_int) -> *mut u32;
@@ -69,6 +74,7 @@ struct Qemu {
     cleanup: CleanupFn,
     register_callbacks: RegisterFn,
     set_pin: SetPinFn,
+    set_apin: SetApinFn,
     bql_lock: LockFn,
     bql_unlock: UnlockFn,
     internals: InternalsFn,
@@ -262,6 +268,124 @@ static INTERNALS: OnceLock<InternalsFn> = OnceLock::new();
 /// The GPIO matrix's output signal of RMT channel 0 (ESP32: 87; ESP32-C3: 51).
 static RMT_SIGNAL0: OnceLock<u32> = OnceLock::new();
 const QEMU_INTERNAL_GPIO_OUT_SEL: c_int = 2;
+/// Whether the library is the ESP32-C3's (RISC-V); else the ESP32's.
+static RISCV: OnceLock<bool> = OnceLock::new();
+
+/// The index `qemu_picsimlab_set_apin` takes for a GPIO's ADC channel, from the
+/// fork's ADC models: on the ESP32 (hw/misc/esp32_sens.c) ADC1 channel n is n and
+/// ADC2 channel n is n + 8; on the C3 (hw/misc/esp32c3_saradc.c) ADC1 channel n is
+/// n. The C3's one ADC2 pin (GPIO5) shares index 0 with GPIO0 there, so it is left out.
+fn adc_index(gpio: u8, riscv: bool) -> Option<c_int> {
+    if riscv {
+        return (gpio <= 4).then_some(c_int::from(gpio));
+    }
+    const ADC1: [u8; 8] = [36, 37, 38, 39, 32, 33, 34, 35];
+    const ADC2: [u8; 10] = [4, 0, 2, 15, 13, 12, 14, 27, 25, 26];
+    let ch = |table: &[u8]| table.iter().position(|&g| g == gpio);
+    ch(&ADC1)
+        .or_else(|| ch(&ADC2).map(|c| c + 8))
+        .and_then(|i| c_int::try_from(i).ok())
+}
+
+/// What ESP-IDF's ADC calibration (as Arduino's analogReadMilliVolts() uses it, at
+/// the default 12 dB attenuation) makes of 12-bit readings on the simulated chips:
+/// (reading, millivolts), measured on them with ESP-IDF 6.0.2 in Arduino core 3.3.12.
+/// The ESP32 calibrates from the eFuse reference voltage the session gives it (1100
+/// mV, `lcgamboa::esp32_efuse`), the C3 from ESP-IDF's curve for blank eFuses.
+const ESP32_ADC: &[(u16, u16)] = &[
+    (0, 142),
+    (128, 245),
+    (256, 348),
+    (384, 451),
+    (512, 554),
+    (640, 658),
+    (768, 761),
+    (896, 864),
+    (1024, 967),
+    (1152, 1070),
+    (1280, 1173),
+    (1408, 1276),
+    (1536, 1379),
+    (1664, 1483),
+    (1792, 1586),
+    (1920, 1689),
+    (2048, 1792),
+    (2175, 1894),
+    (2303, 1997),
+    (2431, 2100),
+    (2559, 2204),
+    (2687, 2307),
+    (2815, 2410),
+    (2943, 2501),
+    (3071, 2592),
+    (3199, 2677),
+    (3327, 2758),
+    (3455, 2832),
+    (3583, 2900),
+    (3711, 2963),
+    (3839, 3023),
+    (3967, 3080),
+    (4095, 3134),
+];
+const ESP32C3_ADC: &[(u16, u16)] = &[
+    (0, 0),
+    (128, 89),
+    (256, 178),
+    (384, 268),
+    (512, 354),
+    (640, 444),
+    (768, 532),
+    (896, 619),
+    (1024, 706),
+    (1152, 793),
+    (1280, 880),
+    (1408, 967),
+    (1536, 1053),
+    (1664, 1139),
+    (1792, 1227),
+    (1920, 1313),
+    (2048, 1398),
+    (2175, 1484),
+    (2303, 1570),
+    (2431, 1657),
+    (2559, 1741),
+    (2687, 1827),
+    (2815, 1911),
+    (2943, 1996),
+    (3071, 2080),
+    (3199, 2164),
+    (3327, 2246),
+    (3455, 2329),
+    (3583, 2410),
+    (3711, 2491),
+    (3839, 2571),
+    (3967, 2648),
+    (4095, 2727),
+];
+
+/// The 12-bit reading for a voltage at the pin: the one the chip's calibration turns
+/// back into that voltage, so firmware reads what the part puts out, as on a real
+/// chip. Below the curve it reads 0; above it, 4095 (the ADC saturates).
+fn adc_reading(volts: f64, riscv: bool) -> c_int {
+    let table = if riscv { ESP32C3_ADC } else { ESP32_ADC };
+    // NaN reads as 0 V.
+    let mv = if volts.is_nan() { 0.0 } else { volts * 1000.0 };
+    let (first, last) = (table[0], table[table.len() - 1]);
+    if mv <= f64::from(first.1) {
+        return c_int::from(first.0);
+    }
+    if mv >= f64::from(last.1) {
+        return c_int::from(last.0);
+    }
+    for w in table.windows(2) {
+        let ((r0, m0), (r1, m1)) = (w[0], w[1]);
+        if mv <= f64::from(m1) {
+            let t = (mv - f64::from(m0)) / f64::from(m1 - m0);
+            return (f64::from(r0) + t * f64::from(r1 - r0)).round() as c_int;
+        }
+    }
+    c_int::from(last.0)
+}
 const OUT_SEL_GPIOS: usize = 40;
 
 /// One RMT symbol from the fork's RMT models (patches 0007 and 0011), or 0 when a
@@ -361,6 +485,7 @@ fn run() -> Result<c_int, String> {
 
     let qemu = load(&lib)?;
     let _ = INTERNALS.set(qemu.internals);
+    let _ = RISCV.set(lib.to_string_lossy().contains("riscv32"));
     let _ = RMT_SIGNAL0.set(if lib.to_string_lossy().contains("riscv32") {
         51
     } else {
@@ -393,6 +518,7 @@ fn run() -> Result<c_int, String> {
             tx,
             rx,
             qemu.set_pin,
+            qemu.set_apin,
             qemu.bql_lock,
             qemu.bql_unlock,
         );
@@ -461,6 +587,7 @@ fn start_bridge(
     tx: Sender<Msg>,
     rx: mpsc::Receiver<Msg>,
     set_pin: SetPinFn,
+    set_apin: SetApinFn,
     bql_lock: LockFn,
     bql_unlock: UnlockFn,
 ) {
@@ -485,6 +612,7 @@ fn start_bridge(
         let mut worker = Worker {
             out: stream,
             set_pin,
+            set_apin,
             bql_lock,
             bql_unlock,
             pictures: HashMap::new(),
@@ -518,6 +646,7 @@ struct PendingPicture {
 struct Worker {
     out: std::os::unix::net::UnixStream,
     set_pin: SetPinFn,
+    set_apin: SetApinFn,
     bql_lock: LockFn,
     bql_unlock: UnlockFn,
     pictures: HashMap<String, PendingPicture>,
@@ -557,6 +686,24 @@ impl Worker {
                 Effect::Drive { gpio, level } => {
                     self.drive(i16::from(gpio), level);
                     true
+                }
+                Effect::Analog { id, gpio, volts } => {
+                    let riscv = RISCV.get().copied().unwrap_or(false);
+                    match adc_index(gpio, riscv) {
+                        Some(index) => {
+                            // SAFETY: the library's own function, with the lock held as for
+                            // set_pin; it only stores the value for the next conversion.
+                            unsafe {
+                                (self.bql_lock)(c"esp32bench-qemu-host".as_ptr(), 0);
+                                (self.set_apin)(index, adc_reading(volts, riscv));
+                                (self.bql_unlock)();
+                            }
+                            true
+                        }
+                        None => self.send(&format!(
+                            "parterror {id} GPIO {gpio} has no analog input on this chip"
+                        )),
+                    }
                 }
                 Effect::State { id, state } => self.send(&format!("part {id} {state}")),
                 Effect::Picture {
@@ -727,6 +874,9 @@ fn load(path: &std::ffi::OsStr) -> Result<Qemu, String> {
                 c"qemu_picsimlab_register_callbacks",
             )?),
             set_pin: std::mem::transmute::<*mut c_void, SetPinFn>(sym(c"qemu_picsimlab_set_pin")?),
+            set_apin: std::mem::transmute::<*mut c_void, SetApinFn>(sym(
+                c"qemu_picsimlab_set_apin",
+            )?),
             bql_lock: std::mem::transmute::<*mut c_void, LockFn>(sym(c"bql_lock_impl")?),
             bql_unlock: std::mem::transmute::<*mut c_void, UnlockFn>(sym(c"bql_unlock")?),
             internals: std::mem::transmute::<*mut c_void, InternalsFn>(sym(
@@ -798,5 +948,34 @@ mod tests {
             7 * std::mem::size_of::<usize>()
         );
         assert_eq!(std::mem::offset_of!(Callbacks, pinmap), 5 * 8);
+    }
+
+    #[test]
+    fn maps_gpios_to_adc_channels() {
+        // ESP32: ADC1 channel 6 is GPIO34, ADC2 channel 7 is GPIO27; GPIO5 has none.
+        assert_eq!(adc_index(36, false), Some(0));
+        assert_eq!(adc_index(34, false), Some(6));
+        assert_eq!(adc_index(27, false), Some(8 + 7));
+        assert_eq!(adc_index(26, false), Some(8 + 9));
+        assert_eq!(adc_index(5, false), None);
+        // C3: ADC1 on GPIO0 to 4 only.
+        assert_eq!(adc_index(3, true), Some(3));
+        assert_eq!(adc_index(5, true), None);
+        // Calibrated readings: what the chip reads back is what the part put out.
+        assert_eq!(adc_reading(0.0, false), 0);
+        assert_eq!(
+            adc_reading(0.1, false),
+            0,
+            "the ESP32 reads 0 below about 0.14 V"
+        );
+        assert_eq!(adc_reading(1.792, false), 2048);
+        assert_eq!(adc_reading(3.3, false), 4095, "saturated");
+        assert_eq!(adc_reading(1.398, true), 2048);
+        assert_eq!(adc_reading(3.3, true), 4095);
+        let mid = adc_reading(1.65, false);
+        assert!((1850..1900).contains(&mid), "{mid}");
+        for t in [ESP32_ADC, ESP32C3_ADC] {
+            assert!(t.windows(2).all(|w| w[0].0 < w[1].0 && w[0].1 < w[1].1));
+        }
     }
 }

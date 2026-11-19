@@ -171,6 +171,19 @@ pub fn esp32c3_efuse() -> Vec<u8> {
     b
 }
 
+/// An eFuse image for the fork's ESP32: blank, as its built-in defaults are (so the
+/// same default MAC address), except for the ADC reference voltage factory-tested
+/// chips have burnt in. Without it ESP-IDF's ADC calibration fails, and Arduino's
+/// analogReadMilliVolts() returns 0. ADC_VREF is BLK0 bits 136 to 140 (word 4, bits
+/// 8 to 12): a sign-magnitude offset from 1100 mV in 7 mV steps, where all zeros
+/// means "not burnt". The sign bit alone is a burnt offset of 0: exactly 1100 mV.
+/// 1024 bytes, read from EFUSE_BLK0_RDATA0 on (the fork reads its first 124).
+pub fn esp32_efuse() -> Vec<u8> {
+    let mut b = vec![0u8; 1024];
+    b[16..20].copy_from_slice(&(0x10u32 << 8).to_le_bytes());
+    b
+}
+
 /// The machine to run each chip on with this fork. Its plain `esp32` machine aborts
 /// at start-up at the pinned commit, and only the PICSimLab machines have the GPIO
 /// and I2C hooks; the S3 has none (docs/qemu-forks.md).

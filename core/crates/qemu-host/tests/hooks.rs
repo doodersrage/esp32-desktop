@@ -685,3 +685,127 @@ async fn esp32_ws2812_parts_light() {
 async fn esp32c3_ws2812_parts_light() {
     ws2812_parts_light(Chip::Esp32c3).await;
 }
+
+/// The potentiometer part on an ADC pin: tests/firmware/adc reads ADC1 with ESP-IDF's
+/// one-shot driver (as analogRead() does) and prints each new reading with ESP-IDF's
+/// calibrated millivolts. The firmware reads back the wiper's voltage: half of 3.3 V
+/// at the start, then a quarter, then full scale, which saturates the ADC.
+async fn potentiometer_reads(chip: Chip) {
+    let Some(build) = esp32bench_sim::lcgamboa::Build::find() else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let image = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../../tests/firmware/out/adc-{chip}.bin"));
+    if !image.is_file() {
+        eprintln!("skipping {chip}: adc firmware not built");
+        return;
+    }
+    // ADC1 channel 6 on the ESP32, channel 3 on the C3.
+    let gpio = if chip == Chip::Esp32 { 34 } else { 3 };
+    let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
+    let launch = esp32bench_sim::engine::lcgamboa_launch(chip, &build, Some(&host)).unwrap();
+    let mut cfg = launch.config(chip, image);
+    cfg.circuit = Some(format!(
+        r#"{{"schemaVersion":"1.2.0","parts":[{{"id":"pot","kind":"potentiometer","pin":{gpio}}}]}}"#
+    ));
+    let mut s = Session::start(cfg).await.unwrap();
+    let mut link = s.gpio.take().expect("no link to the host");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let mut text = String::new();
+    // (raw, millivolts) from the firmware's last reading line.
+    let last = |text: &str| -> Option<(i64, i64)> {
+        let l = text
+            .lines()
+            .rev()
+            .find(|l| l.starts_with("esp32bench-adc raw="))?;
+        let mut it = l.trim_end().split(['=', ' ']);
+        let raw = it.nth(2)?.parse().ok()?;
+        let mv = it.nth(1)?.parse().ok()?;
+        Some((raw, mv))
+    };
+    // What each step should read (millivolts within 20, or saturated), and the slider
+    // position that comes next.
+    let mut steps = [
+        (Some(1650), Some(25.0)),
+        (Some(825), Some(100.0)),
+        (None, None),
+    ]
+    .into_iter();
+    let mut want = steps.next();
+    while let Some((mv, next)) = want {
+        tokio::select! {
+            chunk = s.uart.read_chunk() => {
+                if let Ok(Some(c)) = chunk { text.push_str(&String::from_utf8_lossy(&c)); }
+                let reached = last(&text).is_some_and(|(raw, got)| match mv {
+                    Some(mv) => (got - mv).abs() <= 20,
+                    None => raw == 4095,
+                });
+                if reached {
+                    assert!(text.contains(&format!("esp32bench-adc ready gpio={gpio}")), "{chip}: {text}");
+                    if let Some(position) = next {
+                        link.control("pot", "position", &serde_json::json!(position)).await.unwrap();
+                    }
+                    want = steps.next();
+                }
+            }
+            ev = link.next_event() => {
+                if let esp32bench_sim::gpio::PinEvent::PartError { id, message } = ev.unwrap().expect("host closed the link") {
+                    panic!("{chip}: {id}: {message}");
+                }
+            }
+            () = tokio::time::sleep_until(deadline) => panic!("{chip}: waiting for {mv:?} mV; uart:\n{text}"),
+        }
+    }
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn esp32_potentiometer_reads() {
+    potentiometer_reads(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn esp32c3_potentiometer_reads() {
+    potentiometer_reads(Chip::Esp32c3).await;
+}
+
+/// A potentiometer on a pin with no ADC says so, rather than reading 0 silently.
+#[tokio::test]
+async fn analog_part_on_a_digital_pin_says_so() {
+    let Some(build) = esp32bench_sim::lcgamboa::Build::find() else {
+        eprintln!("skipping: lcgamboa's QEMU is not built");
+        return;
+    };
+    let image =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/firmware/out/adc-esp32.bin");
+    if !image.is_file() {
+        eprintln!("skipping: adc firmware not built");
+        return;
+    }
+    let host = PathBuf::from(env!("CARGO_BIN_EXE_esp32bench-qemu-host"));
+    let launch = esp32bench_sim::engine::lcgamboa_launch(Chip::Esp32, &build, Some(&host)).unwrap();
+    let mut cfg = launch.config(Chip::Esp32, image);
+    cfg.circuit = Some(
+        r#"{"schemaVersion":"1.2.0","parts":[{"id":"pot","kind":"potentiometer","pin":5}]}"#.into(),
+    );
+    let mut s = Session::start(cfg).await.unwrap();
+    let mut link = s.gpio.take().expect("no link to the host");
+    let message = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            if let esp32bench_sim::gpio::PinEvent::PartError { id, message } = link
+                .next_event()
+                .await
+                .unwrap()
+                .expect("host closed the link")
+            {
+                assert_eq!(id, "pot");
+                return message;
+            }
+        }
+    })
+    .await
+    .expect("no error for GPIO5");
+    assert!(message.contains("GPIO 5 has no analog input"), "{message}");
+    s.shutdown().await.unwrap();
+}

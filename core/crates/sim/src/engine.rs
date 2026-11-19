@@ -165,7 +165,12 @@ pub fn lcgamboa_launch(chip: Chip, build: &Build, host: Option<&Path>) -> Option
             build.library(chip.arch()).into(),
         )],
         hooks: true,
-        efuse: (chip == Chip::Esp32c3).then(lcgamboa::esp32c3_efuse),
+        efuse: match chip {
+            Chip::Esp32c3 => Some(lcgamboa::esp32c3_efuse()),
+            // The ADC reference voltage, for ADC calibration (analogReadMilliVolts).
+            Chip::Esp32 => Some(lcgamboa::esp32_efuse()),
+            Chip::Esp32s3 => None,
+        },
         usb_console: chip == Chip::Esp32c3,
         network: true,
     })
@@ -237,12 +242,17 @@ mod tests {
             assert_eq!(l.usb_console, chip == Chip::Esp32c3);
             assert!(!l.config(chip, "x".into()).usb_console);
             // The C3's radio needs an eFuse image: chip revision v0.3 and a MAC.
+            // The ESP32's carries the ADC reference voltage: 1100 mV.
+            let e = l.efuse.as_deref().unwrap();
+            assert_eq!(e.len(), 1024);
             if chip == Chip::Esp32c3 {
-                let e = l.efuse.as_deref().unwrap();
-                assert_eq!(e.len(), 1024);
                 assert_eq!(e[24..30], [0x01, 0x10, 0xfe, 0x24, 0x0a, 0xc4]);
             } else {
-                assert!(l.efuse.is_none());
+                assert_eq!(
+                    u32::from_le_bytes(e[16..20].try_into().unwrap()) >> 8 & 0x1f,
+                    0x10
+                );
+                assert!(e[4..12].iter().all(|b| *b == 0), "the fork's default MAC");
             }
             assert_eq!(l.env[0].0, "ESP32BENCH_QEMU_LIB");
             assert!(Path::new(&l.env[0].1).ends_with(lib));

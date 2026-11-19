@@ -46,6 +46,9 @@ fn pages_to_pixels(
 pub enum Effect {
     /// Drive a GPIO as an input.
     Drive { gpio: u8, level: bool },
+    /// Put a voltage on a GPIO's analog input, in volts (0 to 3.3). The host turns it
+    /// into the 12-bit reading the chip's ADC would give.
+    Analog { id: String, gpio: u8, volts: f64 },
     /// A part's state changed; the whole state.
     State {
         id: String,
@@ -134,6 +137,20 @@ impl Runtime {
             let mut cx = lock(&c);
             if let Some(&gpio) = cx.pins.get(name) {
                 cx.effects.push(Effect::Drive { gpio, level });
+            }
+        });
+        let c = ctx.clone();
+        engine.register_fn("analog", move |name: &str, volts: f64| {
+            let mut cx = lock(&c);
+            if let Some(&gpio) = cx.pins.get(name) {
+                // Nothing on the board goes outside its 3.3 V supply.
+                let volts = if volts.is_finite() {
+                    volts.clamp(0.0, 3.3)
+                } else {
+                    0.0
+                };
+                let id = cx.id.clone();
+                cx.effects.push(Effect::Analog { id, gpio, volts });
             }
         });
         let c = ctx.clone();
@@ -869,5 +886,39 @@ mod tests {
         assert!(engine_check(r#"import "fs" as fs;"#).is_err());
         // No file or process functions exist to call.
         assert!(engine_check(r#"open_file("/etc/passwd")"#).is_err());
+    }
+
+    #[test]
+    fn potentiometer_sets_its_pins_analog_input() {
+        let mut r = runtime(json!([
+            { "id": "pot", "kind": "potentiometer", "pins": { "wiper": 34 } }
+        ]));
+        let fx = r.init();
+        assert!(fx.contains(&Effect::Analog {
+            id: "pot".into(),
+            gpio: 34,
+            volts: 1.65
+        }));
+        let fx = r
+            .control("pot", "position", Dynamic::from(25.0_f64))
+            .unwrap();
+        assert!(fx.contains(&Effect::Analog {
+            id: "pot".into(),
+            gpio: 34,
+            volts: 0.825
+        }));
+        let s = state(&fx, "pot").unwrap();
+        assert_eq!(s["position"], 25.0);
+        assert_eq!(s["volts"], 0.83);
+        // Integers from the CLI work too, and out-of-range values are clamped.
+        let fx = r
+            .control("pot", "position", Dynamic::from(150_i64))
+            .unwrap();
+        assert!(fx.contains(&Effect::Analog {
+            id: "pot".into(),
+            gpio: 34,
+            volts: 3.3
+        }));
+        assert_eq!(state(&fx, "pot").unwrap()["position"], 100.0);
     }
 }

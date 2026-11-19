@@ -278,8 +278,29 @@ pub fn outputs(plan: &Plan, dirs: &Dirs) -> Output {
     }
 }
 
-/// Build: `idf.py build`, then `merge-bin` into one 4 MB flash image, and the ELF
-/// copied beside it. Every line goes to `log`; dropping the future kills the build.
+/// The flash size to pad the merged image to: the project's own (`flash_size` in the
+/// build's flasher_args.json) when QEMU can emulate it, else 4 MB. A 2 MB project
+/// then boots on 2 MB of simulated flash, without ESP-IDF's warning that the chip's
+/// flash is larger than the image says.
+fn image_size(flasher_args: &[u8]) -> &'static str {
+    let size = serde_json::from_slice::<serde_json::Value>(flasher_args)
+        .ok()
+        .and_then(|v| {
+            v.pointer("/flash_settings/flash_size")
+                .and_then(|s| s.as_str())
+                .map(str::to_owned)
+        });
+    match size.as_deref() {
+        Some("2MB") => "2MB",
+        Some("8MB") => "8MB",
+        Some("16MB") => "16MB",
+        _ => "4MB",
+    }
+}
+
+/// Build: `idf.py build`, then `merge-bin` into one flash image of the project's
+/// flash size (`image_size`), and the ELF copied beside it. Every line goes to `log`;
+/// dropping the future kills the build.
 pub async fn run(
     plan: &Plan,
     dirs: &Dirs,
@@ -293,6 +314,11 @@ pub async fn run(
     args.push("build".into());
     run_logged(idf_py(&plan.idf, args), "idf.py build", &mut log).await?;
 
+    let size = image_size(
+        &tokio::fs::read(dirs.build.join("flasher_args.json"))
+            .await
+            .unwrap_or_default(),
+    );
     let mut args = common_args(plan, dirs);
     args.extend([
         "merge-bin".into(),
@@ -301,7 +327,7 @@ pub async fn run(
         "-f".into(),
         "raw".into(),
         "--pad-to-size".into(),
-        "4MB".into(),
+        size.into(),
     ]);
     run_logged(idf_py(&plan.idf, args), "idf.py merge-bin", &mut log).await?;
 
@@ -334,6 +360,18 @@ mod tests {
     }
 
     const CMAKE: &str = "cmake_minimum_required(VERSION 3.16)\ninclude($ENV{IDF_PATH}/tools/cmake/project.cmake)\nproject(blinky)\n";
+
+    #[test]
+    fn images_take_the_projects_flash_size_when_qemu_has_it() {
+        let args = |size: &str| format!(r#"{{"flash_settings": {{"flash_size": "{size}"}}}}"#);
+        assert_eq!(image_size(args("2MB").as_bytes()), "2MB");
+        assert_eq!(image_size(args("16MB").as_bytes()), "16MB");
+        // QEMU has no 1 or 32 MB flash; "keep" and missing files get 4 MB.
+        assert_eq!(image_size(args("1MB").as_bytes()), "4MB");
+        assert_eq!(image_size(args("32MB").as_bytes()), "4MB");
+        assert_eq!(image_size(args("keep").as_bytes()), "4MB");
+        assert_eq!(image_size(b""), "4MB");
+    }
 
     #[test]
     fn opens_idf_projects_and_refuses_other_folders() {

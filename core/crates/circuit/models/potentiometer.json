@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "potentiometer",
+  "name": "Potentiometer (analog input)",
+  "look": "box",
+  "pins": ["wiper"],
+  "controls": [
+    { "name": "position", "type": "slider", "label": "Position", "min": 0, "max": 100, "default": 50, "unit": "%" }
+  ],
+  "state": { "position": 50.0, "volts": 1.65 },
+  "script": "potentiometer.rhai"
+}
