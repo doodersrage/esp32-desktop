@@ -1,10 +1,10 @@
-# Plan: Arch-native ESP32 workbench and simulator
+# Plan: native Linux ESP32 workbench and simulator
 
-Last updated: 2026-11-19 (0.1.4 released: the user's own ESP-IDF projects build with idf.py; the simulator section reflects fork recipe 13: Wi-Fi on all three chips, 222 of 227 library builds pass, light sleep and SPIFFS in ESP-IDF builds)
+Last updated: 2026-11-19 (the owner made Debian, Ubuntu and Fedora supported platforms beside Arch, with packages built and install-tested in CI; 0.1.4 released: the user's own ESP-IDF projects build with idf.py; the simulator section reflects fork recipe 13)
 
 ## Summary
 
-Build a native Qt 6 desktop app for KDE Plasma, backed by a Rust core that wraps lcgamboa's QEMU fork (Espressif's QEMU plus Wi-Fi and host hooks) for simulation and uses Rust serial and flash crates for real boards. Ship it as a PKGBUILD.
+Build a native Qt 6 desktop app for Linux (developed on KDE Plasma; Arch, Debian, Ubuntu and Fedora supported since 2026-11-19), backed by a Rust core that wraps lcgamboa's QEMU fork (Espressif's QEMU plus Wi-Fi and host hooks) for simulation and uses Rust serial and flash crates for real boards. Ship it as a PKGBUILD.
 
 The one hard problem is the virtual breadboard: GPIO-level parts wired to the emulated chip. The plan defers it until the rest works.
 
@@ -27,6 +27,7 @@ v1 is done when every esp32bench.dev library project builds and flashes from the
 | Simulation engine | lcgamboa's QEMU fork, pinned to a commit (decided in phase 0) | Both forks passed boot, UART, reset, GDB and the pinned Arduino core on all three chips; only lcgamboa's lets the host read and drive GPIO and answer as an I2C device, and it adds Wi-Fi on ESP32 and C3. That makes phase 4 app work rather than QEMU patches. Results: [PHASE0.md](PHASE0.md), [qemu-forks.md](qemu-forks.md). |
 | Getting QEMU | Build lcgamboa's fork from source at the pinned commit, as executables and as a library | The fork has no releases. The AUR package is stale (see Arch-specific notes). Espressif's prebuilt binaries stay as a test baseline until the core's setup step builds the fork. |
 | Toolchain | Detect an existing ESP-IDF and Arduino core, offer a managed install | The AUR `esp-idf` package is one supported source. |
+| Platforms | Arch, Debian 13, Ubuntu 24.04 and 26.04 LTS, Fedora 44 and 45, on any desktop (decided by the owner 2026-11-19; before, Arch with Plasma only) | Packages for each (`.pkg.tar.zst`, `.deb`, `.rpm`) are built in that release's container against its own Qt (6.4 at least, for Ubuntu 24.04) and libraries, installed into a fresh container and smoke-tested, by `.github/workflows/packages.yml` on every release tag. Where a distribution has no current `arduino-cli` package (Debian, Ubuntu, Fedora) the app installs a pinned, checksummed release itself; hints name each distribution's packages and serial group (`esp32bench-distro`). Hardware has been checked on Arch only. |
 | Serial monitor | Plain text view (`QPlainTextEdit`) (decided 2026-11-16) | Line-based output needs no terminal emulation, and `qt6-base` already has it. |
 | Simulator network | A simulated Wi-Fi network that reaches nothing: restricted user-mode networking, only the firmware's port 80 forwarded to loopback (decided 2026-11-18) | Library sketches that wait for Wi-Fi run and their web pages open on the desktop, while downloaded firmware still reaches no other computer and resolves no names, so no consent prompt is needed. |
 | Virtual part data | Placed in the app first, saved per project and board on this computer; the shared manifest may carry the same data later (decided 2026-11-16) | The library's wiring is free text, so parts need structured data from somewhere. Placing them in the app works for every project at once with no site change. The circuit file format is versioned in `schema/` and designed so the manifest can adopt it as an optional addition. |
@@ -107,7 +108,7 @@ The first estimate was about 33 weeks for phases 0 to 3 and 5, at about 14 hours
 | 2. Real hardware (feature complete 2026-11-16; inspect, flash, read, erase and restore checked on an ESP32-C3, over USB and a PL2303 UART bridge; the automatic DTR/RTS reset not yet) | Flash, erase, partition table and eFuse summary. Ship a udev rule and handle the `uucp` group. | 6 weeks |
 | 3. Simulator v1 (done 2026-11-16, checked on Plasma) | Build and pin lcgamboa's fork in the setup step (executables and library). Build, flash image, run in QEMU, with console, reset, GDB panel and embedded framebuffer. | 9 weeks |
 | 4. Virtual parts (done 2026-11-17, checked on Plasma) | LEDs, buttons and I2C sensors on a QGraphicsScene pin diagram, for ESP32 and C3, driven through the fork's library hooks. In place: LED, button, switch, RGB LED, SSD1306 OLED, BME280, MPU-6050 and DS3231, with sensor controls kept between runs. | was 12+ weeks; actual two days of sessions (2026-11-16 and 17); more parts open-ended |
-| 5. Packaging (in progress: 0.1.0 released 2026-11-17, 0.1.1 to 0.1.3 on 2026-11-18, 0.1.4 on 2026-11-19, with `-git` and `-bin` PKGBUILDs, clean-chroot built, namcap-checked and installed on Plasma; the AUR submission is left) | PKGBUILD (`-git` and `-bin`) building both the Rust core and the Qt UI, desktop entry, optional deps declared, AUR submission. | was 3 weeks; rescaled to about 1 week, including a clean-chroot build and the owner's AUR submission |
+| 5. Packaging (in progress: 0.1.0 released 2026-11-17, 0.1.1 to 0.1.3 on 2026-11-18, 0.1.4 on 2026-11-19, with `-git` and `-bin` PKGBUILDs, clean-chroot built, namcap-checked and installed on Plasma; from 2026-11-19 also `.deb` and `.rpm` packages for Debian 13, Ubuntu 24.04 and 26.04 and Fedora 44 and 45, built and install-tested in CI per release; the AUR submission is left) | PKGBUILD (`-git` and `-bin`) building both the Rust core and the Qt UI, desktop entry, optional deps declared, AUR submission; Debian and Fedora packages from the same install layout (`packaging/install-files.sh`). | was 3 weeks; rescaled to about 1 week, including a clean-chroot build and the owner's AUR submission |
 
 Phase 4 builds on lcgamboa's library hooks, which phase 0 proved for GPIO and I2C. The work is mostly the canvas and the part models:
 
@@ -121,6 +122,7 @@ Phase 4 builds on lcgamboa's library hooks, which phase 0 proved for GPIO and I2
 - **Library:** the same CI job that feeds the site's "runs in simulator" badge doubles as a regression suite.
 - **Hardware in the loop:** one physical board per chip family on a USB hub, running flash, monitor and reset tests before each release.
 - **UI:** smoke tests on Plasma Wayland and X11.
+- **Packages:** every release's packages are installed into a fresh container of each supported distribution release and checked: commands, the core over its socket, the UI started headless, the udev rule's group, and the app's own arduino-cli install (`packaging/ci/smoke.sh`).
 
 ## Also plan for
 
@@ -130,6 +132,14 @@ Phase 4 builds on lcgamboa's library hooks, which phase 0 proved for GPIO and I2
 - **Part model format:** decided: a JSON description plus a Rhai script per model ([parts.md](parts.md)).
 - **Project format:** a plain, git-friendly on-disk layout for local projects, compatible with the site's manifest.
 - **Repo layout:** a separate repo from the site, with the shared schema published as its own package.
+
+## Debian, Ubuntu and Fedora notes
+
+- **arduino-cli:** no current package (Debian has it only in testing; Fedora not at all), so the app installs the pinned official release (1.5.1, the version Arch shipped when the library sweep ran) into `$XDG_DATA_HOME/esp32bench/arduino-cli/`, after checking its SHA-256. It needs no root.
+- **Serial ports** belong to `dialout`, not `uucp`; the packages' udev rule uses it, and hints say so.
+- **Qt:** Ubuntu 24.04 has Qt 6.4.2, so the UI builds against 6.4 or later. Qt's X11 platform plugin needs `libxcb-cursor0` (`xcb-util-cursor` on Fedora), which the distributions' Qt packages do not pull in, and Wayland desktops other than Plasma need `qt6-wayland` (`qt6-qtwayland`) to run natively; the packages depend on the first and recommend the second.
+- **Rust:** the packages are built with rustup's stable toolchain; the distributions' own (Debian 13: 1.85) are older than the workspace needs.
+- **Simulator build tools** have the usual names (`ninja-build`, `libslirp-dev` or `libslirp-devel`, and on Debian `python3-venv`, which QEMU's configure needs); the packages recommend them, and the app's setup step lists what is missing as an `apt` or `dnf` command.
 
 ## Arch-specific notes
 

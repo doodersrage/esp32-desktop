@@ -1,0 +1,9 @@
+[package]
+name = "esp32bench-distro"
+description = "Which Linux distribution esp32bench runs on: package names, install commands and the serial-port group"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]

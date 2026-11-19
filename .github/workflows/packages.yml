@@ -1,0 +1,111 @@
+name: Packages
+
+# Build esp32bench's packages for every supported distribution, each in a container
+# of that release against its own Qt and libraries; install each into a fresh
+# container of the same release and smoke-test it (packaging/ci/smoke.sh); on a
+# version tag, attach them all to the GitHub release.
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+    paths:
+      - 'packaging/**'
+      - '.github/workflows/packages.yml'
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - '.github/workflows/packages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: arch, image: 'archlinux:latest', script: packaging/arch/build.sh }
+          - { name: debian-13, image: 'debian:13', script: packaging/deb/build.sh }
+          - { name: ubuntu-24.04, image: 'ubuntu:24.04', script: packaging/deb/build.sh }
+          - { name: ubuntu-26.04, image: 'ubuntu:26.04', script: packaging/deb/build.sh }
+          - { name: fedora-44, image: 'fedora:44', script: packaging/rpm/build.sh }
+          - { name: fedora-45, image: 'fedora:45', script: packaging/rpm/build.sh }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build in ${{ matrix.image }}
+        run: |
+          mkdir -p dist
+          docker run --rm -v "$PWD:/src:ro" -v "$PWD/dist:/out" "${{ matrix.image }}" \
+            bash /src/${{ matrix.script }} /src /out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  test:
+    name: Install and test ${{ matrix.name }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: arch, image: 'archlinux:latest', glob: '*.pkg.tar.zst' }
+          - { name: debian-13, image: 'debian:13', glob: '*.deb' }
+          - { name: ubuntu-24.04, image: 'ubuntu:24.04', glob: '*.deb' }
+          - { name: ubuntu-26.04, image: 'ubuntu:26.04', glob: '*.deb' }
+          - { name: fedora-44, image: 'fedora:44', glob: '*.rpm' }
+          - { name: fedora-45, image: 'fedora:45', glob: '*.rpm' }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-${{ matrix.name }}
+          path: dist
+
+      - name: Install into a fresh ${{ matrix.image }} and smoke-test
+        run: |
+          pkg=$(cd dist && ls ${{ matrix.glob }} | head -1)
+          docker run --rm -e ESP32BENCH_SMOKE_DOWNLOADS=1 \
+            -v "$PWD:/src:ro" -v "$PWD/dist:/dist:ro" "${{ matrix.image }}" \
+            bash /src/packaging/ci/smoke.sh "/dist/$pkg"
+
+  release:
+    name: Attach to the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: dist
+          merge-multiple: true
+
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The release notes are written by hand; make a draft if they are not up yet.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft \
+                 --title "esp32bench ${TAG#v}" --notes "Packages for ${TAG#v}; notes to follow."
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/*

@@ -28,7 +28,9 @@ pub enum Error {
     Baud(u32),
     #[error("{0} is in use by another program")]
     Busy(PathBuf),
-    #[error("no permission to open {0}; install the esp32bench udev rule or join the uucp group")]
+    #[error(
+        "no permission to open {0}; install the esp32bench udev rule or join the group that owns serial ports (uucp on Arch, dialout on Debian, Ubuntu and Fedora)"
+    )]
     Permission(PathBuf),
     #[error("{0} does not exist")]
     NotFound(PathBuf),

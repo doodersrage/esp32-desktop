@@ -2,6 +2,7 @@
 //! small package index files. QEMU state depends on the machine, so only its shape
 //! is checked here.
 
+use esp32bench_distro::Distro;
 use std::path::{Path, PathBuf};
 
 use esp32bench_toolchain::{
@@ -108,6 +109,7 @@ fn env(dir: &Path, cli: Option<PathBuf>) -> Env {
         arduino_cli: cli,
         arduino_data: dir.to_owned(),
         sketchbook: dir.join("sketchbook"),
+        distro: Distro::Arch,
     }
 }
 
@@ -162,8 +164,25 @@ async fn without_arduino_cli_says_how_to_get_it_and_never_runs_it() {
         s[0].hint
             .as_deref()
             .unwrap()
-            .contains("pacman -S arduino-cli")
+            .contains("pacman -S --needed arduino-cli")
     );
+    // Where there is no package, the app installs a pinned copy itself.
+    for distro in [Distro::Debian, Distro::Fedora, Distro::Other] {
+        let mut e = env(dir.path(), Some(missing.clone()));
+        e.distro = distro;
+        let d = status(&e).await;
+        assert!(d[0].installable, "{distro:?}");
+        assert_eq!(
+            d[0].download_bytes,
+            Some(esp32bench_build::arduino_cli_pin::SIZE)
+        );
+        assert!(
+            d[0].hint
+                .as_deref()
+                .unwrap()
+                .contains("installs arduino-cli 1.5.1")
+        );
+    }
     assert_eq!(s[1].state, State::Missing);
     assert!(
         !s[1].installable,
@@ -239,12 +258,20 @@ async fn a_failing_arduino_cli_is_broken_not_missing() {
 #[test]
 fn board_access_needs_the_rule_or_the_group() {
     use esp32bench_toolchain::board_access;
-    assert_eq!(board_access(true, false).state, State::Installed);
-    assert_eq!(board_access(false, true).state, State::Installed);
-    let none = board_access(false, false);
+    assert_eq!(
+        board_access(true, false, Distro::Arch).state,
+        State::Installed
+    );
+    assert_eq!(
+        board_access(false, true, Distro::Arch).state,
+        State::Installed
+    );
+    let none = board_access(false, false, Distro::Arch);
     assert_eq!(none.state, State::Missing);
     assert!(!none.installable, "needs root, so the app never does it");
     assert!(none.hint.unwrap().contains("usermod -aG uucp"));
+    let none = board_access(false, false, Distro::Debian);
+    assert!(none.hint.unwrap().contains("usermod -aG dialout"));
 }
 
 #[test]
@@ -285,21 +312,23 @@ fn write_script(path: &std::path::Path, content: impl AsRef<[u8]>) {
 #[test]
 fn lcgamboa_status_says_what_building_needs() {
     use esp32bench_sim::lcgamboa::{Build, Requirement};
-    let c = esp32bench_toolchain::lcgamboa_status(None, false, &[]);
+    let c = esp32bench_toolchain::lcgamboa_status(None, false, &[], Distro::Arch);
     assert_eq!(c.state, State::Missing);
     assert!(c.installable);
     assert!(c.hint.unwrap().contains("2 GB"));
 
     let missing = [Requirement {
         what: "ninja",
-        package: "ninja",
+        need: esp32bench_distro::Need::Ninja,
     }];
-    let c = esp32bench_toolchain::lcgamboa_status(None, false, &missing);
+    let c = esp32bench_toolchain::lcgamboa_status(None, false, &missing, Distro::Arch);
     assert!(!c.installable);
     assert!(c.hint.unwrap().contains("sudo pacman -S --needed ninja"));
+    let c = esp32bench_toolchain::lcgamboa_status(None, false, &missing, Distro::Fedora);
+    assert!(c.hint.unwrap().contains("sudo dnf install ninja-build"));
 
     let built = Build { root: "/x".into() };
-    let c = esp32bench_toolchain::lcgamboa_status(Some(built), false, &missing);
+    let c = esp32bench_toolchain::lcgamboa_status(Some(built), false, &missing, Distro::Arch);
     assert_eq!(c.state, State::Installed);
     assert_eq!(
         c.version.as_deref(),
@@ -307,7 +336,7 @@ fn lcgamboa_status_says_what_building_needs() {
     );
     assert_eq!(c.hint, None);
 
-    let c = esp32bench_toolchain::lcgamboa_status(None, true, &[]);
+    let c = esp32bench_toolchain::lcgamboa_status(None, true, &[], Distro::Arch);
     assert_eq!(c.state, State::OtherVersion);
     assert!(c.installable);
     assert!(c.hint.unwrap().contains("older build"));

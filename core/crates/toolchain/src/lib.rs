@@ -1,15 +1,18 @@
 //! What the app needs installed, whether it is, and installing what it can.
 //!
 //! Status checks never touch the network. Download sizes come from files already on
-//! disk (the Arduino package index) or from pins (QEMU). arduino-cli itself is a
-//! system package: the app shows the command to install it but never runs it,
-//! because that needs root (CLAUDE.md rule 5).
+//! disk (the Arduino package index) or from pins (QEMU, arduino-cli). On Arch
+//! arduino-cli is a system package: the app shows the command to install it but never
+//! runs it, because that needs root (CLAUDE.md rule 5). Debian, Ubuntu and Fedora have
+//! no current package for it, so there the app installs a pinned official release
+//! into its own data directory, which needs no root.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use esp32bench_build::{Stream, Toolchain};
+use esp32bench_distro::{Distro, Need};
 use esp32bench_sim::{Arch, install, lcgamboa, pin};
 use serde::Serialize;
 use serde_json::Value;
@@ -105,6 +108,9 @@ pub struct Env {
     pub arduino_data: PathBuf,
     /// Private sketchbook for builds (ARDUINO_DIRECTORIES_USER).
     pub sketchbook: PathBuf,
+    /// The distribution, for install hints and what the app installs itself
+    /// (`Distro::detect()`; tests set it).
+    pub distro: Distro,
 }
 
 /// The udev rule file the package installs (packaging/udev/).
@@ -113,9 +119,11 @@ pub const UDEV_RULE: &str = "69-esp32bench.rules";
 pub const UDEV_DIRS: [&str; 2] = ["/usr/lib/udev/rules.d", "/etc/udev/rules.d"];
 
 /// Whether this user can reach boards without root: the esp32bench udev rule is
-/// installed (seat access), or the user is in the uucp group that owns serial ports.
-pub fn board_access(rule_installed: bool, in_uucp: bool) -> Component {
-    let ok = rule_installed || in_uucp;
+/// installed (seat access), or the user is in the group that owns serial ports
+/// (`uucp` on Arch, `dialout` on Debian, Ubuntu and Fedora).
+pub fn board_access(rule_installed: bool, in_serial_group: bool, distro: Distro) -> Component {
+    let ok = rule_installed || in_serial_group;
+    let group = distro.serial_group();
     Component {
         id: Id::DeviceAccess,
         name: "Board access",
@@ -127,9 +135,10 @@ pub fn board_access(rule_installed: bool, in_uucp: bool) -> Component {
         download_bytes: None,
         installable: false,
         hint: (!ok).then(|| {
-            "Install the esp32bench package, which ships a udev rule, or join the uucp group: \
-             sudo usermod -aG uucp $USER, then log out and in again."
-                .to_owned()
+            format!(
+                "Install the esp32bench package, which ships a udev rule, or join the {group} \
+                 group: sudo usermod -aG {group} $USER, then log out and in again."
+            )
         }),
     }
 }
@@ -231,11 +240,22 @@ pub async fn status(env: &Env) -> Vec<Component> {
         None => None,
     };
     let cli_ok = matches!(probe, Some(Ok(_)));
+    let distro = env.distro;
+    // Where the distribution packages it, that; else the app installs its own copy.
+    let own_cli = distro.package(Need::ArduinoCli).is_none();
     let (state, version, hint) = match probe {
         None => (
             State::Missing,
             None,
-            Some("Install it from the Arch repositories: sudo pacman -S arduino-cli".to_owned()),
+            Some(match distro.install_hint(&[Need::ArduinoCli]) {
+                Some(cmd) => format!("Install it from the {} repositories: {cmd}", distro.name()),
+                None => format!(
+                    "{} has no current package for it, so the app installs arduino-cli {} \
+                     (an official release, checked) into its own folder.",
+                    distro.name(),
+                    esp32bench_build::arduino_cli_pin::VERSION
+                ),
+            }),
         ),
         Some(Ok(v)) => (State::Installed, Some(v), None),
         Some(Err(e)) => (
@@ -252,8 +272,9 @@ pub async fn status(env: &Env) -> Vec<Component> {
         version,
         wanted: None,
         path: tools.as_ref().map(|t| t.arduino_cli.clone()),
-        download_bytes: None,
-        installable: false,
+        download_bytes: (own_cli && state == State::Missing)
+            .then_some(esp32bench_build::arduino_cli_pin::SIZE),
+        installable: own_cli && state != State::Installed,
         hint,
     });
 
@@ -316,12 +337,17 @@ pub async fn status(env: &Env) -> Vec<Component> {
         lcgamboa::Build::find(),
         outdated,
         &lcgamboa::missing_requirements().await,
+        env.distro,
     ));
 
     let rule = UDEV_DIRS
         .iter()
         .any(|d| Path::new(d).join(UDEV_RULE).is_file());
-    out.push(board_access(rule, in_group("uucp")));
+    out.push(board_access(
+        rule,
+        in_group(env.distro.serial_group()),
+        env.distro,
+    ));
     out
 }
 
@@ -330,14 +356,15 @@ pub fn lcgamboa_status(
     build: Option<lcgamboa::Build>,
     outdated: bool,
     missing: &[lcgamboa::Requirement],
+    distro: Distro,
 ) -> Component {
-    let hint = match (&build, lcgamboa::install_hint(missing)) {
+    let hint = match (&build, lcgamboa::install_hint(distro, missing)) {
         (Some(_), _) => None,
         (None, None) if outdated => {
             Some("An older build is installed; rebuild it (several minutes).".to_owned())
         }
         (None, Some(cmd)) => Some(format!(
-            "Building it needs tools that are not installed. Install them with: {cmd}"
+            "Building it needs tools that are not installed: {cmd}"
         )),
         (None, None) => Some(
             "Built from source on this computer: several minutes and about 2 GB of disk."
@@ -446,8 +473,29 @@ impl std::error::Error for InstallError {}
 /// Install `id`, reporting progress lines to `log`. Dropping the future cancels it.
 pub async fn install(env: &Env, id: Id, mut log: impl FnMut(String)) -> Result<(), InstallError> {
     match id {
-        // Both need root (a system package; a udev rule or group change).
-        Id::ArduinoCli | Id::DeviceAccess => Err(InstallError::NotInstallable(id)),
+        // A udev rule or group change needs root.
+        Id::DeviceAccess => Err(InstallError::NotInstallable(id)),
+        // Arch packages arduino-cli (installing it needs root); elsewhere the app
+        // installs its own pinned copy.
+        Id::ArduinoCli if env.distro.package(Need::ArduinoCli).is_some() => {
+            Err(InstallError::NotInstallable(id))
+        }
+        Id::ArduinoCli => {
+            use esp32bench_build::arduino_cli_pin as pin;
+            let dir = esp32bench_build::app_arduino_cli_dir()
+                .ok_or_else(|| InstallError::Failed("no home directory".into()))?;
+            log(format!(
+                "Downloading arduino-cli {} ({} MB) and checking its SHA-256…",
+                pin::VERSION,
+                pin::SIZE / 1_000_000
+            ));
+            let dir =
+                install::install_archive(pin::URL, pin::SHA256, &dir, Path::new("arduino-cli"))
+                    .await
+                    .map_err(|e| InstallError::Failed(e.to_string()))?;
+            log(format!("Installed {}", dir.join("arduino-cli").display()));
+            Ok(())
+        }
         Id::Esp32Core => {
             let tools = env
                 .toolchain()

@@ -8,9 +8,9 @@ set(CMAKE_AUTOMOC ON)
 
 option(BUILD_TESTING "Build the UI tests" ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Network Widgets)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Network Widgets)
 if(BUILD_TESTING)
-    find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
+    find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
 endif()
 qt_standard_project_setup()
 include(GNUInstallDirs)

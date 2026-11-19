@@ -9,6 +9,9 @@ arch=('x86_64')
 url='https://github.com/doodersrage/esp32-desktop'
 license=('GPL-2.0-or-later')
 depends=(
+  'curl'           # downloads: Espressif's QEMU, the pinned packages
+  'tar'
+  'xz'
   'glibc'
   'libgcc'
   'libstdc++'
@@ -19,6 +22,7 @@ depends=(
 )
 makedepends=('cargo' 'cmake' 'git' 'ninja')
 optdepends=(
+  'qt6-wayland: run natively on Wayland desktops other than Plasma (Plasma installs it)'
   'arduino-cli: build Arduino sketches from the project library'
   # lcgamboa's QEMU fork, the simulator, is built from source by the app's setup step:
   'git: build the simulator (lcgamboa QEMU)'
@@ -72,16 +76,6 @@ check() {
 
 package() {
   cd "$_repo"
-  install -Dm755 "$srcdir/target/release/esp32benchd" "$pkgdir/usr/bin/esp32benchd"
-  install -Dm755 "$srcdir/target/release/esp32bench" "$pkgdir/usr/bin/esp32bench"
-  # The per-session simulator host: a helper the daemon starts, not a command.
-  install -Dm755 "$srcdir/target/release/esp32bench-qemu-host" \
-    "$pkgdir/usr/lib/esp32bench/esp32bench-qemu-host"
-  DESTDIR="$pkgdir" cmake --install "$srcdir/build-ui"
-
-  install -Dm644 packaging/esp32bench.desktop "$pkgdir/usr/share/applications/esp32bench.desktop"
-  install -Dm644 packaging/icons/esp32bench.svg \
-    "$pkgdir/usr/share/icons/hicolor/scalable/apps/esp32bench.svg"
-  install -Dm644 packaging/udev/69-esp32bench.rules \
-    "$pkgdir/usr/lib/udev/rules.d/69-esp32bench.rules"
+  # The layout every package shares (packaging/install-files.sh).
+  sh packaging/install-files.sh "$PWD" "$srcdir/target" "$srcdir/build-ui" "$pkgdir" uucp
 }

@@ -8,6 +8,9 @@ arch=('x86_64')
 url='https://github.com/doodersrage/esp32-desktop'
 license=('GPL-2.0-or-later')
 depends=(
+  'curl'           # downloads: Espressif's QEMU, the pinned packages
+  'tar'
+  'xz'
   'glibc'
   'hicolor-icon-theme'
   'libgcc'
@@ -17,6 +20,7 @@ depends=(
   'systemd-libs'   # libudev: board detection and hotplug
 )
 optdepends=(
+  'qt6-wayland: run natively on Wayland desktops other than Plasma (Plasma installs it)'
   'arduino-cli: build Arduino sketches from the project library'
   # lcgamboa's QEMU fork, the simulator, is built from source by the app's setup step:
   'git: build the simulator (lcgamboa QEMU)'

@@ -558,6 +558,7 @@ dependencies = [
  "esp32bench-circuit",
  "esp32bench-debug",
  "esp32bench-device",
+ "esp32bench-distro",
  "esp32bench-flash",
  "esp32bench-library",
  "esp32bench-rpc",
@@ -605,6 +606,7 @@ dependencies = [
  "esp32bench-circuit",
  "esp32bench-debug",
  "esp32bench-device",
+ "esp32bench-distro",
  "esp32bench-flash",
  "esp32bench-library",
  "esp32bench-rpc",
@@ -642,6 +644,10 @@ dependencies = [
  "tokio",
  "udev",
 ]
+
+[[package]]
+name = "esp32bench-distro"
+version = "0.1.4"
 
 [[package]]
 name = "esp32bench-flash"
@@ -706,6 +712,7 @@ name = "esp32bench-sim"
 version = "0.1.4"
 dependencies = [
  "base64 0.22.1",
+ "esp32bench-distro",
  "libc",
  "serde",
  "serde_json",
@@ -720,6 +727,7 @@ name = "esp32bench-toolchain"
 version = "0.1.4"
 dependencies = [
  "esp32bench-build",
+ "esp32bench-distro",
  "esp32bench-sim",
  "libc",
  "serde",

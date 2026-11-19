@@ -147,8 +147,8 @@ void DevicesPanel::showPorts(const QJsonArray &ports)
         const QJsonObject usb = p.value(u"usb"_s).toObject();
         if (!usb.isEmpty()) {
             item->setText(UsbIdColumn, u"%1:%2"_s
-                                           .arg(usb.value(u"vid"_s).toInt(), 4, 16, u'0')
-                                           .arg(usb.value(u"pid"_s).toInt(), 4, 16, u'0'));
+                                           .arg(usb.value(u"vid"_s).toInt(), 4, 16, QLatin1Char('0'))
+                                           .arg(usb.value(u"pid"_s).toInt(), 4, 16, QLatin1Char('0')));
             const QString product = usb.value(u"product"_s).toString();
             if (!product.isEmpty())
                 item->setToolTip(BridgeColumn, product);
@@ -158,8 +158,9 @@ void DevicesPanel::showPorts(const QJsonArray &ports)
             ++denied;
             item->setIcon(PortColumn, QIcon::fromTheme(u"dialog-warning"_s));
             item->setToolTip(PortColumn,
-                             tr("You cannot open this port. Install the esp32bench udev rule "
-                                "or add yourself to the uucp group."));
+                             tr("You cannot open this port. Install the esp32bench package, which adds "
+                                "a udev rule, or add yourself to the group that owns serial ports: uucp on "
+                                "Arch, dialout on Debian, Ubuntu and Fedora."));
         } else {
             item->setIcon(PortColumn, QIcon::fromTheme(u"network-serial"_s,
                                                         QIcon::fromTheme(u"preferences-system-network"_s)));

@@ -39,6 +39,7 @@ private slots:
         QCOMPARE(cp->text(DevicesPanel::ChipsColumn), u"Any"_s);
         QCOMPARE(cp->text(DevicesPanel::UsbIdColumn), u"10c4:ea60"_s);
         QVERIFY(cp->toolTip(DevicesPanel::PortColumn).contains(u"uucp"_s));
+        QVERIFY(cp->toolTip(DevicesPanel::PortColumn).contains(u"dialout"_s));
         QVERIFY(panel.statusText().contains(u"cannot open: 1"_s));
     }
 

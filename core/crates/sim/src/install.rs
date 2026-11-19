@@ -54,17 +54,40 @@ pub fn find_qemu(arch: Arch) -> Result<PathBuf, Error> {
 }
 
 /// Download, verify and unpack the pinned QEMU for `arch`. Returns the binary path.
-///
-/// Uses `curl` and `tar` with explicit argument lists. The archive is unpacked into a
-/// staging directory and renamed into place, so a failed install leaves nothing behind.
 pub async fn install_qemu(arch: Arch) -> Result<PathBuf, Error> {
     let asset = pin::asset(arch);
-    let final_dir = arch_dir(arch)?;
+    let bin = Path::new("qemu").join("bin").join(arch.binary_name());
+    let dir = install_archive(asset.url, asset.sha256, &arch_dir(arch)?, &bin).await?;
+    Ok(dir.join(bin))
+}
+
+/// Download a pinned archive (`.tar.xz` or `.tar.gz`, by its URL), check its SHA-256,
+/// and unpack it as `final_dir`, which must then hold `expect` (a relative path).
+///
+/// Uses `curl` and `tar` with explicit argument lists, HTTPS only. The archive is
+/// unpacked into a staging directory and renamed into place, so a failed install
+/// leaves nothing behind and an earlier install is replaced only by a good one.
+pub async fn install_archive(
+    url: &str,
+    sha256: &str,
+    final_dir: &Path,
+    expect: &Path,
+) -> Result<PathBuf, Error> {
+    let compression = if url.ends_with(".tar.gz") || url.ends_with(".tgz") {
+        "--gzip"
+    } else {
+        "--xz"
+    };
     let parent = final_dir.parent().ok_or(Error::NoDataDir)?.to_path_buf();
+    let name = final_dir
+        .file_name()
+        .ok_or(Error::NoDataDir)?
+        .to_string_lossy()
+        .into_owned();
     tokio::fs::create_dir_all(&parent).await?;
 
-    let archive = parent.join(format!(".{arch}.tar.xz.partial"));
-    let staging = parent.join(format!(".{arch}.partial"));
+    let archive = parent.join(format!(".{name}.archive.partial"));
+    let staging = parent.join(format!(".{name}.partial"));
     let _cleanup = Cleanup(vec![archive.clone(), staging.clone()]);
 
     let out = Command::new("curl")
@@ -72,21 +95,22 @@ pub async fn install_qemu(arch: Arch) -> Result<PathBuf, Error> {
         .args(["--proto", "=https", "--proto-redir", "=https"])
         .arg("--output")
         .arg(&archive)
-        .arg(asset.url)
+        .arg(url)
         .output()
-        .await?;
+        .await
+        .map_err(|e| missing_tool("curl", e))?;
     if !out.status.success() {
         return Err(Error::Download {
-            url: asset.url.to_owned(),
+            url: url.to_owned(),
             detail: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
         });
     }
 
     let actual = sha256_file(&archive).await?;
-    if actual != asset.sha256 {
+    if actual != sha256 {
         return Err(Error::Checksum {
-            url: asset.url.to_owned(),
-            expected: asset.sha256.to_owned(),
+            url: url.to_owned(),
+            expected: sha256.to_owned(),
             actual,
         });
     }
@@ -94,29 +118,41 @@ pub async fn install_qemu(arch: Arch) -> Result<PathBuf, Error> {
     let _ = tokio::fs::remove_dir_all(&staging).await;
     tokio::fs::create_dir_all(&staging).await?;
     let out = Command::new("tar")
-        .args(["--extract", "--xz", "--no-same-owner", "--file"])
+        .args(["--extract", compression, "--no-same-owner", "--file"])
         .arg(&archive)
         .arg("--directory")
         .arg(&staging)
         .output()
-        .await?;
+        .await
+        .map_err(|e| missing_tool("tar", e))?;
     if !out.status.success() {
         return Err(Error::Extract {
             path: archive.clone(),
             detail: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
         });
     }
-    let bin = staging.join("qemu").join("bin").join(arch.binary_name());
-    if !bin.is_file() {
+    if !staging.join(expect).is_file() {
         return Err(Error::Extract {
             path: archive.clone(),
-            detail: format!("archive has no qemu/bin/{}", arch.binary_name()),
+            detail: format!("archive has no {}", expect.display()),
         });
     }
 
-    let _ = tokio::fs::remove_dir_all(&final_dir).await;
-    tokio::fs::rename(&staging, &final_dir).await?;
-    Ok(final_dir.join("qemu").join("bin").join(arch.binary_name()))
+    let _ = tokio::fs::remove_dir_all(final_dir).await;
+    tokio::fs::rename(&staging, final_dir).await?;
+    Ok(final_dir.to_path_buf())
+}
+
+/// A program that could not be started: say which, when it is not installed.
+fn missing_tool(program: &str, e: std::io::Error) -> Error {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        Error::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("{program} is not installed; install it with your package manager"),
+        ))
+    } else {
+        Error::Io(e)
+    }
 }
 
 pub async fn sha256_file(path: &Path) -> Result<String, Error> {

@@ -191,7 +191,7 @@ enum ToolchainCmd {
         #[arg(long)]
         json: bool,
     },
-    /// Install one component: esp32-core, qemu-xtensa or qemu-riscv32.
+    /// Install one component: esp32-core, qemu-xtensa, qemu-riscv32, qemu-lcgamboa, or arduino-cli where the distribution has no package for it.
     Install { component: String },
 }
 
@@ -894,6 +894,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                     .context("no home directory")?,
                 sketchbook: esp32bench_build::default_sketchbook()
                     .context("no data directory: set XDG_DATA_HOME or HOME")?,
+                distro: esp32bench_distro::Distro::detect(),
             };
             match cmd {
                 ToolchainCmd::Status { json } => {

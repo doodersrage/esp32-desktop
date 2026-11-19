@@ -1,8 +1,8 @@
 # esp32-desktop
 
-A native Linux desktop workbench and simulator for ESP32 boards, built for KDE Plasma on Arch Linux. It is the desktop companion to [esp32bench.dev](https://esp32bench.dev/).
+A native Linux desktop workbench and simulator for ESP32 boards, for Arch, Debian, Ubuntu and Fedora. It is the desktop companion to [esp32bench.dev](https://esp32bench.dev/).
 
-**Status:** version 0.1.4 is out, for Arch Linux with KDE Plasma only. It browses and builds the esp32bench.dev library and your own ESP-IDF projects, flashes, inspects and monitors real boards, and runs builds in a simulator. The automatic reset of boards with a USB-UART bridge (CP210x, CH340) is still untested on hardware.
+**Status:** version 0.1.4 is out, for Arch Linux. From the next release there are also packages for Debian 13, Ubuntu 24.04 and 26.04 and Fedora 44 and 45, built and install-tested on each; real boards have been checked on Arch only so far. It browses and builds the esp32bench.dev library and your own ESP-IDF projects, flashes, inspects and monitors real boards, and runs builds in a simulator. The automatic reset of boards with a USB-UART bridge (CP210x, CH340) is still untested on hardware.
 
 ## What it does
 
@@ -32,16 +32,27 @@ Report problems at [github.com/doodersrage/esp32-desktop/issues](https://github.
 
 ## Installing
 
-On Arch Linux, install the package from the [latest release](https://github.com/doodersrage/esp32-desktop/releases/latest):
+Packages are attached to each [release](https://github.com/doodersrage/esp32-desktop/releases/latest). They are not signed, so they are installed from the downloaded file.
+
+**Arch Linux:**
 
 ```sh
 curl -LO https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.4/esp32bench-bin-0.1.4-1-x86_64.pkg.tar.zst
 sudo pacman -U esp32bench-bin-0.1.4-1-x86_64.pkg.tar.zst
 ```
 
-pacman installs the dependencies from the official repos. The package is not signed, so it is installed from the downloaded file. To build it yourself, run `makepkg -si` in `packaging/esp32bench-bin/` (the release's files) or `packaging/esp32bench-git/` (the latest source). The packages are not on the AUR: its registration is closed for now.
+To build it yourself, run `makepkg -si` in `packaging/esp32bench-bin/` (the release's files) or `packaging/esp32bench-git/` (the latest source). The packages are not on the AUR: its registration is closed for now.
 
-It installs `esp32bench-gui` (the app, also in the Plasma launcher as ESP32 Bench), `esp32benchd` (the core it starts), the `esp32bench` CLI, the udev rule for USB serial boards, and the handler for `esp32bench://` links from esp32bench.dev. To reach boards without root, be in the `uucp` group or logged in at the seat (the rule uses `uaccess`), then replug the board. Builds need `arduino-cli`; the simulator is built from source by the app's setup step (Tools menu), which lists any build tools it is missing.
+**Debian 13, Ubuntu 24.04 and 26.04, Fedora 44 and 45** (from the next release on): download the file for your release, `esp32bench_<version>-1~debian13_amd64.deb`, `…~ubuntu24.04_amd64.deb`, `…~ubuntu26.04_amd64.deb`, or `esp32bench-<version>-1.fc44.x86_64.rpm` / `….fc45.x86_64.rpm`, and install it with your package manager, which fetches the dependencies:
+
+```sh
+sudo apt install ./esp32bench_<version>-1~ubuntu26.04_amd64.deb     # Debian, Ubuntu
+sudo dnf install ./esp32bench-<version>-1.fc45.x86_64.rpm           # Fedora
+```
+
+Each package is built on its own release and installed and checked there by CI before it is attached. Real boards have been tested on Arch so far.
+
+Every package installs `esp32bench-gui` (the app, in the desktop's launcher as ESP32 Bench), `esp32benchd` (the core it starts), the `esp32bench` CLI, the udev rule for USB serial boards, and the handler for `esp32bench://` links from esp32bench.dev. To reach boards without root, be logged in at the seat (the rule uses `uaccess`) or in the group that owns serial ports (`uucp` on Arch, `dialout` on Debian, Ubuntu and Fedora), then replug the board. Builds need `arduino-cli`: on Arch it is a package; elsewhere the app's Toolchain setup installs a pinned release into its own folder. The simulator is built from source by the same setup step (Tools menu), which lists any build tools it is missing as a command for your distribution.
 
 ## Licence
 

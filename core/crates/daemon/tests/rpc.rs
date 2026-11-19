@@ -876,16 +876,20 @@ async fn toolchain_install_runs_as_a_job() {
             break;
         }
     }
-    // arduino-cli itself needs root, so it is never installed from here.
-    match c
-        .call("toolchain.install", json!({ "component": "arduino-cli" }))
-        .await
-    {
-        Err(ClientError::Rpc(e)) => {
-            assert_eq!(e.code, code::FAILED);
-            assert!(e.message.contains("pacman"));
+    // Where the distribution packages arduino-cli (Arch), installing it needs root, so
+    // it is refused here; elsewhere the app installs its own copy (not tested here: a
+    // download).
+    if esp32bench_distro::Distro::detect() == esp32bench_distro::Distro::Arch {
+        match c
+            .call("toolchain.install", json!({ "component": "arduino-cli" }))
+            .await
+        {
+            Err(ClientError::Rpc(e)) => {
+                assert_eq!(e.code, code::FAILED);
+                assert!(e.message.contains("pacman"));
+            }
+            other => panic!("expected a refusal, got {other:?}"),
         }
-        other => panic!("expected a refusal, got {other:?}"),
     }
     match c
         .call("toolchain.install", json!({ "component": "gcc" }))

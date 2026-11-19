@@ -22,6 +22,37 @@ pub mod idf;
 
 /// Overrides the arduino-cli binary (tests use a stand-in).
 pub const ARDUINO_CLI_ENV: &str = "ESP32BENCH_ARDUINO_CLI";
+
+/// The arduino-cli the app installs itself where the distribution has no package for
+/// it (Debian, Ubuntu, Fedora): an official release, pinned and checked. The same
+/// version as Arch's package at the time, which the library sweep was run with.
+/// Source: <https://github.com/arduino/arduino-cli/releases>, whose checksums file
+/// lists the SHA-256 below.
+pub mod arduino_cli_pin {
+    pub const VERSION: &str = "1.5.1";
+    pub const URL: &str = "https://github.com/arduino/arduino-cli/releases/download/v1.5.1/arduino-cli_1.5.1_Linux_64bit.tar.gz";
+    pub const SHA256: &str = "28a8e119c498a25607821c36cb2dc49e8463941b261a0d99091baa7bc692dd2b";
+    /// Download size in bytes, as GitHub reports it.
+    pub const SIZE: u64 = 17_630_765;
+}
+
+/// Where the app installs its own arduino-cli: `$XDG_DATA_HOME/esp32bench/arduino-cli/
+/// <version>/`, the binary at its top.
+pub fn app_arduino_cli_dir() -> Option<PathBuf> {
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|h| !h.is_empty())
+                .map(|h| PathBuf::from(h).join(".local/share"))
+        })?;
+    Some(
+        data.join("esp32bench")
+            .join("arduino-cli")
+            .join(arduino_cli_pin::VERSION),
+    )
+}
 const CONSENT_LIFETIME: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Debug, thiserror::Error)]
@@ -271,9 +302,15 @@ pub struct Toolchain {
 impl Toolchain {
     /// `$ESP32BENCH_ARDUINO_CLI`, else `arduino-cli` on PATH.
     pub fn detect(sketchbook: PathBuf) -> Result<Self, Error> {
+        // The variable, then the copy the app installed, then the system's.
+        let own = app_arduino_cli_dir()
+            .map(|d| d.join("arduino-cli"))
+            .filter(|p| p.is_file());
         let cli = match std::env::var_os(ARDUINO_CLI_ENV).filter(|v| !v.is_empty()) {
             Some(p) => PathBuf::from(p),
-            None => find_on_path("arduino-cli").ok_or(Error::NoArduinoCli)?,
+            None => own
+                .or_else(|| find_on_path("arduino-cli"))
+                .ok_or(Error::NoArduinoCli)?,
         };
         Ok(Toolchain {
             arduino_cli: cli,

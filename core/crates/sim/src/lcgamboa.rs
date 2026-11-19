@@ -10,6 +10,7 @@
 //! runs in a staging directory renamed into place at the end.
 //! `ESP32BENCH_LCGAMBOA_DIR` points at another directory with the same layout.
 
+use esp32bench_distro::{Distro, Need};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
@@ -206,31 +207,32 @@ pub fn machine(chip: crate::Chip) -> &'static str {
     }
 }
 
-/// A tool or library the build needs, and the Arch package that provides it.
+/// A tool or library the build needs: the command or pkg-config name checked, and
+/// what provides it (`esp32bench_distro` names the package on each distribution).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Requirement {
     pub what: &'static str,
-    pub package: &'static str,
+    pub need: Need,
 }
 
 /// Commands on PATH the build runs.
-const COMMANDS: &[(&str, &str)] = &[
-    ("git", "git"),
-    ("make", "make"),
-    ("cc", "gcc"),
-    ("pkg-config", "pkgconf"),
-    ("ninja", "ninja"),
-    ("python3", "python"),
-    ("perl", "perl"),
-    ("sed", "sed"),
+const COMMANDS: &[(&str, Need)] = &[
+    ("git", Need::Git),
+    ("make", Need::Make),
+    ("cc", Need::Gcc),
+    ("pkg-config", Need::PkgConfig),
+    ("ninja", Need::Ninja),
+    ("python3", Need::Python),
+    ("perl", Need::Perl),
+    ("sed", Need::Sed),
 ];
 
 /// Libraries, by pkg-config name.
-const LIBRARIES: &[(&str, &str)] = &[
-    ("glib-2.0", "glib2"),
-    ("pixman-1", "pixman"),
-    ("libgcrypt", "libgcrypt"),
-    ("slirp", "libslirp"),
+const LIBRARIES: &[(&str, Need)] = &[
+    ("glib-2.0", Need::Glib),
+    ("pixman-1", Need::Pixman),
+    ("libgcrypt", Need::Libgcrypt),
+    ("slirp", Need::Slirp),
 ];
 
 fn on_path(cmd: &str) -> bool {
@@ -253,10 +255,26 @@ pub async fn missing_requirements() -> Vec<Requirement> {
     let mut out: Vec<Requirement> = COMMANDS
         .iter()
         .filter(|(c, _)| !on_path(c))
-        .map(|&(what, package)| Requirement { what, package })
+        .map(|&(what, need)| Requirement { what, need })
         .collect();
+    // QEMU's configure makes a Python virtual environment; Debian ships venv apart.
+    if on_path("python3")
+        && !Command::new("python3")
+            .args(["-c", "import venv, ensurepip"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .is_ok_and(|s| s.success())
+    {
+        out.push(Requirement {
+            what: "python3 venv",
+            need: Need::PythonVenv,
+        });
+    }
     let have_pkg_config = on_path("pkg-config");
-    for &(lib, package) in LIBRARIES {
+    for &(lib, need) in LIBRARIES {
         let found = have_pkg_config
             && Command::new("pkg-config")
                 .args(["--exists", lib])
@@ -267,17 +285,17 @@ pub async fn missing_requirements() -> Vec<Requirement> {
                 .await
                 .is_ok_and(|s| s.success());
         if !found {
-            out.push(Requirement { what: lib, package });
+            out.push(Requirement { what: lib, need });
         }
     }
     out
 }
 
-/// The command a person runs to install what is missing (the app never runs it).
-pub fn install_hint(missing: &[Requirement]) -> Option<String> {
-    let mut pkgs: Vec<&str> = missing.iter().map(|r| r.package).collect();
-    pkgs.dedup();
-    (!pkgs.is_empty()).then(|| format!("sudo pacman -S --needed {}", pkgs.join(" ")))
+/// The command a person runs to install what is missing on `distro` (the app never
+/// runs it).
+pub fn install_hint(distro: Distro, missing: &[Requirement]) -> Option<String> {
+    let needs: Vec<Need> = missing.iter().map(|r| r.need).collect();
+    distro.install_hint(&needs)
 }
 
 /// One step of the build: a program, its arguments and where it runs.
@@ -468,11 +486,12 @@ async fn run_step(base: &Path, step: &Step, log: &mut impl FnMut(String)) -> Res
 /// leaves the previous install (if any) untouched.
 pub async fn build(mut log: impl FnMut(String)) -> Result<Build, Error> {
     let missing = missing_requirements().await;
-    if let Some(hint) = install_hint(&missing) {
+    if !missing.is_empty() {
         let what: Vec<&str> = missing.iter().map(|r| r.what).collect();
+        let hint = install_hint(Distro::detect(), &missing).unwrap_or_default();
         return Err(Error::Build {
             step: "Checking build tools".into(),
-            detail: format!("missing {}; install them with: {hint}", what.join(", ")),
+            detail: format!("missing {}; {hint}", what.join(", ")),
         });
     }
     let root = root()?;
@@ -577,21 +596,25 @@ mod tests {
     }
 
     #[test]
-    fn hint_names_arch_packages_once() {
+    fn hint_names_each_distributions_packages() {
         let missing = [
             Requirement {
                 what: "ninja",
-                package: "ninja",
+                need: Need::Ninja,
             },
             Requirement {
                 what: "slirp",
-                package: "libslirp",
+                need: Need::Slirp,
             },
         ];
         assert_eq!(
-            install_hint(&missing).unwrap(),
+            install_hint(Distro::Arch, &missing).unwrap(),
             "sudo pacman -S --needed ninja libslirp"
         );
-        assert_eq!(install_hint(&[]), None);
+        assert_eq!(
+            install_hint(Distro::Debian, &missing).unwrap(),
+            "sudo apt install ninja-build libslirp-dev"
+        );
+        assert_eq!(install_hint(Distro::Fedora, &[]), None);
     }
 }

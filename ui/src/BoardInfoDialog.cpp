@@ -75,7 +75,7 @@ void BoardInfoDialog::showResult(const QString &port, const QJsonObject &result)
         item->setText(0, p.value(u"label"_s).toString());
         item->setText(1, p.value(u"type"_s).toString());
         item->setText(2, p.value(u"subtype"_s).toString());
-        item->setText(3, u"0x%1"_s.arg(p.value(u"offset"_s).toInteger(), 6, 16, u'0'));
+        item->setText(3, u"0x%1"_s.arg(p.value(u"offset"_s).toInteger(), 6, 16, QLatin1Char('0')));
         item->setText(4, QLocale().formattedDataSize(p.value(u"size"_s).toInteger()));
     }
     if (parts.isEmpty())

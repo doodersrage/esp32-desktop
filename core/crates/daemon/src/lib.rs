@@ -654,6 +654,7 @@ fn toolchain_env(state: &State) -> esp32bench_toolchain::Env {
         arduino_cli: state.arduino_cli.clone(),
         arduino_data: state.arduino_data.clone(),
         sketchbook: state.sketchbook.clone(),
+        distro: esp32bench_distro::Distro::detect(),
     }
 }
 
@@ -673,10 +674,17 @@ fn toolchain_install(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
     let p: InstallParams = parse_params(params)?;
     let id = esp32bench_toolchain::Id::parse(&p.component)
         .ok_or_else(|| RpcError::invalid_params(format!("unknown component `{}`", p.component)))?;
-    if id == esp32bench_toolchain::Id::ArduinoCli {
+    // Where the distribution packages arduino-cli, installing it needs root.
+    let distro = esp32bench_distro::Distro::detect();
+    if id == esp32bench_toolchain::Id::ArduinoCli
+        && let Some(cmd) = distro.install_hint(&[esp32bench_distro::Need::ArduinoCli])
+    {
         return Err(RpcError::new(
             code::FAILED,
-            "arduino-cli is a system package; install it with: sudo pacman -S arduino-cli",
+            format!(
+                "arduino-cli is a system package on {}; install it with: {cmd}",
+                distro.name()
+            ),
         ));
     }
     let job = ctx.subscribe(move |sub| async move {
