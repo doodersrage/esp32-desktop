@@ -1,6 +1,6 @@
 # Plan: Arch-native ESP32 workbench and simulator
 
-Last updated: 2026-11-19 (0.1.4 released: the user's own ESP-IDF projects build with idf.py; the simulator section reflects fork recipe 12: Wi-Fi on all three chips, 222 of 227 library builds pass)
+Last updated: 2026-11-19 (0.1.4 released: the user's own ESP-IDF projects build with idf.py; the simulator section reflects fork recipe 13: Wi-Fi on all three chips, 222 of 227 library builds pass, light sleep and SPIFFS in ESP-IDF builds)
 
 ## Summary
 
@@ -62,7 +62,7 @@ The simulator is firmware-level, not circuit-level. It runs on lcgamboa's fork o
 - **eFuses:** blank unless an eFuse image is supplied (the MAC reads as zeros). C3 Wi-Fi needs one.
 - **Display:** QEMU's virtual RGB panel (firmware using Espressif's `esp_lcd_qemu_rgb`) shows in the app on all three chips, read through QMP `screendump`. An SSD1306 OLED is a virtual part (phase 4); other displays (ST7789...) are not modelled.
 - **Patches:** the fork is built with twelve esp32bench patches (`core/crates/sim/patches/`, listed in `CLAUDE.md` and explained in [qemu-forks.md](qemu-forks.md)): the display, the CPU clock, ADC and LEDC registers, the C3's USB serial console, RMT (WS2812), sleep, an optimised library, the FPU at reset, RMT frames for parts, and the S3's radio.
-- **Peripherals:** on the ESP32 and C3, an analog input reads the voltage a part puts on its pin (a potentiometer part, set with a slider; added 2026-11-19), turned into the 12-bit reading that ESP-IDF's calibration maps back to that voltage. This is a value source like the sensors' sliders, not circuit simulation, which stays out of v1. Pins with no part, and every ADC pin on the S3, read 0; LEDC and RMT run (WS2812 strips are parts); deep sleep wakes on a timer, and so does light sleep in Arduino builds (in plain ESP-IDF builds it fails on all three chips, and SPIFFS on the ESP32 does not finish its check: `docs/idf-examples.md`, 2026-11-19). Not modelled: Bluetooth (neither fork has a controller), SPI parts, and secure boot or flash encryption.
+- **Peripherals:** on the ESP32 and C3, an analog input reads the voltage a part puts on its pin (a potentiometer part, set with a slider; added 2026-11-19), turned into the 12-bit reading that ESP-IDF's calibration maps back to that voltage. This is a value source like the sensors' sliders, not circuit simulation, which stays out of v1. Pins with no part, and every ADC pin on the S3, read 0; LEDC and RMT run (WS2812 strips are parts); light and deep sleep wake on a timer (ESP-IDF builds' light sleep since patch 0013, 2026-11-19; `docs/idf-examples.md`). Not modelled: Bluetooth (neither fork has a controller), SPI parts, and secure boot or flash encryption.
 - **Arch dependencies:** `libgcrypt glib2 pixman libslirp`, all in the official repos.
 
 ## Architecture

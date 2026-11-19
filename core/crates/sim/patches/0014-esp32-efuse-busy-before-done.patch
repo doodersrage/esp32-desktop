@@ -1,0 +1,87 @@
+esp32: an eFuse operation ends only once the CPU has seen it busy
+
+The ESP32 ROM checks for fault injection while it reads the eFuses: it
+writes EFUSE_CMD and reads it straight back (ROM 0x4000fc90), and if the
+operation already reads as done it resets the chip with a software reset
+(ROM 0x4000fdc7). On the chip a read takes microseconds, so that read
+always sees it busy. The model ended operations on a virtual timer (1 ms,
+patch 0009), and virtual time follows the host's clock: when a loaded
+host paused the CPU's thread between those two instructions for longer
+than that, the ROM reset the chip, often hundreds of times, and the first
+boot reported SW_RESET instead of POWERON_RESET. This was the rare,
+load-dependent failure in esp32bench's boot tests; with a 10 us operation
+it happened every time.
+
+An operation now ends only after EFUSE_CMD has been read while it ran.
+If the timer fires first, the end is put off 10 us at a time, at most 10
+ms, so an operation nobody polls still ends. Checked with the operation
+at 10 us: the first boot reports POWERON_RESET every time.
+
+Written for esp32bench (GPL-2.0-or-later). Changes Espressif's
+hw/nvram/esp32_efuse.c and include/hw/nvram/esp32_efuse.h (Copyright (c)
+2019 Espressif Systems (Shanghai) Co. Ltd., GPL-2.0-or-later, notices
+kept). Applied by esp32bench (core/crates/sim/src/lcgamboa.rs) to
+lcgamboa/qemu at 885a6e7061fb70fac78a074a719423810bc19a17, after patch
+0013.
+
+diff --git a/hw/nvram/esp32_efuse.c b/hw/nvram/esp32_efuse.c
+index 2bebd7d..9f5aaca 100644
+--- a/hw/nvram/esp32_efuse.c
++++ b/hw/nvram/esp32_efuse.c
+@@ -69,6 +69,9 @@ static uint64_t esp32_efuse_read(void *opaque, hwaddr addr, unsigned int size)
+         break;
+     case A_EFUSE_CMD:
+         r = s->cmd_reg;
++        if (r) {
++            s->esp32bench_busy_seen = true;
++        }
+         break;
+     case A_EFUSE_STATUS:
+         r = 0;
+@@ -229,12 +232,31 @@ static void esp32_efuse_op_timer_start(Esp32EfuseState *s)
+      * shorter (10 us) and the first boot reported a software reset instead of
+      * power-on. */
+     uint64_t interval_ns = 1000000;
++    s->esp32bench_busy_seen = false;
++    s->esp32bench_postponed = 0;
+     timer_mod_anticipate_ns(&s->op_timer, ns_now + interval_ns);
+ }
+ 
++/* esp32bench: an operation ends only once the CPU has seen it running. The ROM
++ * writes EFUSE_CMD and reads it back at once (a glitch check, at 0x4000fc90): if it
++ * reads 0 there it resets the chip with a software reset. On the chip an operation
++ * takes microseconds, so that read always sees it busy; here it ends on a virtual
++ * timer, which follows the host's clock, and a loaded host that paused the CPU's
++ * thread between those two instructions for longer than the operation made the first
++ * boot report SW_RESET, or reset the chip hundreds of times. Put off by 10 us at a
++ * time, at most 10 ms, so an operation nobody polls still ends. */
++#define ESP32BENCH_EFUSE_POSTPONE_NS 10000
++#define ESP32BENCH_EFUSE_POSTPONE_MAX 1000
++
+ static void esp32_efuse_timer_cb(void *opaque)
+ {
+     Esp32EfuseState *s = ESP32_EFUSE(opaque);
++    if (!s->esp32bench_busy_seen && s->esp32bench_postponed < ESP32BENCH_EFUSE_POSTPONE_MAX) {
++        s->esp32bench_postponed++;
++        timer_mod_anticipate_ns(&s->op_timer,
++                                qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + ESP32BENCH_EFUSE_POSTPONE_NS);
++        return;
++    }
+     uint32_t cmd = s->cmd_reg;
+     s->cmd_reg = 0;
+     s->int_raw_reg |= cmd;
+diff --git a/include/hw/nvram/esp32_efuse.h b/include/hw/nvram/esp32_efuse.h
+index 49eb298..84937e9 100644
+--- a/include/hw/nvram/esp32_efuse.h
++++ b/include/hw/nvram/esp32_efuse.h
+@@ -104,6 +104,10 @@ typedef struct Esp32EfuseState {
+     qemu_irq irq;
+     BlockBackend *blk;
+     QEMUTimer op_timer;
++    /* esp32bench: whether the CPU has read EFUSE_CMD while the operation ran, and
++     * how often its end was put off because it had not. */
++    bool esp32bench_busy_seen;
++    int esp32bench_postponed;
+     qemu_irq efuse_update_gpio;
+ 
+     Esp32EfuseRegs efuse_wr;

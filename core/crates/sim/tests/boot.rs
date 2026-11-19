@@ -465,6 +465,69 @@ async fn lcgamboa_esp32c3_sleeps_and_wakes() {
     arduino_sleep_on_lcgamboa(Chip::Esp32c3).await;
 }
 
+/// Light sleep as ESP-IDF 6.0.2 does it by default (patch 0013): three 500 ms sleeps
+/// in a row each return, woken by the timer, with no watchdog. Before the patch the
+/// interrupt watchdog fired during the second sleep on the ESP32 and C3: the timer
+/// groups kept counting while the chip slept.
+async fn idf_light_sleep_on_lcgamboa(chip: Chip) {
+    let Some(image) = built_image("light-sleep", chip) else {
+        return;
+    };
+    let Ok(launch) = esp32bench_sim::engine::launch(chip, Some(esp32bench_sim::Engine::Lcgamboa))
+    else {
+        eprintln!("skipping {chip}: lcgamboa's QEMU is not built");
+        return;
+    };
+    let mut s = Session::start(launch.config(chip, image)).await.unwrap();
+    let mut text = Vec::new();
+    let found = s
+        .uart
+        .wait_for(
+            b"esp32bench-light-sleep done",
+            Duration::from_secs(30),
+            |b| text.extend_from_slice(b),
+        )
+        .await
+        .unwrap();
+    let text = String::from_utf8_lossy(&text);
+    assert_eq!(found, WaitOutcome::Found, "{chip}:\n{text}");
+    let slept: Vec<i64> = text
+        .lines()
+        .filter_map(|l| l.trim_end().strip_prefix("esp32bench-light-sleep slept="))
+        .map(|l| {
+            assert!(l.ends_with(" cause=4"), "{chip}: woken by the timer: {l}");
+            l.split(' ').next().unwrap().parse().unwrap()
+        })
+        .collect();
+    assert_eq!(slept.len(), 3, "{chip}:\n{text}");
+    // ESP-IDF shortens the first sleep by the wake-up time it expects of the chip,
+    // which the simulator does not take, then adapts; allow 10 ms.
+    for us in slept {
+        assert!(
+            (490_000..=510_000).contains(&us),
+            "{chip}: slept {us} us:\n{text}"
+        );
+    }
+    assert!(!text.contains("Guru Meditation"), "{chip}:\n{text}");
+    assert!(!text.contains("WDT"), "{chip}:\n{text}");
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32_idf_light_sleep() {
+    idf_light_sleep_on_lcgamboa(Chip::Esp32).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32s3_idf_light_sleep() {
+    idf_light_sleep_on_lcgamboa(Chip::Esp32s3).await;
+}
+
+#[tokio::test]
+async fn lcgamboa_esp32c3_idf_light_sleep() {
+    idf_light_sleep_on_lcgamboa(Chip::Esp32c3).await;
+}
+
 /// The simulated Wi-Fi network (`esp32bench_sim::network`): the session joins
 /// `tests/firmware/arduino-wifi` through its settings block, as the app does for
 /// library sketches; the sketch gets an address by DHCP, cannot resolve names or

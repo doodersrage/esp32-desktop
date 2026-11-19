@@ -1,0 +1,438 @@
+light sleep stops the timer groups' watchdogs; ESP32 cache toggles are cheap
+
+Two things ESP-IDF builds (6.0.2) found that Arduino builds do not:
+
+- Light sleep, ESP32 and C3. ESP-IDF sleeps with interrupts off and the
+  other CPU parked, so nothing feeds the interrupt watchdog (Timer Group
+  1). On the chip that is fine: light sleep gates the clock the timer
+  groups count, and their watchdogs stand still. Here they counted on, and
+  any light sleep longer than the watchdog's timeout (300 ms by default)
+  ended in an interrupt watchdog panic (C3) or a TG1 watchdog reset
+  (ESP32), from the second sleep on. RTC_CNTL now raises a light-sleep
+  line from SLEEP_EN until the wake-up (or a reset), wired to both timer
+  groups, whose watchdogs keep their count and the time their stage had
+  left while it is high. The general-purpose timers keep counting: ESP-IDF
+  accounts for the sleep from RTC time either way. The S3 did not need it.
+
+- ESP32 flash cache. ESP-IDF turns the cache off and on around every flash
+  operation. The model unmapped and remapped the cache regions on each
+  toggle, which rebuilt QEMU's memory map and flushed all translated code:
+  a file system's small reads did that thousands of times a second, and
+  SPIFFS_check() on a 1 MB partition did not finish in minutes (the C3 and
+  S3 took 2 s). The regions now follow only the per-region masks, and
+  turning the cache on still brings in the pages whose mapping changed
+  (patch 0009's sync flushes code for exactly those). The check now takes
+  about 7 s; the rest is the cost of parking the other CPU for each read.
+  With the cache off a region still reads what it last held, where the
+  chip would fault, which only firmware that is already broken notices.
+
+Written for esp32bench (GPL-2.0-or-later). Changes Espressif's
+hw/timer/esp32_timg.c, hw/timer/esp32c3_timg.c, hw/misc/esp32_rtc_cntl.c,
+hw/misc/esp32c3_rtc_cntl.c, hw/misc/esp32_dport.c and their headers
+(Copyright (c) 2019-2024 Espressif Systems (Shanghai) Co. Ltd.,
+GPL-2.0-or-later, notices kept), and lcgamboa's hw/xtensa/esp32_picsimlab.c
+and hw/riscv/esp32c3_picsimlab.c. Applied by esp32bench
+(core/crates/sim/src/lcgamboa.rs) to lcgamboa/qemu at
+885a6e7061fb70fac78a074a719423810bc19a17, after patch 0012.
+
+diff --git a/hw/misc/esp32_dport.c b/hw/misc/esp32_dport.c
+index f2c57d6..4ce4be9 100644
+--- a/hw/misc/esp32_dport.c
++++ b/hw/misc/esp32_dport.c
+@@ -289,20 +289,26 @@ static void esp32_cache_invalidate_all_entries(Esp32CacheRegionState* crs)
+     }
+ }
+ 
++/* esp32bench: ESP-IDF turns the cache off and on around every flash operation, so a
++ * file system's small reads toggle it thousands of times a second. Unmapping the
++ * regions each time rebuilt QEMU's memory map and flushed all translated code on
++ * every toggle: SPIFFS_check() on a 1 MB partition did not finish in minutes. The
++ * regions now follow only the per-region masks; turning the cache on still brings in
++ * the pages whose mapping changed (esp32_cache_data_sync flushes code for exactly
++ * those). With the cache off a region still reads what it last held, where the chip
++ * would fault, which only firmware that is already broken notices. */
+ static void esp32_cache_state_update(Esp32CacheState* cs)
+ {
+     bool cache_enabled = FIELD_EX32(cs->cache_ctrl_reg, DPORT_PRO_CACHE_CTRL, CACHE_ENA) != 0;
+ 
+-    bool drom0_enabled = cache_enabled &&
+-        FIELD_EX32(cs->cache_ctrl1_reg, DPORT_PRO_CACHE_CTRL1, MASK_DROM0) == 0;
+-    if (!cs->drom0.mem.enabled && drom0_enabled) {
++    bool drom0_enabled = FIELD_EX32(cs->cache_ctrl1_reg, DPORT_PRO_CACHE_CTRL1, MASK_DROM0) == 0;
++    if (cache_enabled && drom0_enabled) {
+         esp32_cache_data_sync(&cs->drom0);
+     }
+     memory_region_set_enabled(&cs->drom0.mem, drom0_enabled);
+ 
+-    bool iram0_enabled = cache_enabled &&
+-        FIELD_EX32(cs->cache_ctrl1_reg, DPORT_PRO_CACHE_CTRL1, MASK_IRAM0) == 0;
+-    if (!cs->iram0.mem.enabled && iram0_enabled) {
++    bool iram0_enabled = FIELD_EX32(cs->cache_ctrl1_reg, DPORT_PRO_CACHE_CTRL1, MASK_IRAM0) == 0;
++    if (cache_enabled && iram0_enabled) {
+         esp32_cache_data_sync(&cs->iram0);
+     }
+     memory_region_set_enabled(&cs->iram0.mem, iram0_enabled);
+diff --git a/hw/misc/esp32_rtc_cntl.c b/hw/misc/esp32_rtc_cntl.c
+index 90a0e26..7cc9d78 100644
+--- a/hw/misc/esp32_rtc_cntl.c
++++ b/hw/misc/esp32_rtc_cntl.c
+@@ -47,6 +47,15 @@ static void esp32bench_update_irq(Esp32RtcCntlState *s)
+     qemu_set_irq(s->irq, (s->esp32bench_int_raw & s->esp32bench_int_ena) != 0);
+ }
+ 
++/* In light sleep the APB clock is gated, which stops the timer groups' watchdogs. */
++static void esp32bench_set_light_sleep(Esp32RtcCntlState *s, bool on)
++{
++    s->esp32bench_light_sleep = on;
++    for (int i = 0; i < 2; ++i) {
++        qemu_set_irq(s->esp32bench_light_sleep_req[i], on);
++    }
++}
++
+ static void esp32bench_sleep(Esp32RtcCntlState *s)
+ {
+     uint32_t wake_ena = FIELD_EX32(s->esp32bench_wakeup_state, RTC_CNTL_WAKEUP_STATE, WAKEUP_ENA);
+@@ -68,6 +77,8 @@ static void esp32bench_sleep(Esp32RtcCntlState *s)
+             qemu_set_irq(s->cpu_stall_req[i], 1);
+         }
+         qemu_irq_pulse(s->dig_reset_req);
++    } else if (wake_ena & ESP32BENCH_TIMER_TRIG_EN) {
++        esp32bench_set_light_sleep(s, true);
+     }
+ }
+ 
+@@ -86,6 +97,7 @@ static void esp32bench_wake(void *opaque)
+         s->esp32bench_wake_pending = true;
+         qemu_irq_pulse(s->dig_reset_req);
+     } else {
++        esp32bench_set_light_sleep(s, false);
+         s->esp32bench_int_raw |= R_RTC_CNTL_INT_SLP_WAKEUP_MASK;
+         esp32bench_update_irq(s);
+     }
+@@ -329,6 +341,9 @@ static void esp32_rtc_cntl_reset_hold(Object *obj, ResetType type)
+     /* esp32bench: an RTC reset (power-on, a reset from the app) ends any sleep. */
+     timer_del(&s->esp32bench_wake_timer);
+     s->esp32bench_wake_pending = false;
++    if (s->esp32bench_light_sleep) {
++        esp32bench_set_light_sleep(s, false);
++    }
+     if (s->esp32bench_deep_sleep) {
+         s->esp32bench_deep_sleep = false;
+         esp32_rtc_update_cpu_stall(s);
+@@ -352,6 +367,7 @@ static void esp32_rtc_cntl_init(Object *obj)
+     sysbus_init_mmio(sbd, &s->iomem);
+     sysbus_init_irq(sbd, &s->irq);
+     timer_init_ns(&s->esp32bench_wake_timer, QEMU_CLOCK_VIRTUAL, esp32bench_wake, s);
++    qdev_init_gpio_out_named(DEVICE(sbd), s->esp32bench_light_sleep_req, ESP32BENCH_RTC_LIGHT_SLEEP_GPIO, 2);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->dig_reset_req, ESP32_RTC_DIG_RESET_GPIO, 1);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->cpu_reset_req[0], ESP32_RTC_CPU_RESET_GPIO, ESP32_CPU_COUNT);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->cpu_stall_req[0], ESP32_RTC_CPU_STALL_GPIO, ESP32_CPU_COUNT);
+diff --git a/hw/misc/esp32c3_rtc_cntl.c b/hw/misc/esp32c3_rtc_cntl.c
+index 4759575..9d57ddb 100644
+--- a/hw/misc/esp32c3_rtc_cntl.c
++++ b/hw/misc/esp32c3_rtc_cntl.c
+@@ -81,6 +81,16 @@ static void esp32bench_hold_cpu(bool hold)
+     }
+ }
+ 
++/* In light sleep the clock the timer groups count is gated, which stops their
++ * watchdogs. */
++static void esp32bench_set_light_sleep(ESP32C3RtcCntlState *s, bool on)
++{
++    s->esp32bench_light_sleep = on;
++    for (int i = 0; i < 2; ++i) {
++        qemu_set_irq(s->esp32bench_light_sleep_req[i], on);
++    }
++}
++
+ static void esp32bench_sleep(ESP32C3RtcCntlState *s)
+ {
+     uint32_t wake_ena = FIELD_EX32(s->esp32bench_wakeup_state, RTC_CNTL_RTC_WAKEUP_STATE, RTC_WAKEUP_ENA);
+@@ -100,6 +110,8 @@ static void esp32bench_sleep(ESP32C3RtcCntlState *s)
+         s->reason = ESP32C3_DEEPSLEEP_RESET;
+         esp32bench_hold_cpu(true);
+         qemu_irq_raise(s->cpu_reset);
++    } else if (wake_ena & ESP32BENCH_TIMER_TRIG_EN) {
++        esp32bench_set_light_sleep(s, true);
+     }
+ }
+ 
+@@ -112,6 +124,7 @@ static void esp32bench_wake(void *opaque)
+         s->esp32bench_deep_sleep = false;
+         esp32bench_hold_cpu(false);
+     } else {
++        esp32bench_set_light_sleep(s, false);
+         s->esp32bench_int_raw |= R_RTC_CNTL_INT_RAW_RTC_SLP_WAKEUP_INT_RAW_MASK;
+     }
+ }
+@@ -293,6 +306,9 @@ static void esp32c3_rtc_cntl_reset_hold(Object *obj, ResetType type)
+         s->esp32bench_sleep_reset = false;
+     } else {
+         timer_del(&s->esp32bench_wake_timer);
++        if (s->esp32bench_light_sleep) {
++            esp32bench_set_light_sleep(s, false);
++        }
+         if (s->esp32bench_deep_sleep) {
+             s->esp32bench_deep_sleep = false;
+             esp32bench_hold_cpu(false);
+@@ -328,6 +344,7 @@ static void esp32c3_rtc_cntl_init(Object *obj)
+     qdev_init_gpio_in(DEVICE(s), esp32c3_reset_request, ESP32C3_COUNT_RESET);
+     /* Initialize the GPIO that will notify the CPU to reset itself */
+     qdev_init_gpio_out_named(DEVICE(s), &s->cpu_reset, ESP32C3_RTC_CPU_RESET_GPIO, 1);
++    qdev_init_gpio_out_named(DEVICE(s), s->esp32bench_light_sleep_req, ESP32BENCH_RTC_LIGHT_SLEEP_GPIO, 2);
+ }
+ 
+ 
+diff --git a/hw/riscv/esp32c3_picsimlab.c b/hw/riscv/esp32c3_picsimlab.c
+index 4425824..19c643a 100644
+--- a/hw/riscv/esp32c3_picsimlab.c
++++ b/hw/riscv/esp32c3_picsimlab.c
+@@ -985,6 +985,9 @@ static void esp32c3_machine_init(MachineState *machine)
+         /* Connect the Watchdog reset request to the CNTL's WDT0 line */
+         qdev_connect_gpio_out_named(DEVICE(&ms->timg[0]), ESP32C3_WDT_IRQ_RESET, 0,
+                                     qdev_get_gpio_in(DEVICE(&ms->rtccntl), ESP32C3_TG0WDT_SYS_RESET));
++        /* esp32bench: light sleep gates the timer group's clock (its watchdog stops). */
++        qdev_connect_gpio_out_named(DEVICE(&ms->rtccntl), ESP32BENCH_RTC_LIGHT_SLEEP_GPIO, 0,
++                                    qdev_get_gpio_in_named(DEVICE(&ms->timg[0]), ESP32BENCH_TIMG_CLOCK_GATE_GPIO, 0));
+     }
+     {
+         sysbus_realize(SYS_BUS_DEVICE(&ms->timg[1]), &error_fatal);
+@@ -997,6 +1000,9 @@ static void esp32c3_machine_init(MachineState *machine)
+                                     qdev_get_gpio_in(intmatrix_dev, ETS_TG1_WDT_LEVEL_INTR_SOURCE));
+         qdev_connect_gpio_out_named(DEVICE(&ms->timg[1]), ESP32C3_WDT_IRQ_RESET, 0,
+                                     qdev_get_gpio_in(DEVICE(&ms->rtccntl), ESP32C3_TG1WDT_SYS_RESET));
++        /* esp32bench: light sleep gates the timer group's clock (its watchdog stops). */
++        qdev_connect_gpio_out_named(DEVICE(&ms->rtccntl), ESP32BENCH_RTC_LIGHT_SLEEP_GPIO, 1,
++                                    qdev_get_gpio_in_named(DEVICE(&ms->timg[1]), ESP32BENCH_TIMG_CLOCK_GATE_GPIO, 0));
+     }
+ 
+     /* System timer */
+diff --git a/hw/timer/esp32_timg.c b/hw/timer/esp32_timg.c
+index f0f0d64..4932328 100644
+--- a/hw/timer/esp32_timg.c
++++ b/hw/timer/esp32_timg.c
+@@ -280,6 +280,7 @@ static void esp32_timg_timer_reset(Esp32TimgTimerState* ts)
+ static void esp32_timg_wdt_reset(Esp32TimgWdtState* ws)
+ {
+     timer_del(&ws->stage_timer);
++    ws->esp32bench_gated = false;
+ 
+     ws->config0_reg = 0x0004c000;
+     ws->config1_reg = 0x00010000;
+@@ -493,7 +494,7 @@ static bool esp32_timg_wdt_protected(Esp32TimgWdtState *ws)
+ 
+ static uint64_t esp32_timg_wdt_get_count(Esp32TimgWdtState *ws, uint64_t ns_now)
+ {
+-    if (!ws->en) {
++    if (!ws->en || ws->esp32bench_gated) {
+         return ws->count_base;
+     }
+     uint64_t ns_from_base = ns_now - ws->ns_base;
+@@ -551,6 +552,9 @@ static void esp32_timg_wdt_arm(Esp32TimgWdtState *ws, uint64_t ns_now)
+     if (ws->parent->wdt_disable || !(ws->en || (ws->flashboot_en && ws->parent->flash_boot_mode))) {
+         return;
+     }
++    if (ws->esp32bench_gated) {
++        return;
++    }
+ 
+     uint32_t stage_timeout = ws->timeout[ws->cur_stage];
+     uint32_t cur_count = esp32_timg_wdt_get_count(ws, ns_now);
+@@ -594,6 +598,28 @@ static void esp32_timg_wdt_cb(void *opaque)
+     esp32_timg_wdt_arm(ws, ns_now);
+ }
+ 
++/* esp32bench: in light sleep the chip gates the APB clock the timer groups count, so
++ * their watchdogs stop: ESP-IDF sleeps with interrupts off and nothing feeds them.
++ * Counting on, the interrupt watchdog fired during any light sleep longer than its
++ * timeout. The general-purpose timers keep counting (ESP-IDF accounts for the sleep
++ * from RTC time either way). */
++static void esp32bench_timg_clock_gate(void *opaque, int n, int level)
++{
++    Esp32TimgState *s = ESP32_TIMG(opaque);
++    Esp32TimgWdtState *ws = &s->wdt;
++    uint64_t ns_now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++
++    if (level && !ws->esp32bench_gated) {
++        ws->count_base = esp32_timg_wdt_get_count(ws, ns_now);
++        ws->esp32bench_gated = true;
++        timer_del(&ws->stage_timer);
++    } else if (!level && ws->esp32bench_gated) {
++        ws->esp32bench_gated = false;
++        ws->ns_base = ns_now;
++        esp32_timg_wdt_arm(ws, ns_now);
++    }
++}
++
+ static void esp32_timg_realize(DeviceState *dev, Error **errp)
+ {
+ }
+@@ -632,6 +658,7 @@ static void esp32_timg_init(Object *obj)
+     timer_init_ns(&s->wdt.stage_timer, QEMU_CLOCK_VIRTUAL, esp32_timg_wdt_cb, &s->wdt);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->wdt_cpu_reset_req, ESP32_TIMG_WDT_CPU_RESET_GPIO, 1);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->wdt_sys_reset_req, ESP32_TIMG_WDT_SYS_RESET_GPIO, 1);
++    qdev_init_gpio_in_named(DEVICE(sbd), esp32bench_timg_clock_gate, ESP32BENCH_TIMG_CLOCK_GATE_GPIO, 1);
+ }
+ 
+ static Property esp32_timg_properties[] = {
+diff --git a/hw/timer/esp32c3_timg.c b/hw/timer/esp32c3_timg.c
+index f451f2d..868f619 100644
+--- a/hw/timer/esp32c3_timg.c
++++ b/hw/timer/esp32c3_timg.c
+@@ -243,6 +243,9 @@ static void esp32c3_wdt_update_stage(ESP32C3WdtState* wdt, int index, uint32_t v
+ 
+ static void esp32c3_wdt_feed(ESP32C3WdtState* wdt)
+ {
++    if (wdt->esp32bench_gated) {
++        return;
++    }
+     if (esp32c3_wdt_enabled(wdt)) {
+         wdt->current_stage = 0;
+         esp32c3_virtual_counter_alarm_in_ticks(&wdt->counter, wdt->stage[0]);
+@@ -671,6 +674,7 @@ static void esp32c3_timg_reset_enter(Object *obj, ResetType type)
+ 
+     /* Reset watchdog */
+     esp32c3_virtual_counter_reset(&s->wdt.counter);
++    s->wdt.esp32bench_gated = false;
+     s->wdt.config0 = 0;
+     s->wdt.wkey = ESP32C3_WDT_DEFAULT_WKEY;
+     s->wdt.current_stage = 0;
+@@ -693,6 +697,31 @@ static void esp32c3_timg_reset_enter(Object *obj, ResetType type)
+ }
+ 
+ 
++/* esp32bench: in light sleep the chip gates the clock the timer group counts, so its
++ * watchdog stops: ESP-IDF sleeps with interrupts off and nothing feeds it. Counting
++ * on, the interrupt watchdog fired during any light sleep longer than its timeout.
++ * Timer 0 keeps counting (ESP-IDF accounts for the sleep from RTC time either way). */
++static void esp32bench_timg_clock_gate(void *opaque, int n, int level)
++{
++    ESP32C3TimgState *s = ESP32C3_TIMG(opaque);
++    ESP32C3WdtState *wdt = &s->wdt;
++    QEMUTimer *t = esp32c3_virtual_counter_get_timer(&wdt->counter);
++    const int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++
++    if (level && !wdt->esp32bench_gated) {
++        esp32c3_virtual_counter_update(&wdt->counter);
++        wdt->esp32bench_left_ns = timer_pending(t) ? MAX(timer_expire_time_ns(t) - now, 0) : -1;
++        timer_del(t);
++        wdt->esp32bench_gated = true;
++    } else if (!level && wdt->esp32bench_gated) {
++        wdt->esp32bench_gated = false;
++        esp32c3_virtual_counter_reenabled(&wdt->counter);
++        if (wdt->esp32bench_left_ns >= 0) {
++            timer_mod_ns(t, now + wdt->esp32bench_left_ns);
++        }
++    }
++}
++
+ static void esp32c3_timg_realize(DeviceState *dev, Error **errp)
+ {
+ }
+@@ -717,6 +746,7 @@ static void esp32c3_timg_init(Object *obj)
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->wdt.reset_irq, ESP32C3_WDT_IRQ_RESET, 1);
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->wdt.interrupt_irq, ESP32C3_WDT_IRQ_INTERRUPT, 1);
+     timer_init_ns(esp32c3_virtual_counter_get_timer(&s->wdt.counter), QEMU_CLOCK_VIRTUAL, esp32c3_wdt_cb, &s->wdt);
++    qdev_init_gpio_in_named(DEVICE(sbd), esp32bench_timg_clock_gate, ESP32BENCH_TIMG_CLOCK_GATE_GPIO, 1);
+ 
+     /* Timer T0 initialization */
+     qdev_init_gpio_out_named(DEVICE(sbd), &s->t0.interrupt_irq, ESP32C3_T0_IRQ_INTERRUPT, 1);
+diff --git a/hw/xtensa/esp32_picsimlab.c b/hw/xtensa/esp32_picsimlab.c
+index 8c14f4e..b0f5061 100644
+--- a/hw/xtensa/esp32_picsimlab.c
++++ b/hw/xtensa/esp32_picsimlab.c
+@@ -640,6 +640,9 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
+ 
+         const hwaddr timg_base[] = {DR_REG_TIMERGROUP0_BASE, DR_REG_TIMERGROUP1_BASE};
+         qdev_realize(DEVICE(&s->timg[i]), &s->periph_bus, &error_fatal);
++        /* esp32bench: light sleep gates the timer group's clock (its watchdog stops). */
++        qdev_connect_gpio_out_named(DEVICE(&s->rtc_cntl), ESP32BENCH_RTC_LIGHT_SLEEP_GPIO, i,
++                                    qdev_get_gpio_in_named(DEVICE(&s->timg[i]), ESP32BENCH_TIMG_CLOCK_GATE_GPIO, 0));
+ 
+         esp32_soc_add_periph_device(sys_mem, &s->timg[i], timg_base[i]);
+ 
+diff --git a/include/hw/misc/esp32_rtc_cntl.h b/include/hw/misc/esp32_rtc_cntl.h
+index 5c713cc..bc6d314 100644
+--- a/include/hw/misc/esp32_rtc_cntl.h
++++ b/include/hw/misc/esp32_rtc_cntl.h
+@@ -11,6 +11,8 @@
+ #define ESP32_RTC_DIG_RESET_GPIO    "dig-reset"
+ #define ESP32_RTC_CPU_RESET_GPIO    "cpu-reset"
+ #define ESP32_RTC_CPU_STALL_GPIO    "cpu-stall"
++/* esp32bench: high while the chip is in light sleep, one line per timer group. */
++#define ESP32BENCH_RTC_LIGHT_SLEEP_GPIO "esp32bench-light-sleep"
+ #define ESP32_RTC_CLK_UPDATE_GPIO   "clk-update"
+ 
+ typedef enum Esp32ResetCause {
+@@ -86,6 +88,8 @@ typedef struct Esp32RtcCntlState {
+     uint32_t esp32bench_dig_pwc;
+     uint32_t esp32bench_mem_crc;
+     bool esp32bench_deep_sleep;
++    bool esp32bench_light_sleep;
++    qemu_irq esp32bench_light_sleep_req[2];
+     bool esp32bench_wake_pending;
+     QEMUTimer esp32bench_wake_timer;
+ } Esp32RtcCntlState;
+diff --git a/include/hw/misc/esp32c3_rtc_cntl.h b/include/hw/misc/esp32c3_rtc_cntl.h
+index 60a554a..739b0be 100644
+--- a/include/hw/misc/esp32c3_rtc_cntl.h
++++ b/include/hw/misc/esp32c3_rtc_cntl.h
+@@ -71,10 +71,15 @@ typedef struct ESP32C3RtcCntlState {
+     uint32_t esp32bench_clk_conf;
+     bool esp32bench_deep_sleep;
+     bool esp32bench_sleep_reset;
++    bool esp32bench_light_sleep;
++    qemu_irq esp32bench_light_sleep_req[2];
+     QEMUTimer esp32bench_wake_timer;
+ 
+ } ESP32C3RtcCntlState;
+ 
++/* esp32bench: high while the chip is in light sleep, one line per timer group. */
++#define ESP32BENCH_RTC_LIGHT_SLEEP_GPIO "esp32bench-light-sleep"
++
+ 
+ REG32(RTC_CNTL_RTC_OPTIONS0, 0x0000)
+     FIELD(RTC_CNTL_RTC_OPTIONS0, SW_SYS_RST, 31, 1)
+diff --git a/include/hw/timer/esp32_timg.h b/include/hw/timer/esp32_timg.h
+index dbf554a..2759a44 100644
+--- a/include/hw/timer/esp32_timg.h
++++ b/include/hw/timer/esp32_timg.h
+@@ -50,6 +50,9 @@ typedef enum Esp32TimgWdtStageMode {
+     WDT_MODE_SYSRESET = 3
+ } Esp32TimgWdtStageMode;
+ 
++/* esp32bench: input, high while the chip is in light sleep (RTC_CNTL). */
++#define ESP32BENCH_TIMG_CLOCK_GATE_GPIO "esp32bench-clock-gate"
++
+ typedef struct Esp32TimgWdtState {
+     Esp32TimgState *parent;
+     uint32_t config0_reg;
+@@ -66,6 +69,8 @@ typedef struct Esp32TimgWdtState {
+     int cur_stage;
+     uint32_t protect_reg;
+     QEMUTimer stage_timer;
++    /* esp32bench: the clock is gated (light sleep): the count stands still. */
++    bool esp32bench_gated;
+ } Esp32TimgWdtState;
+ 
+ typedef struct Esp32TimgState {
+diff --git a/include/hw/timer/esp32c3_timg.h b/include/hw/timer/esp32c3_timg.h
+index 2a238c2..d24a042 100644
+--- a/include/hw/timer/esp32c3_timg.h
++++ b/include/hw/timer/esp32c3_timg.h
+@@ -104,8 +104,15 @@ typedef struct ESP32C3WdtState {
+     ESP32C3VirtualCounter counter;
+     qemu_irq reset_irq;
+     qemu_irq interrupt_irq;
++    /* esp32bench: the clock is gated (light sleep), and the time its alarm had left
++     * then, or -1 if none was set. */
++    bool esp32bench_gated;
++    int64_t esp32bench_left_ns;
+ } ESP32C3WdtState;
+ 
++/* esp32bench: input, high while the chip is in light sleep (RTC_CNTL). */
++#define ESP32BENCH_TIMG_CLOCK_GATE_GPIO "esp32bench-clock-gate"
++
+ 
+ typedef struct ESP32C3T0State {
+     uint32_t config;

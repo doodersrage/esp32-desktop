@@ -35,12 +35,15 @@ const MARKER: &str = "installed";
 /// 10: coprocessors (the FPU) enabled from reset (floats in global constructors).
 /// 11: RMT symbols and transmission ends reported to the host (WS2812 strip parts).
 /// 12: a Wi-Fi radio on the S3, from the C3's models.
-pub const RECIPE: u32 = 12;
+/// 13: light sleep stops the watchdogs (ESP-IDF's light sleep panicked); cheap ESP32
+///     cache toggles (SPIFFS_check never finished); ESP32 eFuse operations end only
+///     once seen busy (on a loaded host the ROM reset the chip at boot).
+pub const RECIPE: u32 = 13;
 
 /// Changes esp32bench makes to the pinned commit, in order. Each file says what and
 /// why. Kept in `core/crates/sim/patches/` and built into the program, so an installed
 /// app can build the fork without the repo.
-pub const PATCHES: [(&str, &str); 12] = [
+pub const PATCHES: [(&str, &str); 14] = [
     (
         "0001.patch",
         include_str!("../patches/0001-build-library-with-pixman.patch"),
@@ -85,6 +88,14 @@ pub const PATCHES: [(&str, &str); 12] = [
     (
         "0012.patch",
         include_str!("../patches/0012-esp32s3-wifi-radio.patch"),
+    ),
+    (
+        "0013.patch",
+        include_str!("../patches/0013-light-sleep-watchdogs-and-esp32-cache.patch"),
+    ),
+    (
+        "0014.patch",
+        include_str!("../patches/0014-esp32-efuse-busy-before-done.patch"),
     ),
 ];
 
@@ -332,6 +343,8 @@ pub fn steps(jobs: usize) -> Vec<Step> {
                 "../patches/0010.patch",
                 "../patches/0011.patch",
                 "../patches/0012.patch",
+                "../patches/0013.patch",
+                "../patches/0014.patch",
             ],
             "src",
         ),

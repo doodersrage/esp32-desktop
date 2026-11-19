@@ -192,6 +192,17 @@ The S3 had no radio, so its Wi-Fi start-up hung in the PHY's RF calibration: `ra
 
 The C3's MAC model could not simply be linked beside the ESP32's in the xtensa program: both defined the same global functions and QOM type name, and both analog models defined `esp32_wifi_channel`. Each MAC model now sets its frame functions in the shared device state, the C3 model's type is `esp32c3_wifi`, and the channel is defined once. Sessions on the fork's S3 get `-nic hubport,hubid=0,model=esp32c3_wifi` and the simulated network like the others. `wifi-scan` sees the fork's access points, `lcgamboa_esp32s3_simulated_wifi_is_isolated_and_serves` passes, and all ten of the library's S3 Wi-Fi builds pass.
 
+### ESP-IDF builds: light sleep and SPIFFS on the ESP32 (fixed 2026-11-19)
+
+Running ESP-IDF 6.0.2's own examples (`docs/idf-examples.md`) found two gaps that Arduino builds had not:
+
+- **Light sleep.** On the ESP32 and C3 the first light sleep returned and the second ended in the interrupt watchdog (a TG1 reset on the ESP32, a panic on the C3). ESP-IDF sleeps with interrupts off and the other CPU parked, so nothing feeds that watchdog; the chip gates the timer groups' clock in light sleep, but the models kept counting, and any sleep longer than the 300 ms timeout tripped it. Patch 0013 (recipe 13) has RTC_CNTL raise a light-sleep line from `SLEEP_EN` to the wake-up, wired to both timer groups, whose watchdogs keep their count while it is high. Tested by `lcgamboa_*_idf_light_sleep` (`tests/firmware/light-sleep`: three 500 ms sleeps). ESP-IDF shortens the first sleep by the wake-up time it expects of the chip, which the simulator does not take, then measures and adapts, so the first sleep can be a few milliseconds off; with chip-like timing (`-icount`) the `esp_timer` example's ±1 ms check passes on the ESP32 and C3, and the S3 wakes about 3 ms late.
+- **SPIFFS on the ESP32.** ESP-IDF turns the flash cache off and on around every flash operation. The ESP32's cache model unmapped and remapped its regions on each toggle, rebuilding QEMU's memory map and flushing all translated code, thousands of times a second during `SPIFFS_check()`, which never finished. The regions now follow only their masks, and turning the cache on still syncs the pages whose mapping changed. The check takes about 7 s on a 900 KB partition (2 s on the C3 and S3; the difference is parking the other CPU for each read).
+
+### The rare first-boot SW_RESET on the ESP32 (fixed 2026-11-19)
+
+Now and then, only on a loaded host, an ESP32 boot test failed because the first boot reported `rst:0x3 (SW_RESET)` instead of power-on (the "intermittent core test" of 2026-11-18). Shortening the eFuse model's operation to 10 µs made it happen every time, and logging writes to RTC_CNTL `OPTIONS0` showed the ROM itself resetting the chip, hundreds of times, from 0x4000fdc7. That is the ROM's fault-injection check while it reads the eFuses (0x4000fc90): it writes `EFUSE_CMD` and reads it straight back, and resets the chip if the operation already reads as done. On the chip a read takes microseconds; the model ended it on a virtual timer, and virtual time follows the host's clock, so a CPU thread paused for over a millisecond between those two instructions tripped the check. Patch 0014 ends an operation only after the CPU has read `EFUSE_CMD` while it ran (put off 10 µs at a time, at most 10 ms). With the 10 µs operation the first boot now reports power-on every time.
+
 ## Open questions
 
 None at the moment.

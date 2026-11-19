@@ -8,6 +8,7 @@ Small firmware projects that the core's QEMU boot tests run. The ESP-IDF version
 | `hello-arduino` | Arduino sketch: ready line, ticks and echo, built with the pinned ESP32 Arduino core | `esp32bench-arduino ready` |
 | `gpio` | Toggles GPIO 2 every 500 ms and reports changes on GPIO 4 | `esp32bench-gpio ready`, `esp32bench-gpio in 4=<level>` |
 | `i2c-scan` | Scans I2C bus 0 and reads registers 0x10–0x11 from 0x3C | `esp32bench-i2c scan done count=<n>`, `esp32bench-i2c read ...` |
+| `light-sleep` | ESP-IDF's default light sleep: three 500 ms sleeps on the timer | `esp32bench-light-sleep slept=<us> cause=4`, `esp32bench-light-sleep done` |
 | `adc` | Reads ADC1 (GPIO34 on the ESP32, GPIO3 on the C3) with the one-shot driver and prints each new reading with ESP-IDF's calibrated millivolts | `esp32bench-adc ready gpio=<n>`, `esp32bench-adc raw=<n> mv=<n>` |
 | `arduino-periph` | Arduino sketch: analogRead, tone, analogWrite, a 192-symbol rmtWrite and rgbLedWrite (ADC, LEDC and RMT, which library sketches use) | `esp32bench-periph done`, `esp32bench-periph rmt=1` |
 | `arduino-sleep` | Arduino sketch: 200 ms of light sleep, then deep sleep on a timer twice, counting boots in RTC memory | `esp32bench-sleep boot=<n> cause=<c> reset=<r>`, `esp32bench-sleep done` |

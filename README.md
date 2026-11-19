@@ -13,7 +13,7 @@ A native Linux desktop workbench and simulator for ESP32 boards, built for KDE P
 - Place virtual parts on the ESP32 and C3: LEDs, buttons, switches, an RGB LED, a NeoPixel strip, an SSD1306 OLED, and BME280, MPU-6050 and DS3231 modules on I2C.
 - Give simulated sketches (ESP32, S3 and C3) a Wi-Fi network that reaches nothing outside: they get an address, and their web pages open on your computer. Library sketches are joined to it for you.
 
-The simulator is firmware-level: no Bluetooth and no encrypted Wi-Fi networks. Analog inputs read the voltage of a potentiometer part placed on them (ESP32 and C3; on the S3 they read 0). Deep sleep wakes on a timer only, and so does light sleep in Arduino sketches; light sleep in ESP-IDF projects does not work yet (`docs/idf-examples.md`).
+The simulator is firmware-level: no Bluetooth and no encrypted Wi-Fi networks. Analog inputs read the voltage of a potentiometer part placed on them (ESP32 and C3; on the S3 they read 0). Light and deep sleep wake on a timer only.
 
 Report problems at [github.com/doodersrage/esp32-desktop/issues](https://github.com/doodersrage/esp32-desktop/issues).
 
