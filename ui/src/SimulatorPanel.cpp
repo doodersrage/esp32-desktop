@@ -8,6 +8,7 @@
 #include <QComboBox>
 #include <QSettings>
 #include <QHBoxLayout>
+#include <QRegularExpression>
 #include <QIcon>
 #include <QJsonObject>
 #include <QLabel>
@@ -17,6 +18,22 @@
 
 using namespace Qt::StringLiterals;
 
+// A site pattern as a person reads it: "tick \\d+ ms" as "tick … ms".
+QString SimulatorPanel::readablePattern(const QString &pattern)
+{
+    QString t = pattern;
+    for (const auto &re : {u"-\\?\\\\d\\+"_s, u"\\\\d\\+"_s, u"\\.\\+"_s, u"\\.\\*"_s})
+        t.replace(QRegularExpression(re), u"…"_s);
+    t.replace(QRegularExpression(u"\\\\(.)"_s), u"\\1"_s);
+    t.replace(u"….…"_s, u"…"_s); // a decimal number
+    return t;
+}
+
+QString SimulatorPanel::expectText() const
+{
+    return m_expect->isHidden() ? QString() : m_expect->text();
+}
+
 SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     : QWidget(parent)
     , m_core(core)
@@ -24,6 +41,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
                              "then choose Run in simulator."),
                           this))
     , m_network(new QLabel(this))
+    , m_expect(new QLabel(this))
     , m_reset(new QPushButton(QIcon::fromTheme(u"view-refresh"_s), tr("Reset"), this))
     , m_stop(new QPushButton(QIcon::fromTheme(u"media-playback-stop"_s), tr("Stop"), this))
     , m_again(new QPushButton(QIcon::fromTheme(u"media-playback-start"_s), tr("Run again"), this))
@@ -84,6 +102,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     layout->addWidget(m_network);
+    layout->addWidget(m_expect);
     layout->addWidget(m_output, 1);
     m_tools = new ConsoleBar(m_output, m_core, u"simulator/timestamps"_s, this);
     layout->addWidget(m_tools);
@@ -97,6 +116,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
                 m_status->setText(tr("Running %1 on a simulated %2.").arg(project, Labels::chipName(chip)));
                 m_lastProject = project;
                 m_lastBoard = board;
+                m_expect->hide();
                 const QJsonObject net = m_core->simNetwork();
                 if (net.isEmpty()) {
                     m_network->hide();
@@ -109,6 +129,37 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
                     m_network->show();
                 }
                 setRunning(true);
+            });
+    // Whether the run prints what the project expects (sim.expect).
+    m_expect->setWordWrap(true);
+    m_expect->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_expect->hide();
+    connect(m_core, &CoreConnection::simExpect, this,
+            [this](const QStringList &matched, const QStringList &missing, const QString &needs, int seconds,
+                   bool timedOut) {
+                QStringList shown;
+                for (const QString &p : missing)
+                    shown << readablePattern(p);
+                QString text;
+                if (missing.isEmpty()) {
+                    text = tr("✓ The output is what this project expects.");
+                } else if (!timedOut) {
+                    text = tr("Waiting for the expected output: %1 of %2 seen so far.")
+                               .arg(matched.size())
+                               .arg(matched.size() + missing.size());
+                } else {
+                    text = tr("Not seen yet (a board prints it within %1 s): %2").arg(seconds).arg(shown.join(u"; "_s));
+                    if (needs == u"wifi")
+                        text += u" "_s + tr("This project needs Wi-Fi, and the simulated network reaches nothing, "
+                                             "so it may stop before that.");
+                    else if (needs == u"parts")
+                        text += u" "_s + tr("It needs its parts: add them in the Circuit dock, or what it prints "
+                                             "about them may differ.");
+                }
+                m_expect->setText(text);
+                m_expect->setToolTip(tr("What a board running this project prints, from esp32bench.dev: %1")
+                                         .arg((matched + missing).join(u"; "_s)));
+                m_expect->show();
             });
     connect(m_core, &CoreConnection::simWifiJoined, this, [this](const QString &ssid) {
         m_output->appendNotice(

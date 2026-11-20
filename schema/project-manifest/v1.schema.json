@@ -127,7 +127,8 @@
           "level": {
             "enum": [
               "Starter",
-              "Intermediate"
+              "Intermediate",
+              "Advanced"
             ]
           },
           "minutes": {
@@ -432,6 +433,50 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "explain": {
+      "type": "array",
+      "maxItems": 500,
+      "description": "Since 1.1. Plain-language explanations of output lines (crashes, reset reasons, upload errors), from the same rules as the site's bench (src/lib/crash.ts) and with the error page each belongs to. The app checks simulator, serial and build output against them and says what a matching line means, once per key per run.",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "pattern",
+          "text",
+          "level"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "pattern": {
+            "type": "string",
+            "description": "A regular expression in the subset JavaScript and Rust's regex crate both read: no lookaround or backreferences."
+          },
+          "flags": {
+            "enum": [
+              "i"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "problem",
+              "info"
+            ],
+            "description": "problem: worth showing at once (a crash, a failed upload); info: a note (a normal reset)."
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://"
           }
         }
       }

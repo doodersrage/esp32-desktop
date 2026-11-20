@@ -111,7 +111,11 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     connect(m_core, &CoreConnection::stateChanged, this, [this] { setOpen(m_core->isSerialOpen()); });
     // A project's baud rate is the right default for its board.
     connect(m_core, &CoreConnection::projectLoaded, this, [this](const QJsonObject &result) {
-        suggestBaud(result.value(u"project"_s).toObject().value(u"baud"_s).toInt());
+        const QJsonObject p = result.value(u"project"_s).toObject();
+        const int baud = p.value(u"baud"_s).toInt();
+        if (baud > 0)
+            m_projectBauds.insert(p.value(u"id"_s).toString(), baud);
+        suggestBaud(baud);
     });
     setOpen(false);
 }

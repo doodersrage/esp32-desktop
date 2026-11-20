@@ -56,11 +56,22 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     , m_stack(new QStackedWidget(this))
 {
     // Page 0: nothing selected, or loading.
-    m_placeholder = new QLabel(m_stack);
+    auto *first = new QWidget(m_stack);
+    m_placeholder = new QLabel(first);
     m_placeholder->setAlignment(Qt::AlignCenter);
     m_placeholder->setWordWrap(true);
     m_placeholder->setEnabled(false);
-    m_stack->addWidget(m_placeholder);
+    // In the guide: see something work at once, without a board.
+    m_try = new QPushButton(QIcon::fromTheme(u"media-playback-start"_s), tr("Try Blink in the simulator"), first);
+    m_try->setToolTip(tr("Pick the Blink project, build it (after asking) and run it in the simulator"));
+    m_try->hide();
+    connect(m_try, &QPushButton::clicked, this, &ProjectView::tryRequested);
+    auto *firstLayout = new QVBoxLayout(first);
+    firstLayout->addStretch(1);
+    firstLayout->addWidget(m_placeholder);
+    firstLayout->addWidget(m_try, 0, Qt::AlignHCenter);
+    firstLayout->addStretch(1);
+    m_stack->addWidget(first);
 
     // Page 1: the project.
     auto *page = new QWidget(m_stack);
@@ -111,6 +122,16 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     m_board = new QComboBox(page);
     connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::showBuild);
     connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::updateBuildButton);
+    connect(m_board, &QComboBox::activated, this, [this] { m_boardChosen = true; });
+    connect(m_core, &CoreConnection::devicesListed, this, [this](const QJsonArray &ports) {
+        QStringList chips;
+        for (const QJsonValue &v : ports) {
+            const QJsonArray c = v.toObject().value(u"chips"_s).toArray();
+            if (c.size() == 1 && !chips.contains(c.at(0).toString()))
+                chips << c.at(0).toString();
+        }
+        setConnectedChips(chips);
+    });
 
     m_tabs = new QTabWidget(page);
 
@@ -206,6 +227,7 @@ void ProjectView::showGuide()
            "</ol>"
            "<p>The first build needs the build tools: <b>Tools → Toolchain setup</b> installs them.</p>"));
     m_placeholder->setEnabled(true);
+    m_try->setVisible(m_tryAvailable);
     m_stack->setCurrentIndex(0);
     updateBuildButton();
 }
@@ -213,6 +235,13 @@ void ProjectView::showGuide()
 QString ProjectView::currentProjectTitle() const
 {
     return m_stack->currentIndex() == 1 ? m_title->text() : QString();
+}
+
+void ProjectView::setTryAvailable(bool available)
+{
+    m_tryAvailable = available;
+    if (m_stack->currentIndex() == 0 && m_placeholder->isEnabled())
+        m_try->setVisible(available);
 }
 
 QString ProjectView::currentProjectId() const
@@ -243,6 +272,7 @@ QString ProjectView::notesText() const
 void ProjectView::showPlaceholder(const QString &text)
 {
     m_placeholder->setTextFormat(Qt::PlainText);
+    m_try->hide();
     m_placeholder->setAlignment(Qt::AlignCenter);
     m_placeholder->setContentsMargins(0, 0, 0, 0);
     m_placeholder->setText(text);
@@ -367,6 +397,7 @@ void ProjectView::showResult(const QJsonObject &result)
     const QString level = p.value(u"level"_s).toString();
     const QString levelText = level == u"Starter" ? tr("Starter")
                               : level == u"Intermediate" ? tr("Intermediate")
+                              : level == u"Advanced" ? tr("Advanced")
                                                          : level;
     const bool prebuilt = p.value(u"firmware"_s).toString() == u"prebuilt";
     m_meta->setText(tr("%1 · about %2 min · %3")
@@ -418,13 +449,51 @@ void ProjectView::showResult(const QJsonObject &result)
     for (const QJsonValue &v : m_builds) {
         const QString id = v.toObject().value(u"board"_s).toString();
         m_board->addItem(names.value(id, id), id);
+        m_board->setItemData(m_board->count() - 1, chipOf(result, id), ChipRole);
     }
     m_board->setEnabled(m_builds.size() > 1);
-    const int start = qMax(0, m_board->findData(keepBoard));
+    m_boardChosen = !keepBoard.isEmpty();
+    int start = qMax(0, m_board->findData(keepBoard));
+    // A new project with a board connected that says its chip: start on a build for it.
+    if (keepBoard.isEmpty())
+        start = qMax(0, buildForConnectedChip());
     m_board->setCurrentIndex(start);
     showBuild(start);
     m_stack->setCurrentIndex(1);
     updateBuildButton();
+}
+
+QString ProjectView::chipOf(const QJsonObject &result, const QString &board)
+{
+    for (const QJsonValue &v : result.value(u"boards"_s).toArray()) {
+        if (v.toObject().value(u"id"_s).toString() == board)
+            return v.toObject().value(u"chip"_s).toString();
+    }
+    return {};
+}
+
+int ProjectView::buildForConnectedChip() const
+{
+    for (const QString &chip : m_connectedChips) {
+        const int i = m_board->findData(chip, ChipRole);
+        if (i >= 0)
+            return i;
+    }
+    return -1;
+}
+
+void ProjectView::setConnectedChips(const QStringList &chips)
+{
+    m_connectedChips = chips;
+    // A board plugged in while a library project is shown: switch to a build for its
+    // chip, unless the board was chosen (by hand or by a link) or already fits.
+    if (m_local || m_boardChosen || m_stack->currentIndex() != 1 || chips.isEmpty())
+        return;
+    if (chips.contains(m_board->currentData(ChipRole).toString()))
+        return;
+    const int i = buildForConnectedChip();
+    if (i >= 0)
+        m_board->setCurrentIndex(i);
 }
 
 void ProjectView::showBuild(int index)

@@ -1,6 +1,7 @@
 // SimulatorPanel and CoreConnection's sim calls against a fake core.
 
 #include "CoreConnection.h"
+#include "PlotPanel.h"
 #include "SimulatorPanel.h"
 
 #include <QJsonArray>
@@ -14,7 +15,10 @@
 #include <QCheckBox>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QSignalSpy>
 #include <QTest>
+
+#include <cmath>
 
 using namespace Qt::StringLiterals;
 
@@ -67,6 +71,20 @@ private:
             }
             output("ets Jul 29 2019\r\n"); // before the reply
             QJsonObject r{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}};
+            if (p.value(u"project"_s).toString() == u"oled"_s) {
+                // An expectation that is met in part, then times out.
+                reply(id, r);
+                const auto expect = [this](const QJsonArray &matched, const QJsonArray &missing, bool timedOut) {
+                    send({{u"jsonrpc"_s, u"2.0"_s}, {u"method"_s, u"sim.expect"_s},
+                          {u"params"_s, QJsonObject{{u"subscription"_s, 5}, {u"matched"_s, matched},
+                                                    {u"missing"_s, missing}, {u"needs"_s, u"parts"_s},
+                                                    {u"seconds"_s, 10}, {u"timedOut"_s, timedOut}}}});
+                };
+                expect({}, {u"Display ready"_s, u"temp -?\\d+\\.\\d+ C"_s}, false);
+                expect({u"Display ready"_s}, {u"temp -?\\d+\\.\\d+ C"_s}, false);
+                expect({u"Display ready"_s}, {u"temp -?\\d+\\.\\d+ C"_s}, true);
+                return;
+            }
             if (p.value(u"project"_s).toString() == u"web-led"_s) {
                 r[u"network"_s] = QJsonObject{{u"ssid"_s, u"PICSimLabWifi"_s},
                                               {u"webUrl"_s, u"http://127.0.0.1:41823/"_s}};
@@ -77,6 +95,14 @@ private:
             }
             reply(id, r);
             output("esp32bench-hello ready\n");
+            if (p.value(u"project"_s).toString() == u"crashy"_s) {
+                send({{u"jsonrpc"_s, u"2.0"_s}, {u"method"_s, u"sim.output"_s},
+                      {u"params"_s, QJsonObject{{u"subscription"_s, 5}, {u"data"_s, QString::fromLatin1(QByteArray("Guru\n").toBase64())},
+                                                {u"text"_s, u"Guru\n"_s},
+                                                {u"explain"_s, QJsonArray{QJsonObject{{u"key"_s, u"panic-load"_s},
+                                                                                      {u"text"_s, u"Null pointer."_s},
+                                                                                      {u"level"_s, u"problem"_s}}}}}}});
+            }
             lastIcount = p.value(u"icount"_s).toBool();
         } else if (m == u"sim.write") {
             written << QByteArray::fromBase64(p.value(u"data"_s).toString().toLatin1());
@@ -170,6 +196,83 @@ private slots:
         core.stopSim();
         QTRY_VERIFY(!core.isSimRunning());
         QVERIFY(panel.networkText().isEmpty());
+    }
+
+    void saysWhetherTheOutputIsAsExpected()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        SimulatorPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        core.startSim(u"oled"_s, u"esp32"_s);
+        // Half seen, then the time ran out: what is missing, readably, and why it may be.
+        QTRY_VERIFY(panel.expectText().startsWith(u"Not seen yet"_s));
+        QVERIFY(panel.expectText().contains(u"temp … C"_s));
+        QVERIFY(panel.expectText().contains(u"Circuit dock"_s));
+        QCOMPARE(SimulatorPanel::readablePattern(u"tick \\d+ ms"_s), u"tick … ms"_s);
+        QCOMPARE(SimulatorPanel::readablePattern(u"Sleeping\\. Press"_s), u"Sleeping. Press"_s);
+        QCOMPARE(SimulatorPanel::readablePattern(u"ota ready: .+ at"_s), u"ota ready: … at"_s);
+        core.stopSim();
+        QTRY_VERIFY(!core.isSimRunning());
+        // A new run starts without the last one's verdict.
+        core.startSim(u"blink"_s, u"esp32"_s);
+        QTRY_VERIFY(core.isSimRunning());
+        QVERIFY(panel.expectText().isEmpty());
+    }
+
+    void passesOnExplanations()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        QSignalSpy explained(&core, &CoreConnection::outputExplained);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        core.startSim(u"crashy"_s, u"esp32"_s);
+        QTRY_COMPARE(explained.size(), 1);
+        QCOMPARE(explained.at(0).at(0).toString(), u"sim"_s);
+        QCOMPARE(explained.at(0).at(1).toJsonArray().at(0).toObject().value(u"key"_s).toString(), u"panic-load"_s);
+    }
+
+    void plotsRowsOfNumbers()
+    {
+        CoreConnection core;
+        PlotPanel panel(&core);
+        QSignalSpy first(&panel, &PlotPanel::firstRows);
+        const auto row = [](double t, double h) {
+            return QJsonArray{QJsonObject{{u"name"_s, u"temp"_s}, {u"value"_s, t}},
+                              QJsonObject{{u"name"_s, u"hum"_s}, {u"value"_s, h}}};
+        };
+        emit core.plotRows(QJsonArray{row(21.5, 45), row(21.6, 44)});
+        QCOMPARE(first.size(), 1); // shows the dock once
+        QCOMPARE(panel.canvas()->seriesNames(), (QStringList{u"temp"_s, u"hum"_s}));
+        QCOMPARE(panel.canvas()->values(u"temp"_s), (QList<double>{21.5, 21.6}));
+        // Paused: nothing added; then cleared.
+        panel.findChild<QCheckBox *>()->setChecked(true);
+        emit core.plotRows(QJsonArray{row(30, 30)});
+        QCOMPARE(panel.canvas()->values(u"temp"_s).size(), 2);
+        panel.findChild<QCheckBox *>()->setChecked(false);
+        // Only the latest rows are kept.
+        QJsonArray many;
+        for (int i = 0; i < PlotCanvas::Kept + 20; ++i)
+            many.append(row(i, i));
+        emit core.plotRows(many);
+        QCOMPARE(panel.canvas()->values(u"hum"_s).size(), PlotCanvas::Kept);
+        QCOMPARE(panel.canvas()->values(u"hum"_s).last(), double(PlotCanvas::Kept + 19));
+        panel.resize(600, 300);
+        QVERIFY(!panel.grab().isNull()); // draws
+        if (const QString shot = qEnvironmentVariable("ESP32BENCH_SCREENSHOT"); !shot.isEmpty()) {
+            panel.canvas()->clear();
+            QJsonArray wave;
+            for (int i = 0; i < 200; ++i)
+                wave.append(row(21 + std::sin(i / 15.0), 45 + 3 * std::cos(i / 25.0)));
+            emit core.plotRows(wave);
+            QVERIFY(panel.grab().save(shot));
+        }
+        panel.canvas()->clear();
+        QVERIFY(panel.canvas()->seriesNames().isEmpty());
     }
 
     void sendsChipLikeTimingWhenChosen()

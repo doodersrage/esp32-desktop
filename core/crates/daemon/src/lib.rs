@@ -575,11 +575,17 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
     }
 
     let result_plan = plan.clone();
+    let mut explain = esp32bench_library::explain::Explainer::new(&manifest.explain);
     let job = ctx.subscribe(move |sub| async move {
         let _one_at_a_time = state.build_lock.lock().await;
         let dirs = esp32bench_build::Dirs::new(&state.builds_root, &plan);
         let r = esp32bench_build::run(&plan, &code, &tools, &dirs, |stream, line| {
-            sub.send("build.log", json!({ "stream": stream, "line": line }));
+            let mut params = json!({ "stream": stream, "line": line });
+            let found = explain.line_findings(&line);
+            if !found.is_empty() {
+                params["explain"] = json!(found);
+            }
+            sub.send("build.log", params);
         })
         .await;
         let event = match r {
@@ -1022,6 +1028,33 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
     let network = config.network;
     config.icount = p.icount;
     let mut joiner = (network.is_some() && p.join_wifi).then(esp32bench_sim::network::Joiner::new);
+    let mut explain = esp32bench_library::explain::Explainer::new(&manifest.explain);
+    // What the project should print (the manifest's expect), checked as the output
+    // comes (sim.expect). Not while debugging: the run pauses at the user's will.
+    let expect = (!p.debug)
+        .then(|| manifest.project(&p.project))
+        .flatten()
+        .and_then(|x| x.expect.as_ref())
+        .and_then(esp32bench_library::expect::Expect::from_value);
+    let mut checker = expect
+        .as_ref()
+        .map(esp32bench_library::expect::Checker::new)
+        .filter(|c| !c.is_empty());
+    // A board prints it all within `seconds`; the simulator gets twice that (four
+    // times with chip-like timing, which runs slower) and five seconds to boot.
+    let expect_wait = expect.as_ref().map(|e| {
+        std::time::Duration::from_secs(u64::from(e.seconds) * if p.icount { 4 } else { 2 } + 5)
+    });
+    let expect_event = move |progress: &esp32bench_library::expect::Progress, timed_out: bool| {
+        let e = expect.as_ref();
+        json!({
+            "matched": progress.matched,
+            "missing": progress.missing,
+            "needs": e.map(|e| e.needs.clone()),
+            "seconds": e.map(|e| e.seconds),
+            "timedOut": timed_out,
+        })
+    };
     if launch_parts {
         config.circuit =
             Some(serde_json::to_string(&circuit).map_err(|e| RpcError::internal(e.to_string()))?);
@@ -1084,9 +1117,29 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             let mut trace_batch: Vec<Value> = Vec::new();
             let mut trace_skipped: u64 = 0;
             let mut pin_flush = tokio::time::Instant::now();
+            // Lines of numbers, for the app's plotter.
+            let mut plot = esp32bench_serial::plot::Lines::new();
+            // The expectation, said once at the start; its deadline, until it is met
+            // or has passed.
+            let mut expect_deadline = None;
+            if let (Some(c), Some(wait)) = (&checker, expect_wait) {
+                sub.send("sim.expect", expect_event(&c.progress(), false));
+                expect_deadline = Some(tokio::time::Instant::now() + wait);
+            }
             loop {
                 let wait = display.as_ref().map(esp32bench_sim::display::Display::interval);
                 tokio::select! {
+                    () = async {
+                        match expect_deadline {
+                            Some(d) => tokio::time::sleep_until(d).await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        expect_deadline = None;
+                        if let Some(c) = &checker {
+                            sub.send("sim.expect", expect_event(&c.progress(), true));
+                        }
+                    }
                     () = async {
                         match wait {
                             Some(w) => tokio::time::sleep(w).await,
@@ -1216,12 +1269,29 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                     }
                     chunk = session.uart.read_chunk() => match chunk {
                         Ok(Some(bytes)) => {
-                            let sent = sub.send("sim.output", json!({
+                            let mut params = json!({
                                 "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
                                 "text": String::from_utf8_lossy(&bytes),
-                            }));
+                            });
+                            let rows = plot.feed(&bytes);
+                            if !rows.is_empty() {
+                                params["plot"] = json!(rows);
+                            }
+                            let found = explain.feed(&bytes);
+                            if !found.is_empty() {
+                                params["explain"] = json!(found);
+                            }
+                            let sent = sub.send("sim.output", params);
                             if !sent {
                                 break;
+                            }
+                            if let Some(progress) = checker.as_mut().and_then(|c| c.feed(&bytes)) {
+                                if progress.complete() {
+                                    expect_deadline = None;
+                                }
+                                if expect_deadline.is_some() || progress.complete() {
+                                    sub.send("sim.expect", expect_event(&progress, false));
+                                }
                             }
                             // A library sketch asking for its Wi-Fi settings: give it
                             // the simulated network's (sim.wifiJoined says so).
@@ -1985,9 +2055,19 @@ fn serial_error(e: esp32bench_serial::Error) -> RpcError {
     RpcError::new(code, e.to_string())
 }
 
+/// The site's explanations of output lines (the manifest's explain), for a run.
+async fn explainer(state: &State) -> esp32bench_library::explain::Explainer {
+    let rules = match state.library.load().await {
+        Ok(Some(m)) => m.explain,
+        _ => Vec::new(),
+    };
+    esp32bench_library::explain::Explainer::new(&rules)
+}
+
 async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: SerialOpenParams = parse_params(params)?;
     check_port(&state, &p.path).await?;
+    let mut explain = explainer(&state).await;
     let (port, mut rx) = {
         let path = p.path.clone();
         tokio::task::spawn_blocking(move || esp32bench_serial::Port::open(&path, p.baud))
@@ -2013,16 +2093,24 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         async move {
             let _entry = entry;
             use base64::Engine;
+            // Lines of numbers, for the app's plotter.
+            let mut plot = esp32bench_serial::plot::Lines::new();
             while let Some(event) = rx.recv().await {
                 match event {
                     esp32bench_serial::Event::Data(bytes) => {
-                        let sent = sub.send(
-                            "serial.data",
-                            json!({
-                                "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
-                                "text": String::from_utf8_lossy(&bytes),
-                            }),
-                        );
+                        let mut params = json!({
+                            "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
+                            "text": String::from_utf8_lossy(&bytes),
+                        });
+                        let rows = plot.feed(&bytes);
+                        if !rows.is_empty() {
+                            params["plot"] = json!(rows);
+                        }
+                        let found = explain.feed(&bytes);
+                        if !found.is_empty() {
+                            params["explain"] = json!(found);
+                        }
+                        let sent = sub.send("serial.data", params);
                         if !sent {
                             break;
                         }

@@ -15,6 +15,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QLocale>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -124,6 +125,26 @@ private slots:
         QVERIFY(qobject_cast<QPushButton *>(t->itemWidget(esp, SetupDialog::ActionColumn)));
         // Installed rows get no button.
         QVERIFY(!t->itemWidget(t->topLevelItem(0), SetupDialog::ActionColumn));
+    }
+
+    void installsEverythingNeededInOneStep()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        SetupDialog dialog(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        core.requestToolchainStatus();
+        // What it will fetch in all, in one button.
+        QTRY_VERIFY(dialog.installAllButton()->isVisibleTo(&dialog));
+        QVERIFY2(dialog.installAllButton()->text().contains(QLocale().formattedDataSize(1810706323)),
+                 qPrintable(dialog.installAllButton()->text()));
+        dialog.installAllButton()->click();
+        QTRY_COMPARE(fake.installs, QStringList{u"esp32-core"_s});
+        // Done: nothing left to install, so the button goes.
+        QTRY_VERIFY(!dialog.installAllButton()->isVisibleTo(&dialog));
+        QVERIFY(dialog.logText().contains(u"Done."_s));
     }
 
     // With ESP32BENCH_SETUP_STATUS (a toolchain.status components file) and

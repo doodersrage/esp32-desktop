@@ -515,6 +515,7 @@ async fn circuit_command(cmd: CircuitCmd) -> Result<()> {
                 active_low: None,
                 label,
                 controls: Default::default(),
+                at: None,
             };
             for p in &pins {
                 let (k, v) = key_value(p)?;

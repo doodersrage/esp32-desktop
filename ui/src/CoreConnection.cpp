@@ -266,7 +266,7 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
     } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.trace" || method == u"sim.parts" || method == u"sim.partPicture"
-               || method == u"sim.exited" || method == u"sim.wifiJoined"
+               || method == u"sim.exited" || method == u"sim.wifiJoined" || method == u"sim.expect"
                || method.startsWith(u"debug.")) {
         if (sub == m_simSub)
             handleSimEvent(method, params);
@@ -444,6 +444,8 @@ void CoreConnection::handleBuildEvent(const QString &method, const QJsonObject &
 {
     if (method == u"build.log") {
         emit buildLog(params.value(u"stream"_s).toString(), params.value(u"line"_s).toString());
+        if (params.contains(u"explain"_s))
+            emit outputExplained(u"build"_s, params.value(u"explain"_s).toArray());
         return;
     }
     m_buildJob = 0;
@@ -492,6 +494,10 @@ void CoreConnection::handleSerialEvent(const QString &method, const QJsonObject 
 {
     if (method == u"serial.data") {
         emit serialData(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        if (params.contains(u"explain"_s))
+            emit outputExplained(u"serial"_s, params.value(u"explain"_s).toArray());
+        if (params.contains(u"plot"_s))
+            emit plotRows(params.value(u"plot"_s).toArray());
         return;
     }
     m_serialSub = 0;
@@ -675,6 +681,21 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
 {
     if (method == u"sim.output") {
         emit simOutput(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        if (params.contains(u"explain"_s))
+            emit outputExplained(u"sim"_s, params.value(u"explain"_s).toArray());
+        if (params.contains(u"plot"_s))
+            emit plotRows(params.value(u"plot"_s).toArray());
+        return;
+    }
+    if (method == u"sim.expect") {
+        const auto list = [&](const char *key) {
+            QStringList out;
+            for (const QJsonValue &v : params.value(QLatin1StringView(key)).toArray())
+                out << v.toString();
+            return out;
+        };
+        emit simExpect(list("matched"), list("missing"), params.value(u"needs"_s).toString(),
+                       params.value(u"seconds"_s).toInt(), params.value(u"timedOut"_s).toBool());
         return;
     }
     if (method == u"sim.wifiJoined") {

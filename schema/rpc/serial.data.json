@@ -23,6 +23,64 @@
       "text": {
         "type": "string",
         "description": "The same bytes decoded as UTF-8, with invalid sequences replaced. A multi-byte character split across two events shows as replacement characters; use `data` when that matters."
+      },
+      "plot": {
+        "type": "array",
+        "maxItems": 1000,
+        "description": "Rows of numbers this chunk completed, for the app's plotter: lines in the Arduino Serial Plotter's format (numbers separated by spaces, commas or tabs, each optionally named name:value or name=value). Absent when there are none.",
+        "items": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "value"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "The value's name, or its position (1, 2, ...) when unnamed."
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      },
+      "explain": {
+        "type": "array",
+        "maxItems": 64,
+        "description": "Plain-language explanations of lines this chunk completed (the manifest's explain rules: a crash, a reset reason, an upload error), each key once per run. Absent when there are none.",
+        "items": {
+          "type": "object",
+          "required": [
+            "key",
+            "text",
+            "level"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "level": {
+              "enum": [
+                "problem",
+                "info"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "The site's page about it."
+            }
+          }
+        }
       }
     }
   },

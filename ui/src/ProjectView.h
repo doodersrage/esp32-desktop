@@ -30,6 +30,13 @@ public:
     void showProject(const QString &id);
     // Show `board` when the project next arrives, if it has a build for it.
     void preferBoard(const QString &board) { m_wantBoard = board; }
+    // Chips of the connected boards that say theirs (device.list): a library project
+    // starts on a build for one, and switches to it when one is plugged in, unless a
+    // board was chosen.
+    void setConnectedChips(const QStringList &chips);
+    // Whether the guide offers to try Blink (the library has it).
+    void setTryAvailable(bool available);
+    QPushButton *tryButton() const { return m_try; }
     // Render a library.get result. Public so tests can feed fixed data.
     void showResult(const QJsonObject &result);
     // Render a local.get result: one of the user's ESP-IDF projects.
@@ -64,9 +71,15 @@ signals:
     void boardSelected(const QString &project, const QString &board, const QJsonArray &pins);
     // What is shown or whether it can be built changed (currentProjectTitle(), buildAction()).
     void currentChanged();
+    // The guide's Try Blink button.
+    void tryRequested();
 
 private:
     void showBuild(int index);
+    // The chip id of `board` in a library.get result.
+    static QString chipOf(const QJsonObject &result, const QString &board);
+    // The index of a build for a connected board's chip, or -1.
+    int buildForConnectedChip() const;
     void showPlaceholder(const QString &text);
     // Nothing selected yet: how to get from a project to a running board.
     void showGuide();
@@ -81,6 +94,13 @@ private:
     // A local ESP-IDF project, and whether it can be built now (ESP-IDF found, folder there).
     bool m_local = false;
     bool m_localBuildable = false;
+    // The board shown was chosen (by hand, by a link, or kept): plugging in a board
+    // does not change it.
+    bool m_boardChosen = false;
+    QStringList m_connectedChips;
+    QPushButton *m_try = nullptr;
+    bool m_tryAvailable = false;
+    static constexpr int ChipRole = Qt::UserRole + 1;
 
     QStackedWidget *m_stack;
     QLabel *m_placeholder;

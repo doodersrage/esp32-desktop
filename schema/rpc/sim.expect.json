@@ -1,0 +1,68 @@
+{
+  "event": "sim.expect",
+  "description": "Whether a library project's simulation prints what the project expects (the manifest's expect: the site's lab expectations). Sent at the start with nothing matched, then each time a pattern appears for the first time, and once with timedOut when the project's time (twice its seconds, four times with icount, plus five) passes first. A pattern seen after that is reported only when it completes the set. Not sent for projects without an expectation, the user's own projects, or debug sessions.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "matched",
+      "missing",
+      "needs",
+      "seconds",
+      "timedOut"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "matched": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Patterns (regular expressions) seen so far."
+      },
+      "missing": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Patterns not seen yet. Empty: the output is as expected."
+      },
+      "needs": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "What the output needs beyond the board: none, wifi (the simulated network reaches nothing), or parts (the project's parts on the Circuit dock)."
+      },
+      "seconds": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "description": "How long a board takes to print it all."
+      },
+      "timedOut": {
+        "type": "boolean"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "matched": [
+          "tick \\d+ ms"
+        ],
+        "missing": [],
+        "needs": "none",
+        "seconds": 8,
+        "timedOut": false
+      }
+    }
+  ]
+}

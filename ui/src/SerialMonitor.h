@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <QHash>
 #include <QWidget>
 
 class ConsoleView;
@@ -19,10 +20,15 @@ class SerialMonitor : public QWidget {
 
 public:
     ConsoleBar *consoleBar() const { return m_tools; }
+    ConsoleView *console() const { return m_output; }
     explicit SerialMonitor(CoreConnection *core, QWidget *parent = nullptr);
 
     // Open `path` (e.g. from a double-click in the Devices panel).
     void openPort(const QString &path);
+    // Choose this baud rate if the port is closed (a project's, say).
+    void suggestBaud(int baud);
+    // The baud rate a library project's firmware uses (from library.get), or 0.
+    int projectBaud(const QString &project) const { return m_projectBauds.value(project); }
 
     // For tests.
     QString outputText() const;
@@ -38,7 +44,6 @@ private:
     void setPorts(const QJsonArray &ports);
     void send();
     void setOpen(bool open);
-    void suggestBaud(int baud);
 
     CoreConnection *m_core;
     QComboBox *m_port;
@@ -52,4 +57,5 @@ private:
     QPushButton *m_send;
     bool m_open_ = false;
     ConsoleBar *m_tools = nullptr;
+    QHash<QString, int> m_projectBauds;
 };

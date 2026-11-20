@@ -2,6 +2,7 @@
 
 #include "BoardInfoDialog.h"
 #include "BuildPanel.h"
+#include "ConsoleView.h"
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
 #include "LibraryPanel.h"
@@ -13,6 +14,7 @@
 #include "DebugPanel.h"
 #include "DisplayPanel.h"
 #include "PinsPanel.h"
+#include "PlotPanel.h"
 #include "TracePanel.h"
 #include "CircuitPanel.h"
 
@@ -67,6 +69,17 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_split->setStretchFactor(0, 1);
     m_split->setStretchFactor(1, 1);
     connect(m_library, &LibraryPanel::projectSelected, m_project, &ProjectView::showProject);
+    // Try Blink: select it, then Run in simulator, which builds it first (asking).
+    connect(core, &CoreConnection::libraryListed, this, [this](const QJsonObject &library) {
+        bool has = false;
+        for (const QJsonValue &v : library.value(u"projects"_s).toArray())
+            has |= v.toObject().value(u"id"_s).toString() == u"blink" && v.toObject().value(u"simulator"_s).toBool();
+        m_project->setTryAvailable(has);
+    });
+    connect(m_project, &ProjectView::tryRequested, this, [this] {
+        m_tryPending = true;
+        m_library->selectProject(u"blink"_s);
+    });
     // Errors stay above the library and project until closed or a new attempt starts.
     auto *centre = new QWidget(this);
     m_messages = new MessageBar(centre);
@@ -75,6 +88,19 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     centreLayout->addWidget(m_messages);
     centreLayout->addWidget(m_split, 1);
     setCentralWidget(centre);
+    // What the board or a tool printed means: problems in the bar, notes in the console.
+    connect(core, &CoreConnection::outputExplained, this, [this](const QString &source, const QJsonArray &findings) {
+        for (const QJsonValue &v : findings) {
+            const QJsonObject f = v.toObject();
+            const QString text = f.value(u"text"_s).toString();
+            if (f.value(u"level"_s).toString() == u"problem")
+                m_messages->showExplanation(text, f.value(u"url"_s).toString());
+            else if (source == u"sim")
+                m_sim->console()->appendNotice(tr("Note: %1").arg(text));
+            else if (source == u"serial")
+                m_serial->console()->appendNotice(tr("Note: %1").arg(text));
+        }
+    });
     connect(core, &CoreConnection::buildStarted, m_messages, &QWidget::hide);
     connect(core, &CoreConnection::boardStarted, m_messages, &QWidget::hide);
     // A build or flash can take minutes: when it ends with the window behind others, ask
@@ -138,6 +164,16 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
             m_traceDock->show();
         m_simDock->raise();
     });
+
+    // Numbers the firmware prints, as lines; beside the console, shown when they come.
+    m_plotDock = new QDockWidget(tr("Plot"), this);
+    m_plotDock->setObjectName(u"plotDock"_s);
+    m_plot = new PlotPanel(core, m_plotDock);
+    m_plotDock->setWidget(m_plot);
+    addDockWidget(Qt::BottomDockWidgetArea, m_plotDock);
+    tabifyDockWidget(m_traceDock, m_plotDock);
+    m_plotDock->hide();
+    connect(m_plot, &PlotPanel::firstRows, this, [this] { m_plotDock->show(); });
 
     // The virtual RGB panel, on the right where the board would sit; it appears when
     // firmware first draws on it.
@@ -219,6 +255,7 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     connect(m_buildPanel, &BuildPanel::flashRequested, this,
             [this](const QString &port, const QString &project, const QString &board) {
                 freePort(port);
+                m_flashedProject = project;
                 m_core->flashBuild(port, project, board);
             });
     connect(core, &CoreConnection::boardConsentRequired, this,
@@ -252,6 +289,8 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
                 if (op == u"flash" && ok) {
                     m_serialDock->show();
                     m_serialDock->raise();
+                    // At the speed the new firmware talks, or its output is garbled.
+                    m_serial->suggestBaud(m_serial->projectBaud(m_flashedProject));
                     m_serial->openPort(m_lastBoardPort);
                     m_reopenSerial.clear();
                 } else if (!m_reopenSerial.isEmpty()) {
@@ -434,6 +473,19 @@ void MainWindow::buildToolBar()
     connect(m_core, &CoreConnection::buildFinished, this, &MainWindow::updateToolBar);
     connect(m_core, &CoreConnection::simStarted, this, &MainWindow::updateToolBar);
     connect(m_core, &CoreConnection::simStopped, this, &MainWindow::updateToolBar);
+    // Checked when either changes: the project view shows blink before the build panel
+    // has it as its target.
+    const auto tryNow = [this] {
+        if (!m_tryPending || m_project->currentProjectId() != u"blink"
+            || m_buildPanel->targetProject() != u"blink")
+            return;
+        if (m_buildPanel->simulateAction()->isEnabled()) {
+            m_tryPending = false;
+            m_buildPanel->simulateAction()->trigger();
+        }
+    };
+    connect(m_project, &ProjectView::currentChanged, this, tryNow);
+    connect(m_buildPanel, &BuildPanel::actionsChanged, this, tryNow);
     connect(m_core, &CoreConnection::stateChanged, this, &MainWindow::updateToolBar);
     connect(m_core, &CoreConnection::boardStarted, this, &MainWindow::updateToolBar);
     connect(m_core, &CoreConnection::boardFinished, this, &MainWindow::updateToolBar);
@@ -449,6 +501,11 @@ void MainWindow::buildToolBar()
         updateToolBar();
     });
     connect(m_core, &CoreConnection::toolchainInstallFinished, m_core, &CoreConnection::requestToolchainStatus);
+    connect(m_core, &CoreConnection::toolchainInstallFinished, this, &MainWindow::updateToolBar);
+    connect(m_core, &CoreConnection::toolchainProgress, this, [this] {
+        if (!m_busyAction->isVisible())
+            updateToolBar();
+    });
     connect(m_core, &CoreConnection::stateChanged, this, [this](CoreConnection::State s) {
         if (s == CoreConnection::State::Connected)
             m_core->requestToolchainStatus();
@@ -468,7 +525,7 @@ void MainWindow::updateToolBar()
     m_stopSim->setEnabled(m_core->isSimRunning());
     m_boardMenu->setEnabled(m_buildPanel->portPicker()->currentIndex() >= 0
                             && m_core->state() == CoreConnection::State::Connected && !m_core->isBoardBusy());
-    m_busyAction->setVisible(m_core->isBuilding() || m_core->isBoardBusy());
+    m_busyAction->setVisible(m_core->isBuilding() || m_core->isBoardBusy() || m_core->isInstalling());
 
     const QString id = m_project->currentProjectId();
     const bool built = !id.isEmpty() && m_buildPanel->builtProject() == id
@@ -480,6 +537,8 @@ void MainWindow::updateToolBar()
         next = tr("Building…");
     else if (m_core->isBoardBusy())
         next = tr("Working on the board…");
+    else if (m_core->isInstalling())
+        next = tr("Installing the build tools…");
     else if (m_core->isSimRunning())
         next = tr("Simulating. The console is below.");
     else if (title.isEmpty())
@@ -560,6 +619,7 @@ void MainWindow::buildMenus()
     view->addAction(m_serialDock->toggleViewAction());
     view->addAction(m_simDock->toggleViewAction());
     view->addAction(m_traceDock->toggleViewAction());
+    view->addAction(m_plotDock->toggleViewAction());
     view->addAction(m_debugDock->toggleViewAction());
     view->addAction(m_displayDock->toggleViewAction());
     view->addAction(m_pinsDock->toggleViewAction());

@@ -25,6 +25,7 @@ add_library(esp32bench_ui STATIC
     src/DebugPanel.cpp src/DebugPanel.h
     src/DisplayPanel.cpp src/DisplayPanel.h
     src/PinsPanel.cpp src/PinsPanel.h
+    src/PlotPanel.cpp src/PlotPanel.h
     src/CircuitPanel.cpp src/CircuitPanel.h
     src/DevicesPanel.cpp src/DevicesPanel.h
     src/Labels.cpp src/Labels.h
@@ -91,6 +92,7 @@ qt_add_resources(esp32bench_ui "fallback_icons"
         icons/esp32bench-fallback/scalable/download.svg
         icons/esp32bench-fallback/scalable/edit-clear.svg
         icons/esp32bench-fallback/scalable/edit-delete.svg
+        icons/esp32bench-fallback/scalable/edit-undo.svg
         icons/esp32bench-fallback/scalable/folder-open.svg
         icons/esp32bench-fallback/scalable/help-about.svg
         icons/esp32bench-fallback/scalable/internet-web-browser.svg

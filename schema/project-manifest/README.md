@@ -14,7 +14,7 @@ The file carries `format` and `version`. Readers check that `format` is `esp32be
 
 ## Versions
 
-- 1.1 (2026-11-20): a build of prebuilt firmware may carry `image` (an https URL, its SHA-256 and size), the merged image the browser flasher also uses. The app downloads it, after asking, checks it, and runs it in the simulator or flashes it.
+- 1.1 (2026-11-20): a build of prebuilt firmware may carry `image` (an https URL, its SHA-256 and size), the merged image the browser flasher also uses. The app downloads it, after asking, checks it, and runs it in the simulator or flashes it. The manifest may also carry `explain`: the site's explanations of crash, reset and upload lines, which the app applies to output.
 
 ## Tests
 

@@ -154,6 +154,7 @@ pub fn from_wiring(wiring: &[Wire], hints: &[&str]) -> Suggestion {
                     format!("{name} LED")
                 }),
                 controls: Default::default(),
+                at: None,
             });
         }
     }
@@ -351,6 +352,7 @@ fn add_pin(parts: &mut Vec<Part>, kind: &str, gpio: u8, name: &str, active_low: 
         active_low: None,
         label: label(name),
         controls: Default::default(),
+        at: None,
     });
 }
 
@@ -386,6 +388,7 @@ fn add_i2c(parts: &mut Vec<Part>, kind: &str, address: u8, name: &str) {
         active_low: None,
         label: label(name),
         controls: Default::default(),
+        at: None,
     });
 }
 

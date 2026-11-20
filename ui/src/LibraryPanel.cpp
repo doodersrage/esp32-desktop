@@ -252,6 +252,7 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
         const QString level = p.value(u"level"_s).toString();
         item->setText(LevelColumn, level == u"Starter" ? tr("Starter")
                                    : level == u"Intermediate" ? tr("Intermediate")
+                              : level == u"Advanced" ? tr("Advanced")
                                                               : level);
         const int minutes = p.value(u"minutes"_s).toInt();
         item->setText(TimeColumn, tr("%1 min").arg(minutes));

@@ -190,6 +190,10 @@
         <translation>Añadir las piezas del proyecto</translation>
     </message>
     <message>
+        <source>Undo</source>
+        <translation>Deshacer</translation>
+    </message>
+    <message>
         <source>Add part</source>
         <translation>Añadir pieza</translation>
     </message>
@@ -200,6 +204,10 @@
     <message>
         <source>Remove the selected part</source>
         <translation>Quita la pieza seleccionada</translation>
+    </message>
+    <message>
+        <source>Undo the last change to the parts (Ctrl+Z)</source>
+        <translation>Deshacer el último cambio en las piezas (Ctrl+Z)</translation>
     </message>
     <message>
         <source>%1: %2</source>
@@ -768,6 +776,10 @@
         <translation>Intermedio</translation>
     </message>
     <message>
+        <source>Advanced</source>
+        <translation>Avanzado</translation>
+    </message>
+    <message>
         <source>%1 min</source>
         <translation>%1 min</translation>
     </message>
@@ -881,6 +893,14 @@ El panel Compilación de abajo tiene el registro completo.</translation>
         <translation>La grabación falló: %1</translation>
     </message>
     <message>
+        <source>Note: %1</source>
+        <translation>Nota: %1</translation>
+    </message>
+    <message>
+        <source>Plot</source>
+        <translation>Gráfica</translation>
+    </message>
+    <message>
         <source>Board operation failed: %1</source>
         <translation>Falló la operación con la placa: %1</translation>
     </message>
@@ -951,6 +971,10 @@ El panel Compilación de abajo tiene el registro completo.</translation>
     <message>
         <source>Working on the board…</source>
         <translation>Trabajando con la placa…</translation>
+    </message>
+    <message>
+        <source>Installing the build tools…</source>
+        <translation>Instalando las herramientas de compilación…</translation>
     </message>
     <message>
         <source>Simulating. The console is below.</source>
@@ -1151,6 +1175,10 @@ SHA-256 del código: %2</translation>
         <source>Close this message</source>
         <translation>Cerrar este mensaje</translation>
     </message>
+    <message>
+        <source>Read more on esp32bench.dev</source>
+        <translation>Más información en esp32bench.dev</translation>
+    </message>
 </context>
 <context>
     <name>PartItem</name>
@@ -1239,7 +1267,45 @@ SHA-256 del código: %2</translation>
     </message>
 </context>
 <context>
+    <name>PlotCanvas</name>
+    <message>
+        <source>Lines of numbers the firmware prints are drawn here, such as &quot;21.5 45&quot; or &quot;temp:21.5 humidity:45&quot;.</source>
+        <translation>Aquí se dibujan las líneas de números que imprime el firmware, como "21.5 45" o "temp:21.5 humidity:45".</translation>
+    </message>
+    <message>
+        <source>%1: %2</source>
+        <translation>%1: %2</translation>
+    </message>
+</context>
+<context>
+    <name>PlotPanel</name>
+    <message>
+        <source>Pause</source>
+        <translation>Pausa</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>Borrar</translation>
+    </message>
+    <message>
+        <source>Numbers from the simulator or the serial monitor, whichever is running.</source>
+        <translation>Números del simulador o del monitor serie, el que esté en marcha.</translation>
+    </message>
+    <message>
+        <source>Stop adding new values, to look at what is shown</source>
+        <translation>Dejar de añadir valores nuevos, para mirar lo que se ve</translation>
+    </message>
+</context>
+<context>
     <name>ProjectView</name>
+    <message>
+        <source>Try Blink in the simulator</source>
+        <translation>Probar Blink en el simulador</translation>
+    </message>
+    <message>
+        <source>Pick the Blink project, build it (after asking) and run it in the simulator</source>
+        <translation>Elegir el proyecto Blink, compilarlo (tras preguntar) y ejecutarlo en el simulador</translation>
+    </message>
     <message>
         <source>Open on esp32bench.dev</source>
         <translation>Abrir en esp32bench.dev</translation>
@@ -1359,6 +1425,10 @@ SHA-256 del código: %2</translation>
     <message>
         <source>Intermediate</source>
         <translation>Intermedio</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>Avanzado</translation>
     </message>
     <message>
         <source>%1 · about %2 min · %3</source>
@@ -1546,6 +1616,10 @@ SHA-256 del código: %2</translation>
         <translation>Aquí aparece el progreso de la instalación.</translation>
     </message>
     <message>
+        <source>Install everything needed</source>
+        <translation>Instalar todo lo necesario</translation>
+    </message>
+    <message>
         <source>Done.</source>
         <translation>Hecho.</translation>
     </message>
@@ -1600,6 +1674,14 @@ SHA-256 del código: %2</translation>
     <message>
         <source>Install</source>
         <translation>Instalar</translation>
+    </message>
+    <message>
+        <source>Install everything needed (%1 to download%2)</source>
+        <translation>Instalar todo lo necesario (%1 de descarga%2)</translation>
+    </message>
+    <message>
+        <source>, or more</source>
+        <translation>, o más</translation>
     </message>
     <message>
         <source>Everything needed for builds is installed.</source>
@@ -1683,6 +1765,30 @@ SHA-256 del código: %2</translation>
     <message>
         <source>Simulated Wi-Fi: %1 (open, no internet). The firmware&apos;s web page: &lt;a href=&quot;%2&quot;&gt;%2&lt;/a&gt;</source>
         <translation>Wi-Fi simulada: %1 (abierta, sin internet). La página web del firmware: &lt;a href=&quot;%2&quot;&gt;%2&lt;/a&gt;</translation>
+    </message>
+    <message>
+        <source>✓ The output is what this project expects.</source>
+        <translation>✓ La salida es la que este proyecto espera.</translation>
+    </message>
+    <message>
+        <source>Waiting for the expected output: %1 of %2 seen so far.</source>
+        <translation>Esperando la salida esperada: %1 de %2 vistas por ahora.</translation>
+    </message>
+    <message>
+        <source>Not seen yet (a board prints it within %1 s): %2</source>
+        <translation>Aún no se ha visto (una placa lo imprime en %1 s): %2</translation>
+    </message>
+    <message>
+        <source>This project needs Wi-Fi, and the simulated network reaches nothing, so it may stop before that.</source>
+        <translation>Este proyecto necesita Wi-Fi, y la red simulada no llega a nada, así que puede detenerse antes.</translation>
+    </message>
+    <message>
+        <source>It needs its parts: add them in the Circuit dock, or what it prints about them may differ.</source>
+        <translation>Necesita sus piezas: añádelas en el panel Circuito, o lo que imprima sobre ellas puede variar.</translation>
+    </message>
+    <message>
+        <source>What a board running this project prints, from esp32bench.dev: %1</source>
+        <translation>Lo que imprime una placa con este proyecto, según esp32bench.dev: %1</translation>
     </message>
     <message>
         <source>Gave the sketch the simulated Wi-Fi settings (network %1, no password); it restarts to join.</source>

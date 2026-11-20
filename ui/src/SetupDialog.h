@@ -8,6 +8,7 @@
 
 class CoreConnection;
 class QLabel;
+class QPushButton;
 class QPlainTextEdit;
 class QTreeWidget;
 
@@ -24,11 +25,20 @@ public:
     QTreeWidget *tree() const { return m_tree; }
     QString logText() const;
 
+    QPushButton *installAllButton() const { return m_installAll; }
+
 private:
     void install(const QString &component, const QString &name);
+    // Start the next queued install (Install everything needed).
+    void installNext();
 
     CoreConnection *m_core;
     QLabel *m_summary;
     QTreeWidget *m_tree;
     QPlainTextEdit *m_log;
+    QPushButton *m_installAll = nullptr;
+    // Components the app can install that are missing (id, name), and those still to
+    // install in this round.
+    QList<std::pair<QString, QString>> m_missing;
+    QList<std::pair<QString, QString>> m_queue;
 };

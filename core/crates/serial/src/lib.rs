@@ -4,6 +4,8 @@
 //! to async code over a channel. Dropping the [`Port`] stops that thread within a
 //! read timeout. Output is bytes; callers decode at the edge.
 
+pub mod plot;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

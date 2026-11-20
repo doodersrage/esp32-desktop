@@ -897,6 +897,83 @@ async fn serial_streams_bytes_both_ways() {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
         other => panic!("unexpected {other:?}"),
     }
+
+    // A line of numbers comes with its plot row, in pieces or not.
+    for piece in [&b"temp:21."[..], b"5 hum:45\n"] {
+        // SAFETY: write a valid buffer to the pty master.
+        unsafe { libc::write(master.as_raw_fd(), piece.as_ptr().cast(), piece.len()) };
+    }
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(6);
+    let plot = loop {
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_valid(
+            &method_def("serial.data")["params"],
+            &n["params"],
+            "serial.data",
+        );
+        if let Some(p) = n["params"].get("plot") {
+            break p.clone();
+        }
+    };
+    assert_eq!(
+        plot,
+        json!([[{ "name": "temp", "value": 21.5 }, { "name": "hum", "value": 45.0 }]])
+    );
+}
+
+/// A crash line from the board comes with the site's explanation of it (the manifest's
+/// explain), once.
+#[cfg(unix)]
+#[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
+async fn serial_explains_a_crash_once() {
+    use std::os::fd::AsRawFd;
+    let (master, port) = pty();
+    let (_d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    c.call("serial.open", json!({ "path": port, "baud": 115200 }))
+        .await
+        .unwrap();
+    let crash =
+        b"Guru Meditation Error: Core  1 panic'ed (LoadProhibited). Exception was unhandled.\n";
+    for _ in 0..2 {
+        // SAFETY: write a valid buffer to the pty master.
+        unsafe { libc::write(master.as_raw_fd(), crash.as_ptr().cast(), crash.len()) };
+    }
+    let mut found = Vec::new();
+    let mut text = String::new();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(6);
+    while text.matches("Guru Meditation").count() < 2 {
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_valid(
+            &method_def("serial.data")["params"],
+            &n["params"],
+            "serial.data",
+        );
+        text.push_str(n["params"]["text"].as_str().unwrap());
+        if let Some(e) = n["params"]["explain"].as_array() {
+            found.extend(e.iter().cloned());
+        }
+    }
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0]["key"], "panic-load");
+    assert_eq!(found[0]["level"], "problem");
+    assert!(
+        found[0]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://esp32bench.dev/errors/")
+    );
 }
 
 #[cfg(unix)]
@@ -1359,8 +1436,12 @@ async fn sim_wait_for(c: &mut Client, sub: &Value, marker: &str) {
             .unwrap();
         let event = n["method"].as_str().unwrap();
         assert_valid(&method_def(event)["params"], &n["params"], event);
-        assert_eq!(event, "sim.output", "{n}");
         assert_eq!(&n["params"]["subscription"], sub);
+        // The project's expectation is checked alongside (sim.expect has its own test).
+        if event == "sim.expect" {
+            continue;
+        }
+        assert_eq!(event, "sim.output", "{n}");
         text.push_str(n["params"]["text"].as_str().unwrap());
     }
 }
@@ -1444,6 +1525,69 @@ async fn sim_runs_a_build_with_console_and_reset() {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
         other => panic!("reset a stopped simulator: {other:?}"),
     }
+}
+
+/// The project's expectation (the manifest's expect) is checked as the output comes:
+/// sim.expect says what is missing at the start and when it has all appeared.
+#[tokio::test]
+async fn sim_checks_the_output_against_the_projects_expectation() {
+    let Some(hello) = firmware("hello-esp32.bin") else {
+        eprintln!("skipping: hello firmware not built");
+        return;
+    };
+    if esp32bench_sim::install::find_qemu(esp32bench_sim::Arch::Xtensa).is_err() {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    }
+    // The example library, with blink expecting what the hello firmware prints.
+    let lib = tempfile::tempdir().unwrap();
+    let mut m: Value = serde_json::from_slice(&std::fs::read(example_manifest()).unwrap()).unwrap();
+    for p in m["projects"].as_array_mut().unwrap() {
+        if p["id"] == "blink" {
+            p["expect"] = json!({ "patterns": [r"esp32bench-hello ready", r"never \d+ printed"], "seconds": 1, "needs": "none" });
+        }
+    }
+    let manifest = lib.path().join("m.json");
+    std::fs::write(&manifest, serde_json::to_vec(&m).unwrap()).unwrap();
+    let (d, sock, _lock) = daemon_with_source(&manifest).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&hello, out.join("blink.ino.merged.bin")).unwrap();
+    let r = c
+        .call("sim.start", json!({ "project": "blink", "board": "esp32" }))
+        .await
+        .unwrap();
+    let sub = r["subscription"].clone();
+    // Collect sim.expect until it times out (one pattern never appears).
+    let mut seen: Vec<Value> = Vec::new();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(90);
+    while !seen.last().is_some_and(|e| e["timedOut"] == true) {
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
+            .await
+            .unwrap_or_else(|_| panic!("no timeout in {seen:?}"))
+            .unwrap();
+        let event = n["method"].as_str().unwrap();
+        assert_valid(&method_def(event)["params"], &n["params"], event);
+        if event == "sim.expect" {
+            seen.push(n["params"].clone());
+        }
+    }
+    // At the start: nothing seen.
+    assert_eq!(seen[0]["matched"], json!([]));
+    assert_eq!(seen[0]["needs"], "none");
+    // Then the ready line, and at the end the one that never came.
+    assert!(
+        seen.iter()
+            .any(|e| e["matched"] == json!(["esp32bench-hello ready"])),
+        "{seen:?}"
+    );
+    let last = seen.last().unwrap();
+    assert_eq!(last["missing"], json!([r"never \d+ printed"]));
+    c.call("core.unsubscribe", json!({ "subscription": sub }))
+        .await
+        .unwrap();
 }
 
 /// sim.start with icount: true runs QEMU counting time in instructions; the build
@@ -1545,7 +1689,11 @@ async fn sim_joins_a_sketch_to_the_simulated_wifi() {
             .unwrap();
         let event = n["method"].as_str().unwrap();
         assert_valid(&method_def(event)["params"], &n["params"], event);
-        assert_eq!(&n["params"]["subscription"], &sub);
+        // The first simulation's last events (its sim.expect goes out at once) can
+        // still arrive after its unsubscribe.
+        if n["params"]["subscription"] != sub {
+            continue;
+        }
         match event {
             "sim.wifiJoined" => {
                 assert_eq!(n["params"]["ssid"], "PICSimLabWifi");
@@ -2391,7 +2539,7 @@ async fn sim_runs_the_boards_parts() {
             .iter()
             .all(|p| p["id"] == "air" || p.get("controls").is_none())
     );
-    assert_eq!(r["circuit"]["schemaVersion"], "1.2.0");
+    assert_eq!(r["circuit"]["schemaVersion"], "1.3.0");
     // Values are booleans or numbers, nothing else.
     match c
         .call(

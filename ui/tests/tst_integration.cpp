@@ -411,6 +411,26 @@ private slots:
             QCOMPARE(recent.count(u"blink"_s), 1);
         }
 
+        // A first start (nothing to reopen): the guide's Try Blink selects it, builds it
+        // after asking, and runs it in the simulator.
+        {
+            QSettings().remove(u"project/last"_s);
+            CoreConnection again;
+            again.setSocketPath(sock);
+            AgreeingWindow third(&again);
+            again.start();
+            QTRY_VERIFY_WITH_TIMEOUT(third.projectView()->tryButton()->isVisibleTo(third.projectView()), 10000);
+            QSignalSpy built(&again, &CoreConnection::buildFinished);
+            QSignalSpy started(&again, &CoreConnection::simStarted);
+            QSignalSpy stopped(&again, &CoreConnection::simStopped);
+            third.projectView()->tryButton()->click();
+            QTRY_COMPARE_WITH_TIMEOUT(third.asked, 1, 10000);
+            QTRY_COMPARE_WITH_TIMEOUT(built.size(), 1, 10000);
+            QCOMPARE(third.projectView()->currentProjectId(), u"blink"_s);
+            QTRY_VERIFY_WITH_TIMEOUT(!started.isEmpty() || !stopped.isEmpty(), 10000);
+            again.stopSim();
+        }
+
 
         const QString shot = qEnvironmentVariable("ESP32BENCH_SCREENSHOT");
         if (!shot.isEmpty())

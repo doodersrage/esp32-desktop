@@ -38,6 +38,11 @@ public:
     // The same, for a one-pin model with an activeLow property.
     void addPart(const QString &kind, int pin, bool activeLow, const QString &label);
     void removePart(const QString &id);
+    // Keep a part where it was dragged to on the canvas (circuit 1.3's `at`).
+    void movePart(const QString &id, QPointF to);
+    // Back to the parts as they were before the last change (add, remove, move).
+    void undo();
+    QPushButton *undoButton() const { return m_undoButton; }
 
     // For tests.
     QString statusText() const;
@@ -75,12 +80,17 @@ private:
     void updateStatus();
     void rebuildControls();
     void saveControl(const QString &id, const QString &name, double value);
+    // Save a change the user made, remembering what it replaces for undo().
+    void edit(const QJsonObject &circuit);
 
     CoreConnection *m_core;
     QLabel *m_status;
     QToolButton *m_add;
     QPushButton *m_remove;
     QPushButton *m_addSuggested;
+    QPushButton *m_undoButton;
+    // The board's circuits before each change, newest last.
+    QList<QJsonObject> m_undo;
     // What the project's wiring gives (circuit.suggest) for the board shown.
     QJsonObject m_suggested;
     QStringList m_unmatched;

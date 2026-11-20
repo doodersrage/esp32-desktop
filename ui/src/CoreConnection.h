@@ -211,6 +211,15 @@ signals:
     void simOutput(const QByteArray &bytes);
     // sim.wifiJoined: the core gave a library sketch the simulated network's settings.
     void simWifiJoined(const QString &ssid);
+    // Rows of numbers from the simulator's or the serial port's output (the events'
+    // plot field): arrays of {name, value}.
+    void plotRows(const QJsonArray &rows);
+    // What lines of output mean (the events' explain field): `source` is build, serial
+    // or sim; each finding has key, text, level (problem or info) and maybe url.
+    void outputExplained(const QString &source, const QJsonArray &findings);
+    // sim.expect: how much of what the project should print has appeared.
+    void simExpect(const QStringList &matched, const QStringList &missing, const QString &needs, int seconds,
+                   bool timedOut);
     // A new picture on the simulator's virtual RGB panel (sim.frame).
     void simFrame(const QImage &image);
     // sim.pins: pins that changed, each {gpio, level?, output?}.

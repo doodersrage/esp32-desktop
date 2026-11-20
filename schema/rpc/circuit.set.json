@@ -108,6 +108,23 @@
                   "propertyNames": {
                     "pattern": "^[a-zA-Z0-9_-]{1,32}$"
                   }
+                },
+                "at": {
+                  "type": "object",
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Where the app's canvas shows the part, once moved there (1.3). Only the drawing: the part works the same anywhere.",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    }
+                  }
                 }
               }
             }

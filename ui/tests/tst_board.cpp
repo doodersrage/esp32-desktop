@@ -6,6 +6,8 @@
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
 #include "MainWindow.h"
+#include "SimulatorPanel.h"
+#include "MessageBar.h"
 #include "SerialMonitor.h"
 
 #include <QComboBox>
@@ -20,6 +22,8 @@
 #include <QToolButton>
 #include <QMenu>
 #include <QAction>
+#include <QLabel>
+#include <QJsonObject>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -30,6 +34,7 @@ using namespace Qt::StringLiterals;
 class FakeCore : public QObject {
     Q_OBJECT
 public:
+    int openedBaud = 0;
     QStringList calls; // "method" or "method consent=..." etc.
 
     explicit FakeCore(const QString &path)
@@ -83,6 +88,7 @@ private:
             event(8, u"build.finished"_s, {{u"ok"_s, true}, {u"image"_s, u"/tmp/blink.bin"_s}});
             reply(id, QJsonObject{{u"job"_s, 8}, {u"plan"_s, QJsonObject{{u"project"_s, u"blink"_s}, {u"board"_s, u"esp32"_s}}}});
         } else if (m == u"serial.open") {
+            openedBaud = p.value(u"baud"_s).toInt();
             reply(id, QJsonObject{{u"subscription"_s, 4}});
         } else if (m == u"core.unsubscribe") {
             reply(id, QJsonObject{});
@@ -174,6 +180,21 @@ private slots:
         QCOMPARE(fake.calls.mid(0, 3),
                  (QStringList{u"core.unsubscribe"_s, u"board.flash consent="_s, u"board.flash consent=tok"_s}));
         QCOMPARE(fake.calls.last(), u"serial.open"_s);
+
+        // The monitor comes back at the flashed project's baud rate, here an unusual one.
+        // (The project view shows it too, so it is the blink the last build was of.)
+        const QJsonObject fw{{u"board"_s, u"esp32"_s}, {u"pins"_s, QJsonArray{}}, {u"wiring"_s, QJsonArray{}},
+                                {u"code"_s, u"void setup() {}"_s}, {u"sample"_s, QJsonArray{}}};
+        emit core.projectLoaded(QJsonObject{
+            {u"project"_s, QJsonObject{{u"id"_s, u"blink"_s}, {u"name"_s, u"Blink"_s}, {u"firmware"_s, u"sketch"_s},
+                                       {u"baud"_s, 74880}, {u"builds"_s, QJsonArray{fw}}}},
+            {u"boards"_s, QJsonArray{QJsonObject{{u"id"_s, u"esp32"_s}, {u"name"_s, u"ESP32"_s}, {u"chip"_s, u"esp32"_s}}}}});
+        QTRY_VERIFY(build->flashAction()->isEnabled());
+        fake.calls.clear();
+        build->flashAction()->trigger();
+        QTRY_VERIFY2(fake.calls.contains(u"board.flash consent=tok"_s), qPrintable(fake.calls.join(u", "_s)));
+        QTRY_COMPARE(fake.calls.last(), u"serial.open"_s);
+        QCOMPARE(fake.openedBaud, 74880);
     }
 
     void declinedFlashSendsNothingMore()
@@ -192,6 +213,28 @@ private slots:
         QTRY_COMPARE(window.flashAsked, 1);
         QTest::qWait(200);
         QCOMPARE(fake.calls, QStringList{u"board.flash consent="_s});
+    }
+
+    void explainsWhatTheBoardPrinted()
+    {
+        CoreConnection core;
+        ScriptedWindow window(&core);
+        // A problem (a crash): in the message bar, with the site's page.
+        emit core.outputExplained(u"sim"_s, QJsonArray{QJsonObject{
+            {u"key"_s, u"panic-load"_s}, {u"text"_s, u"The code read from an address it may not touch."_s},
+            {u"level"_s, u"problem"_s}, {u"url"_s, u"https://esp32bench.dev/errors/guru-meditation-loadprohibited/"_s}}});
+        QVERIFY(window.messageBar()->text().contains(u"may not touch"_s));
+        QVERIFY(window.messageBar()->findChild<QLabel *>(QString(), Qt::FindDirectChildrenOnly) != nullptr);
+        bool linked = false;
+        for (QLabel *l : window.messageBar()->findChildren<QLabel *>())
+            linked |= l->text().contains(u"href=\"https://esp32bench.dev/errors/guru-meditation-loadprohibited/\""_s);
+        QVERIFY(linked);
+        // A note (a normal reset): in the console it came from, not the bar.
+        window.messageBar()->hide();
+        emit core.outputExplained(u"sim"_s, QJsonArray{QJsonObject{
+            {u"key"_s, u"rst-POWERON_RESET"_s}, {u"text"_s, u"POWERON_RESET: Normal start."_s}, {u"level"_s, u"info"_s}}});
+        QVERIFY(window.messageBar()->text().isEmpty());
+        QVERIFY(window.simulator()->outputText().contains(u"Note: POWERON_RESET: Normal start."_s));
     }
 
     void inspectShowsTheBoardAndEraseAsksFirst()

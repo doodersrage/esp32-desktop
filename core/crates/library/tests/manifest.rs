@@ -114,6 +114,20 @@ fn real_site_manifest_matches_schema() {
     assert_matches_schema(&bytes, "site manifest");
     let m = parse(&bytes).unwrap();
     assert!(!m.projects.is_empty());
+    // Every explanation the site publishes reads here too.
+    for r in &m.explain {
+        let source = if r.flags.as_deref() == Some("i") {
+            format!("(?i){}", r.pattern)
+        } else {
+            r.pattern.clone()
+        };
+        assert!(
+            regex::Regex::new(&source).is_ok(),
+            "explain {}: {}",
+            r.key,
+            r.pattern
+        );
+    }
     for p in &m.projects {
         for b in &p.builds {
             assert!(

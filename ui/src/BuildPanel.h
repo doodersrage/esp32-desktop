@@ -38,6 +38,9 @@ public:
     void setTarget(const QString &project, const QString &board, bool canBuild);
     // The build that was to be followed by a run or flash was declined.
     void cancelPending();
+    // What Run, Debug and Flash act on now.
+    QString targetProject() const;
+    QString targetBoard() const;
 
 signals:
     // Run, Debug or Flash needs the project shown built first.
@@ -50,8 +53,6 @@ signals:
 private:
     enum class Then { Nothing, Run, Debug, Flash };
     void act(Then what);
-    QString targetProject() const;
-    QString targetBoard() const;
     bool targetBuilt() const;
     void started(const QJsonObject &plan);
     void appendLine(const QString &stream, const QString &line);

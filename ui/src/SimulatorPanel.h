@@ -19,6 +19,9 @@ class SimulatorPanel : public QWidget {
 
 public:
     ConsoleBar *consoleBar() const { return m_tools; }
+    ConsoleView *console() const { return m_output; }
+    QString expectText() const;
+    static QString readablePattern(const QString &pattern);
     explicit SimulatorPanel(CoreConnection *core, QWidget *parent = nullptr);
 
     QString outputText() const;
@@ -38,6 +41,7 @@ private:
     QLabel *m_status;
     // The simulated Wi-Fi network and the link to the sketch's web page.
     QLabel *m_network;
+    QLabel *m_expect;
     QPushButton *m_reset;
     QPushButton *m_stop;
     QPushButton *m_again;

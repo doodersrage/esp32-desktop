@@ -82,6 +82,21 @@
    "arduinoBoard": "AI Thinker ESP32-CAM"
   }
  ],
+ "explain": [
+  {
+   "key": "panic-load",
+   "pattern": "Guru Meditation Error: Core\\s+\\d panic'ed \\((?:LoadProhibited|Load access fault)",
+   "text": "The code read from an address it may not touch. Usually a null or dangling pointer, or an object used before it was set up.",
+   "level": "problem",
+   "url": "https://esp32bench.dev/errors/guru-meditation-loadprohibited/"
+  },
+  {
+   "key": "rst-POWERON_RESET",
+   "pattern": "rst:0x[0-9a-fA-F]+ \\(POWERON_RESET\\)",
+   "text": "POWERON_RESET: Normal start after power-up or the EN button.",
+   "level": "info"
+  }
+ ],
  "projects": [
   {
    "id": "blink",

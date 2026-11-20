@@ -669,6 +669,7 @@ version = "0.1.7"
 dependencies = [
  "esp32bench-distro",
  "jsonschema",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",
@@ -705,6 +706,7 @@ name = "esp32bench-serial"
 version = "0.1.7"
 dependencies = [
  "libc",
+ "serde",
  "serialport",
  "thiserror",
  "tokio",

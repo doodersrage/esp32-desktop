@@ -55,7 +55,8 @@
           "level": {
             "enum": [
               "Starter",
-              "Intermediate"
+              "Intermediate",
+              "Advanced"
             ]
           },
           "minutes": {

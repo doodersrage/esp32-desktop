@@ -18,6 +18,7 @@ class DisplayPanel;
 class PinsPanel;
 class TracePanel;
 class CircuitPanel;
+class PlotPanel;
 class QDockWidget;
 class QLabel;
 class QPushButton;
@@ -51,6 +52,7 @@ public:
     // The toolbar's Board menu: serial monitor, inspect and erase for the chosen port.
     QToolButton *boardMenuButton() const { return m_boardMenu; }
     CircuitPanel *circuit() const { return m_circuit; }
+    PlotPanel *plot() const { return m_plot; }
     void showSetup();
     // Open an esp32bench:// link: select the project (and board) it names. It is
     // not built or flashed; that still asks first. Waits for the core if needed.
@@ -107,6 +109,8 @@ private:
     QDockWidget *m_circuitDock = nullptr;
     CircuitPanel *m_circuit = nullptr;
     QDockWidget *m_traceDock = nullptr;
+    QDockWidget *m_plotDock = nullptr;
+    PlotPanel *m_plot = nullptr;
     TracePanel *m_trace = nullptr;
     QString m_autoStartError;
     SimulatorPanel *m_sim = nullptr;
@@ -114,6 +118,10 @@ private:
     // A serial monitor closed to free the port for flashing, reopened afterwards.
     QString m_reopenSerial;
     QString m_lastBoardPort;
+    // The project the last flash wrote, for the serial monitor's baud rate after it.
+    QString m_flashedProject;
+    // Try Blink was pressed: run it once it is shown and can be.
+    bool m_tryPending = false;
     QToolBar *m_toolBar = nullptr;
     QLabel *m_current = nullptr;
     QLabel *m_nextStep = nullptr;

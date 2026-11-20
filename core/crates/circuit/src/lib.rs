@@ -22,7 +22,7 @@ pub mod suggest;
 pub use runtime::{Effect, I2cEvent, Runtime};
 
 /// The circuit format this program writes. It reads every 1.x.
-pub const SCHEMA_VERSION: &str = "1.2.0";
+pub const SCHEMA_VERSION: &str = "1.3.0";
 pub const MAX_PARTS: usize = 32;
 pub const MAX_GPIO: u8 = 48;
 const MAX_LABEL: usize = 40;
@@ -235,6 +235,17 @@ pub struct Part {
     /// starts, so a sensor keeps its readings between runs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub controls: BTreeMap<String, f64>,
+    /// Where the app's canvas shows the part, once it was moved there (circuit 1.3).
+    /// Only the drawing: the part works the same anywhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<At>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct At {
+    pub x: f64,
+    pub y: f64,
 }
 
 impl Part {

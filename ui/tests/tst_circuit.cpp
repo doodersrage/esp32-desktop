@@ -16,6 +16,8 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QTemporaryDir>
+#include <QApplication>
+#include <QMouseEvent>
 #include <QTest>
 #include <QToolButton>
 
@@ -221,6 +223,47 @@ private slots:
         QVERIFY(!panel.addSuggestedButton()->isVisibleTo(&panel));
     }
 
+    void dragsPartsAndUndoes()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        CircuitPanel panel(&core);
+        panel.resize(700, 500);
+        panel.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&panel));
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QTRY_VERIFY(!panel.modelIds().isEmpty());
+        panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s});
+        QTRY_COMPARE(panel.parts().size(), 1);
+        QVERIFY(!panel.undoButton()->isEnabled()); // nothing changed yet
+
+        // Drag the LED with the mouse: its place is saved (circuit 1.3's at).
+        QGraphicsView *view = panel.view();
+        const QPoint from = view->mapFromScene(panel.partCentre(u"led-1"_s));
+        const QPoint to = from + QPoint(60, 40);
+        QTest::mousePress(view->viewport(), Qt::LeftButton, {}, from);
+        QMouseEvent move(QEvent::MouseMove, to, view->viewport()->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, {});
+        QApplication::sendEvent(view->viewport(), &move);
+        QTest::mouseRelease(view->viewport(), Qt::LeftButton, {}, to);
+        QTRY_VERIFY(partsOf(fake.saved, 0).contains(u"at"_s));
+        const QJsonObject at = partsOf(fake.saved, 0).value(u"at"_s).toObject();
+        QVERIFY(at.value(u"x"_s).toDouble() > 0);
+        QTRY_VERIFY(panel.undoButton()->isEnabled());
+
+        // Undo puts it back where it was laid out.
+        panel.undoButton()->click();
+        QTRY_VERIFY(!partsOf(fake.saved, 0).contains(u"at"_s));
+        QVERIFY(!panel.undoButton()->isEnabled());
+
+        // An added part can be undone too.
+        panel.addPart(u"button"_s, 4, true, u"Go"_s);
+        QTRY_COMPARE(panel.parts().size(), 2);
+        panel.undoButton()->click();
+        QTRY_COMPARE(panel.parts().size(), 1);
+    }
+
     void editsAndRunsParts()
     {
         FakeCore fake(path());
@@ -249,7 +292,7 @@ private slots:
         QCOMPARE(b.value(u"pins"_s).toObject().value(u"pin"_s).toInt(), 4);
         QCOMPARE(b.value(u"props"_s).toObject().value(u"activeLow"_s).toBool(), true);
         QCOMPARE(b.value(u"label"_s).toString(), u"Go"_s);
-        QCOMPARE(fake.saved.value(u"schemaVersion"_s).toString(), u"1.2.0"_s);
+        QCOMPARE(fake.saved.value(u"schemaVersion"_s).toString(), u"1.3.0"_s);
         panel.addPart(u"rgb-led"_s, QJsonObject{{u"red"_s, 25}, {u"green"_s, 26}, {u"blue"_s, 27}}, {}, {});
         QTRY_COMPARE(panel.parts().size(), 3);
         QCOMPARE(partsOf(fake.saved, 2).value(u"id"_s).toString(), u"rgb-led-1"_s);

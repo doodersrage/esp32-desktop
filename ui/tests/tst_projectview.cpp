@@ -68,6 +68,42 @@ private slots:
         QVERIFY(view.codeView()->toPlainText().contains(second));
     }
 
+    void startsOnTheConnectedBoardsChip()
+    {
+        // The example, with an ESP32-S3 build added after the ESP32 ones.
+        QJsonObject result = example();
+        QJsonObject p = result.value(u"project"_s).toObject();
+        QJsonArray builds = p.value(u"builds"_s).toArray();
+        QJsonObject s3 = builds.at(0).toObject();
+        s3[u"board"_s] = u"esp32s3"_s;
+        builds.append(s3);
+        p[u"builds"_s] = builds;
+        result[u"project"_s] = p;
+        QJsonArray boards = result.value(u"boards"_s).toArray();
+        boards.append(QJsonObject{{u"id"_s, u"esp32s3"_s}, {u"name"_s, u"ESP32-S3 DevKitC-1"_s},
+                                  {u"short"_s, u"S3"_s}, {u"chip"_s, u"esp32s3"_s}, {u"arduinoBoard"_s, u"x"_s}});
+        result[u"boards"_s] = boards;
+
+        CoreConnection core;
+        ProjectView view(&core);
+        view.setConnectedChips({u"esp32s3"_s});
+        view.showResult(result);
+        QCOMPARE(view.boardPicker()->currentData().toString(), u"esp32s3"_s);
+
+        // Plugged in while shown: it switches, unless the board was chosen by hand.
+        ProjectView later(&core);
+        later.showResult(result);
+        QCOMPARE(later.boardPicker()->currentIndex(), 0);
+        later.setConnectedChips({u"esp32s3"_s});
+        QCOMPARE(later.boardPicker()->currentData().toString(), u"esp32s3"_s);
+
+        ProjectView chosen(&core);
+        chosen.showResult(result);
+        emit chosen.boardPicker()->activated(0); // as a click on the first board does
+        chosen.setConnectedChips({u"esp32s3"_s});
+        QCOMPARE(chosen.boardPicker()->currentIndex(), 0);
+    }
+
     void saysWhenFirmwareIsPrebuilt()
     {
         CoreConnection core;

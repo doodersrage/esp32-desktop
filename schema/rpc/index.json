@@ -53,6 +53,7 @@
     "serial.closed",
     "serial.data",
     "sim.exited",
+    "sim.expect",
     "sim.frame",
     "sim.output",
     "sim.partPicture",

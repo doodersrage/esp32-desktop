@@ -24,6 +24,38 @@
       },
       "line": {
         "type": "string"
+      },
+      "explain": {
+        "type": "array",
+        "maxItems": 64,
+        "description": "Plain-language explanations of lines this chunk completed (the manifest's explain rules: a crash, a reset reason, an upload error), each key once per run. Absent when there are none.",
+        "items": {
+          "type": "object",
+          "required": [
+            "key",
+            "text",
+            "level"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "level": {
+              "enum": [
+                "problem",
+                "info"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "The site's page about it."
+            }
+          }
+        }
       }
     }
   },

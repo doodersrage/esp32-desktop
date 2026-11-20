@@ -8,6 +8,8 @@
 
 pub mod link;
 
+pub mod expect;
+pub mod explain;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -47,6 +49,10 @@ pub struct Manifest {
     pub licence: Licence,
     pub boards: Vec<Board>,
     pub projects: Vec<Project>,
+    /// What to tell the user about lines of output (manifest 1.1): the site's crash,
+    /// reset and upload explanations, applied by [`explain::Explainer`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub explain: Vec<explain::Rule>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

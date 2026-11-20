@@ -69,8 +69,15 @@ public:
         m_initial = model.value(u"state"_s).toObject();
         m_state = m_initial;
         setFlag(ItemIsSelectable);
+        // Dragged to where the user likes it; the wires follow and the place is saved.
+        setFlag(ItemIsMovable);
+        setFlag(ItemSendsGeometryChanges);
         setAcceptedMouseButtons(Qt::LeftButton);
     }
+
+    // Called as the part moves (to redraw its wires) and once dropped somewhere else.
+    std::function<void(QPointF)> moving;
+    std::function<void(QPointF)> moved;
 
     QString id() const { return m_id; }
     QJsonObject state() const { return m_state; }
@@ -254,8 +261,15 @@ public:
     }
 
 protected:
+    QVariant itemChange(GraphicsItemChange change, const QVariant &value) override
+    {
+        if (change == ItemPositionHasChanged && moving)
+            moving(value.toPointF());
+        return QGraphicsItem::itemChange(change, value);
+    }
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override
     {
+        m_pressedAt = pos();
         QGraphicsItem::mousePressEvent(event);
         if (!m_momentary.isEmpty())
             m_control(m_momentary, true);
@@ -265,11 +279,14 @@ protected:
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override
     {
         QGraphicsItem::mouseReleaseEvent(event);
+        if (moved && (pos() - m_pressedAt).manhattanLength() > 4)
+            moved(pos());
         if (!m_momentary.isEmpty())
             m_control(m_momentary, false);
     }
 
 private:
+    QPointF m_pressedAt;
     QString m_id;
     QString m_look;
     QString m_label;
@@ -291,6 +308,7 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     , m_add(new QToolButton(this))
     , m_remove(new QPushButton(QIcon::fromTheme(u"list-remove"_s), tr("Remove"), this))
     , m_addSuggested(new QPushButton(QIcon::fromTheme(u"list-add"_s), tr("Add the project's parts"), this))
+    , m_undoButton(new QPushButton(QIcon::fromTheme(u"edit-undo"_s), tr("Undo"), this))
     , m_scene(new QGraphicsScene(this))
     , m_view(new QGraphicsView(m_scene, this))
     , m_controls(new QGroupBox(this))
@@ -323,14 +341,20 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     m_addSuggested->setVisible(false);
     connect(m_addSuggested, &QPushButton::clicked, this, [this] {
         if (!m_project.isEmpty() && !m_suggested.value(u"parts"_s).toArray().isEmpty())
-            m_core->saveCircuit(m_project, m_board, m_suggested);
+            edit(m_suggested);
     });
     connect(core, &CoreConnection::circuitSuggested, this, &CircuitPanel::circuitSuggested);
+
+    m_undoButton->setToolTip(tr("Undo the last change to the parts (Ctrl+Z)"));
+    m_undoButton->setShortcut(QKeySequence::Undo);
+    m_undoButton->setEnabled(false);
+    connect(m_undoButton, &QPushButton::clicked, this, &CircuitPanel::undo);
 
     auto *tools = new QHBoxLayout;
     tools->addWidget(m_addSuggested);
     tools->addWidget(m_add);
     tools->addWidget(m_remove);
+    tools->addWidget(m_undoButton);
     tools->addStretch(1);
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(m_status);
@@ -459,6 +483,8 @@ void CircuitPanel::showBoard(const QString &project, const QString &board, const
     m_circuit = {};
     m_suggested = {};
     m_unmatched.clear();
+    m_undo.clear();
+    m_undoButton->setEnabled(false);
     m_addSuggested->setVisible(false);
     rebuildScene();
     m_add->setEnabled(!m_models.isEmpty());
@@ -601,10 +627,13 @@ void CircuitPanel::rebuildScene()
             auto *item = new PartItem(id, model, label, [this, id](const QString &control, const QJsonValue &value) {
                 m_core->controlPart(id, control, value);
             });
-            item->setPos(0, busY);
+            const QJsonObject at = o.value(u"at"_s).toObject();
+            item->setPos(at.isEmpty() ? QPointF(0, busY) : QPointF(at.value(u"x"_s).toDouble(), at.value(u"y"_s).toDouble()));
             item->setToolTip(where);
             m_scene->addItem(item);
-            busY += item->boundingRect().height() + 16;
+            if (at.isEmpty())
+                busY += item->boundingRect().height() + 16;
+            item->moved = [this, id](QPointF to) { movePart(id, to); };
             m_items.insert(id, item);
             continue;
         }
@@ -628,15 +657,28 @@ void CircuitPanel::rebuildScene()
             const QJsonObject countProp = model.value(u"props"_s).toObject().value(u"count"_s).toObject();
             item->setCount(o.value(u"props"_s).toObject().value(u"count"_s).toInt(countProp.value(u"default"_s).toInt(8)));
         }
-        const qreal x = PartX + stack * 200;
-        item->setPos(x, y - PartSize / 2);
+        // Where it was moved to, else on its pin's row, after any others there.
+        const QJsonObject at = o.value(u"at"_s).toObject();
+        const QPointF place = at.isEmpty() ? QPointF(PartX + stack * 200, y - PartSize / 2)
+                                           : QPointF(at.value(u"x"_s).toDouble(), at.value(u"y"_s).toDouble());
+        item->setPos(place);
         m_scene->addItem(item);
-        // A wire from each connected pin to the part.
+        // A wire from each connected pin to the part; they follow it when it is dragged.
         QStringList where;
+        QList<QGraphicsLineItem *> wires;
         for (auto it = conn.begin(); it != conn.end(); ++it) {
-            m_scene->addLine(BoardWidth + 2, rowY(it.value()), x, y, QPen(pal.color(QPalette::Mid), 2));
+            wires << m_scene->addLine(BoardWidth + 2, rowY(it.value()), place.x(), place.y() + PartSize / 2,
+                                      QPen(pal.color(QPalette::Mid), 2));
             where << (conn.size() == 1 ? tr("GPIO %1").arg(it.value()) : tr("%1: GPIO %2").arg(it.key()).arg(it.value()));
         }
+        item->moving = [wires](QPointF to) {
+            for (QGraphicsLineItem *w : wires) {
+                QLineF l = w->line();
+                l.setP2(QPointF(to.x(), to.y() + PartSize / 2));
+                w->setLine(l);
+            }
+        };
+        item->moved = [this, id](QPointF to) { movePart(id, to); };
         item->setToolTip(where.join(u", "_s));
         m_items.insert(id, item);
     }
@@ -664,7 +706,7 @@ void CircuitPanel::saveControl(const QString &id, const QString &name, double va
         list.replace(n, part);
     }
     QJsonObject c = m_circuit;
-    c.insert(u"schemaVersion"_s, u"1.2.0"_s);
+    c.insert(u"schemaVersion"_s, u"1.3.0"_s);
     c.insert(u"parts"_s, list);
     m_core->saveCircuit(m_project, m_board, c);
 }
@@ -696,9 +738,9 @@ void CircuitPanel::addPart(const QString &kind, const QJsonObject &pins, const Q
     QJsonArray list = parts();
     list.append(part);
     QJsonObject c = m_circuit;
-    c.insert(u"schemaVersion"_s, u"1.2.0"_s);
+    c.insert(u"schemaVersion"_s, u"1.3.0"_s);
     c.insert(u"parts"_s, list);
-    m_core->saveCircuit(m_project, m_board, c);
+    edit(c);
 }
 
 void CircuitPanel::addPart(const QString &kind, int pin, bool activeLow, const QString &label)
@@ -716,9 +758,46 @@ void CircuitPanel::removePart(const QString &id)
             list.append(v);
     }
     QJsonObject c = m_circuit;
-    c.insert(u"schemaVersion"_s, u"1.2.0"_s);
+    c.insert(u"schemaVersion"_s, u"1.3.0"_s);
     c.insert(u"parts"_s, list);
-    m_core->saveCircuit(m_project, m_board, c);
+    edit(c);
+}
+
+void CircuitPanel::movePart(const QString &id, QPointF to)
+{
+    QJsonArray list = parts();
+    for (qsizetype n = 0; n < list.size(); ++n) {
+        QJsonObject part = list.at(n).toObject();
+        if (part.value(u"id"_s).toString() != id)
+            continue;
+        part.insert(u"at"_s, QJsonObject{{u"x"_s, qRound(to.x())}, {u"y"_s, qRound(to.y())}});
+        list.replace(n, part);
+    }
+    QJsonObject c = m_circuit;
+    c.insert(u"schemaVersion"_s, u"1.3.0"_s);
+    c.insert(u"parts"_s, list);
+    edit(c);
+}
+
+void CircuitPanel::edit(const QJsonObject &circuit)
+{
+    // What there was before, to go back to; a few dozen steps are plenty.
+    m_undo.append(m_circuit);
+    if (m_undo.size() > 30)
+        m_undo.removeFirst();
+    m_undoButton->setEnabled(true);
+    m_core->saveCircuit(m_project, m_board, circuit);
+}
+
+void CircuitPanel::undo()
+{
+    if (m_undo.isEmpty() || m_project.isEmpty())
+        return;
+    QJsonObject previous = m_undo.takeLast();
+    if (previous.isEmpty())
+        previous = QJsonObject{{u"schemaVersion"_s, u"1.3.0"_s}, {u"parts"_s, QJsonArray{}}};
+    m_undoButton->setEnabled(!m_undo.isEmpty());
+    m_core->saveCircuit(m_project, m_board, previous);
 }
 
 // A dialog built from the model: a GPIO for each pin, a field for each property.

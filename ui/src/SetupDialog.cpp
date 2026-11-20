@@ -46,6 +46,15 @@ SetupDialog::SetupDialog(CoreConnection *core, QWidget *parent)
     m_log->setMaximumBlockCount(5000);
     m_log->setPlaceholderText(tr("Install progress appears here."));
 
+    // One step for everything the app can install itself, in the order listed.
+    m_installAll = new QPushButton(QIcon::fromTheme(u"download"_s), tr("Install everything needed"), this);
+    m_installAll->setDefault(true);
+    m_installAll->hide();
+    connect(m_installAll, &QPushButton::clicked, this, [this] {
+        m_queue = m_missing;
+        installNext();
+    });
+
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
@@ -53,6 +62,7 @@ SetupDialog::SetupDialog(CoreConnection *core, QWidget *parent)
     layout->addWidget(intro);
     layout->addWidget(m_tree, 2);
     layout->addWidget(m_summary);
+    layout->addWidget(m_installAll, 0, Qt::AlignLeft);
     layout->addWidget(m_log, 1);
     layout->addWidget(buttons);
 
@@ -60,7 +70,12 @@ SetupDialog::SetupDialog(CoreConnection *core, QWidget *parent)
     connect(m_core, &CoreConnection::toolchainProgress, m_log, &QPlainTextEdit::appendPlainText);
     connect(m_core, &CoreConnection::toolchainInstallFinished, this, [this](bool ok, const QString &error) {
         m_log->appendPlainText(ok ? tr("Done.") : tr("Install failed: %1").arg(error));
-        m_core->requestToolchainStatus();
+        if (!ok)
+            m_queue.clear(); // stop at the first failure; the log says why
+        if (!m_queue.isEmpty())
+            installNext();
+        else
+            m_core->requestToolchainStatus();
     });
 }
 
@@ -79,10 +94,22 @@ void SetupDialog::install(const QString &component, const QString &name)
             w->setEnabled(false);
 }
 
+void SetupDialog::installNext()
+{
+    if (m_queue.isEmpty() || m_core->isInstalling())
+        return;
+    const auto [id, name] = m_queue.takeFirst();
+    install(id, name);
+    m_installAll->setEnabled(false);
+}
+
 void SetupDialog::showStatus(const QJsonArray &components)
 {
     m_tree->clear();
     int missingForBuild = 0;
+    m_missing.clear();
+    qint64 total = 0;
+    bool unknownSize = false;
     for (const QJsonValue &v : components) {
         const QJsonObject c = v.toObject();
         const QString id = c.value(u"id"_s).toString();
@@ -122,6 +149,11 @@ void SetupDialog::showStatus(const QJsonArray &components)
                 item->setToolTip(col, hint);
         }
         if (!installed && c.value(u"installable"_s).toBool()) {
+            m_missing.append({id, name});
+            if (c.contains(u"downloadBytes"_s))
+                total += c.value(u"downloadBytes"_s).toInteger();
+            else
+                unknownSize = true;
             auto *button = new QPushButton(QIcon::fromTheme(u"download"_s), tr("Install"), m_tree);
             button->setEnabled(!m_core->isInstalling());
             connect(button, &QPushButton::clicked, this, [this, id, name] { install(id, name); });
@@ -131,6 +163,13 @@ void SetupDialog::showStatus(const QJsonArray &components)
             item->setText(ActionColumn, hint);
         }
     }
+    // The one-step install: what it fetches, in all.
+    m_installAll->setVisible(!m_missing.isEmpty());
+    m_installAll->setEnabled(!m_core->isInstalling());
+    m_installAll->setText(total > 0
+                              ? tr("Install everything needed (%1 to download%2)")
+                                    .arg(QLocale().formattedDataSize(total), unknownSize ? tr(", or more") : QString())
+                              : tr("Install everything needed"));
     m_summary->setText(missingForBuild == 0
                            ? tr("Everything needed for builds is installed.")
                            : tr("Missing for builds: %1. Hover over a row for details.").arg(missingForBuild));
