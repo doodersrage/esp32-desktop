@@ -146,7 +146,14 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           export ESP32BENCH_DAEMON="$(cygpath -w "$PWD/core/target/release/esp32benchd.exe")"
-          ctest --test-dir build/ui --output-on-failure
+          # Failed tests again, verbosely, with their exit codes (a crash shows no output).
+          ctest --test-dir build/ui --output-on-failure || {
+            ctest --test-dir build/ui --rerun-failed -V
+            for t in $(ctest --test-dir build/ui --rerun-failed -N | sed -n 's/.*Test *#[0-9]*: \(tst_[a-z]*\).*/\1/p'); do
+              echo "=== $t"; ./build/ui/$t.exe -o -,txt; echo "exit code $?"
+            done
+            exit 1
+          }
 
       - name: Package
         shell: bash
