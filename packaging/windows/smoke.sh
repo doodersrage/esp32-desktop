@@ -1,7 +1,7 @@
 #!/bin/bash
 # Smoke-test the Windows .zip as a user would unpack it (Git Bash on a Windows runner):
 # the programs, the core over its named pipe, the bundled simulator (the hello firmware
-# boots on all three chips; GPIO 2 is traced), and the UI staying up headless.
+# boots on all three chips; GPIO pins both ways over the pin link), and the UI staying up headless.
 #
 # Usage: packaging/windows/smoke.sh <zip> <firmware dir with hello-*.bin, gpio-*.bin>
 set -euo pipefail

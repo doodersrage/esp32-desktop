@@ -2,7 +2,7 @@
 
 A native Linux desktop workbench and simulator for ESP32 boards, for Arch, Debian, Ubuntu and Fedora. It is the desktop companion to [esp32bench.dev](https://esp32bench.dev/).
 
-**Status:** version 0.1.6 is out, with packages for Arch, Debian 13, Ubuntu 24.04 and 26.04 and Fedora 44 and 45, each built and install-tested on its release; real boards have been checked on Arch only so far. macOS and Windows versions are planned, macOS first. It browses and builds the esp32bench.dev library and your own ESP-IDF projects, flashes, inspects and monitors real boards, and runs builds in a simulator. The automatic reset of boards with a USB-UART bridge (CP210x, CH340) is still untested on hardware.
+**Status:** version 0.1.6 is out, with packages for Arch, Debian 13, Ubuntu 24.04 and 26.04 and Fedora 44 and 45, each built and install-tested on its release; real boards have been checked on Arch only so far. macOS and Windows versions build and pass their tests in CI and are not released yet. It browses and builds the esp32bench.dev library and your own ESP-IDF projects, flashes, inspects and monitors real boards, and runs builds in a simulator. The automatic reset of boards with a USB-UART bridge (CP210x, CH340) is still untested on hardware.
 
 ## What it does
 
