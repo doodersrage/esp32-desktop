@@ -148,9 +148,14 @@ jobs:
           export ESP32BENCH_DAEMON="$(cygpath -w "$PWD/core/target/release/esp32benchd.exe")"
           # Failed tests again, verbosely, with their exit codes (a crash shows no output).
           ctest --test-dir build/ui --output-on-failure || {
-            ctest --test-dir build/ui --rerun-failed -V
+            set +e
+            export QT_FORCE_STDERR_LOGGING=1
             for t in $(ctest --test-dir build/ui --rerun-failed -N | sed -n 's/.*Test *#[0-9]*: \(tst_[a-z]*\).*/\1/p'); do
-              echo "=== $t"; ./build/ui/$t.exe -o -,txt; echo "exit code $?"
+              echo "=== $t"
+              ./build/ui/$t.exe -o "$t.txt,txt" -o -,txt -v2 2>&1 | tail -60
+              code=${PIPESTATUS[0]}
+              printf 'exit code %d (0x%08X)\n' "$code" "$(( code & 0xFFFFFFFF ))"
+              tail -30 "$t.txt" 2> /dev/null
             done
             exit 1
           }
