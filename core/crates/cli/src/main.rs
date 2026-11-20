@@ -636,10 +636,15 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             let mut monitor = esp32bench_device::Monitor::new()?;
             let mut last = esp32bench_device::list(all)?;
             print_ports(&last, json, !json)?;
+            // One Ctrl-C listener for the whole loop: a new one each turn would miss a
+            // signal that came while the loop was busy, and the handler tokio installs
+            // keeps the default one from ending the program.
+            let ctrl_c = tokio::signal::ctrl_c();
+            tokio::pin!(ctrl_c);
             loop {
                 tokio::select! {
                     r = monitor.changed() => r?,
-                    _ = tokio::signal::ctrl_c() => break,
+                    _ = &mut ctrl_c => break,
                 }
                 let now = esp32bench_device::list(all)?;
                 if now != last {
@@ -867,6 +872,11 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             let mut out = std::io::stdout();
             let mut stdin = BufReader::new(tokio::io::stdin()).lines();
             let mut stdin_open = true;
+            // One Ctrl-C listener for the whole loop: a new one each turn would miss a
+            // signal that came while the loop was busy, and the handler tokio installs
+            // keeps the default one from ending the program.
+            let ctrl_c = tokio::signal::ctrl_c();
+            tokio::pin!(ctrl_c);
             loop {
                 tokio::select! {
                     ev = rx.recv() => match ev {
@@ -884,7 +894,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         Some(l) => p.write(format!("{l}{ending}").as_bytes())?,
                         None => stdin_open = false,
                     },
-                    _ = tokio::signal::ctrl_c() => break,
+                    _ = &mut ctrl_c => break,
                 }
             }
         }
@@ -1031,6 +1041,11 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             let mut display = esp32bench_sim::display::Display::new(&s.paths().dir.clone());
             let mut saved = 0u32;
             let mut gpio = s.gpio.take();
+            // One Ctrl-C listener for the whole loop: a new one each turn would miss a
+            // signal that came while the loop was busy, and the handler tokio installs
+            // keeps the default one from ending the program.
+            let ctrl_c = tokio::signal::ctrl_c();
+            tokio::pin!(ctrl_c);
             loop {
                 tokio::select! {
                     ev = async {
@@ -1133,7 +1148,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         },
                         None => stdin_open = false,
                     },
-                    _ = tokio::signal::ctrl_c() => break,
+                    _ = &mut ctrl_c => break,
                 }
             }
             s.shutdown().await?;
