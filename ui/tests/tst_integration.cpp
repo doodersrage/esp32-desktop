@@ -60,9 +60,36 @@ public:
     }
 };
 
-// A stand-in arduino-cli for the daemon: "compiles" by writing empty outputs.
+// A stand-in arduino-cli for the daemon: "compiles" by writing empty outputs. A shell
+// script, or on Windows a batch file doing the same.
 static QString writeFakeArduinoCli(const QString &dir)
 {
+#if defined(Q_OS_WIN)
+    const QString path = dir + u"/fake-arduino-cli.cmd"_s;
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly))
+        qFatal("cannot write %s", qPrintable(path));
+    f.write(R"BAT(@echo off
+setlocal enabledelayedexpansion
+if "%~1"=="lib" (echo Installed %~3& exit /b 0)
+if not "%~1"=="compile" exit /b 0
+set "out=" & set "prev=" & set "last="
+:args
+if "%~1"=="" goto done
+if "!prev!"=="--output-dir" set "out=%~1"
+set "prev=%~1"
+set "last=%~1"
+shift
+goto args
+:done
+for %%F in ("!last!") do set "name=%%~nxF"
+echo Sketch uses 1234 bytes
+type nul > "!out!\!name!.ino.merged.bin"
+type nul > "!out!\!name!.ino.elf"
+)BAT");
+    f.close();
+    return path;
+#endif
     const QString path = dir + u"/fake-arduino-cli"_s;
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly))
