@@ -56,7 +56,9 @@ for c in "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "/c/Program Files/Inno S
   [ -f "$c" ] && iscc=$c
 done
 if [ -n "$iscc" ]; then
-  "$iscc" //Qp "//DVersion=$version" "//DSource=$(cygpath -w "$app")" "//O$(cygpath -w "$out")" \
+  # Absolute paths: Inno Setup resolves relative ones against the script's folder.
+  "$iscc" //Qp "//DVersion=$version" "//DSource=$(cygpath -w "$(cd "$app" && pwd)")" \
+    "//O$(cygpath -w "$(cd "$out" && pwd)")" \
     "$(cygpath -w "$repo/packaging/windows/esp32bench.iss")"
   echo "built $out/esp32bench-$version-windows-x86_64-setup.exe"
 else
