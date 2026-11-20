@@ -102,6 +102,9 @@ private:
 private slots:
     void initTestCase()
     {
+        // An organisation, so QSettings can save: on Windows it is the registry key
+        // Software\<organisation>\<app>, which an empty name does not make.
+        QCoreApplication::setOrganizationName(u"esp32bench-tests"_s);
         QStandardPaths::setTestModeEnabled(true);
         QSettings().clear();
     }

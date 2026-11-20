@@ -88,7 +88,12 @@ class TestIntegration : public QObject {
 
 private slots:
     // Keep QSettings away from the real configuration.
-    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+    void initTestCase()
+    {
+        // An organisation, so QSettings can save (on Windows, a registry key).
+        QCoreApplication::setOrganizationName(u"esp32bench-tests"_s);
+        QStandardPaths::setTestModeEnabled(true);
+    }
 
     void startsCoreAndListsDevices()
     {

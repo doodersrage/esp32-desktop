@@ -100,7 +100,12 @@ private:
     QString path() const { return m_dir.filePath(u"core.sock"_s); }
 
 private slots:
-    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+    void initTestCase()
+    {
+        // An organisation, so QSettings can save (on Windows, a registry key).
+        QCoreApplication::setOrganizationName(u"esp32bench-tests"_s);
+        QStandardPaths::setTestModeEnabled(true);
+    }
     void runsWithConsoleInputResetAndStop()
     {
         FakeCore fake(path());

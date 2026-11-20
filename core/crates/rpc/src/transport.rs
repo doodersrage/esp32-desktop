@@ -92,26 +92,17 @@ mod imp {
 
 pub use imp::{Listener, connect};
 
-/// The named pipe for `path`: the path itself if it is one (`\\.\pipe\...`), else a
-/// name made from it, so paths keep working as endpoint names on Windows (tests bind
-/// sockets in temporary directories). Pipe names may not contain `\` after the prefix.
+/// The named pipe for `path`, as Qt's `QLocalSocket` names it, so the UI and the core
+/// meet at the same pipe for any socket path: the path itself if it is one
+/// (`\\.\pipe\...`), else `\\.\pipe\` and the path. Pipe names may hold anything but
+/// `\` after the prefix, so backslashes become `/` (the UI's paths have `/` already).
 pub fn pipe_name(path: &Path) -> std::ffi::OsString {
     const PREFIX: &str = r"\\.\pipe\";
     let s = path.to_string_lossy();
     if s.starts_with(PREFIX) {
         return path.as_os_str().to_owned();
     }
-    let flat: String = s
-        .chars()
-        .map(|c| {
-            if matches!(c, '\\' | '/' | ':') {
-                '-'
-            } else {
-                c
-            }
-        })
-        .collect();
-    format!("{PREFIX}esp32bench{flat}").into()
+    format!("{PREFIX}{}", s.replace('\\', "/")).into()
 }
 
 #[cfg(test)]
@@ -124,13 +115,14 @@ mod tests {
             pipe_name(Path::new(r"\\.\pipe\esp32bench-ana-core")),
             r"\\.\pipe\esp32bench-ana-core"
         );
+        // What QLocalSocket connects to for the UI's paths, which have forward slashes.
         assert_eq!(
-            pipe_name(Path::new(r"C:\Users\ana\AppData\Local\Temp\x\core.sock")),
-            r"\\.\pipe\esp32benchC--Users-ana-AppData-Local-Temp-x-core.sock"
+            pipe_name(Path::new("C:/Users/ana/AppData/Local/Temp/x/core.sock")),
+            r"\\.\pipe\C:/Users/ana/AppData/Local/Temp/x/core.sock"
         );
         assert_eq!(
-            pipe_name(Path::new("/tmp/x/core.sock")),
-            r"\\.\pipe\esp32bench-tmp-x-core.sock"
+            pipe_name(Path::new(r"C:\Users\ana\Temp\x\core.sock")),
+            r"\\.\pipe\C:/Users/ana/Temp/x/core.sock"
         );
     }
 }
