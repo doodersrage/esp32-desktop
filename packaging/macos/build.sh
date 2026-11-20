@@ -53,6 +53,14 @@ printf '%s\nrecipe %s\n' "$commit" "$recipe" > "$sim/installed"
 # Their Homebrew libraries (glib, pixman, libgcrypt, libslirp...), beside them.
 dylibbundler -of -b -cd -d "$sim/src/build/libs" -p @loader_path/libs/ \
   -x "$sim/src/build/libqemu-xtensa.dylib" -x "$sim/src/build/libqemu-riscv32.dylib"
+# The bundled libraries sit in libs/ themselves, so their references to each other are
+# @loader_path/<lib>, not the @loader_path/libs/<lib> dylibbundler wrote for all of them.
+for lib in "$sim"/src/build/libs/*.dylib; do
+  otool -L "$lib" | awk 'NR > 1 { print $1 }' | { grep '^@loader_path/libs/' || true; } |
+    while read -r dep; do
+      install_name_tool -change "$dep" "@loader_path/${dep#@loader_path/libs/}" "$lib"
+    done
+done
 # dylibbundler can add the same LC_RPATH more than once, and dyld refuses to load a
 # library with a duplicate ("duplicate LC_RPATH"): keep one of each.
 find "$sim/src/build" -name '*.dylib' | while read -r lib; do

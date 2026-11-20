@@ -29,7 +29,22 @@
 #include <QTreeWidget>
 #include <QToolButton>
 
+#include <QProcess>
+
 #include <csignal>
+
+// Ask the core this test started to stop: SIGTERM, on which it removes its socket; on
+// Windows, which has no SIGTERM, taskkill (its pipe goes with the process).
+static bool stopCore(qint64 pid)
+{
+#if defined(Q_OS_WIN)
+    return QProcess::execute(QStringLiteral("taskkill"),
+                             {QStringLiteral("/F"), QStringLiteral("/PID"), QString::number(pid)})
+           == 0;
+#else
+    return ::kill(pid_t(pid), SIGTERM) == 0;
+#endif
+}
 
 using namespace Qt::StringLiterals;
 
@@ -114,7 +129,7 @@ private slots:
         // Stop the daemon we started however the test ends.
         const auto stopDaemon = qScopeGuard([&core] {
             if (core.startedCorePid() > 0)
-                ::kill(pid_t(core.startedCorePid()), SIGTERM);
+                stopCore(core.startedCorePid());
         });
         QTRY_COMPARE_WITH_TIMEOUT(core.state(), CoreConnection::State::Connected, 10000);
         QVERIFY(window.connectionText().contains(u"Connected"_s));
@@ -312,7 +327,7 @@ private slots:
 
         // Stop the daemon we started: it removes its socket on SIGTERM.
         QVERIFY(core.startedCorePid() > 0);
-        QCOMPARE(::kill(pid_t(core.startedCorePid()), SIGTERM), 0);
+        QVERIFY(stopCore(core.startedCorePid()));
         QTRY_VERIFY_WITH_TIMEOUT(core.state() == CoreConnection::State::Disconnected, 5000);
     }
 };
