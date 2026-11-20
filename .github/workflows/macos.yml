@@ -1,0 +1,113 @@
+name: macOS
+
+# Build ESP32 Bench for macOS (Apple silicon) and smoke-test the .dmg: the core, the
+# UI with Qt, and lcgamboa's QEMU fork with esp32bench's patches, shipped inside the
+# app (docs/platforms.md). Phase 6 (docs/PLAN.md).
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'core/**'
+      - 'ui/**'
+      - 'packaging/macos/**'
+      - 'tests/platforms/**'
+      - '.github/workflows/macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORK_REPO: https://github.com/lcgamboa/qemu.git
+  FORK_COMMIT: 885a6e7061fb70fac78a074a719423810bc19a17
+
+jobs:
+  firmware:
+    name: Smoke-test firmware
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: bash
+        run: |
+          git config --global --add safe.directory '*'
+          export IDF_PATH=/opt/esp/idf
+          for p in hello gpio; do bash tests/firmware/build.sh "$p"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-firmware
+          path: tests/firmware/out/*.bin
+          if-no-files-found: error
+
+  app:
+    name: Build and smoke-test the app
+    needs: firmware
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: smoke-firmware
+          path: tests/firmware/out
+
+      - name: Tools
+        run: brew install ninja meson pkgconf glib pixman libgcrypt libslirp dylibbundler librsvg
+
+      # The simulator: the fork at the pinned commit with esp32bench's patches, linked
+      # as libraries. Rebuilt only when the patches or the link script change.
+      - name: Simulator from the cache
+        id: sim-cache
+        uses: actions/cache@v4
+        with:
+          path: sim-out
+          key: macos-sim-${{ env.FORK_COMMIT }}-${{ hashFiles('core/crates/sim/patches/**', 'tests/platforms/link-library.sh') }}
+      - name: Build the simulator
+        if: steps.sim-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir fork && cd fork
+          git init -q && git remote add origin "$FORK_REPO"
+          git fetch -q --depth 1 origin "$FORK_COMMIT" && git checkout -q FETCH_HEAD
+          git apply ../core/crates/sim/patches/*.patch
+          sh build_libqemu-esp32.sh > ../libbuild.log 2>&1 || { tail -60 ../libbuild.log; exit 1; }
+          for a in xtensa riscv32; do sh ../tests/platforms/link-library.sh build $a; done
+          mkdir -p ../sim-out/build
+          cp build/libqemu-*.dylib ../sim-out/build/
+          cp -R pc-bios ../sim-out/pc-bios
+          git rev-parse HEAD > ../sim-out/COMMIT
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+
+      - name: Core
+        run: cargo build --release --locked --manifest-path core/Cargo.toml
+
+      - name: UI
+        run: |
+          cmake -S ui -B build/ui -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/ui
+      - name: UI tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          ESP32BENCH_DAEMON: ${{ github.workspace }}/core/target/release/esp32benchd
+        run: ctest --test-dir build/ui --output-on-failure
+
+      - name: App and .dmg
+        run: packaging/macos/build.sh "$PWD" core/target build/ui sim-out dist
+      - name: Smoke test
+        run: packaging/macos/smoke.sh dist/*.dmg tests/firmware/out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/*.dmg
+          if-no-files-found: error

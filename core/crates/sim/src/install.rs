@@ -73,10 +73,13 @@ pub async fn install_archive(
     final_dir: &Path,
     expect: &Path,
 ) -> Result<PathBuf, Error> {
-    let compression = if url.ends_with(".tar.gz") || url.ends_with(".tgz") {
-        "--gzip"
+    // A .zip only comes on Windows, whose tar (bsdtar) tells the format itself.
+    let compression: &[&str] = if url.ends_with(".tar.gz") || url.ends_with(".tgz") {
+        &["--gzip"]
+    } else if url.ends_with(".zip") {
+        &[]
     } else {
-        "--xz"
+        &["--xz"]
     };
     let parent = final_dir.parent().ok_or(Error::NoDataDir)?.to_path_buf();
     let name = final_dir
@@ -118,7 +121,9 @@ pub async fn install_archive(
     let _ = tokio::fs::remove_dir_all(&staging).await;
     tokio::fs::create_dir_all(&staging).await?;
     let out = Command::new("tar")
-        .args(["--extract", compression, "--no-same-owner", "--file"])
+        .arg("--extract")
+        .args(compression)
+        .args(["--no-same-owner", "--file"])
         .arg(&archive)
         .arg("--directory")
         .arg(&staging)

@@ -955,7 +955,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             let socket = match socket {
                 Some(s) => s,
                 None => esp32bench_rpc::default_socket_path()
-                    .context("XDG_RUNTIME_DIR is not set; pass --socket")?,
+                    .context("no runtime directory (XDG_RUNTIME_DIR is not set); pass --socket")?,
             };
             let mut client = esp32bench_rpc::Client::connect(&socket).await?;
             let result = client.call(&method, params).await?;

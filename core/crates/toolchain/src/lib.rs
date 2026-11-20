@@ -143,7 +143,30 @@ pub fn board_access(rule_installed: bool, in_serial_group: bool, distro: Distro)
     }
 }
 
+/// Board access where there is no udev: on macOS the user may open USB serial ports
+/// as they are; Windows needs the USB-UART bridge's driver (Espressif's own USB comes
+/// with the system).
+pub fn board_access_without_udev() -> Component {
+    Component {
+        id: Id::DeviceAccess,
+        name: "Board access",
+        needed_for: "hardware",
+        state: State::Installed,
+        version: None,
+        wanted: None,
+        path: None,
+        download_bytes: None,
+        installable: false,
+        hint: cfg!(windows).then(|| {
+            "Boards with a CP210x or CH340 USB chip need its driver from the chip's maker \
+             (Silicon Labs, WCH) before they show up."
+                .to_owned()
+        }),
+    }
+}
+
 /// Whether the current user is a member of `group` (primary or supplementary).
+#[cfg(unix)]
 pub fn in_group(group: &str) -> bool {
     let Ok(name) = std::ffi::CString::new(group) else {
         return false;
@@ -340,14 +363,18 @@ pub async fn status(env: &Env) -> Vec<Component> {
         env.distro,
     ));
 
-    let rule = UDEV_DIRS
-        .iter()
-        .any(|d| Path::new(d).join(UDEV_RULE).is_file());
-    out.push(board_access(
-        rule,
-        in_group(env.distro.serial_group()),
-        env.distro,
-    ));
+    if cfg!(target_os = "linux") {
+        let rule = UDEV_DIRS
+            .iter()
+            .any(|d| Path::new(d).join(UDEV_RULE).is_file());
+        out.push(board_access(
+            rule,
+            in_group(env.distro.serial_group()),
+            env.distro,
+        ));
+    } else {
+        out.push(board_access_without_udev());
+    }
     out
 }
 
@@ -358,8 +385,16 @@ pub fn lcgamboa_status(
     missing: &[lcgamboa::Requirement],
     distro: Distro,
 ) -> Component {
+    // On macOS and Windows the package carries the simulator (lcgamboa::bundled_root);
+    // it is only built from source on Linux.
+    let shipped = !cfg!(target_os = "linux");
     let hint = match (&build, lcgamboa::install_hint(distro, missing)) {
         (Some(_), _) => None,
+        (None, _) if shipped => Some(
+            "The simulator comes with the app on this system, and it is not where it should be: \
+             reinstall esp32bench."
+                .to_owned(),
+        ),
         (None, None) if outdated => {
             Some("An older build is installed; rebuild it (several minutes).".to_owned())
         }
@@ -384,7 +419,7 @@ pub fn lcgamboa_status(
         wanted: Some(lcgamboa::short_commit().to_owned()),
         path: build.map(|b| b.root),
         download_bytes: None,
-        installable: missing.is_empty(),
+        installable: !shipped && missing.is_empty(),
         hint,
     }
 }
@@ -490,10 +525,10 @@ pub async fn install(env: &Env, id: Id, mut log: impl FnMut(String)) -> Result<(
                 pin::SIZE / 1_000_000
             ));
             let dir =
-                install::install_archive(pin::URL, pin::SHA256, &dir, Path::new("arduino-cli"))
+                install::install_archive(&pin::url(), pin::SHA256, &dir, Path::new(pin::BINARY))
                     .await
                     .map_err(|e| InstallError::Failed(e.to_string()))?;
-            log(format!("Installed {}", dir.join("arduino-cli").display()));
+            log(format!("Installed {}", dir.join(pin::BINARY).display()));
             Ok(())
         }
         Id::Esp32Core => {

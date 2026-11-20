@@ -90,7 +90,13 @@ QString CoreConnection::defaultSocketPath()
     const QString env = qEnvironmentVariable("ESP32BENCH_SOCKET");
     if (!env.isEmpty())
         return env;
+    // As the core's esp32bench_rpc::default_socket_path: $XDG_RUNTIME_DIR on Linux,
+    // $TMPDIR on macOS (per user; QDir::tempPath reads it).
+#if defined(Q_OS_MACOS)
+    const QString runtime = QDir::tempPath();
+#else
     const QString runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+#endif
     return QDir(runtime).filePath(u"esp32bench/core.sock"_s);
 }
 

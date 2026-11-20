@@ -324,14 +324,24 @@ impl Drop for DirGuard {
     }
 }
 
-/// A private directory for one session under `$XDG_RUNTIME_DIR/esp32bench/`.
+/// The runtime directory as the core uses it (`esp32bench_rpc::runtime_dir`, kept in
+/// step by hand: this crate does not depend on the RPC crate).
+fn runtime_dir() -> Option<PathBuf> {
+    if cfg!(target_os = "linux") {
+        std::env::var_os("XDG_RUNTIME_DIR")
+            .filter(|d| !d.is_empty())
+            .map(PathBuf::from)
+    } else {
+        Some(std::env::temp_dir())
+    }
+}
+
+/// A private directory for one session under `<runtime dir>/esp32bench/`.
 fn new_runtime_dir() -> Result<PathBuf, Error> {
     use std::os::unix::fs::DirBuilderExt;
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-    let base = std::env::var_os("XDG_RUNTIME_DIR")
-        .filter(|d| !d.is_empty())
-        .map(PathBuf::from)
+    let base = runtime_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join(crate::install::APP_DIR);
     std::fs::DirBuilder::new()

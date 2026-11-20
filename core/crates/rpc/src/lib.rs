@@ -19,15 +19,26 @@ use tokio::sync::mpsc;
 /// Largest message accepted, in bytes. Longer lines close the connection.
 pub const MAX_MESSAGE: usize = 16 * 1024 * 1024;
 
-/// Directory for the core's socket and lock, under `$XDG_RUNTIME_DIR`.
+/// Directory for the core's socket and lock, under the runtime directory.
 pub const RUNTIME_DIR: &str = "esp32bench";
 pub const SOCKET_NAME: &str = "core.sock";
 
-/// Default socket path: `$XDG_RUNTIME_DIR/esp32bench/core.sock`.
+/// The per-user directory for sockets and other files that last one login:
+/// `$XDG_RUNTIME_DIR` on Linux; on macOS, which has none, `$TMPDIR` (per user, private,
+/// emptied at reboot), which is also what Qt's `QDir::tempPath()` gives the UI.
+pub fn runtime_dir() -> Option<PathBuf> {
+    if cfg!(target_os = "linux") {
+        std::env::var_os("XDG_RUNTIME_DIR")
+            .filter(|d| !d.is_empty())
+            .map(PathBuf::from)
+    } else {
+        Some(std::env::temp_dir())
+    }
+}
+
+/// Default socket path: `<runtime dir>/esp32bench/core.sock`.
 pub fn default_socket_path() -> Option<PathBuf> {
-    std::env::var_os("XDG_RUNTIME_DIR")
-        .filter(|d| !d.is_empty())
-        .map(|d| PathBuf::from(d).join(RUNTIME_DIR).join(SOCKET_NAME))
+    runtime_dir().map(|d| d.join(RUNTIME_DIR).join(SOCKET_NAME))
 }
 
 /// Error codes. Protocol codes are JSON-RPC's; application codes are listed in `docs/rpc.md`.

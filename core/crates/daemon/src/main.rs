@@ -33,7 +33,7 @@ async fn main() -> Result<()> {
     let socket = match socket {
         Some(s) => s,
         None => esp32bench_rpc::default_socket_path()
-            .context("XDG_RUNTIME_DIR is not set; pass --socket")?,
+            .context("no runtime directory (XDG_RUNTIME_DIR is not set); pass --socket")?,
     };
 
     let (listener, _lock) = esp32bench_daemon::bind(&socket)

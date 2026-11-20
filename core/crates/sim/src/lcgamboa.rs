@@ -121,6 +121,21 @@ pub fn short_commit() -> &'static str {
     &COMMIT[..10]
 }
 
+/// Where macOS and Windows packages put the prebuilt fork, laid out as the setup step
+/// installs it (`src/build/libqemu-*`, `src/pc-bios`, the `installed` marker):
+/// `<app>.app/Contents/Resources/lcgamboa` beside `Contents/MacOS`, or `lcgamboa\`
+/// beside the Windows executables. None on Linux, where the setup step builds it.
+pub fn bundled_root() -> Option<PathBuf> {
+    let exe_dir = std::env::current_exe().ok()?.parent()?.to_owned();
+    if cfg!(target_os = "macos") {
+        Some(exe_dir.parent()?.join("Resources/lcgamboa"))
+    } else if cfg!(windows) {
+        Some(exe_dir.join("lcgamboa"))
+    } else {
+        None
+    }
+}
+
 /// Where the pinned build lives, whether or not it exists.
 pub fn root() -> Result<PathBuf, Error> {
     if let Some(d) = std::env::var_os(DIR_ENV).filter(|d| !d.is_empty()) {
@@ -160,9 +175,15 @@ impl Build {
         root.join(MARKER).is_file() && Build::at(root).is_none()
     }
 
-    /// The installed build, if any.
+    /// The build to use: `ESP32BENCH_LCGAMBOA_DIR` if set, else one shipped with the
+    /// app (macOS and Windows, [`bundled_root`]), else the one the setup step built.
     pub fn find() -> Option<Build> {
-        Build::at(&root().ok()?)
+        if std::env::var_os(DIR_ENV).is_some_and(|d| !d.is_empty()) {
+            return Build::at(&root().ok()?);
+        }
+        bundled_root()
+            .and_then(|r| Build::at(&r))
+            .or_else(|| Build::at(&root().ok()?))
     }
 
     pub fn executable(&self, arch: Arch) -> PathBuf {

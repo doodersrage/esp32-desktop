@@ -25,15 +25,59 @@ pub const ARDUINO_CLI_ENV: &str = "ESP32BENCH_ARDUINO_CLI";
 
 /// The arduino-cli the app installs itself where the distribution has no package for
 /// it (Debian, Ubuntu, Fedora): an official release, pinned and checked. The same
-/// version as Arch's package at the time, which the library sweep was run with.
+/// version as Arch's package at the time, which the library sweep was run with. Each
+/// platform's official release, with the SHA-256 from the release's
+/// `1.5.1-checksums.txt` and the size GitHub reports.
 /// Source: <https://github.com/arduino/arduino-cli/releases>, whose checksums file
 /// lists the SHA-256 below.
 pub mod arduino_cli_pin {
     pub const VERSION: &str = "1.5.1";
-    pub const URL: &str = "https://github.com/arduino/arduino-cli/releases/download/v1.5.1/arduino-cli_1.5.1_Linux_64bit.tar.gz";
-    pub const SHA256: &str = "28a8e119c498a25607821c36cb2dc49e8463941b261a0d99091baa7bc692dd2b";
+    const BASE: &str = "https://github.com/arduino/arduino-cli/releases/download/v1.5.1/";
+
+    #[cfg(target_os = "macos")]
+    mod this {
+        #[cfg(target_arch = "aarch64")]
+        pub const ASSET: (&str, &str, u64) = (
+            "arduino-cli_1.5.1_macOS_ARM64.tar.gz",
+            "cb952e8c1621c95ef5f1d17831c945e3d0ec5973f89c557a7ec8feb9c4f7d4c9",
+            17_370_016,
+        );
+        #[cfg(not(target_arch = "aarch64"))]
+        pub const ASSET: (&str, &str, u64) = (
+            "arduino-cli_1.5.1_macOS_64bit.tar.gz",
+            "c982e940027996bea9901050e95fae99c59c1dcfee54beedecaf28141e7bf2e7",
+            19_355_892,
+        );
+        pub const BINARY: &str = "arduino-cli";
+    }
+    #[cfg(windows)]
+    mod this {
+        pub const ASSET: (&str, &str, u64) = (
+            "arduino-cli_1.5.1_Windows_64bit.zip",
+            "fabe42e0eb04d00e776a66178299ff95a46c623dbc260f997e58fd514853dd40",
+            17_965_819,
+        );
+        pub const BINARY: &str = "arduino-cli.exe";
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    mod this {
+        pub const ASSET: (&str, &str, u64) = (
+            "arduino-cli_1.5.1_Linux_64bit.tar.gz",
+            "28a8e119c498a25607821c36cb2dc49e8463941b261a0d99091baa7bc692dd2b",
+            17_630_765,
+        );
+        pub const BINARY: &str = "arduino-cli";
+    }
+
+    /// The archive to download.
+    pub fn url() -> String {
+        format!("{BASE}{}", this::ASSET.0)
+    }
+    pub const SHA256: &str = this::ASSET.1;
     /// Download size in bytes, as GitHub reports it.
-    pub const SIZE: u64 = 17_630_765;
+    pub const SIZE: u64 = this::ASSET.2;
+    /// The program's file name in the archive.
+    pub const BINARY: &str = this::BINARY;
 }
 
 /// Where the app installs its own arduino-cli: `$XDG_DATA_HOME/esp32bench/arduino-cli/
@@ -304,7 +348,7 @@ impl Toolchain {
     pub fn detect(sketchbook: PathBuf) -> Result<Self, Error> {
         // The variable, then the copy the app installed, then the system's.
         let own = app_arduino_cli_dir()
-            .map(|d| d.join("arduino-cli"))
+            .map(|d| d.join(arduino_cli_pin::BINARY))
             .filter(|p| p.is_file());
         let cli = match std::env::var_os(ARDUINO_CLI_ENV).filter(|v| !v.is_empty()) {
             Some(p) => PathBuf::from(p),
