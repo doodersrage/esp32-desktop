@@ -214,9 +214,10 @@ fn venv_python(env: &Path) -> Option<PathBuf> {
 }
 
 /// ESP-IDF's Python environment for `idf` and the tools folder it is in:
-/// `$IDF_PYTHON_ENV_PATH`, else what EIM recorded for this install, else
-/// `<tools>/python_env/idf<major>.<minor>_py*_env` (the newest Python) in
-/// `$IDF_TOOLS_PATH`, `~/.espressif` or, on Windows, `C:\Espressif`.
+/// `$IDF_PYTHON_ENV_PATH`, else what EIM recorded for this install, else in
+/// `$IDF_TOOLS_PATH`, `~/.espressif` or, on Windows, `C:\Espressif` or `C:\esp`:
+/// `python_env/idf<major>.<minor>_py*_env` (install.sh and install.ps1; the newest
+/// Python) or `python/v<version>/venv` (EIM).
 pub fn python_env(idf: &Idf) -> Option<(PathBuf, Option<PathBuf>)> {
     let tools_env = std::env::var_os("IDF_TOOLS_PATH")
         .filter(|p| !p.is_empty())
@@ -238,10 +239,18 @@ pub fn python_env(idf: &Idf) -> Option<(PathBuf, Option<PathBuf>)> {
     }
     if cfg!(windows) {
         roots.push(PathBuf::from(r"C:\Espressif"));
+        roots.push(PathBuf::from(r"C:\esp"));
     }
     let (major_minor, _) = idf.version.rsplit_once('.')?;
     let prefix = format!("idf{major_minor}_py");
     roots.into_iter().find_map(|root| {
+        let eim = root
+            .join("python")
+            .join(format!("v{}", idf.version))
+            .join("venv");
+        if let Some(py) = venv_python(&eim) {
+            return Some((py, Some(root.clone())));
+        }
         let mut envs: Vec<PathBuf> = std::fs::read_dir(root.join("python_env"))
             .into_iter()
             .flatten()

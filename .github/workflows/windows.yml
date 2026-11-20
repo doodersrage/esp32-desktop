@@ -209,13 +209,16 @@ jobs:
         with:
           name: windows-packages
           path: dist
+      # The action's own deactivate script can fail after EIM has installed ESP-IDF
+      # ("name 'e' is ambiguous"); what matters here is the install, checked below.
       - uses: espressif/install-esp-idf-action@v1
+        continue-on-error: true
         with:
           version: v6.0.2
       - name: What EIM recorded
         shell: pwsh
         run: |
-          Get-ChildItem -Path C:\esp, C:\Espressif, "$env:USERPROFILE\.espressif" -Filter eim_idf.json -Recurse -ErrorAction SilentlyContinue |
+          Get-ChildItem -Path C:\esp, C:\Espressif, "$env:USERPROFILE\.espressif", "$env:LOCALAPPDATA", "$env:APPDATA" -Filter eim_idf.json -Recurse -Depth 4 -ErrorAction SilentlyContinue |
             ForEach-Object { Write-Output "== $($_.FullName)"; Get-Content $_.FullName }
           Write-Output "IDF_PATH=$env:IDF_PATH IDF_TOOLS_PATH=$env:IDF_TOOLS_PATH IDF_PYTHON_ENV_PATH=$env:IDF_PYTHON_ENV_PATH"
       - name: Build a local project
