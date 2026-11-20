@@ -1270,7 +1270,7 @@ Code-SHA-256: %2</translation>
     <name>PlotCanvas</name>
     <message>
         <source>Lines of numbers the firmware prints are drawn here, such as &quot;21.5 45&quot; or &quot;temp:21.5 humidity:45&quot;.</source>
-        <translation>Zeilen mit Zahlen, die die Firmware ausgibt, werden hier gezeichnet, etwa "21.5 45" oder "temp:21.5 humidity:45".</translation>
+        <translation>Zeilen mit Zahlen, die die Firmware ausgibt, werden hier gezeichnet, etwa &quot;21.5 45&quot; oder &quot;temp:21.5 humidity:45&quot;.</translation>
     </message>
     <message>
         <source>%1: %2</source>
