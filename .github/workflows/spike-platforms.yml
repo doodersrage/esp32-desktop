@@ -122,8 +122,11 @@ jobs:
         working-directory: fork
         run: |
           mkdir build-exe && cd build-exe
+          # The fork links libslirp statically (meson.build: static: true), which on
+          # MSYS2 also pulls in glib's static library beside its DLL; link it all
+          # statically instead, which also makes a self-contained library.
           ../configure --target-list=xtensa-softmmu,riscv32-softmmu --enable-slirp \
-            --enable-gcrypt --disable-werror
+            --enable-gcrypt --disable-werror --static
           make -j"$(nproc)"
       - name: Boot test firmware on the executables
         run: |
