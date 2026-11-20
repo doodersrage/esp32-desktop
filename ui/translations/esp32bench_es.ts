@@ -613,6 +613,14 @@
 <context>
     <name>LibraryPanel</name>
     <message>
+        <source>Runs in the simulator</source>
+        <translation>Funciona en el simulador</translation>
+    </message>
+    <message>
+        <source>Fits my board</source>
+        <translation>Para mi placa</translation>
+    </message>
+    <message>
         <source>Search projects</source>
         <translation>Buscar proyectos</translation>
     </message>
@@ -661,6 +669,18 @@
         <translation>Olvidar este proyecto</translation>
     </message>
     <message>
+        <source>Only projects that run in the simulator, with no board needed</source>
+        <translation>Solo proyectos que funcionan en el simulador, sin placa</translation>
+    </message>
+    <message>
+        <source>Connect a board to show only the projects for its chip</source>
+        <translation>Conecta una placa para ver solo los proyectos de su chip</translation>
+    </message>
+    <message>
+        <source>Only projects with a build for the connected %1</source>
+        <translation>Solo proyectos con compilación para la %1 conectada</translation>
+    </message>
+    <message>
         <source>Could not download the project library: %1</source>
         <translation>No se pudo descargar la biblioteca de proyectos: %1</translation>
     </message>
@@ -691,6 +711,14 @@
     <message>
         <source>%1 min</source>
         <translation>%1 min</translation>
+    </message>
+    <message>
+        <source>%1
+
+Runs in the simulator.</source>
+        <translation>%1
+
+Funciona en el simulador.</translation>
     </message>
     <message>
         <source>Prebuilt</source>

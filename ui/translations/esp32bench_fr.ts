@@ -219,7 +219,7 @@
     </message>
     <message>
         <source>The project&apos;s wiring has parts the simulator can show: %1. Add them to see them work when it runs.</source>
-        <translation>Le câblage du projet comporte des composants que le simulateur sait montrer : %1. Ajoutez-les pour les voir fonctionner pendant l'exécution.</translation>
+        <translation>Le câblage du projet comporte des composants que le simulateur sait montrer : %1. Ajoutez-les pour les voir fonctionner pendant l&apos;exécution.</translation>
     </message>
     <message>
         <source>No parts on this board yet. Add an LED, a button or another part on its pins.</source>
@@ -613,6 +613,14 @@
 <context>
     <name>LibraryPanel</name>
     <message>
+        <source>Runs in the simulator</source>
+        <translation>Fonctionne dans le simulateur</translation>
+    </message>
+    <message>
+        <source>Fits my board</source>
+        <translation>Pour ma carte</translation>
+    </message>
+    <message>
         <source>Search projects</source>
         <translation>Rechercher des projets</translation>
     </message>
@@ -661,6 +669,18 @@
         <translation>Oublier ce projet</translation>
     </message>
     <message>
+        <source>Only projects that run in the simulator, with no board needed</source>
+        <translation>Seulement les projets qui fonctionnent dans le simulateur, sans carte</translation>
+    </message>
+    <message>
+        <source>Connect a board to show only the projects for its chip</source>
+        <translation>Branchez une carte pour ne voir que les projets pour sa puce</translation>
+    </message>
+    <message>
+        <source>Only projects with a build for the connected %1</source>
+        <translation>Seulement les projets avec une compilation pour la %1 branchée</translation>
+    </message>
+    <message>
         <source>Could not download the project library: %1</source>
         <translation>Impossible de télécharger la bibliothèque de projets : %1</translation>
     </message>
@@ -691,6 +711,14 @@
     <message>
         <source>%1 min</source>
         <translation>%1 min</translation>
+    </message>
+    <message>
+        <source>%1
+
+Runs in the simulator.</source>
+        <translation>%1
+
+Fonctionne dans le simulateur.</translation>
     </message>
     <message>
         <source>Prebuilt</source>

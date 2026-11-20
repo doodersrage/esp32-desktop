@@ -172,6 +172,31 @@ pub struct Summary {
     /// Distinct chips of those boards, in board order.
     pub chips: Vec<String>,
     pub url: String,
+    /// Whether it runs in the app's simulator: a build for an ESP32, ESP32-S3 or
+    /// ESP32-C3 board of a sketch that does not use Bluetooth, which the simulator
+    /// has no radio for. The library sweep (docs/library-sweep.md) is what says so.
+    pub simulator: bool,
+}
+
+/// Chips the simulator runs.
+pub const SIMULATED_CHIPS: &[&str] = &["esp32", "esp32s3", "esp32c3"];
+
+/// Whether a project uses Bluetooth: a BLE or Bluetooth library, or a sketch that
+/// includes one of their headers.
+pub fn uses_bluetooth(p: &Project) -> bool {
+    let named = |s: &str| {
+        let l = s.to_lowercase();
+        l.contains("ble") || l.contains("bluetooth") || l.contains("esp_bt")
+    };
+    p.libraries.iter().any(|l| named(l))
+        || p.builds
+            .iter()
+            .filter_map(|b| b.code.as_deref())
+            .any(|code| {
+                code.lines()
+                    .filter(|l| l.trim_start().starts_with("#include"))
+                    .any(named)
+            })
 }
 
 /// Parse and check a manifest: right format, a major version this code reads.
@@ -224,6 +249,9 @@ impl Manifest {
                     tags: p.tags.clone(),
                     firmware: p.firmware,
                     boards,
+                    simulator: p.firmware == Firmware::Sketch
+                        && chips.iter().any(|c| SIMULATED_CHIPS.contains(&c.as_str()))
+                        && !uses_bluetooth(p),
                     chips,
                     url: p.url.clone(),
                 }

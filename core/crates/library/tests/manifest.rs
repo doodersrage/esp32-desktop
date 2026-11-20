@@ -41,6 +41,23 @@ fn example_matches_schema_and_parses() {
     seen.dedup();
     assert_eq!(seen.len(), sketch.chips.len());
     assert!(sketch.chips.iter().all(|c| c.starts_with("esp32")));
+    // A sketch for the ESP32 without Bluetooth runs in the simulator; prebuilt
+    // firmware the library does not link does not.
+    assert!(sketch.simulator);
+    let prebuilt = s.iter().find(|p| p.firmware == Firmware::Prebuilt).unwrap();
+    assert!(!prebuilt.simulator);
+}
+
+#[test]
+fn bluetooth_projects_are_not_simulated() {
+    let bytes = read(schema_dir().join("example.json"));
+    let mut m = parse(&bytes).unwrap();
+    let blink = m.projects.iter_mut().find(|p| p.id == "blink").unwrap();
+    assert!(!esp32bench_library::uses_bluetooth(blink));
+    blink.builds[0].code = Some("#include <BLEDevice.h>\nvoid setup() {}\nvoid loop() {}\n".into());
+    assert!(esp32bench_library::uses_bluetooth(blink));
+    let s = m.summaries();
+    assert!(!s.iter().find(|p| p.id == "blink").unwrap().simulator);
 }
 
 #[test]

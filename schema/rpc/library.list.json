@@ -51,7 +51,8 @@
             "firmware",
             "boards",
             "chips",
-            "url"
+            "url",
+            "simulator"
           ],
           "properties": {
             "id": {
@@ -98,6 +99,10 @@
             },
             "url": {
               "type": "string"
+            },
+            "simulator": {
+              "type": "boolean",
+              "description": "Whether it runs in the app's simulator: a build for an ESP32, ESP32-S3 or ESP32-C3 board, of a sketch (or prebuilt firmware the library links) that does not use Bluetooth."
             }
           }
         }
@@ -143,7 +148,8 @@
             "chips": [
               "esp32"
             ],
-            "url": "https://esp32bench.dev/projects/blink"
+            "url": "https://esp32bench.dev/projects/blink",
+            "simulator": true
           }
         ]
       }

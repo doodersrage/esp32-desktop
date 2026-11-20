@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include <QCheckBox>
 #include <QDateTime>
 #include <QFileDialog>
 #include <QMenu>
@@ -57,6 +58,8 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     , m_refresh(new QToolButton(this))
     , m_open(new QToolButton(this))
     , m_tree(new QTreeWidget(this))
+    , m_simOnly(new QCheckBox(tr("Runs in the simulator"), this))
+    , m_fitsBoard(new QCheckBox(tr("Fits my board"), this))
 {
     m_filter->setPlaceholderText(tr("Search projects"));
     m_filter->setMinimumWidth(m_filter->fontMetrics().averageCharWidth() * 16);
@@ -132,12 +135,41 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
         menu.exec(m_tree->viewport()->mapToGlobal(pos));
     });
 
+    m_simOnly->setToolTip(tr("Only projects that run in the simulator, with no board needed"));
+    connect(m_simOnly, &QCheckBox::toggled, this, &LibraryPanel::applyFilter);
+    m_fitsBoard->setEnabled(false);
+    m_fitsBoard->setToolTip(tr("Connect a board to show only the projects for its chip"));
+    connect(m_fitsBoard, &QCheckBox::toggled, this, &LibraryPanel::applyFilter);
+    // The chips of connected boards, from ports that say which chip they have.
+    connect(m_core, &CoreConnection::devicesListed, this, [this](const QJsonArray &ports) {
+        QStringList chips;
+        for (const QJsonValue &v : ports) {
+            const QJsonArray c = v.toObject().value(u"chips"_s).toArray();
+            if (c.size() == 1 && !chips.contains(c.at(0).toString()))
+                chips << c.at(0).toString();
+        }
+        m_connectedChips = chips;
+        QStringList names;
+        for (const QString &c : std::as_const(chips))
+            names << Labels::chipName(c);
+        m_fitsBoard->setEnabled(!chips.isEmpty());
+        m_fitsBoard->setToolTip(chips.isEmpty()
+                                    ? tr("Connect a board to show only the projects for its chip")
+                                    : tr("Only projects with a build for the connected %1").arg(names.join(u", "_s)));
+        applyFilter();
+    });
+
     auto *top = new QHBoxLayout;
     top->addWidget(m_filter, 1);
     top->addWidget(m_refresh);
     top->addWidget(m_open);
+    auto *filters = new QHBoxLayout;
+    filters->addWidget(m_simOnly);
+    filters->addWidget(m_fitsBoard);
+    filters->addStretch(1);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
+    layout->addLayout(filters);
     layout->addWidget(m_status);
     layout->addWidget(m_tree, 1);
 
@@ -226,9 +258,20 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
         item->setData(TimeColumn, Qt::UserRole, minutes);
 
         QStringList chips;
-        for (const QJsonValue &c : p.value(u"chips"_s).toArray())
+        QStringList chipIds;
+        for (const QJsonValue &c : p.value(u"chips"_s).toArray()) {
             chips << Labels::chipName(c.toString());
+            chipIds << c.toString();
+        }
         item->setText(ChipsColumn, chips.join(u", "_s));
+        item->setData(NameColumn, ChipsRole, chipIds);
+        const bool simulated = p.value(u"simulator"_s).toBool();
+        item->setData(NameColumn, SimulatorRole, simulated);
+        if (simulated) {
+            item->setIcon(NameColumn, QIcon::fromTheme(u"media-playback-start"_s));
+            item->setToolTip(NameColumn,
+                             tr("%1\n\nRuns in the simulator.").arg(p.value(u"summary"_s).toString()));
+        }
 
         const bool prebuilt = p.value(u"firmware"_s).toString() == u"prebuilt";
         item->setText(FirmwareColumn, prebuilt ? tr("Prebuilt") : tr("Arduino sketch"));
@@ -301,6 +344,10 @@ void LibraryPanel::addLocalItems()
         item->setToolTip(NameColumn, p.value(u"path"_s).toString());
         item->setData(NameColumn, IdRole, p.value(u"id"_s).toString());
         item->setData(NameColumn, LocalRole, true);
+        // Built for the chip chosen, so any of the three the simulator runs.
+        item->setData(NameColumn, SimulatorRole, true);
+        item->setData(NameColumn, ChipsRole, QStringList{u"esp32"_s, u"esp32s3"_s, u"esp32c3"_s});
+        item->setIcon(NameColumn, QIcon::fromTheme(u"media-playback-start"_s));
         item->setText(ChipsColumn, QStringList{Labels::chipName(u"esp32"_s), Labels::chipName(u"esp32s3"_s),
                                                Labels::chipName(u"esp32c3"_s)}
                                        .join(u", "_s));
@@ -389,8 +436,14 @@ void LibraryPanel::applyFilter()
     for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
         QTreeWidgetItem *item = m_tree->topLevelItem(i);
         const QString text = item->data(NameColumn, Qt::UserRole).toString();
-        const bool match = std::all_of(terms.begin(), terms.end(),
-                                       [&](const QString &t) { return text.contains(t); });
+        bool match = std::all_of(terms.begin(), terms.end(), [&](const QString &t) { return text.contains(t); });
+        if (m_simOnly->isChecked() && !item->data(NameColumn, SimulatorRole).toBool())
+            match = false;
+        if (m_fitsBoard->isChecked() && m_fitsBoard->isEnabled()) {
+            const QStringList chips = item->data(NameColumn, ChipsRole).toStringList();
+            match = match && std::any_of(chips.begin(), chips.end(),
+                                         [&](const QString &c) { return m_connectedChips.contains(c); });
+        }
         item->setHidden(!match);
     }
 }

@@ -9,6 +9,7 @@
 #include <QWidget>
 
 class CoreConnection;
+class QCheckBox;
 class QLabel;
 class QLineEdit;
 class QToolButton;
@@ -24,6 +25,10 @@ public:
     static constexpr int IdRole = Qt::UserRole + 2;
     // True for the user's own ESP-IDF projects.
     static constexpr int LocalRole = Qt::UserRole + 3;
+    // True when the project runs in the simulator (library.list's `simulator`).
+    static constexpr int SimulatorRole = Qt::UserRole + 4;
+    // The chip ids it has builds for.
+    static constexpr int ChipsRole = Qt::UserRole + 5;
 
     explicit LibraryPanel(CoreConnection *core, QWidget *parent = nullptr);
 
@@ -36,6 +41,8 @@ public:
     QToolButton *openButton() const { return m_open; }
     QTreeWidget *tree() const { return m_tree; }
     QLineEdit *filter() const { return m_filter; }
+    QCheckBox *simulatorFilter() const { return m_simOnly; }
+    QCheckBox *boardFilter() const { return m_fitsBoard; }
     // Select a project by id (for links), now or once the list has arrived.
     void selectProject(const QString &id);
     QString statusText() const;
@@ -69,6 +76,10 @@ private:
     QToolButton *m_open;
     QJsonArray m_local;
     QTreeWidget *m_tree;
+    QCheckBox *m_simOnly;
+    QCheckBox *m_fitsBoard;
+    // Chips on the connected boards that say which they are (device.list).
+    QStringList m_connectedChips;
     QByteArray m_defaultColumns;
     bool m_userSized = false; // the user dragged a column edge, or a saved layout did
     bool m_fitting = false;

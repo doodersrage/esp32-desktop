@@ -3,6 +3,7 @@
 #include "CoreConnection.h"
 #include "LibraryPanel.h"
 
+#include <QCheckBox>
 #include <QFile>
 #include <QHeaderView>
 #include <QJsonArray>
@@ -38,7 +39,7 @@ private slots:
         QCOMPARE(blink->text(LibraryPanel::NameColumn), u"Blink and heartbeat"_s);
         QCOMPARE(blink->text(LibraryPanel::TimeColumn), u"5 min"_s);
         QCOMPARE(blink->text(LibraryPanel::FirmwareColumn), u"Arduino sketch"_s);
-        QCOMPARE(blink->toolTip(LibraryPanel::NameColumn), u"Blink the onboard LED."_s);
+        QVERIFY(blink->toolTip(LibraryPanel::NameColumn).startsWith(u"Blink the onboard LED."_s));
         QCOMPARE(blink->data(LibraryPanel::NameColumn, LibraryPanel::UrlRole).toString(),
                  u"https://esp32bench.dev/projects/blink"_s);
         QCOMPARE(t->topLevelItem(1)->text(LibraryPanel::ChipsColumn), u"ESP32-S3, ESP32-C3"_s);
@@ -79,6 +80,41 @@ private slots:
         panel.resetColumns();
         QVERIFY(panel.saveColumns().isEmpty());
         QVERIFY(t->columnWidth(LibraryPanel::NameColumn) > longest);
+    }
+
+    void filtersOnTheSimulatorAndTheConnectedBoard()
+    {
+        CoreConnection core;
+        LibraryPanel panel(&core);
+        panel.showLibrary(library());
+        QTreeWidget *t = panel.tree();
+        const auto shown = [t] {
+            QStringList ids;
+            for (int i = 0; i < t->topLevelItemCount(); ++i) {
+                if (!t->topLevelItem(i)->isHidden())
+                    ids << t->topLevelItem(i)->data(LibraryPanel::NameColumn, LibraryPanel::IdRole).toString();
+            }
+            return ids;
+        };
+        // Marked, and filtered on.
+        QVERIFY(t->topLevelItem(0)->data(LibraryPanel::NameColumn, LibraryPanel::SimulatorRole).toBool());
+        QVERIFY(t->topLevelItem(0)->toolTip(LibraryPanel::NameColumn).contains(u"Runs in the simulator"_s));
+        panel.simulatorFilter()->setChecked(true);
+        QCOMPARE(shown(), QStringList{u"blink"_s});
+        panel.simulatorFilter()->setChecked(false);
+
+        // No board that says its chip: the board filter is off.
+        QVERIFY(!panel.boardFilter()->isEnabled());
+        emit core.devicesListed(QJsonDocument::fromJson(R"([{"path": "/dev/ttyUSB0", "chips": []}])").array());
+        QVERIFY(!panel.boardFilter()->isEnabled());
+        // An S3 plugged in: only the project with an S3 build.
+        emit core.devicesListed(QJsonDocument::fromJson(R"([{"path": "/dev/ttyACM0", "chips": ["esp32s3"]}])").array());
+        QVERIFY(panel.boardFilter()->isEnabled());
+        panel.boardFilter()->setChecked(true);
+        QCOMPARE(shown(), QStringList{u"weather"_s});
+        // Unplugged: the filter has nothing to go on, so everything shows again.
+        emit core.devicesListed(QJsonArray{});
+        QCOMPARE(shown(), (QStringList{u"blink"_s, u"weather"_s}));
     }
 
     void showsLocalProjectsFirst()

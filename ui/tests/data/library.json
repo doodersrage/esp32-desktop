@@ -22,7 +22,8 @@
       "chips": [
         "esp32"
       ],
-      "url": "https://esp32bench.dev/projects/blink"
+      "url": "https://esp32bench.dev/projects/blink",
+      "simulator": true
     },
     {
       "id": "weather",
@@ -42,7 +43,8 @@
         "esp32s3",
         "esp32c3"
       ],
-      "url": "https://esp32bench.dev/projects/weather"
+      "url": "https://esp32bench.dev/projects/weather",
+      "simulator": false
     }
   ]
 }
