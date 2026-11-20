@@ -119,6 +119,11 @@ if [ "${ESP32BENCH_SMOKE_IDF:-}" = 1 ]; then
   echo "smoke: built a local ESP-IDF project with ESP-IDF $(sed -n 's/^ESP-IDF \([^ ]*\).*/\1/p' "$work/idf-list.err") and ran it in the simulator"
 fi
 
+# Qt's SVG icon engine, without which the bundled icons (ui/icons) and the app's own
+# do not draw: Windows has no icon theme of its own.
+ls "$bin/iconengines/"*qsvgicon* > /dev/null 2>&1 || fail "the app has no SVG icon engine (iconengines)"
+echo "smoke: SVG icon engine bundled"
+
 # The UI starts and stays up headless.
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui.exe" --version || true
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui.exe" > "$work/gui.log" 2>&1 &

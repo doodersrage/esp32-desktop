@@ -63,7 +63,7 @@ jobs:
     container: archlinux:latest
     steps:
       - name: Install build dependencies
-        run: pacman -Syu --noconfirm --needed git base-devel cmake ninja qt6-base qt6-tools qt6-declarative
+        run: pacman -Syu --noconfirm --needed git base-devel cmake ninja qt6-base qt6-svg qt6-tools qt6-declarative
 
       - uses: actions/checkout@v4
 

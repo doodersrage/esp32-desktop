@@ -50,7 +50,8 @@ private slots:
     {
         CoreConnection core;
         LibraryPanel panel(&core);
-        panel.resize(500, 300);
+        // Wide enough for the longest name with any system font.
+        panel.resize(900, 300);
         panel.show();
         QVERIFY(QTest::qWaitForWindowExposed(&panel));
         panel.showLibrary(library());
@@ -67,7 +68,7 @@ private slots:
         // A width the user drags stays, through a new list and a resize, and is saved.
         h->resizeSection(LibraryPanel::NameColumn, 300);
         panel.showLibrary(library());
-        panel.resize(600, 300);
+        panel.resize(1000, 300);
         QCOMPARE(t->columnWidth(LibraryPanel::NameColumn), 300);
         const QByteArray saved = panel.saveColumns();
         QVERIFY(!saved.isEmpty());

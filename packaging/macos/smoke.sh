@@ -102,6 +102,12 @@ if [ "${ESP32BENCH_SMOKE_BUILD:-}" = 1 ]; then
   echo "smoke: built blink with the app's arduino-cli and ran it in the simulator"
 fi
 
+# Qt's SVG icon engine, without which the bundled icons (ui/icons) and the app's own
+# do not draw: macOS has no icon theme of its own.
+ls "$work/ESP32 Bench.app/Contents/PlugIns/iconengines/"*qsvgicon* > /dev/null 2>&1 \
+  || fail "the app has no SVG icon engine (Contents/PlugIns/iconengines)"
+echo "smoke: SVG icon engine bundled"
+
 # The UI starts and stays up headless.
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui" --version
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui" > "$work/gui.log" 2>&1 &
