@@ -157,11 +157,11 @@ private slots:
         QTRY_VERIFY(core.isSerialOpen());
         core.startBuild(u"blink"_s, u"esp32"_s);
         BuildPanel *build = window.buildPanel();
-        QTRY_VERIFY(build->flashButton()->isEnabled());
+        QTRY_VERIFY(build->flashAction()->isEnabled());
         QCOMPARE(build->portPicker()->currentData().toString(), u"/dev/ttyACM0"_s);
 
         fake.calls.clear();
-        build->flashButton()->click();
+        build->flashAction()->trigger();
         // The monitor lets go of the port, consent is asked, the flash runs with the
         // token, and the monitor comes back on the same port.
         QTRY_VERIFY(fake.calls.contains(u"board.flash consent=tok"_s));
@@ -183,9 +183,9 @@ private slots:
         core.start();
         QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
         core.startBuild(u"blink"_s, u"esp32"_s);
-        QTRY_VERIFY(window.buildPanel()->flashButton()->isEnabled());
+        QTRY_VERIFY(window.buildPanel()->flashAction()->isEnabled());
         fake.calls.clear();
-        window.buildPanel()->flashButton()->click();
+        window.buildPanel()->flashAction()->trigger();
         QTRY_COMPARE(window.flashAsked, 1);
         QTest::qWait(200);
         QCOMPARE(fake.calls, QStringList{u"board.flash consent="_s});

@@ -1,5 +1,6 @@
-// The running or last build: its plan, the arduino-cli log and the outcome.
-// Renders only; the core runs the build.
+// The running or last build: its plan, the arduino-cli log and the outcome, and the
+// actions on the last successful build (run, debug, flash), which the main window
+// puts in its toolbar with the port picker. Renders only; the core runs the build.
 
 #pragma once
 
@@ -11,6 +12,7 @@ class QLabel;
 class QPlainTextEdit;
 class QComboBox;
 class QProgressBar;
+class QAction;
 class QPushButton;
 
 class BuildPanel : public QWidget {
@@ -21,12 +23,18 @@ public:
 
     QString statusText() const;
     QString logText() const;
+    // Not in this panel's layout: the main window places it in its toolbar.
     QComboBox *portPicker() const { return m_port; }
-    QPushButton *flashButton() const { return m_flash; }
-    QPushButton *simulateButton() const { return m_simulate; }
-    QPushButton *debugButton() const { return m_debug; }
+    QAction *flashAction() const { return m_flash; }
+    QAction *simulateAction() const { return m_simulate; }
+    QAction *debugAction() const { return m_debug; }
+    // The last build that succeeded, which the actions use.
+    QString builtProject() const { return m_builtProject; }
+    QString builtBoard() const { return m_builtBoard; }
 
 signals:
+    // The actions' state changed: a build finished, ports came or went.
+    void actionsChanged();
     // Flash the last successful build to `port`.
     void flashRequested(const QString &port, const QString &project, const QString &board);
 
@@ -42,9 +50,9 @@ private:
     QPushButton *m_cancel;
     QPlainTextEdit *m_log;
     QComboBox *m_port;
-    QPushButton *m_flash;
-    QPushButton *m_simulate;
-    QPushButton *m_debug;
+    QAction *m_flash;
+    QAction *m_simulate;
+    QAction *m_debug;
     QProgressBar *m_progress;
     // The last build that succeeded, which Flash writes.
     QString m_builtProject;

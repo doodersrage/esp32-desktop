@@ -107,16 +107,8 @@
         <translation>Cancelar</translation>
     </message>
     <message>
-        <source>Flash to board</source>
-        <translation>Grabar en la placa</translation>
-    </message>
-    <message>
         <source>Run in simulator</source>
         <translation>Ejecutar en el simulador</translation>
-    </message>
-    <message>
-        <source>Debug in simulator</source>
-        <translation>Depurar en el simulador</translation>
     </message>
     <message>
         <source>Run the last successful build in QEMU (ESP32, ESP32-S3 and ESP32-C3 boards)</source>
@@ -131,8 +123,20 @@
         <translation>Placa que grabar</translation>
     </message>
     <message>
-        <source>Write the last successful build to the selected board</source>
-        <translation>Graba la última compilación correcta en la placa seleccionada</translation>
+        <source>Flash</source>
+        <translation>Grabar</translation>
+    </message>
+    <message>
+        <source>Debug</source>
+        <translation>Depurar</translation>
+    </message>
+    <message>
+        <source>Write the last successful build to the board on the selected port</source>
+        <translation>Grabar la última compilación correcta en la placa del puerto elegido</translation>
+    </message>
+    <message>
+        <source>No board</source>
+        <translation>Sin placa</translation>
     </message>
     <message>
         <source>Flashing %1 to %2…</source>
@@ -424,8 +428,8 @@
         <translation>Depurador: %1</translation>
     </message>
     <message>
-        <source>Not debugging. Build a project for an ESP32, ESP32-S3 or ESP32-C3 board, then choose Debug in simulator.</source>
-        <translation>No se está depurando. Compila un proyecto para una placa ESP32, ESP32-S3 o ESP32-C3 y elige Depurar en el simulador.</translation>
+        <source>Not debugging. Build a project for an ESP32, ESP32-S3 or ESP32-C3 board, then choose Debug in the toolbar.</source>
+        <translation>No se está depurando. Compila un proyecto para una placa ESP32, ESP32-S3 o ESP32-C3 y elige Depurar en la barra de herramientas.</translation>
     </message>
     <message>
         <source>%1 (%2, line %3)</source>
@@ -539,6 +543,14 @@
         <translation>Un puente USB a UART no indica qué chip hay detrás.</translation>
     </message>
     <message>
+        <source>USB ID %1</source>
+        <translation>ID USB %1</translation>
+    </message>
+    <message>
+        <source>%1, USB ID %2</source>
+        <translation>%1, ID USB %2</translation>
+    </message>
+    <message>
         <source>You cannot open this port. Install the esp32bench package, which adds a udev rule, or add yourself to the group that owns serial ports: uucp on Arch, dialout on Debian, Ubuntu and Fedora.</source>
         <translation>No puedes abrir este puerto. Instala el paquete esp32bench, que añade una regla udev, o añádete al grupo propietario de los puertos serie: uucp en Arch, dialout en Debian, Ubuntu y Fedora.</translation>
     </message>
@@ -585,8 +597,8 @@
 <context>
     <name>LibraryPanel</name>
     <message>
-        <source>Filter projects</source>
-        <translation>Filtrar proyectos</translation>
+        <source>Search projects</source>
+        <translation>Buscar proyectos</translation>
     </message>
     <message>
         <source>Refresh</source>
@@ -776,6 +788,50 @@
         <translation>Inicia el núcleo de esp32bench en segundo plano</translation>
     </message>
     <message>
+        <source>Main toolbar</source>
+        <translation>Barra principal</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Detener</translation>
+    </message>
+    <message>
+        <source>Stop the simulation</source>
+        <translation>Detener la simulación</translation>
+    </message>
+    <message>
+        <source>Port:</source>
+        <translation>Puerto:</translation>
+    </message>
+    <message>
+        <source>No project selected</source>
+        <translation>Ningún proyecto elegido</translation>
+    </message>
+    <message>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <source>Building…</source>
+        <translation>Compilando…</translation>
+    </message>
+    <message>
+        <source>Simulating. The console is below.</source>
+        <translation>Simulando. La consola está abajo.</translation>
+    </message>
+    <message>
+        <source>Next: pick a project.</source>
+        <translation>Siguiente: elige un proyecto.</translation>
+    </message>
+    <message>
+        <source>Next: run it in the simulator, or flash it to a board.</source>
+        <translation>Siguiente: ejecútalo en el simulador o grábalo en una placa.</translation>
+    </message>
+    <message>
+        <source>Next: build it.</source>
+        <translation>Siguiente: compílalo.</translation>
+    </message>
+    <message>
         <source>&amp;File</source>
         <translation>&amp;Archivo</translation>
     </message>
@@ -790,6 +846,14 @@
     <message>
         <source>&amp;View</source>
         <translation>&amp;Ver</translation>
+    </message>
+    <message>
+        <source>&amp;Reset layout</source>
+        <translation>&amp;Restablecer la disposición</translation>
+    </message>
+    <message>
+        <source>Put the panels back where they were at first</source>
+        <translation>Devolver los paneles a su sitio inicial</translation>
     </message>
     <message>
         <source>&amp;Tools</source>
@@ -1055,8 +1119,8 @@ SHA-256 del código: %2</translation>
         <translation>No se pudo cargar el proyecto: %1</translation>
     </message>
     <message>
-        <source>Select a project to see its parts, wiring and code.</source>
-        <translation>Selecciona un proyecto para ver sus piezas, cableado y código.</translation>
+        <source>&lt;h3&gt;Getting started&lt;/h3&gt;&lt;ol&gt;&lt;li&gt;Pick a project from the list, or open one of your own ESP-IDF project folders.&lt;/li&gt;&lt;li&gt;Choose your board, then press &lt;b&gt;Build&lt;/b&gt;.&lt;/li&gt;&lt;li&gt;Press &lt;b&gt;Run in simulator&lt;/b&gt; to try it without hardware, or plug in a board, choose its port and press &lt;b&gt;Flash&lt;/b&gt;.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;The first build needs the build tools: &lt;b&gt;Tools → Toolchain setup&lt;/b&gt; installs them.&lt;/p&gt;</source>
+        <translation>&lt;h3&gt;Primeros pasos&lt;/h3&gt;&lt;ol&gt;&lt;li&gt;Elige un proyecto de la lista o abre una de tus propias carpetas de proyectos ESP-IDF.&lt;/li&gt;&lt;li&gt;Elige tu placa y pulsa &lt;b&gt;Compilar&lt;/b&gt;.&lt;/li&gt;&lt;li&gt;Pulsa &lt;b&gt;Ejecutar en el simulador&lt;/b&gt; para probarlo sin hardware, o conecta una placa, elige su puerto y pulsa &lt;b&gt;Grabar&lt;/b&gt;.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;La primera compilación necesita las herramientas: &lt;b&gt;Herramientas → Configurar herramientas&lt;/b&gt; las instala.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Loading…</source>

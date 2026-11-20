@@ -45,14 +45,15 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     , m_open(new QToolButton(this))
     , m_tree(new QTreeWidget(this))
 {
-    m_filter->setPlaceholderText(tr("Filter projects"));
+    m_filter->setPlaceholderText(tr("Search projects"));
+    m_filter->setMinimumWidth(m_filter->fontMetrics().averageCharWidth() * 16);
     m_filter->setClearButtonEnabled(true);
     connect(m_filter, &QLineEdit::textChanged, this, &LibraryPanel::applyFilter);
 
     m_refresh->setIcon(QIcon::fromTheme(u"view-refresh"_s));
     m_refresh->setText(tr("Refresh"));
     m_refresh->setToolTip(tr("Download the project library from esp32bench.dev again"));
-    m_refresh->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_refresh->setToolButtonStyle(Qt::ToolButtonIconOnly);
     connect(m_refresh, &QToolButton::clicked, this, [this] {
         setStatus(tr("Downloading the project library…"));
         m_refresh->setEnabled(false);
@@ -77,6 +78,21 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     m_tree->header()->setStretchLastSection(false);
     for (int c = LevelColumn; c < ColumnCount; ++c)
         m_tree->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
+    // The name, level and chips are what a choice needs; time and firmware are in the
+    // project view. Right-click the header to show them again.
+    m_tree->setColumnHidden(TimeColumn, true);
+    m_tree->setColumnHidden(FirmwareColumn, true);
+    m_tree->header()->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tree->header(), &QHeaderView::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QMenu menu(this);
+        for (int c = LevelColumn; c < ColumnCount; ++c) {
+            QAction *a = menu.addAction(m_tree->headerItem()->text(c));
+            a->setCheckable(true);
+            a->setChecked(!m_tree->isColumnHidden(c));
+            connect(a, &QAction::toggled, this, [this, c](bool on) { m_tree->setColumnHidden(c, !on); });
+        }
+        menu.exec(m_tree->header()->viewport()->mapToGlobal(pos));
+    });
     connect(m_tree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
         if (item)
             emit projectSelected(item->data(NameColumn, IdRole).toString());

@@ -141,7 +141,7 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
             m_status->setText(tr("Debugger: %1").arg(message));
     });
     m_status->setText(tr("Not debugging. Build a project for an ESP32, ESP32-S3 or ESP32-C3 board, "
-                         "then choose Debug in simulator."));
+                         "then choose Debug in the toolbar."));
     setMode(Mode::Off);
 }
 

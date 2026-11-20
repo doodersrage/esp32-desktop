@@ -2,6 +2,7 @@
 
 #include "CoreConnection.h"
 
+#include <QAction>
 #include <QComboBox>
 #include <QFontDatabase>
 #include <QJsonArray>
@@ -27,29 +28,30 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     , m_cancel(new QPushButton(QIcon::fromTheme(u"process-stop"_s), tr("Cancel"), this))
     , m_log(new QPlainTextEdit(this))
     , m_port(new QComboBox(this))
-    , m_flash(new QPushButton(QIcon::fromTheme(u"media-flash"_s, QIcon::fromTheme(u"document-send"_s)),
-                              tr("Flash to board"), this))
-    , m_simulate(new QPushButton(QIcon::fromTheme(u"media-playback-start"_s), tr("Run in simulator"), this))
-    , m_debug(new QPushButton(QIcon::fromTheme(u"debug-run"_s, QIcon::fromTheme(u"tools-report-bug"_s)),
-                              tr("Debug in simulator"), this))
+    , m_flash(new QAction(QIcon::fromTheme(u"media-flash"_s, QIcon::fromTheme(u"document-send"_s)),
+                          tr("Flash"), this))
+    , m_simulate(new QAction(QIcon::fromTheme(u"media-playback-start"_s), tr("Run in simulator"), this))
+    , m_debug(new QAction(QIcon::fromTheme(u"debug-run"_s, QIcon::fromTheme(u"tools-report-bug"_s)), tr("Debug"),
+                          this))
     , m_progress(new QProgressBar(this))
 {
     m_simulate->setToolTip(tr("Run the last successful build in QEMU (ESP32, ESP32-S3 and ESP32-C3 boards)"));
-    connect(m_simulate, &QPushButton::clicked, this, [this] {
+    connect(m_simulate, &QAction::triggered, this, [this] {
         if (m_core->isSimRunning())
             m_core->stopSim();
         m_core->startSim(m_builtProject, m_builtBoard);
     });
     m_debug->setToolTip(tr("Run the last successful build in QEMU under GDB, paused before it starts"));
-    connect(m_debug, &QPushButton::clicked, this, [this] {
+    connect(m_debug, &QAction::triggered, this, [this] {
         if (m_core->isSimRunning())
             m_core->stopSim();
         m_core->startSim(m_builtProject, m_builtBoard, true);
     });
     m_port->setToolTip(tr("Board to flash"));
     m_port->setMinimumContentsLength(12);
-    m_flash->setToolTip(tr("Write the last successful build to the selected board"));
-    connect(m_flash, &QPushButton::clicked, this, [this] {
+    m_flash->setToolTip(tr("Write the last successful build to the board on the selected port"));
+    m_port->setPlaceholderText(tr("No board"));
+    connect(m_flash, &QAction::triggered, this, [this] {
         emit flashRequested(m_port->currentData().toString(), m_builtProject, m_builtBoard);
     });
     m_progress->setVisible(false);
@@ -67,10 +69,6 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     auto *top = new QHBoxLayout;
     top->addWidget(m_status, 1);
     top->addWidget(m_cancel);
-    top->addWidget(m_port);
-    top->addWidget(m_flash);
-    top->addWidget(m_simulate);
-    top->addWidget(m_debug);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     layout->addWidget(m_progress);
@@ -160,9 +158,10 @@ void BuildPanel::setPorts(const QJsonArray &ports)
         const QString path = v.toObject().value(u"path"_s).toString();
         m_port->addItem(path, path);
     }
+    // With a placeholder text the combo selects nothing by itself: keep the port that
+    // was chosen, else take the first.
     const int i = m_port->findData(current);
-    if (i >= 0)
-        m_port->setCurrentIndex(i);
+    m_port->setCurrentIndex(i >= 0 ? i : (m_port->count() > 0 ? 0 : -1));
     updateFlashButton();
 }
 

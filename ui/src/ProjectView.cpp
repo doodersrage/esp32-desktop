@@ -3,6 +3,7 @@
 #include "CoreConnection.h"
 #include "Labels.h"
 
+#include <QAction>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QFontDatabase>
@@ -80,8 +81,10 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     });
 
     m_build = new QPushButton(QIcon::fromTheme(u"run-build"_s), tr("Build"), page);
-    m_build->setToolTip(tr("Build this project for the selected board with arduino-cli"));
-    connect(m_build, &QPushButton::clicked, this, [this] {
+    m_buildAction = new QAction(m_build->icon(), tr("Build"), this);
+    setBuildToolTip(tr("Build this project for the selected board with arduino-cli"));
+    connect(m_build, &QPushButton::clicked, m_buildAction, &QAction::trigger);
+    connect(m_buildAction, &QAction::triggered, this, [this] {
         // The core asks for consent first; MainWindow shows that dialog.
         m_core->startBuild(m_project.value(u"id"_s).toString(), m_board->currentData().toString());
     });
@@ -92,6 +95,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
 
     m_board = new QComboBox(page);
     connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::showBuild);
+    connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::currentChanged);
 
     m_tabs = new QTabWidget(page);
 
@@ -162,7 +166,42 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
                 if ((method == u"library.get" || method == u"local.get") && !m_requestedId.isEmpty())
                     showPlaceholder(tr("Could not load the project: %1").arg(message));
             });
-    showPlaceholder(tr("Select a project to see its parts, wiring and code."));
+    showGuide();
+}
+
+void ProjectView::setBuildToolTip(const QString &text)
+{
+    m_build->setToolTip(text);
+    m_buildAction->setToolTip(text);
+}
+
+void ProjectView::showGuide()
+{
+    m_placeholder->setTextFormat(Qt::RichText);
+    m_placeholder->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_placeholder->setContentsMargins(24, 0, 24, 0);
+    m_placeholder->setText(
+        tr("<h3>Getting started</h3>"
+           "<ol>"
+           "<li>Pick a project from the list, or open one of your own ESP-IDF project folders.</li>"
+           "<li>Choose your board, then press <b>Build</b>.</li>"
+           "<li>Press <b>Run in simulator</b> to try it without hardware, or plug in a board, "
+           "choose its port and press <b>Flash</b>.</li>"
+           "</ol>"
+           "<p>The first build needs the build tools: <b>Tools → Toolchain setup</b> installs them.</p>"));
+    m_placeholder->setEnabled(true);
+    m_stack->setCurrentIndex(0);
+    updateBuildButton();
+}
+
+QString ProjectView::currentProjectTitle() const
+{
+    return m_stack->currentIndex() == 1 ? m_title->text() : QString();
+}
+
+QString ProjectView::currentBoardName() const
+{
+    return m_stack->currentIndex() == 1 ? m_board->currentText() : QString();
 }
 
 QString ProjectView::title() const
@@ -177,8 +216,13 @@ QString ProjectView::notesText() const
 
 void ProjectView::showPlaceholder(const QString &text)
 {
+    m_placeholder->setTextFormat(Qt::PlainText);
+    m_placeholder->setAlignment(Qt::AlignCenter);
+    m_placeholder->setContentsMargins(0, 0, 0, 0);
     m_placeholder->setText(text);
+    m_placeholder->setEnabled(false);
     m_stack->setCurrentIndex(0);
+    updateBuildButton();
 }
 
 void ProjectView::showProject(const QString &id)
@@ -245,7 +289,7 @@ void ProjectView::showLocal(const QJsonObject &result)
 
     m_openSite->setText(tr("Open folder"));
     m_openSite->setIcon(QIcon::fromTheme(u"folder-open"_s));
-    m_build->setToolTip(tr("Build this project for the selected chip with ESP-IDF"));
+    setBuildToolTip(tr("Build this project for the selected chip with ESP-IDF"));
     m_tabs->hide();
 
     const QSignalBlocker block(m_board);
@@ -260,8 +304,8 @@ void ProjectView::showLocal(const QJsonObject &result)
     const int start = qMax(0, m_board->findData(keepBoard));
     m_board->setCurrentIndex(start);
     showBuild(start);
-    updateBuildButton();
     m_stack->setCurrentIndex(1);
+    updateBuildButton();
 }
 
 void ProjectView::showResult(const QJsonObject &result)
@@ -280,7 +324,7 @@ void ProjectView::showResult(const QJsonObject &result)
     m_builds = p.value(u"builds"_s).toArray();
     m_openSite->setText(tr("Open on esp32bench.dev"));
     m_openSite->setIcon(QIcon::fromTheme(u"internet-web-browser"_s));
-    m_build->setToolTip(tr("Build this project for the selected board with arduino-cli"));
+    setBuildToolTip(tr("Build this project for the selected board with arduino-cli"));
     m_tabs->show();
     m_boardLabel->setText(tr("Board:"));
 
@@ -344,8 +388,8 @@ void ProjectView::showResult(const QJsonObject &result)
     const int start = qMax(0, m_board->findData(keepBoard));
     m_board->setCurrentIndex(start);
     showBuild(start);
-    updateBuildButton();
     m_stack->setCurrentIndex(1);
+    updateBuildButton();
 }
 
 void ProjectView::showBuild(int index)
@@ -389,4 +433,6 @@ void ProjectView::updateBuildButton()
     m_build->setVisible(m_local || sketch);
     m_build->setEnabled(buildable && m_core->state() == CoreConnection::State::Connected
                         && !m_core->isBuilding());
+    m_buildAction->setEnabled(m_stack->currentIndex() == 1 && (m_local || sketch) && m_build->isEnabled());
+    emit currentChanged();
 }

@@ -57,6 +57,7 @@ DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
     m_tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_tree->header()->setSectionResizeMode(BridgeColumn, QHeaderView::Stretch);
     m_tree->setTextElideMode(Qt::ElideRight);
+    m_tree->setColumnHidden(UsbIdColumn, true); // in each row's tooltip instead
     m_tree->setToolTip(tr("Double-click a port to open it in the serial monitor; right-click for more"));
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
@@ -146,12 +147,13 @@ void DevicesPanel::showPorts(const QJsonArray &ports)
         item->setText(BridgeColumn, bridgeName(p.value(u"bridge"_s)));
         const QJsonObject usb = p.value(u"usb"_s).toObject();
         if (!usb.isEmpty()) {
-            item->setText(UsbIdColumn, u"%1:%2"_s
-                                           .arg(usb.value(u"vid"_s).toInt(), 4, 16, QLatin1Char('0'))
-                                           .arg(usb.value(u"pid"_s).toInt(), 4, 16, QLatin1Char('0')));
+            const QString id = u"%1:%2"_s
+                                   .arg(usb.value(u"vid"_s).toInt(), 4, 16, QLatin1Char('0'))
+                                   .arg(usb.value(u"pid"_s).toInt(), 4, 16, QLatin1Char('0'));
+            item->setText(UsbIdColumn, id);
             const QString product = usb.value(u"product"_s).toString();
-            if (!product.isEmpty())
-                item->setToolTip(BridgeColumn, product);
+            item->setToolTip(BridgeColumn, product.isEmpty() ? tr("USB ID %1").arg(id)
+                                                             : tr("%1, USB ID %2").arg(product, id));
         }
 
         if (p.value(u"access"_s).toString() == u"denied") {

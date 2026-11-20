@@ -4,7 +4,9 @@
 #include "CoreConnection.h"
 #include "ProjectView.h"
 
+#include <QAction>
 #include <QComboBox>
+#include <QSignalSpy>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -34,11 +36,20 @@ private slots:
     {
         CoreConnection core;
         ProjectView view(&core);
+        // Before a project: nothing for the toolbar, and nothing to build.
+        QVERIFY(view.currentProjectTitle().isEmpty());
+        QVERIFY(!view.buildAction()->isEnabled());
+        QSignalSpy changed(&view, &ProjectView::currentChanged);
         const QJsonObject result = example();
         const QJsonObject p = result.value(u"project"_s).toObject();
         view.showResult(result);
 
         QCOMPARE(view.title(), p.value(u"name"_s).toString());
+        QVERIFY(changed.size() >= 1);
+        QCOMPARE(view.currentProjectTitle(), view.title());
+        QCOMPARE(view.currentBoardName(), view.boardPicker()->currentText());
+        // Not connected to a core, so the button and the toolbar's action agree: off.
+        QCOMPARE(view.buildAction()->isEnabled(), view.buildButton()->isEnabled());
         const QJsonArray builds = p.value(u"builds"_s).toArray();
         QCOMPARE(view.boardPicker()->count(), builds.size());
         QVERIFY(builds.size() >= 2);

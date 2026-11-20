@@ -107,16 +107,8 @@
         <translation>Annuler</translation>
     </message>
     <message>
-        <source>Flash to board</source>
-        <translation>Flasher sur la carte</translation>
-    </message>
-    <message>
         <source>Run in simulator</source>
         <translation>Exécuter dans le simulateur</translation>
-    </message>
-    <message>
-        <source>Debug in simulator</source>
-        <translation>Déboguer dans le simulateur</translation>
     </message>
     <message>
         <source>Run the last successful build in QEMU (ESP32, ESP32-S3 and ESP32-C3 boards)</source>
@@ -131,8 +123,20 @@
         <translation>Carte à flasher</translation>
     </message>
     <message>
-        <source>Write the last successful build to the selected board</source>
-        <translation>Écrire la dernière compilation réussie sur la carte sélectionnée</translation>
+        <source>Flash</source>
+        <translation>Flasher</translation>
+    </message>
+    <message>
+        <source>Debug</source>
+        <translation>Déboguer</translation>
+    </message>
+    <message>
+        <source>Write the last successful build to the board on the selected port</source>
+        <translation>Écrire la dernière compilation réussie sur la carte du port choisi</translation>
+    </message>
+    <message>
+        <source>No board</source>
+        <translation>Aucune carte</translation>
     </message>
     <message>
         <source>Flashing %1 to %2…</source>
@@ -424,8 +428,8 @@
         <translation>Débogueur : %1</translation>
     </message>
     <message>
-        <source>Not debugging. Build a project for an ESP32, ESP32-S3 or ESP32-C3 board, then choose Debug in simulator.</source>
-        <translation>Pas de débogage en cours. Compilez un projet pour une carte ESP32, ESP32-S3 ou ESP32-C3, puis choisissez Déboguer dans le simulateur.</translation>
+        <source>Not debugging. Build a project for an ESP32, ESP32-S3 or ESP32-C3 board, then choose Debug in the toolbar.</source>
+        <translation>Pas de débogage en cours. Compilez un projet pour une carte ESP32, ESP32-S3 ou ESP32-C3, puis choisissez Déboguer dans la barre d'outils.</translation>
     </message>
     <message>
         <source>%1 (%2, line %3)</source>
@@ -539,6 +543,14 @@
         <translation>Un pont USB vers UART n’indique pas quelle puce se trouve derrière lui.</translation>
     </message>
     <message>
+        <source>USB ID %1</source>
+        <translation>ID USB %1</translation>
+    </message>
+    <message>
+        <source>%1, USB ID %2</source>
+        <translation>%1, ID USB %2</translation>
+    </message>
+    <message>
         <source>You cannot open this port. Install the esp32bench package, which adds a udev rule, or add yourself to the group that owns serial ports: uucp on Arch, dialout on Debian, Ubuntu and Fedora.</source>
         <translation>Vous ne pouvez pas ouvrir ce port. Installez le paquet esp32bench, qui ajoute une règle udev, ou ajoutez-vous au groupe propriétaire des ports série : uucp sous Arch, dialout sous Debian, Ubuntu et Fedora.</translation>
     </message>
@@ -585,8 +597,8 @@
 <context>
     <name>LibraryPanel</name>
     <message>
-        <source>Filter projects</source>
-        <translation>Filtrer les projets</translation>
+        <source>Search projects</source>
+        <translation>Rechercher des projets</translation>
     </message>
     <message>
         <source>Refresh</source>
@@ -776,6 +788,50 @@
         <translation>Démarrer le cœur d’esp32bench en arrière-plan</translation>
     </message>
     <message>
+        <source>Main toolbar</source>
+        <translation>Barre d'outils principale</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Arrêter</translation>
+    </message>
+    <message>
+        <source>Stop the simulation</source>
+        <translation>Arrêter la simulation</translation>
+    </message>
+    <message>
+        <source>Port:</source>
+        <translation>Port :</translation>
+    </message>
+    <message>
+        <source>No project selected</source>
+        <translation>Aucun projet choisi</translation>
+    </message>
+    <message>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <source>Building…</source>
+        <translation>Compilation…</translation>
+    </message>
+    <message>
+        <source>Simulating. The console is below.</source>
+        <translation>Simulation en cours. La console est en dessous.</translation>
+    </message>
+    <message>
+        <source>Next: pick a project.</source>
+        <translation>Ensuite : choisissez un projet.</translation>
+    </message>
+    <message>
+        <source>Next: run it in the simulator, or flash it to a board.</source>
+        <translation>Ensuite : exécutez-le dans le simulateur, ou flashez-le sur une carte.</translation>
+    </message>
+    <message>
+        <source>Next: build it.</source>
+        <translation>Ensuite : compilez-le.</translation>
+    </message>
+    <message>
         <source>&amp;File</source>
         <translation>&amp;Fichier</translation>
     </message>
@@ -790,6 +846,14 @@
     <message>
         <source>&amp;View</source>
         <translation>&amp;Affichage</translation>
+    </message>
+    <message>
+        <source>&amp;Reset layout</source>
+        <translation>&amp;Réinitialiser la disposition</translation>
+    </message>
+    <message>
+        <source>Put the panels back where they were at first</source>
+        <translation>Remettre les panneaux à leur place de départ</translation>
     </message>
     <message>
         <source>&amp;Tools</source>
@@ -1055,8 +1119,8 @@ SHA-256 du code : %2</translation>
         <translation>Impossible de charger le projet : %1</translation>
     </message>
     <message>
-        <source>Select a project to see its parts, wiring and code.</source>
-        <translation>Sélectionnez un projet pour voir ses pièces, son câblage et son code.</translation>
+        <source>&lt;h3&gt;Getting started&lt;/h3&gt;&lt;ol&gt;&lt;li&gt;Pick a project from the list, or open one of your own ESP-IDF project folders.&lt;/li&gt;&lt;li&gt;Choose your board, then press &lt;b&gt;Build&lt;/b&gt;.&lt;/li&gt;&lt;li&gt;Press &lt;b&gt;Run in simulator&lt;/b&gt; to try it without hardware, or plug in a board, choose its port and press &lt;b&gt;Flash&lt;/b&gt;.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;The first build needs the build tools: &lt;b&gt;Tools → Toolchain setup&lt;/b&gt; installs them.&lt;/p&gt;</source>
+        <translation>&lt;h3&gt;Pour commencer&lt;/h3&gt;&lt;ol&gt;&lt;li&gt;Choisissez un projet dans la liste, ou ouvrez l'un de vos propres dossiers de projets ESP-IDF.&lt;/li&gt;&lt;li&gt;Choisissez votre carte, puis appuyez sur &lt;b&gt;Compiler&lt;/b&gt;.&lt;/li&gt;&lt;li&gt;Appuyez sur &lt;b&gt;Exécuter dans le simulateur&lt;/b&gt; pour l'essayer sans matériel, ou branchez une carte, choisissez son port et appuyez sur &lt;b&gt;Flasher&lt;/b&gt;.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;La première compilation a besoin des outils : &lt;b&gt;Outils → Configuration des outils&lt;/b&gt; les installe.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Loading…</source>

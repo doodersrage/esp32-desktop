@@ -203,7 +203,7 @@ private slots:
         BuildPanel build(&core);
         core.start();
         QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
-        QVERIFY(!build.debugButton()->isEnabled()); // nothing built yet
+        QVERIFY(!build.debugAction()->isEnabled()); // nothing built yet
         // A plain run does not ask for the debugger.
         core.startSim(u"blink"_s, u"esp32"_s);
         QTRY_VERIFY(core.isSimRunning());

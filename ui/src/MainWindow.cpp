@@ -19,6 +19,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QComboBox>
 #include <QCloseEvent>
 #include <QDockWidget>
 #include <QIcon>
@@ -32,8 +33,15 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QToolBar>
 
 using namespace Qt::StringLiterals;
+
+namespace {
+// Saved layouts from before this version are not restored: the default changed (the
+// toolbar, and fewer panels at first).
+constexpr int LayoutVersion = 1;
+} // namespace
 
 MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     : QMainWindow(parent)
@@ -284,10 +292,110 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     statusBar()->addWidget(m_connection, 1);
     statusBar()->addPermanentWidget(m_startCore);
 
+    // At first only the simulator's console is open below; the build log and the serial
+    // monitor open when a build starts or a port is opened.
+    m_buildDock->hide();
+    m_serialDock->hide();
+
+    buildToolBar();
     buildMenus();
     connect(m_core, &CoreConnection::stateChanged, this, &MainWindow::showConnectionState);
     showConnectionState();
+    m_defaultState = saveState(LayoutVersion);
     restoreLayout();
+}
+
+void MainWindow::buildToolBar()
+{
+    m_toolBar = addToolBar(tr("Main toolbar"));
+    m_toolBar->setObjectName(u"mainToolBar"_s);
+    m_toolBar->setMovable(false);
+    m_toolBar->setFloatable(false);
+    m_toolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_toolBar->toggleViewAction()->setEnabled(false); // always there
+
+    m_current = new QLabel(m_toolBar);
+    m_current->setContentsMargins(6, 0, 12, 0);
+    QFont bold = m_current->font();
+    bold.setBold(true);
+    m_current->setFont(bold);
+    m_toolBar->addWidget(m_current);
+    m_toolBar->addAction(m_project->buildAction());
+    m_toolBar->addSeparator();
+    m_toolBar->addAction(m_buildPanel->simulateAction());
+    m_toolBar->addAction(m_buildPanel->debugAction());
+    m_stopSim = m_toolBar->addAction(QIcon::fromTheme(u"media-playback-stop"_s), tr("Stop"));
+    m_stopSim->setToolTip(tr("Stop the simulation"));
+    connect(m_stopSim, &QAction::triggered, m_core, &CoreConnection::stopSim);
+    m_toolBar->addSeparator();
+    auto *portLabel = new QLabel(tr("Port:"), m_toolBar);
+    portLabel->setContentsMargins(6, 0, 4, 0);
+    portLabel->setBuddy(m_buildPanel->portPicker());
+    m_toolBar->addWidget(portLabel);
+    m_toolBar->addWidget(m_buildPanel->portPicker());
+    m_toolBar->addAction(m_buildPanel->flashAction());
+    auto *spacer = new QWidget(m_toolBar);
+    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_toolBar->addWidget(spacer);
+    m_nextStep = new QLabel(m_toolBar);
+    m_nextStep->setContentsMargins(12, 0, 6, 0);
+    m_toolBar->addWidget(m_nextStep);
+
+    connect(m_project, &ProjectView::boardSelected, this,
+            [this](const QString &project, const QString &, const QJsonArray &) { m_shownProject = project; });
+    connect(m_project, &ProjectView::currentChanged, this, &MainWindow::updateToolBar);
+    connect(m_buildPanel, &BuildPanel::actionsChanged, this, &MainWindow::updateToolBar);
+    connect(m_core, &CoreConnection::buildStarted, this, &MainWindow::updateToolBar);
+    connect(m_core, &CoreConnection::buildFinished, this, &MainWindow::updateToolBar);
+    connect(m_core, &CoreConnection::simStarted, this, &MainWindow::updateToolBar);
+    connect(m_core, &CoreConnection::simStopped, this, &MainWindow::updateToolBar);
+    connect(m_core, &CoreConnection::stateChanged, this, &MainWindow::updateToolBar);
+    updateToolBar();
+}
+
+void MainWindow::updateToolBar()
+{
+    const QString title = m_project->currentProjectTitle();
+    const QString board = m_project->currentBoardName();
+    const QString current = title.isEmpty() ? tr("No project selected")
+                            : board.isEmpty() ? title
+                                              : tr("%1 · %2").arg(title, board);
+    m_current->setText(m_current->fontMetrics().elidedText(current, Qt::ElideRight, 360));
+    m_current->setToolTip(current);
+    m_stopSim->setEnabled(m_core->isSimRunning());
+
+    QString next;
+    if (m_core->state() != CoreConnection::State::Connected)
+        next.clear();
+    else if (m_core->isBuilding())
+        next = tr("Building…");
+    else if (m_core->isSimRunning())
+        next = tr("Simulating. The console is below.");
+    else if (title.isEmpty())
+        next = tr("Next: pick a project.");
+    else if (!m_shownProject.isEmpty() && m_buildPanel->builtProject() == m_shownProject)
+        next = tr("Next: run it in the simulator, or flash it to a board.");
+    else if (m_project->buildAction()->isEnabled())
+        next = tr("Next: build it.");
+    m_nextStep->setText(next);
+}
+
+QString MainWindow::nextStepText() const
+{
+    return m_nextStep->text();
+}
+
+void MainWindow::applyDefaultSizes()
+{
+    resizeDocks({m_devicesDock, m_circuitDock}, {260, 380}, Qt::Horizontal);
+    const int w = m_split->width() > 0 ? m_split->width() : 760;
+    m_split->setSizes({w * 2 / 5, w * 3 / 5});
+}
+
+void MainWindow::resetLayout()
+{
+    restoreState(m_defaultState, LayoutVersion);
+    applyDefaultSizes();
 }
 
 QString MainWindow::connectionText() const
@@ -316,6 +424,10 @@ void MainWindow::buildMenus()
     view->addAction(m_displayDock->toggleViewAction());
     view->addAction(m_pinsDock->toggleViewAction());
     view->addAction(m_circuitDock->toggleViewAction());
+    view->addSeparator();
+    QAction *reset = view->addAction(QIcon::fromTheme(u"view-restore"_s), tr("&Reset layout"));
+    reset->setToolTip(tr("Put the panels back where they were at first"));
+    connect(reset, &QAction::triggered, this, &MainWindow::resetLayout);
 
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
     QAction *setup = tools->addAction(QIcon::fromTheme(u"configure"_s), tr("&Toolchain setup…"));
@@ -376,8 +488,10 @@ void MainWindow::restoreLayout()
     if (geometry.isEmpty() || !restoreGeometry(geometry))
         resize(1400, 820);
     const QByteArray state = settings.value(u"mainWindow/state"_s).toByteArray();
-    if (state.isEmpty() || !restoreState(state))
-        resizeDocks({m_devicesDock}, {340}, Qt::Horizontal); // first start
+    if (state.isEmpty() || !restoreState(state, LayoutVersion)) {
+        applyDefaultSizes(); // first start, or a layout from an older version
+        return;
+    }
     m_split->restoreState(settings.value(u"mainWindow/librarySplit"_s).toByteArray());
 }
 
@@ -385,7 +499,7 @@ void MainWindow::saveLayout()
 {
     QSettings settings;
     settings.setValue(u"mainWindow/geometry"_s, saveGeometry());
-    settings.setValue(u"mainWindow/state"_s, saveState());
+    settings.setValue(u"mainWindow/state"_s, saveState(LayoutVersion));
     settings.setValue(u"mainWindow/librarySplit"_s, m_split->saveState());
 }
 

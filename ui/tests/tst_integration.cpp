@@ -1,5 +1,6 @@
 // The UI against a real esp32benchd. Skipped unless ESP32BENCH_DAEMON points at the
-// daemon binary. Set ESP32BENCH_SCREENSHOT to a .png path to save the main window.
+// daemon binary. Set ESP32BENCH_SCREENSHOT to a .png path to save the main window at
+// the end, and ESP32BENCH_SCREENSHOT_START to save it as it first appears.
 
 #include "CoreConnection.h"
 #include "DebugPanel.h"
@@ -16,6 +17,8 @@
 #include <QDir>
 #include <QComboBox>
 #include <QStatusBar>
+#include <QToolBar>
+#include <QAction>
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QScopeGuard>
@@ -174,6 +177,11 @@ private slots:
         // No library cached yet, so the panel downloads it once by itself.
         QTRY_COMPARE_WITH_TIMEOUT(window.libraryPanel()->tree()->topLevelItemCount(), 2, 10000);
         QVERIFY(window.libraryPanel()->statusText().contains(u"Projects: 2"_s));
+        // Nothing picked yet: the project view shows how to start, and so does the toolbar.
+        QCOMPARE(window.nextStepText(), u"Next: pick a project."_s);
+        QVERIFY(!window.projectView()->buildAction()->isEnabled());
+        if (const QString shot = qEnvironmentVariable("ESP32BENCH_SCREENSHOT_START"); !shot.isEmpty())
+            QVERIFY(window.grab().save(shot));
         // An esp32bench:// link selects its project and board (link.open), and builds
         // nothing: building would still ask first.
         window.openLink(u"esp32bench://project/probeharbor-probe?board=esp32-doit"_s);
@@ -193,16 +201,20 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(window.projectView()->title(),
                                   window.libraryPanel()->tree()->topLevelItem(0)->text(LibraryPanel::NameColumn), 5000);
 
-        // Build it: the daemon asks for consent, the window agrees, the build runs.
-        QPushButton *build = window.projectView()->buildButton();
+        // Build it from the toolbar: the daemon asks for consent, the window agrees, the
+        // build runs. The toolbar names the project and says what to do next.
+        QAction *build = window.projectView()->buildAction();
+        QVERIFY(window.toolBar()->actions().contains(build));
         QTRY_VERIFY(build->isEnabled());
+        QCOMPARE(window.nextStepText(), u"Next: build it."_s);
         QSignalSpy finished(&core, &CoreConnection::buildFinished);
-        build->click();
+        build->trigger();
         QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 10000);
         // A build that ends before asking failed early; say why.
         QVERIFY2(window.asked == 1, qPrintable(finished.at(0).at(1).toString()));
         QVERIFY2(finished.at(0).at(0).toBool(), qPrintable(finished.at(0).at(1).toString()));
         QVERIFY(window.buildPanel()->logText().contains(u"Sketch uses 1234 bytes"_s));
+        QTRY_COMPARE(window.nextStepText(), u"Next: run it in the simulator, or flash it to a board."_s);
 
         // Run it in the simulator, with the real hello firmware standing in for the
         // stand-in compiler's empty image: UI -> daemon -> QEMU.
@@ -211,9 +223,10 @@ private slots:
         if (QFile::exists(hello) && QFile::exists(qemuBin + u"/qemu-system-xtensa"_s)) {
             QVERIFY(QFile::remove(image));
             QVERIFY(QFile::copy(hello, image));
-            QPushButton *run = window.buildPanel()->simulateButton();
+            QAction *run = window.buildPanel()->simulateAction();
+            QVERIFY(window.toolBar()->actions().contains(run));
             QVERIFY(run->isEnabled());
-            run->click();
+            run->trigger();
             QTRY_VERIFY_WITH_TIMEOUT(window.simulator()->outputText().contains(u"esp32bench-hello ready"_s), 30000);
             core.stopSim();
             QTRY_VERIFY(!core.isSimRunning());
@@ -229,7 +242,7 @@ private slots:
                 QVERIFY(QFile::remove(built));
                 QVERIFY(QFile::copy(elf, built));
                 DebugPanel *dbg = window.debugger();
-                window.buildPanel()->debugButton()->click();
+                window.buildPanel()->debugAction()->trigger();
                 QTRY_VERIFY_WITH_TIMEOUT(dbg->statusText().contains(u"before the firmware starts"_s), 30000);
                 dbg->locationInput()->setText(u"app_main"_s);
                 dbg->addButton()->click();
@@ -251,7 +264,7 @@ private slots:
             if (QFile::exists(rgb)) {
                 QVERIFY(QFile::remove(image));
                 QVERIFY(QFile::copy(rgb, image));
-                window.buildPanel()->simulateButton()->click();
+                window.buildPanel()->simulateAction()->trigger();
                 QTRY_VERIFY_WITH_TIMEOUT(window.display()->image().size() == QSize(320, 240)
                                              && window.display()->image().pixelColor(250, 200) == QColor(Qt::white),
                                          30000);
@@ -277,7 +290,7 @@ private slots:
                 QTRY_COMPARE(circuit->parts().size(), 2);
                 QVERIFY(QFile::remove(image));
                 QVERIFY(QFile::copy(gpioFw, image));
-                window.buildPanel()->simulateButton()->click();
+                window.buildPanel()->simulateAction()->trigger();
                 QTRY_VERIFY_WITH_TIMEOUT(window.pins()->row(2) != nullptr, 30000);
                 QVERIFY(window.pins()->isVisible());
                 QTRY_COMPARE_WITH_TIMEOUT(window.pins()->row(2)->text(PinsPanel::DirectionColumn), u"output"_s, 20000);
@@ -309,7 +322,7 @@ private slots:
                 QTRY_COMPARE(circuit->parts().size(), before + 1);
                 QVERIFY(QFile::remove(image));
                 QVERIFY(QFile::copy(bmeFw, image));
-                window.buildPanel()->simulateButton()->click();
+                window.buildPanel()->simulateAction()->trigger();
                 QTRY_VERIFY_WITH_TIMEOUT(window.simulator()->outputText().contains(u"esp32bench-bme280 ready id=0x60"_s), 30000);
                 QTRY_VERIFY_WITH_TIMEOUT(core.simPartsActive(), 5000);
                 circuit->selectPart(u"bme280-1"_s, true);
@@ -340,7 +353,7 @@ private slots:
                 QTRY_COMPARE(circuit->parts().size(), before + 1);
                 QVERIFY(QFile::remove(image));
                 QVERIFY(QFile::copy(oledFw, image));
-                window.buildPanel()->simulateButton()->click();
+                window.buildPanel()->simulateAction()->trigger();
                 QTRY_VERIFY_WITH_TIMEOUT(!circuit->partPicture(u"ssd1306-1"_s).isNull()
                                              && qGray(circuit->partPicture(u"ssd1306-1"_s).pixel(64, 32)) > 128,
                                          30000);

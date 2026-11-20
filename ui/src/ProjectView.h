@@ -11,6 +11,7 @@ class CoreConnection;
 class QComboBox;
 class QLabel;
 class QPlainTextEdit;
+class QAction;
 class QPushButton;
 class QStackedWidget;
 class QTabWidget;
@@ -41,6 +42,13 @@ public:
     QPlainTextEdit *codeView() const { return m_code; }
     QTabWidget *tabs() const { return m_tabs; }
     QPushButton *buildButton() const { return m_build; }
+    // The same as the Build button, for the main window's toolbar: enabled when the
+    // project shown can be built now.
+    QAction *buildAction() const { return m_buildAction; }
+    // What is shown, for the toolbar: the project's title and the board's name, or
+    // empty when no project is shown.
+    QString currentProjectTitle() const;
+    QString currentBoardName() const;
     QPushButton *openButton() const { return m_openSite; }
     QString summaryText() const;
     QString notesText() const;
@@ -48,10 +56,15 @@ public:
 signals:
     // The project and board now shown, with the build's pin list as the library has it.
     void boardSelected(const QString &project, const QString &board, const QJsonArray &pins);
+    // What is shown or whether it can be built changed (currentProjectTitle(), buildAction()).
+    void currentChanged();
 
 private:
     void showBuild(int index);
     void showPlaceholder(const QString &text);
+    // Nothing selected yet: how to get from a project to a running board.
+    void showGuide();
+    void setBuildToolTip(const QString &text);
     void updateBuildButton();
 
     CoreConnection *m_core;
@@ -70,6 +83,7 @@ private:
     QLabel *m_summary;
     QPushButton *m_openSite;
     QPushButton *m_build;
+    QAction *m_buildAction;
     QComboBox *m_board;
     QLabel *m_boardLabel;
     QTabWidget *m_tabs;

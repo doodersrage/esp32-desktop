@@ -21,6 +21,8 @@ class CircuitPanel;
 class QDockWidget;
 class QLabel;
 class QPushButton;
+class QAction;
+class QToolBar;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -40,6 +42,8 @@ public:
     DisplayPanel *display() const { return m_display; }
     PinsPanel *pins() const { return m_pins; }
     TracePanel *trace() const { return m_trace; }
+    QToolBar *toolBar() const { return m_toolBar; }
+    QString nextStepText() const;
     CircuitPanel *circuit() const { return m_circuit; }
     void showSetup();
     // Open an esp32bench:// link: select the project (and board) it names. It is
@@ -59,6 +63,13 @@ protected:
 
 private:
     void buildMenus();
+    void buildToolBar();
+    // The toolbar's project, Stop and next-step hint, from what the window shows now.
+    void updateToolBar();
+    // The first-start layout: library, project, simulator and circuit; the rest open
+    // when they have something to show. View → Reset layout returns to it.
+    void resetLayout();
+    void applyDefaultSizes();
     QStringList m_pendingLinks;
     void showConnectionState();
     void startCore();
@@ -94,6 +105,13 @@ private:
     // A serial monitor closed to free the port for flashing, reopened afterwards.
     QString m_reopenSerial;
     QString m_lastBoardPort;
+    QToolBar *m_toolBar = nullptr;
+    QLabel *m_current = nullptr;
+    QLabel *m_nextStep = nullptr;
+    QAction *m_stopSim = nullptr;
+    // The project and board the project view shows (ids), for the next-step hint.
+    QString m_shownProject;
+    QByteArray m_defaultState;
     QLabel *m_connection;
     QPushButton *m_startCore;
 };

@@ -33,11 +33,13 @@ private slots:
         QCOMPARE(jtag->text(DevicesPanel::PortColumn), u"/dev/ttyACM0"_s);
         QCOMPARE(jtag->text(DevicesPanel::ChipsColumn), u"ESP32-S3, ESP32-C3, ESP32-C6"_s);
         QCOMPARE(jtag->text(DevicesPanel::UsbIdColumn), u"303a:1001"_s);
-        QCOMPARE(jtag->toolTip(DevicesPanel::BridgeColumn), u"USB JTAG/serial debug unit"_s);
+        QCOMPARE(jtag->toolTip(DevicesPanel::BridgeColumn), u"USB JTAG/serial debug unit, USB ID 303a:1001"_s);
+        QVERIFY(t->isColumnHidden(DevicesPanel::UsbIdColumn)); // shown in the tooltip instead
 
         QTreeWidgetItem *cp = t->topLevelItem(1);
         QCOMPARE(cp->text(DevicesPanel::ChipsColumn), u"Any"_s);
         QCOMPARE(cp->text(DevicesPanel::UsbIdColumn), u"10c4:ea60"_s);
+        QCOMPARE(cp->toolTip(DevicesPanel::BridgeColumn), u"USB ID 10c4:ea60"_s);
         QVERIFY(cp->toolTip(DevicesPanel::PortColumn).contains(u"uucp"_s));
         QVERIFY(cp->toolTip(DevicesPanel::PortColumn).contains(u"dialout"_s));
         QVERIFY(panel.statusText().contains(u"cannot open: 1"_s));
