@@ -89,7 +89,7 @@ type nul > "!out!\!name!.ino.elf"
 )BAT");
     f.close();
     return path;
-#endif
+#else
     const QString path = dir + u"/fake-arduino-cli"_s;
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly))
@@ -108,6 +108,7 @@ esac
     f.close();
     f.setPermissions(f.permissions() | QFileDevice::ExeOwner);
     return path;
+#endif
 }
 
 class TestIntegration : public QObject {
