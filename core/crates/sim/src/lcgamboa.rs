@@ -131,8 +131,8 @@ pub fn root() -> Result<PathBuf, Error> {
         .join(format!("lcgamboa-{}", short_commit())))
 }
 
-/// Shared libraries' file extension here.
-const LIBRARY_EXT: &str = if cfg!(target_os = "macos") {
+/// Shared libraries' file extension on this platform.
+pub const LIBRARY_EXT: &str = if cfg!(target_os = "macos") {
     "dylib"
 } else if cfg!(windows) {
     "dll"
@@ -600,7 +600,7 @@ mod tests {
         );
         assert!(
             b.library(Arch::Riscv32)
-                .ends_with("src/build/libqemu-riscv32.so")
+                .ends_with(format!("src/build/libqemu-riscv32.{LIBRARY_EXT}"))
         );
         assert!(b.pc_bios().ends_with("src/pc-bios"));
     }

@@ -80,6 +80,12 @@ async fn lcgamboa_boot_reset_and_quit(chip: Chip) {
     let Some((image, marker)) = image_for(chip) else {
         return;
     };
+    // The app runs the library through the host; the executables are only built
+    // where the setup step builds the fork from source (Linux).
+    if !build.executable(chip.arch()).is_file() {
+        eprintln!("skipping {chip}: the fork's executables are not built");
+        return;
+    }
     let cfg = SessionConfig {
         chip,
         qemu: build.executable(chip.arch()),

@@ -310,6 +310,7 @@ fn monitor_thread(
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
     fn monitor_threads() -> usize {
         std::fs::read_dir("/proc/self/task")
             .unwrap()
@@ -318,6 +319,8 @@ mod tests {
             .count()
     }
 
+    // Counts the monitor's thread by name in /proc.
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn monitor_waits_quietly_and_its_thread_ends_on_drop() {
         // Plugging a board in is a manual check; here, nothing changes.

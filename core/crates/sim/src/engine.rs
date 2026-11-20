@@ -205,8 +205,8 @@ mod tests {
     #[test]
     fn esp32_and_c3_go_through_the_host_with_the_library() {
         for (chip, lib, machine) in [
-            (Chip::Esp32, "libqemu-xtensa.so", "esp32-picsimlab"),
-            (Chip::Esp32c3, "libqemu-riscv32.so", "esp32c3-picsimlab"),
+            (Chip::Esp32, "xtensa", "esp32-picsimlab"),
+            (Chip::Esp32c3, "riscv32", "esp32c3-picsimlab"),
         ] {
             let l = lcgamboa_launch(chip, &build(), Some(Path::new("/bin/host"))).unwrap();
             assert_eq!(l.engine, Engine::Lcgamboa);
@@ -240,7 +240,10 @@ mod tests {
                 assert!(e[4..12].iter().all(|b| *b == 0), "the fork's default MAC");
             }
             assert_eq!(l.env[0].0, "ESP32BENCH_QEMU_LIB");
-            assert!(Path::new(&l.env[0].1).ends_with(lib));
+            assert!(
+                Path::new(&l.env[0].1)
+                    .ends_with(format!("libqemu-{lib}.{}", lcgamboa::LIBRARY_EXT))
+            );
             // No socket or pins: nothing is attached.
             assert_eq!(l.env.len(), 1);
             assert!(l.hooks);
@@ -267,7 +270,9 @@ mod tests {
         assert_eq!(l.qemu, host);
         assert_eq!(l.machine.as_deref(), Some("esp32s3"));
         assert!(l.hooks, "patch 0015 gives the S3 the library's hooks");
-        assert!(Path::new(&l.env[0].1).ends_with("libqemu-xtensa.so"));
+        assert!(
+            Path::new(&l.env[0].1).ends_with(format!("libqemu-xtensa.{}", lcgamboa::LIBRARY_EXT))
+        );
         assert_eq!(
             l.efuse.as_deref().map(|e| e[64]),
             Some(1),

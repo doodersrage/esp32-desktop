@@ -16,7 +16,8 @@ case "$(uname -s)" in
   MINGW*|MSYS*) target="qemu-system-$arch.exe"; out="libqemu-$arch.dll"; kind="-shared" ;;
   *) target="qemu-system-$arch"; out="libqemu-$arch.so"; kind="-shared" ;;
 esac
-main_obj="$target.p/system_main.c.o"
+# main()'s object: system_main.c.o, or .c.obj on Windows.
+main_obj="$target.p/system_main.c.o[bj]*"
 cmd=$(ninja -t commands "$target" | tail -n 1)
 case $cmd in
   *"@$target.rsp"*)
