@@ -44,7 +44,7 @@ On Linux the setup step builds the fork from source (about 10 minutes, with the 
 
 ## Where it stands
 
-Both platforms have packages built, installed and smoke-tested in CI on every change to the core, the UI or their packaging:
+Both platforms have packages built, installed and smoke-tested in CI on every change to the core, the UI or their packaging, and released since 0.1.7 (2026-11-20: a version tag's `packages.yml` run builds and attaches them; a manual run gathers them without uploading):
 
 - **macOS** (`.github/workflows/macos.yml`, `packaging/macos/`): `ESP32 Bench.app` in a `.dmg` for Apple silicon, with the simulator in `Contents/Resources/lcgamboa` and the Homebrew libraries it needs beside it (`dylibbundler`, then each bundled library pointed at its neighbours and duplicate rpaths removed, which dyld refuses), `esp32bench://` registered, signed ad hoc (Apple silicon runs only signed code). Qt 6.10: 6.8's CMake files link Apple's AGL framework, which current SDKs no longer have.
 - **Windows** (`.github/workflows/windows.yml`, `packaging/windows/`): a `.zip` and an Inno Setup installer that installs for the user without administrator rights and registers `esp32bench://`, with the simulator in `lcgamboa\`. Built with MSVC (in PowerShell: Git Bash's `/usr/bin/link` shadows MSVC's linker) and Qt 6.8.
@@ -62,6 +62,5 @@ What is left:
 
 1. Real boards, which needs hardware: the serial monitor, flashing and the automatic reset over USB serial on both.
 2. Named pipes for the simulator's links on Windows.
-3. A release with the `.dmg`, `.zip` and installer (a version tag's `packages.yml` run now builds and attaches them; a manual run gathers them without uploading), and the site's /desktop/ page offering them.
-4. Signing: unsigned until the owner decides (macOS Gatekeeper asks users to allow an app from the internet; Windows SmartScreen warns).
-5. An Intel Mac build (the `.dmg` is arm64 only) and Windows on Arm, if wanted.
+3. Signing: unsigned until the owner decides (macOS Gatekeeper asks users to allow an app from the internet; Windows SmartScreen warns).
+4. An Intel Mac build (the `.dmg` is arm64 only) and Windows on Arm, if wanted.
