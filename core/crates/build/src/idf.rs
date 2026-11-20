@@ -108,6 +108,9 @@ pub struct EimInstall {
     pub python: Option<PathBuf>,
     /// Where its tools are (`IDF_TOOLS_PATH`), when recorded.
     pub tools: Option<PathBuf>,
+    /// Its activation script (on Windows a PowerShell profile, which prints the
+    /// environment with `-e`), when recorded.
+    pub activation: Option<PathBuf>,
 }
 
 /// Where EIM keeps its record of installs: `C:\Espressif\tools\eim_idf.json` on
@@ -133,7 +136,8 @@ pub fn eim_installs() -> Vec<EimInstall> {
 }
 
 /// Read `eim_idf.json`: `idfInstalled` is a list of installs (`id`, `path`, `python`,
-/// `idfToolsPath`), `idfSelectedId` the one in use. Unknown or missing fields are
+/// `idfToolsPath`, `activationScript`), `idfSelectedId` the one in use (EIM 3.0 can
+/// leave it naming none of them). Unknown or missing fields are
 /// skipped, so a newer EIM's file still gives what it can.
 fn parse_eim(bytes: &[u8]) -> Vec<EimInstall> {
     let Ok(v) = serde_json::from_slice::<serde_json::Value>(bytes) else {
@@ -160,6 +164,7 @@ fn parse_eim(bytes: &[u8]) -> Vec<EimInstall> {
                     path: path(o, "path")?,
                     python: path(o, "python"),
                     tools: path(o, "idfToolsPath"),
+                    activation: path(o, "activationScript"),
                 },
             ))
         })
@@ -300,9 +305,97 @@ fn parse_export(stdout: &str, path: &OsString) -> Vec<(String, OsString)> {
 /// with no shell, so a CLI started from Git Bash drops it for them.
 const MSYSTEM: &str = "MSYSTEM";
 
-/// ESP-IDF's environment, as its activation computes it, for [`Activation::Direct`].
+/// Run `cmd` (no console window on Windows) and return its standard output, or its
+/// standard error as the error.
+async fn capture(mut cmd: Command) -> Result<String, Error> {
+    cmd.stdin(std::process::Stdio::null())
+        .env_remove(MSYSTEM)
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd.output().await?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+        return Err(Error::IdfExport(if err.is_empty() {
+            format!("exit {}", out.status)
+        } else {
+            err
+        }));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// The variables EIM's activation script prints with `-e`: `KEY=VALUE` lines, its
+/// `PATH` only the folders it adds (put before `path`, this process's PATH), and
+/// `SYSTEM_PATH` the PATH when EIM ran, which is left out.
+fn parse_eim_env(stdout: &str, path: &OsString) -> Vec<(String, OsString)> {
+    let lines: String = stdout
+        .lines()
+        .map(|l| {
+            let l = l.trim_end();
+            match l.strip_prefix("PATH=") {
+                Some(extra) if !extra.is_empty() => format!("PATH={extra};%PATH%\n"),
+                Some(_) => String::new(),
+                None => format!("{l}\n"),
+            }
+        })
+        .collect();
+    parse_export(&lines, path)
+        .into_iter()
+        .filter(|(k, _)| k != "SYSTEM_PATH")
+        .collect()
+}
+
+/// ESP-IDF's environment, as its activation computes it, for [`Activation::Direct`]:
+/// for an install EIM made on Windows, from its activation script (EIM keeps tools
+/// where idf_tools.py does not look); otherwise from `idf_tools.py export`.
 pub async fn environment(idf: &Idf) -> Result<Environment, Error> {
+    if cfg!(windows)
+        && let Some(i) = eim_installs().into_iter().find(|i| i.path == idf.path)
+        && let Some(script) = i
+            .activation
+            .filter(|p| p.is_file() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ps1")))
+        && let Some(python) = i.python.filter(|p| p.is_file())
+    {
+        let mut cmd = Command::new("powershell.exe");
+        cmd.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+        ])
+        .arg(&script)
+        .arg("-e");
+        let out = capture(cmd).await?;
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let vars = parse_eim_env(&out, &path);
+        return Ok(Environment {
+            vars: with_defaults(idf, &python, i.tools, vars),
+            python,
+        });
+    }
+
     let (python, tools) = python_env(idf).ok_or_else(|| Error::NoIdfPython(idf.path.clone()))?;
+    let mut cmd = Command::new(&python);
+    cmd.arg(idf.path.join("tools").join("idf_tools.py"))
+        .args(["export", "--format", "key-value"])
+        .envs(base_vars(idf, &python, tools.clone()));
+    let out = capture(cmd).await?;
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let vars = parse_export(&out, &path);
+    Ok(Environment {
+        vars: with_defaults(idf, &python, tools, vars),
+        python,
+    })
+}
+
+/// IDF_PATH, IDF_PYTHON_ENV_PATH (the folder of `python`'s virtual environment) and,
+/// when known, IDF_TOOLS_PATH.
+fn base_vars(idf: &Idf, python: &Path, tools: Option<PathBuf>) -> Vec<(String, OsString)> {
     let env_dir = python
         .parent()
         .and_then(Path::parent)
@@ -315,28 +408,18 @@ pub async fn environment(idf: &Idf) -> Result<Environment, Error> {
     if let Some(t) = tools {
         base.push(("IDF_TOOLS_PATH".into(), t.into()));
     }
-    let mut cmd = Command::new(&python);
-    cmd.arg(idf.path.join("tools").join("idf_tools.py"))
-        .args(["export", "--format", "key-value"])
-        .envs(base.iter().map(|(k, v)| (k, v)))
-        .env_remove(MSYSTEM)
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
-    #[cfg(windows)]
-    {
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    let out = cmd.output().await?;
-    if !out.status.success() {
-        return Err(Error::IdfExport(
-            String::from_utf8_lossy(&out.stderr).trim().to_owned(),
-        ));
-    }
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    let mut vars = parse_export(&String::from_utf8_lossy(&out.stdout), &path);
-    // The variables idf_tools.py leaves out when they are already right.
-    for (k, v) in base {
+    base
+}
+
+/// `vars` with [`base_vars`] and ESP_IDF_VERSION added where they are missing
+/// (idf_tools.py leaves out what is already right).
+fn with_defaults(
+    idf: &Idf,
+    python: &Path,
+    tools: Option<PathBuf>,
+    mut vars: Vec<(String, OsString)>,
+) -> Vec<(String, OsString)> {
+    for (k, v) in base_vars(idf, python, tools) {
         if !vars.iter().any(|(n, _)| *n == k) {
             vars.push((k, v));
         }
@@ -346,7 +429,7 @@ pub async fn environment(idf: &Idf) -> Result<Environment, Error> {
     {
         vars.push(("ESP_IDF_VERSION".into(), major_minor.into()));
     }
-    Ok(Environment { python, vars })
+    vars
 }
 
 /// A local ESP-IDF project.
@@ -793,6 +876,15 @@ mod tests {
         assert_eq!(all[0].python, None);
         assert_eq!(all[1].tools, Some(PathBuf::from(r"C:\Espressif\tools")));
         assert!(parse_eim(b"not json").is_empty());
+        let rec = br#"{"idfInstalled": [{"id": "x", "path": "C:\\esp\\idf\\v6.0.2\\esp-idf",
+            "activationScript": "C:\\Espressif\\tools\\Microsoft.v6.0.2.PowerShell_profile.ps1"}],
+            "idfSelectedId": "gone"}"#;
+        assert_eq!(
+            parse_eim(rec)[0].activation,
+            Some(PathBuf::from(
+                r"C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1"
+            ))
+        );
     }
 
     #[test]
@@ -815,6 +907,24 @@ mod tests {
         let win = parse_export("PATH=C:\\t\\bin;%PATH%\r\nESP_IDF_VERSION=6.0\r\n", &path);
         assert_eq!(win[0].1, OsString::from("C:\\t\\bin;/usr/bin"));
         assert_eq!(win[1].1, OsString::from("6.0"));
+    }
+
+    #[test]
+    fn eims_printed_environment_goes_before_this_path() {
+        let out = "PATH=C:\\t\\a;C:\\t\\b\r\nESP_IDF_VERSION=6.0\r\nIDF_VERSION=6.0.2\r\nSYSTEM_PATH=C:\\old\r\nIDF_TOOLS_PATH=C:\\esp\r\n";
+        let vars = parse_eim_env(out, &OsString::from("C:\\Windows"));
+        assert_eq!(
+            vars[0],
+            (
+                "PATH".to_owned(),
+                OsString::from("C:\\t\\a;C:\\t\\b;C:\\Windows")
+            )
+        );
+        assert!(vars.iter().all(|(k, _)| k != "SYSTEM_PATH"));
+        assert!(
+            vars.iter()
+                .any(|(k, v)| k == "IDF_TOOLS_PATH" && v == "C:\\esp")
+        );
     }
 
     #[test]
