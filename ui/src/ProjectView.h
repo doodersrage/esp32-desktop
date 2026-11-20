@@ -48,6 +48,9 @@ public:
     // What is shown, for the toolbar: the project's title and the board's name, or
     // empty when no project is shown.
     QString currentProjectTitle() const;
+    // The project's id and the board id a build of it uses, or empty.
+    QString currentProjectId() const;
+    QString currentBuildBoard() const;
     QString currentBoardName() const;
     QPushButton *openButton() const { return m_openSite; }
     QString summaryText() const;

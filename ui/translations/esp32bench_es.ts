@@ -111,14 +111,6 @@
         <translation>Ejecutar en el simulador</translation>
     </message>
     <message>
-        <source>Run the last successful build in QEMU (ESP32, ESP32-S3 and ESP32-C3 boards)</source>
-        <translation>Ejecuta la última compilación correcta en QEMU (placas ESP32, ESP32-S3 y ESP32-C3)</translation>
-    </message>
-    <message>
-        <source>Run the last successful build in QEMU under GDB, paused before it starts</source>
-        <translation>Ejecuta la última compilación correcta en QEMU bajo GDB, en pausa antes de empezar</translation>
-    </message>
-    <message>
         <source>Board to flash</source>
         <translation>Placa que grabar</translation>
     </message>
@@ -131,8 +123,16 @@
         <translation>Depurar</translation>
     </message>
     <message>
-        <source>Write the last successful build to the board on the selected port</source>
-        <translation>Grabar la última compilación correcta en la placa del puerto elegido</translation>
+        <source>Run the selected project in the simulator, building it first if needed (ESP32, ESP32-S3 and ESP32-C3 boards)</source>
+        <translation>Ejecutar el proyecto elegido en el simulador, compilándolo antes si hace falta (placas ESP32, ESP32-S3 y ESP32-C3)</translation>
+    </message>
+    <message>
+        <source>Run the selected project in the simulator under GDB, paused before it starts, building it first if needed</source>
+        <translation>Ejecutar el proyecto elegido en el simulador bajo GDB, en pausa antes de empezar, compilándolo antes si hace falta</translation>
+    </message>
+    <message>
+        <source>Write the selected project to the board on the selected port, building it first if needed</source>
+        <translation>Grabar el proyecto elegido en la placa del puerto elegido, compilándolo antes si hace falta</translation>
     </message>
     <message>
         <source>No board</source>
@@ -173,6 +173,10 @@
     <message>
         <source>Build failed: %1</source>
         <translation>Falló la compilación: %1</translation>
+    </message>
+    <message>
+        <source>%1 – %2</source>
+        <translation>%1 – %2</translation>
     </message>
 </context>
 <context>
@@ -728,6 +732,12 @@
         <translation>ESP32 Bench</translation>
     </message>
     <message>
+        <source>The build failed: %1
+The Build panel below has the whole log.</source>
+        <translation>La compilación falló: %1
+El panel Compilación de abajo tiene el registro completo.</translation>
+    </message>
+    <message>
         <source>Build</source>
         <translation>Compilación</translation>
     </message>
@@ -766,6 +776,10 @@
     <message>
         <source>Erasing the board on %1…</source>
         <translation>Borrando la placa en %1…</translation>
+    </message>
+    <message>
+        <source>Flashing failed: %1</source>
+        <translation>La grabación falló: %1</translation>
     </message>
     <message>
         <source>Board operation failed: %1</source>
@@ -816,6 +830,10 @@
         <translation>Compilando…</translation>
     </message>
     <message>
+        <source>Working on the board…</source>
+        <translation>Trabajando con la placa…</translation>
+    </message>
+    <message>
         <source>Simulating. The console is below.</source>
         <translation>Simulando. La consola está abajo.</translation>
     </message>
@@ -828,8 +846,12 @@
         <translation>Siguiente: ejecútalo en el simulador o grábalo en una placa.</translation>
     </message>
     <message>
-        <source>Next: build it.</source>
-        <translation>Siguiente: compílalo.</translation>
+        <source>First, &lt;a href=&quot;setup&quot;&gt;install the build tools&lt;/a&gt;.</source>
+        <translation>Primero, &lt;a href="setup"&gt;instala las herramientas de compilación&lt;/a&gt;.</translation>
+    </message>
+    <message>
+        <source>Next: build it, or press Run in simulator, which builds it first.</source>
+        <translation>Siguiente: compílalo, o pulsa Ejecutar en el simulador, que lo compila antes.</translation>
     </message>
     <message>
         <source>&amp;File</source>
@@ -842,6 +864,10 @@
     <message>
         <source>&amp;Quit</source>
         <translation>&amp;Salir</translation>
+    </message>
+    <message>
+        <source>&amp;Project</source>
+        <translation>&amp;Proyecto</translation>
     </message>
     <message>
         <source>&amp;View</source>
@@ -968,6 +994,13 @@ SHA-256 del código: %2</translation>
     <message>
         <source>Erase</source>
         <translation>Borrar</translation>
+    </message>
+</context>
+<context>
+    <name>MessageBar</name>
+    <message>
+        <source>Close this message</source>
+        <translation>Cerrar este mensaje</translation>
     </message>
 </context>
 <context>

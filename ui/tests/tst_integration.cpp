@@ -13,6 +13,7 @@
 #include "ProjectView.h"
 #include "SimulatorPanel.h"
 #include "MainWindow.h"
+#include "MessageBar.h"
 
 #include <QDir>
 #include <QComboBox>
@@ -23,6 +24,7 @@
 #include <QFile>
 #include <QScopeGuard>
 #include <QPushButton>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QStandardPaths>
@@ -124,6 +126,7 @@ private slots:
         // An organisation, so QSettings can save (on Windows, a registry key).
         QCoreApplication::setOrganizationName(u"esp32bench-tests"_s);
         QStandardPaths::setTestModeEnabled(true);
+        QSettings().clear(); // no layout or last project from an earlier run
     }
 
     void startsCoreAndListsDevices()
@@ -193,7 +196,7 @@ private slots:
         QVERIFY(window.statusBar()->currentMessage().contains(u"will ask first"_s));
         // A link that asks for more than a project is refused, and nothing changes.
         window.openLink(u"esp32bench://project/blink?board=esp32&flash=1"_s);
-        QTRY_VERIFY(window.statusBar()->currentMessage().contains(u"Could not open the link"_s));
+        QTRY_VERIFY(window.messageBar()->text().contains(u"Could not open the link"_s));
         QCOMPARE(window.projectView()->boardPicker()->currentData().toString(), u"esp32-doit"_s);
 
         // Picking a project loads it through library.get.
@@ -206,7 +209,8 @@ private slots:
         QAction *build = window.projectView()->buildAction();
         QVERIFY(window.toolBar()->actions().contains(build));
         QTRY_VERIFY(build->isEnabled());
-        QCOMPARE(window.nextStepText(), u"Next: build it."_s);
+        // The stand-in arduino-cli has no ESP32 core, so the toolbar points at the setup.
+        QTRY_VERIFY(window.nextStepText().contains(u"install the build tools"_s));
         QSignalSpy finished(&core, &CoreConnection::buildFinished);
         build->trigger();
         QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 10000);
@@ -365,6 +369,41 @@ private slots:
             }
         } else {
             qWarning("hello firmware or QEMU missing; simulator step skipped");
+        }
+
+        // Run on a board not built yet builds it first (asking, as every build does),
+        // then asks the core to run that build, not the last one.
+        {
+            ProjectView *view = window.projectView();
+            const int doit = view->boardPicker()->findData(u"esp32-doit"_s);
+            QVERIFY(doit >= 0);
+            view->boardPicker()->setCurrentIndex(doit);
+            QTRY_VERIFY(window.buildPanel()->simulateAction()->isEnabled());
+            const int askedBefore = window.asked;
+            QSignalSpy built(&core, &CoreConnection::buildFinished);
+            QSignalSpy simStarted(&core, &CoreConnection::simStarted);
+            QSignalSpy stopped(&core, &CoreConnection::simStopped);
+            window.buildPanel()->simulateAction()->trigger();
+            QTRY_COMPARE_WITH_TIMEOUT(built.size(), 1, 10000);
+            QVERIFY2(built.at(0).at(0).toBool(), qPrintable(built.at(0).at(1).toString()));
+            QCOMPARE(window.asked, askedBefore + 1);
+            QCOMPARE(window.buildPanel()->builtBoard(), u"esp32-doit"_s);
+            // The stand-in build's image is empty, so the run may fail to boot; what
+            // matters is that it was asked for, for this board.
+            QTRY_VERIFY_WITH_TIMEOUT(!simStarted.isEmpty() || !stopped.isEmpty(), 10000);
+            if (!simStarted.isEmpty())
+                QCOMPARE(simStarted.at(0).at(1).toString(), u"esp32-doit"_s);
+            core.stopSim();
+        }
+
+        // Started again, the app shows the project and board it showed last.
+        {
+            CoreConnection again;
+            again.setSocketPath(sock);
+            AgreeingWindow second(&again);
+            again.start();
+            QTRY_COMPARE_WITH_TIMEOUT(second.projectView()->currentProjectId(), u"blink"_s, 10000);
+            QTRY_COMPARE(second.projectView()->currentBuildBoard(), u"esp32-doit"_s);
         }
 
 

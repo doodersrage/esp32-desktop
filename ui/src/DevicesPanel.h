@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <QJsonValue>
 #include <QJsonArray>
 #include <QWidget>
 
@@ -18,6 +19,9 @@ public:
     enum Column { PortColumn, ChipsColumn, BridgeColumn, UsbIdColumn, ColumnCount };
 
     explicit DevicesPanel(CoreConnection *core, QWidget *parent = nullptr);
+
+    // A device.list bridge id ("cp210x") as people know it ("CP210x USB to UART").
+    static QString bridgeName(const QJsonValue &bridge);
 
     // Render a device.list result. Public so tests can feed fixed data.
     void showPorts(const QJsonArray &ports);

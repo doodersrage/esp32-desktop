@@ -111,14 +111,6 @@
         <translation>Rodar no simulador</translation>
     </message>
     <message>
-        <source>Run the last successful build in QEMU (ESP32, ESP32-S3 and ESP32-C3 boards)</source>
-        <translation>Roda a última compilação bem-sucedida no QEMU (placas ESP32, ESP32-S3 e ESP32-C3)</translation>
-    </message>
-    <message>
-        <source>Run the last successful build in QEMU under GDB, paused before it starts</source>
-        <translation>Roda a última compilação bem-sucedida no QEMU com o GDB, pausada antes de começar</translation>
-    </message>
-    <message>
         <source>Board to flash</source>
         <translation>Placa a gravar</translation>
     </message>
@@ -131,8 +123,16 @@
         <translation>Depurar</translation>
     </message>
     <message>
-        <source>Write the last successful build to the board on the selected port</source>
-        <translation>Gravar a última compilação bem-sucedida na placa da porta escolhida</translation>
+        <source>Run the selected project in the simulator, building it first if needed (ESP32, ESP32-S3 and ESP32-C3 boards)</source>
+        <translation>Rodar o projeto escolhido no simulador, compilando antes se necessário (placas ESP32, ESP32-S3 e ESP32-C3)</translation>
+    </message>
+    <message>
+        <source>Run the selected project in the simulator under GDB, paused before it starts, building it first if needed</source>
+        <translation>Rodar o projeto escolhido no simulador sob o GDB, pausado antes de começar, compilando antes se necessário</translation>
+    </message>
+    <message>
+        <source>Write the selected project to the board on the selected port, building it first if needed</source>
+        <translation>Gravar o projeto escolhido na placa da porta escolhida, compilando antes se necessário</translation>
     </message>
     <message>
         <source>No board</source>
@@ -173,6 +173,10 @@
     <message>
         <source>Build failed: %1</source>
         <translation>A compilação falhou: %1</translation>
+    </message>
+    <message>
+        <source>%1 – %2</source>
+        <translation>%1 – %2</translation>
     </message>
 </context>
 <context>
@@ -728,6 +732,12 @@
         <translation>ESP32 Bench</translation>
     </message>
     <message>
+        <source>The build failed: %1
+The Build panel below has the whole log.</source>
+        <translation>A compilação falhou: %1
+O painel Compilação abaixo tem o registro completo.</translation>
+    </message>
+    <message>
         <source>Build</source>
         <translation>Compilação</translation>
     </message>
@@ -766,6 +776,10 @@
     <message>
         <source>Erasing the board on %1…</source>
         <translation>Apagando a placa em %1…</translation>
+    </message>
+    <message>
+        <source>Flashing failed: %1</source>
+        <translation>A gravação falhou: %1</translation>
     </message>
     <message>
         <source>Board operation failed: %1</source>
@@ -816,6 +830,10 @@
         <translation>Compilando…</translation>
     </message>
     <message>
+        <source>Working on the board…</source>
+        <translation>Trabalhando na placa…</translation>
+    </message>
+    <message>
         <source>Simulating. The console is below.</source>
         <translation>Simulando. O console está abaixo.</translation>
     </message>
@@ -828,8 +846,12 @@
         <translation>Próximo passo: rode no simulador ou grave em uma placa.</translation>
     </message>
     <message>
-        <source>Next: build it.</source>
-        <translation>Próximo passo: compile.</translation>
+        <source>First, &lt;a href=&quot;setup&quot;&gt;install the build tools&lt;/a&gt;.</source>
+        <translation>Primeiro, &lt;a href="setup"&gt;instale as ferramentas de compilação&lt;/a&gt;.</translation>
+    </message>
+    <message>
+        <source>Next: build it, or press Run in simulator, which builds it first.</source>
+        <translation>Próximo passo: compile, ou clique em Rodar no simulador, que compila antes.</translation>
     </message>
     <message>
         <source>&amp;File</source>
@@ -842,6 +864,10 @@
     <message>
         <source>&amp;Quit</source>
         <translation>&amp;Sair</translation>
+    </message>
+    <message>
+        <source>&amp;Project</source>
+        <translation>&amp;Projeto</translation>
     </message>
     <message>
         <source>&amp;View</source>
@@ -968,6 +994,13 @@ SHA-256 do código: %2</translation>
     <message>
         <source>Erase</source>
         <translation>Apagar</translation>
+    </message>
+</context>
+<context>
+    <name>MessageBar</name>
+    <message>
+        <source>Close this message</source>
+        <translation>Fechar esta mensagem</translation>
     </message>
 </context>
 <context>

@@ -11,6 +11,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
+#include <QKeySequence>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -82,6 +83,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
 
     m_build = new QPushButton(QIcon::fromTheme(u"run-build"_s), tr("Build"), page);
     m_buildAction = new QAction(m_build->icon(), tr("Build"), this);
+    m_buildAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_B));
     setBuildToolTip(tr("Build this project for the selected board with arduino-cli"));
     connect(m_build, &QPushButton::clicked, m_buildAction, &QAction::trigger);
     connect(m_buildAction, &QAction::triggered, this, [this] {
@@ -197,6 +199,16 @@ void ProjectView::showGuide()
 QString ProjectView::currentProjectTitle() const
 {
     return m_stack->currentIndex() == 1 ? m_title->text() : QString();
+}
+
+QString ProjectView::currentProjectId() const
+{
+    return m_stack->currentIndex() == 1 ? m_project.value(u"id"_s).toString() : QString();
+}
+
+QString ProjectView::currentBuildBoard() const
+{
+    return m_stack->currentIndex() == 1 ? m_board->currentData().toString() : QString();
 }
 
 QString ProjectView::currentBoardName() const

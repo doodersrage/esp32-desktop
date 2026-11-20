@@ -28,17 +28,31 @@ public:
     QAction *flashAction() const { return m_flash; }
     QAction *simulateAction() const { return m_simulate; }
     QAction *debugAction() const { return m_debug; }
-    // The last build that succeeded, which the actions use.
+    // The last build that succeeded.
     QString builtProject() const { return m_builtProject; }
     QString builtBoard() const { return m_builtBoard; }
+    // What Run, Debug and Flash act on: the project and board shown (the board id the
+    // build uses), and whether it can be built now. When its last build is not this
+    // one, they build it first and then go on. Without a project shown they use the
+    // last build.
+    void setTarget(const QString &project, const QString &board, bool canBuild);
+    // The build that was to be followed by a run or flash was declined.
+    void cancelPending();
 
 signals:
+    // Run, Debug or Flash needs the project shown built first.
+    void buildRequested();
     // The actions' state changed: a build finished, ports came or went.
     void actionsChanged();
     // Flash the last successful build to `port`.
     void flashRequested(const QString &port, const QString &project, const QString &board);
 
 private:
+    enum class Then { Nothing, Run, Debug, Flash };
+    void act(Then what);
+    QString targetProject() const;
+    QString targetBoard() const;
+    bool targetBuilt() const;
     void started(const QJsonObject &plan);
     void appendLine(const QString &stream, const QString &line);
     void finished(bool ok, const QString &error, const QString &image);
@@ -59,4 +73,10 @@ private:
     QString m_builtBoard;
     QString m_pendingProject;
     QString m_pendingBoard;
+    QString m_targetProject;
+    QString m_targetBoard;
+    bool m_canBuild = false;
+    Then m_then = Then::Nothing;
+    // The ports in the last list, to pick a board that was just plugged in.
+    QStringList m_knownPorts;
 };

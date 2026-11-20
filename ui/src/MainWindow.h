@@ -23,6 +23,8 @@ class QLabel;
 class QPushButton;
 class QAction;
 class QToolBar;
+class QProgressBar;
+class MessageBar;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -44,6 +46,7 @@ public:
     TracePanel *trace() const { return m_trace; }
     QToolBar *toolBar() const { return m_toolBar; }
     QString nextStepText() const;
+    MessageBar *messageBar() const { return m_messages; }
     CircuitPanel *circuit() const { return m_circuit; }
     void showSetup();
     // Open an esp32bench:// link: select the project (and board) it names. It is
@@ -109,8 +112,13 @@ private:
     QLabel *m_current = nullptr;
     QLabel *m_nextStep = nullptr;
     QAction *m_stopSim = nullptr;
-    // The project and board the project view shows (ids), for the next-step hint.
-    QString m_shownProject;
+    QProgressBar *m_busy = nullptr;
+    QAction *m_busyAction = nullptr;
+    MessageBar *m_messages = nullptr;
+    // arduino-cli or the ESP32 core is not installed (toolchain.status).
+    bool m_buildToolsMissing = false;
+    // The last project was reopened (or a link chose one) at the first connection.
+    bool m_reopened = false;
     QByteArray m_defaultState;
     QLabel *m_connection;
     QPushButton *m_startCore;

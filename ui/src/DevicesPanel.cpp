@@ -15,22 +15,18 @@
 
 using namespace Qt::StringLiterals;
 
-namespace {
-
-QString bridgeName(const QJsonValue &bridge)
+QString DevicesPanel::bridgeName(const QJsonValue &bridge)
 {
     const QString b = bridge.toString();
-    if (b == u"cp210x") return DevicesPanel::tr("CP210x USB to UART");
-    if (b == u"ch340") return DevicesPanel::tr("CH340 USB to UART");
-    if (b == u"ch9102") return DevicesPanel::tr("CH9102 USB to UART");
-    if (b == u"ftdi") return DevicesPanel::tr("FTDI USB to UART");
-    if (b == u"pl2303") return DevicesPanel::tr("PL2303 USB to UART");
-    if (b == u"usb-serial-jtag") return DevicesPanel::tr("Built-in USB Serial/JTAG");
-    if (b == u"usb-cdc") return DevicesPanel::tr("Built-in USB (firmware CDC)");
-    return DevicesPanel::tr("Unknown");
+    if (b == u"cp210x") return tr("CP210x USB to UART");
+    if (b == u"ch340") return tr("CH340 USB to UART");
+    if (b == u"ch9102") return tr("CH9102 USB to UART");
+    if (b == u"ftdi") return tr("FTDI USB to UART");
+    if (b == u"pl2303") return tr("PL2303 USB to UART");
+    if (b == u"usb-serial-jtag") return tr("Built-in USB Serial/JTAG");
+    if (b == u"usb-cdc") return tr("Built-in USB (firmware CDC)");
+    return tr("Unknown");
 }
-
-} // namespace
 
 DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
     : QWidget(parent)

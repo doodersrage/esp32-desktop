@@ -111,14 +111,6 @@
         <translation>Im Simulator ausführen</translation>
     </message>
     <message>
-        <source>Run the last successful build in QEMU (ESP32, ESP32-S3 and ESP32-C3 boards)</source>
-        <translation>Den letzten erfolgreichen Build in QEMU ausführen (ESP32-, ESP32-S3- und ESP32-C3-Boards)</translation>
-    </message>
-    <message>
-        <source>Run the last successful build in QEMU under GDB, paused before it starts</source>
-        <translation>Den letzten erfolgreichen Build in QEMU unter GDB ausführen, angehalten vor dem Start</translation>
-    </message>
-    <message>
         <source>Board to flash</source>
         <translation>Board zum Flashen</translation>
     </message>
@@ -131,8 +123,16 @@
         <translation>Debuggen</translation>
     </message>
     <message>
-        <source>Write the last successful build to the board on the selected port</source>
-        <translation>Den letzten erfolgreichen Build auf das Board am ausgewählten Port schreiben</translation>
+        <source>Run the selected project in the simulator, building it first if needed (ESP32, ESP32-S3 and ESP32-C3 boards)</source>
+        <translation>Das ausgewählte Projekt im Simulator ausführen und es vorher kompilieren, falls nötig (ESP32-, ESP32-S3- und ESP32-C3-Boards)</translation>
+    </message>
+    <message>
+        <source>Run the selected project in the simulator under GDB, paused before it starts, building it first if needed</source>
+        <translation>Das ausgewählte Projekt im Simulator unter GDB ausführen, angehalten vor dem Start, und es vorher kompilieren, falls nötig</translation>
+    </message>
+    <message>
+        <source>Write the selected project to the board on the selected port, building it first if needed</source>
+        <translation>Das ausgewählte Projekt auf das Board am ausgewählten Port schreiben und es vorher kompilieren, falls nötig</translation>
     </message>
     <message>
         <source>No board</source>
@@ -173,6 +173,10 @@
     <message>
         <source>Build failed: %1</source>
         <translation>Build fehlgeschlagen: %1</translation>
+    </message>
+    <message>
+        <source>%1 – %2</source>
+        <translation>%1 – %2</translation>
     </message>
 </context>
 <context>
@@ -728,6 +732,12 @@
         <translation>ESP32 Bench</translation>
     </message>
     <message>
+        <source>The build failed: %1
+The Build panel below has the whole log.</source>
+        <translation>Der Build ist fehlgeschlagen: %1
+Der Bereich Build unten enthält das ganze Protokoll.</translation>
+    </message>
+    <message>
         <source>Build</source>
         <translation>Build</translation>
     </message>
@@ -766,6 +776,10 @@
     <message>
         <source>Erasing the board on %1…</source>
         <translation>Lösche das Board an %1…</translation>
+    </message>
+    <message>
+        <source>Flashing failed: %1</source>
+        <translation>Flashen fehlgeschlagen: %1</translation>
     </message>
     <message>
         <source>Board operation failed: %1</source>
@@ -816,6 +830,10 @@
         <translation>Kompiliere…</translation>
     </message>
     <message>
+        <source>Working on the board…</source>
+        <translation>Arbeite am Board…</translation>
+    </message>
+    <message>
         <source>Simulating. The console is below.</source>
         <translation>Simulation läuft. Die Konsole ist unten.</translation>
     </message>
@@ -828,8 +846,12 @@
         <translation>Als Nächstes: Führe es im Simulator aus oder flashe es auf ein Board.</translation>
     </message>
     <message>
-        <source>Next: build it.</source>
-        <translation>Als Nächstes: Kompiliere es.</translation>
+        <source>First, &lt;a href=&quot;setup&quot;&gt;install the build tools&lt;/a&gt;.</source>
+        <translation>Zuerst &lt;a href="setup"&gt;die Build-Werkzeuge installieren&lt;/a&gt;.</translation>
+    </message>
+    <message>
+        <source>Next: build it, or press Run in simulator, which builds it first.</source>
+        <translation>Als Nächstes: Kompiliere es, oder klicke auf Im Simulator ausführen, das es vorher kompiliert.</translation>
     </message>
     <message>
         <source>&amp;File</source>
@@ -842,6 +864,10 @@
     <message>
         <source>&amp;Quit</source>
         <translation>&amp;Beenden</translation>
+    </message>
+    <message>
+        <source>&amp;Project</source>
+        <translation>&amp;Projekt</translation>
     </message>
     <message>
         <source>&amp;View</source>
@@ -968,6 +994,13 @@ Code-SHA-256: %2</translation>
     <message>
         <source>Erase</source>
         <translation>Löschen</translation>
+    </message>
+</context>
+<context>
+    <name>MessageBar</name>
+    <message>
+        <source>Close this message</source>
+        <translation>Diese Meldung schließen</translation>
     </message>
 </context>
 <context>

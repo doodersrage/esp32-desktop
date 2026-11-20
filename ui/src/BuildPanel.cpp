@@ -1,6 +1,8 @@
 #include "BuildPanel.h"
 
 #include "CoreConnection.h"
+#include "DevicesPanel.h"
+#include "Labels.h"
 
 #include <QAction>
 #include <QComboBox>
@@ -9,6 +11,8 @@
 #include <QProgressBar>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QJsonObject>
+#include <QKeySequence>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -35,25 +39,23 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
                           this))
     , m_progress(new QProgressBar(this))
 {
-    m_simulate->setToolTip(tr("Run the last successful build in QEMU (ESP32, ESP32-S3 and ESP32-C3 boards)"));
-    connect(m_simulate, &QAction::triggered, this, [this] {
-        if (m_core->isSimRunning())
-            m_core->stopSim();
-        m_core->startSim(m_builtProject, m_builtBoard);
-    });
-    m_debug->setToolTip(tr("Run the last successful build in QEMU under GDB, paused before it starts"));
-    connect(m_debug, &QAction::triggered, this, [this] {
-        if (m_core->isSimRunning())
-            m_core->stopSim();
-        m_core->startSim(m_builtProject, m_builtBoard, true);
-    });
+    m_simulate->setToolTip(tr("Run the selected project in the simulator, building it first if needed "
+                              "(ESP32, ESP32-S3 and ESP32-C3 boards)"));
+    m_simulate->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
+    connect(m_simulate, &QAction::triggered, this, [this] { act(Then::Run); });
+    m_debug->setToolTip(tr("Run the selected project in the simulator under GDB, paused before it starts, "
+                           "building it first if needed"));
+    m_debug->setShortcut(QKeySequence(Qt::Key_F5));
+    connect(m_debug, &QAction::triggered, this, [this] { act(Then::Debug); });
     m_port->setToolTip(tr("Board to flash"));
-    m_port->setMinimumContentsLength(12);
-    m_flash->setToolTip(tr("Write the last successful build to the board on the selected port"));
+    m_port->setMinimumContentsLength(16);
+    m_port->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    m_flash->setToolTip(tr("Write the selected project to the board on the selected port, building it first "
+                           "if needed"));
+    m_flash->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_U));
     m_port->setPlaceholderText(tr("No board"));
-    connect(m_flash, &QAction::triggered, this, [this] {
-        emit flashRequested(m_port->currentData().toString(), m_builtProject, m_builtBoard);
-    });
+    connect(m_port, &QComboBox::currentIndexChanged, this, &BuildPanel::updateFlashButton);
+    connect(m_flash, &QAction::triggered, this, [this] { act(Then::Flash); });
     m_progress->setVisible(false);
     m_progress->setTextVisible(true);
     m_status->setWordWrap(true);
@@ -147,28 +149,110 @@ void BuildPanel::finished(bool ok, const QString &error, const QString &image)
         m_builtProject = m_pendingProject;
         m_builtBoard = m_pendingBoard;
     }
+    // What was asked for before the build (run, debug, flash) follows a build of the
+    // project it was asked for; a failed build drops it.
+    const Then then = std::exchange(m_then, Then::Nothing);
     updateFlashButton();
+    if (ok && then != Then::Nothing && targetBuilt())
+        act(then);
+}
+
+void BuildPanel::setTarget(const QString &project, const QString &board, bool canBuild)
+{
+    if (project != m_targetProject || board != m_targetBoard)
+        m_then = Then::Nothing; // a different project now: forget what the last one wanted
+    m_targetProject = project;
+    m_targetBoard = board;
+    m_canBuild = canBuild;
+    updateFlashButton();
+}
+
+void BuildPanel::cancelPending()
+{
+    m_then = Then::Nothing;
+}
+
+QString BuildPanel::targetProject() const
+{
+    return m_targetProject.isEmpty() ? m_builtProject : m_targetProject;
+}
+
+QString BuildPanel::targetBoard() const
+{
+    return m_targetProject.isEmpty() ? m_builtBoard : m_targetBoard;
+}
+
+bool BuildPanel::targetBuilt() const
+{
+    return !m_builtProject.isEmpty() && targetProject() == m_builtProject && targetBoard() == m_builtBoard;
+}
+
+void BuildPanel::act(Then what)
+{
+    if (!targetBuilt()) {
+        // Build the project shown first; the build's end does the rest (finished()).
+        m_then = what;
+        emit buildRequested();
+        return;
+    }
+    switch (what) {
+    case Then::Run:
+    case Then::Debug:
+        if (m_core->isSimRunning())
+            m_core->stopSim();
+        m_core->startSim(targetProject(), targetBoard(), what == Then::Debug);
+        break;
+    case Then::Flash:
+        emit flashRequested(m_port->currentData().toString(), targetProject(), targetBoard());
+        break;
+    case Then::Nothing:
+        break;
+    }
 }
 
 void BuildPanel::setPorts(const QJsonArray &ports)
 {
     const QString current = m_port->currentData().toString();
+    QStringList paths;
     m_port->clear();
     for (const QJsonValue &v : ports) {
-        const QString path = v.toObject().value(u"path"_s).toString();
-        m_port->addItem(path, path);
+        const QJsonObject p = v.toObject();
+        const QString path = p.value(u"path"_s).toString();
+        paths << path;
+        // What is on the port, then its short name: "ESP32-S3 – ttyACM0".
+        const QJsonArray chips = p.value(u"chips"_s).toArray();
+        const QString bridge = p.value(u"bridge"_s).toString();
+        const QString what = chips.size() == 1 ? Labels::chipName(chips.at(0).toString())
+                             : bridge.isEmpty() ? QString()
+                                                : DevicesPanel::bridgeName(bridge);
+        const QString name = path.section(u'/', -1);
+        m_port->addItem(what.isEmpty() ? name : tr("%1 – %2").arg(what, name), path);
+        m_port->setItemData(m_port->count() - 1, path, Qt::ToolTipRole);
     }
-    // With a placeholder text the combo selects nothing by itself: keep the port that
-    // was chosen, else take the first.
-    const int i = m_port->findData(current);
+    // A board just plugged in is the one to flash; otherwise keep the port that was
+    // chosen, else take the first. (With a placeholder text the combo selects nothing
+    // by itself.)
+    QString pick = current;
+    for (const QString &path : std::as_const(paths)) {
+        if (!m_knownPorts.contains(path) && !m_knownPorts.isEmpty())
+            pick = path;
+    }
+    m_knownPorts = paths;
+    if (m_knownPorts.isEmpty())
+        m_knownPorts << QString(); // seen an empty list: the next board is new
+    const int i = m_port->findData(pick);
     m_port->setCurrentIndex(i >= 0 ? i : (m_port->count() > 0 ? 0 : -1));
     updateFlashButton();
 }
 
 void BuildPanel::updateFlashButton()
 {
-    m_simulate->setEnabled(!m_builtProject.isEmpty() && m_core->state() == CoreConnection::State::Connected);
-    m_debug->setEnabled(m_simulate->isEnabled());
-    m_flash->setEnabled(!m_builtProject.isEmpty() && m_port->count() > 0
-                        && m_core->state() == CoreConnection::State::Connected && !m_core->isBoardBusy());
+    const bool connected = m_core->state() == CoreConnection::State::Connected;
+    // Something to act on: built already, or buildable now.
+    const bool ready = connected && !targetProject().isEmpty() && !m_core->isBuilding()
+                       && (targetBuilt() || (!m_targetProject.isEmpty() && m_canBuild));
+    m_simulate->setEnabled(ready);
+    m_debug->setEnabled(ready);
+    m_flash->setEnabled(ready && m_port->currentIndex() >= 0 && !m_core->isBoardBusy());
+    emit actionsChanged();
 }

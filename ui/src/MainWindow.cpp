@@ -5,6 +5,7 @@
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
 #include "LibraryPanel.h"
+#include "MessageBar.h"
 #include "ProjectView.h"
 #include "SerialMonitor.h"
 #include "SetupDialog.h"
@@ -29,10 +30,12 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <memory>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QVBoxLayout>
 #include <QToolBar>
 
 using namespace Qt::StringLiterals;
@@ -52,7 +55,6 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     , m_startCore(new QPushButton(tr("Start core"), this))
 {
     setWindowTitle(tr("ESP32 Bench"));
-    setWindowIcon(QIcon::fromTheme(u"applications-electronics"_s));
 
     m_split = new QSplitter(Qt::Horizontal, this);
     m_split->setObjectName(u"librarySplit"_s);
@@ -63,7 +65,20 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_split->setStretchFactor(0, 1);
     m_split->setStretchFactor(1, 1);
     connect(m_library, &LibraryPanel::projectSelected, m_project, &ProjectView::showProject);
-    setCentralWidget(m_split);
+    // Errors stay above the library and project until closed or a new attempt starts.
+    auto *centre = new QWidget(this);
+    m_messages = new MessageBar(centre);
+    auto *centreLayout = new QVBoxLayout(centre);
+    centreLayout->setContentsMargins(0, 0, 0, 0);
+    centreLayout->addWidget(m_messages);
+    centreLayout->addWidget(m_split, 1);
+    setCentralWidget(centre);
+    connect(core, &CoreConnection::buildStarted, m_messages, &QWidget::hide);
+    connect(core, &CoreConnection::boardStarted, m_messages, &QWidget::hide);
+    connect(core, &CoreConnection::buildFinished, this, [this](bool ok, const QString &error) {
+        if (!ok)
+            m_messages->showError(tr("The build failed: %1\nThe Build panel below has the whole log.").arg(error));
+    });
 
     m_devicesDock->setObjectName(u"devicesDock"_s); // needed for saveState()
     m_devices = new DevicesPanel(core, m_devicesDock);
@@ -187,6 +202,8 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
             [this](const QString &project, const QString &board, const QString &token, const QJsonObject &plan) {
                 if (confirmBuild(project, board, plan))
                     m_core->startBuild(project, board, token);
+                else
+                    m_buildPanel->cancelPending(); // nor what was to follow it
             });
 
     m_boardInfo = new BoardInfoDialog(this);
@@ -227,7 +244,9 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
                     m_boardInfo->show();
                     m_boardInfo->raise();
                 } else if (!ok) {
-                    statusBar()->showMessage(tr("Board operation failed: %1").arg(error), 10000);
+                    statusBar()->clearMessage();
+                    m_messages->showError(op == u"flash" ? tr("Flashing failed: %1").arg(error)
+                                                         : tr("Board operation failed: %1").arg(error));
                 } else if (op == u"erase") {
                     statusBar()->showMessage(tr("Flash erased."), 10000);
                 }
@@ -255,10 +274,20 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     });
     connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
         if (method == u"link.open")
-            statusBar()->showMessage(tr("Could not open the link: %1").arg(message), 15000);
+            m_messages->showError(tr("Could not open the link: %1").arg(message));
     });
     connect(core, &CoreConnection::stateChanged, this, [this](CoreConnection::State s) {
         if (s == CoreConnection::State::Connected) {
+            // A link names what to show; otherwise reopen what was shown last time.
+            if (m_pendingLinks.isEmpty() && !m_reopened) {
+                QSettings settings;
+                const QString last = settings.value(u"project/last"_s).toString();
+                if (!last.isEmpty() && m_project->currentProjectId().isEmpty()) {
+                    m_project->preferBoard(settings.value(u"project/lastBoard"_s).toString());
+                    m_library->selectProject(last);
+                }
+            }
+            m_reopened = true;
             for (const QString &url : std::exchange(m_pendingLinks, {}))
                 m_core->openLink(url);
         }
@@ -326,6 +355,7 @@ void MainWindow::buildToolBar()
     m_toolBar->addAction(m_buildPanel->debugAction());
     m_stopSim = m_toolBar->addAction(QIcon::fromTheme(u"media-playback-stop"_s), tr("Stop"));
     m_stopSim->setToolTip(tr("Stop the simulation"));
+    m_stopSim->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
     connect(m_stopSim, &QAction::triggered, m_core, &CoreConnection::stopSim);
     m_toolBar->addSeparator();
     auto *portLabel = new QLabel(tr("Port:"), m_toolBar);
@@ -334,22 +364,62 @@ void MainWindow::buildToolBar()
     m_toolBar->addWidget(portLabel);
     m_toolBar->addWidget(m_buildPanel->portPicker());
     m_toolBar->addAction(m_buildPanel->flashAction());
+    // Busy while a build or a board operation runs; the Build panel has the details.
+    m_busy = new QProgressBar(m_toolBar);
+    m_busy->setRange(0, 0);
+    m_busy->setMaximumWidth(120);
+    m_busy->setTextVisible(false);
+    m_busyAction = m_toolBar->addWidget(m_busy);
     auto *spacer = new QWidget(m_toolBar);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_toolBar->addWidget(spacer);
     m_nextStep = new QLabel(m_toolBar);
     m_nextStep->setContentsMargins(12, 0, 6, 0);
+    m_nextStep->setTextFormat(Qt::RichText);
+    connect(m_nextStep, &QLabel::linkActivated, this, &MainWindow::showSetup);
     m_toolBar->addWidget(m_nextStep);
 
-    connect(m_project, &ProjectView::boardSelected, this,
-            [this](const QString &project, const QString &, const QJsonArray &) { m_shownProject = project; });
-    connect(m_project, &ProjectView::currentChanged, this, &MainWindow::updateToolBar);
+    connect(m_project, &ProjectView::currentChanged, this, [this] {
+        if (const QString id = m_project->currentProjectId(); !id.isEmpty()) {
+            QSettings settings;
+            settings.setValue(u"project/last"_s, id);
+            settings.setValue(u"project/lastBoard"_s, m_project->currentBuildBoard());
+        }
+        m_buildPanel->setTarget(m_project->currentProjectId(), m_project->currentBuildBoard(),
+                                m_project->buildAction()->isEnabled());
+        updateToolBar();
+    });
+    // Run, Debug or Flash on a project not built yet builds it first.
+    connect(m_buildPanel, &BuildPanel::buildRequested, this, [this] {
+        if (m_project->buildAction()->isEnabled())
+            m_project->buildAction()->trigger();
+        else
+            m_buildPanel->cancelPending();
+    });
     connect(m_buildPanel, &BuildPanel::actionsChanged, this, &MainWindow::updateToolBar);
     connect(m_core, &CoreConnection::buildStarted, this, &MainWindow::updateToolBar);
     connect(m_core, &CoreConnection::buildFinished, this, &MainWindow::updateToolBar);
     connect(m_core, &CoreConnection::simStarted, this, &MainWindow::updateToolBar);
     connect(m_core, &CoreConnection::simStopped, this, &MainWindow::updateToolBar);
     connect(m_core, &CoreConnection::stateChanged, this, &MainWindow::updateToolBar);
+    connect(m_core, &CoreConnection::boardStarted, this, &MainWindow::updateToolBar);
+    connect(m_core, &CoreConnection::boardFinished, this, &MainWindow::updateToolBar);
+    // Whether builds can run: arduino-cli and the ESP32 core installed. Asked on every
+    // connection and after an install.
+    connect(m_core, &CoreConnection::toolchainStatus, this, [this](const QJsonArray &components) {
+        m_buildToolsMissing = false;
+        for (const QJsonValue &v : components) {
+            const QJsonObject c = v.toObject();
+            if (c.value(u"neededFor"_s).toString() == u"build" && c.value(u"state"_s).toString() != u"installed")
+                m_buildToolsMissing = true;
+        }
+        updateToolBar();
+    });
+    connect(m_core, &CoreConnection::toolchainInstallFinished, m_core, &CoreConnection::requestToolchainStatus);
+    connect(m_core, &CoreConnection::stateChanged, this, [this](CoreConnection::State s) {
+        if (s == CoreConnection::State::Connected)
+            m_core->requestToolchainStatus();
+    });
     updateToolBar();
 }
 
@@ -363,20 +433,29 @@ void MainWindow::updateToolBar()
     m_current->setText(m_current->fontMetrics().elidedText(current, Qt::ElideRight, 360));
     m_current->setToolTip(current);
     m_stopSim->setEnabled(m_core->isSimRunning());
+    m_busyAction->setVisible(m_core->isBuilding() || m_core->isBoardBusy());
 
+    const QString id = m_project->currentProjectId();
+    const bool built = !id.isEmpty() && m_buildPanel->builtProject() == id
+                       && m_buildPanel->builtBoard() == m_project->currentBuildBoard();
     QString next;
     if (m_core->state() != CoreConnection::State::Connected)
         next.clear();
     else if (m_core->isBuilding())
         next = tr("Building…");
+    else if (m_core->isBoardBusy())
+        next = tr("Working on the board…");
     else if (m_core->isSimRunning())
         next = tr("Simulating. The console is below.");
     else if (title.isEmpty())
         next = tr("Next: pick a project.");
-    else if (!m_shownProject.isEmpty() && m_buildPanel->builtProject() == m_shownProject)
+    else if (built)
         next = tr("Next: run it in the simulator, or flash it to a board.");
+    // Your own ESP-IDF projects build with your ESP-IDF, not these tools.
+    else if (m_buildToolsMissing && !id.startsWith(u"local-"))
+        next = tr("First, <a href=\"setup\">install the build tools</a>.");
     else if (m_project->buildAction()->isEnabled())
-        next = tr("Next: build it.");
+        next = tr("Next: build it, or press Run in simulator, which builds it first.");
     m_nextStep->setText(next);
 }
 
@@ -414,6 +493,15 @@ void MainWindow::buildMenus()
     QAction *quit = file->addAction(QIcon::fromTheme(u"application-exit"_s), tr("&Quit"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
+
+    // The toolbar's steps, where their shortcuts show.
+    QMenu *project = menuBar()->addMenu(tr("&Project"));
+    project->addAction(m_project->buildAction());
+    project->addAction(m_buildPanel->simulateAction());
+    project->addAction(m_buildPanel->debugAction());
+    project->addAction(m_stopSim);
+    project->addSeparator();
+    project->addAction(m_buildPanel->flashAction());
 
     QMenu *view = menuBar()->addMenu(tr("&View"));
     view->addAction(m_devicesDock->toggleViewAction());

@@ -5,6 +5,7 @@
 #include "CoreConnection.h"
 #include "MainWindow.h"
 
+#include <QComboBox>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLocalServer>
@@ -109,6 +110,36 @@ private:
 private slots:
     // Keep QSettings away from the real configuration.
     void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+
+    void portsAreNamedAndANewBoardIsPicked()
+    {
+        CoreConnection core;
+        BuildPanel panel(&core);
+        QComboBox *ports = panel.portPicker();
+        const auto list = [](const char *json) { return QJsonDocument::fromJson(json).array(); };
+        emit core.devicesListed(list(R"([
+          {"path": "/dev/ttyACM0", "bridge": "usb-serial-jtag", "chips": ["esp32s3"]},
+          {"path": "/dev/ttyUSB0", "bridge": "cp210x", "chips": []},
+          {"path": "/dev/ttyS0", "chips": []}
+        ])"));
+        // What is on the port first, then its short name; the path is the data.
+        QCOMPARE(ports->itemText(0), u"ESP32-S3 – ttyACM0"_s);
+        QCOMPARE(ports->itemText(1), u"CP210x USB to UART – ttyUSB0"_s);
+        QCOMPARE(ports->itemText(2), u"ttyS0"_s);
+        QCOMPARE(ports->itemData(1).toString(), u"/dev/ttyUSB0"_s);
+        // The first list picks the first port, and the user's choice stays...
+        QCOMPARE(ports->currentData().toString(), u"/dev/ttyACM0"_s);
+        ports->setCurrentIndex(2);
+        emit core.devicesListed(list(R"([
+          {"path": "/dev/ttyACM0", "chips": ["esp32s3"]}, {"path": "/dev/ttyUSB0", "chips": []},
+          {"path": "/dev/ttyS0", "chips": []}])"));
+        QCOMPARE(ports->currentData().toString(), u"/dev/ttyS0"_s);
+        // ...until a board is plugged in: that is the one to flash.
+        emit core.devicesListed(list(R"([
+          {"path": "/dev/ttyACM0", "chips": ["esp32s3"]}, {"path": "/dev/ttyUSB0", "chips": []},
+          {"path": "/dev/ttyS0", "chips": []}, {"path": "/dev/ttyACM1", "chips": ["esp32c3"]}])"));
+        QCOMPARE(ports->currentData().toString(), u"/dev/ttyACM1"_s);
+    }
 
     void consentThenBuildWithEarlyEvents()
     {

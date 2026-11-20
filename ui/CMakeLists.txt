@@ -34,6 +34,7 @@ add_library(esp32bench_ui STATIC
     src/SetupDialog.cpp src/SetupDialog.h
     src/SimulatorPanel.cpp src/SimulatorPanel.h
     src/MainWindow.cpp src/MainWindow.h
+    src/MessageBar.cpp src/MessageBar.h
     src/Translations.cpp src/Translations.h
     src/TracePanel.cpp src/TracePanel.h
 )
