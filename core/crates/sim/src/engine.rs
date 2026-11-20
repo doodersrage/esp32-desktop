@@ -109,10 +109,12 @@ pub fn find_host() -> Option<PathBuf> {
 /// package: /usr/bin/esp32benchd and /usr/lib/esp32bench/esp32bench-qemu-host, since
 /// it is a helper, not a command).
 fn host_candidates(dir: &Path) -> Vec<PathBuf> {
-    let mut v = vec![dir.join(HOST_BIN)];
+    // esp32bench-qemu-host.exe on Windows.
+    let bin = format!("{HOST_BIN}{}", std::env::consts::EXE_SUFFIX);
+    let mut v = vec![dir.join(&bin)];
     if let Some(up) = dir.parent() {
-        v.push(up.join(HOST_BIN));
-        v.push(up.join("lib/esp32bench").join(HOST_BIN));
+        v.push(up.join(&bin));
+        v.push(up.join("lib/esp32bench").join(&bin));
     }
     v
 }

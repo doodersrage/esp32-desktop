@@ -466,7 +466,7 @@ pub fn is_general_register(name: &str) -> bool {
 pub const ARDUINO_GDB_VERSION: &str = "17.1_20260402";
 
 /// The toolchain GDB for `chip` ("esp32", "esp32s3", "esp32c3") in an Arduino data
-/// directory (~/.arduino15), if the pinned core installed it.
+/// directory (`esp32bench_distro::dirs::arduino_data`), if the pinned core installed it.
 pub fn find_gdb(arduino_data: &Path, chip: &str) -> Option<std::path::PathBuf> {
     let (tool, exe) = match chip {
         "esp32" => ("xtensa-esp-elf-gdb", "xtensa-esp32-elf-gdb"),
@@ -479,7 +479,7 @@ pub fn find_gdb(arduino_data: &Path, chip: &str) -> Option<std::path::PathBuf> {
         .join(tool)
         .join(ARDUINO_GDB_VERSION)
         .join("bin")
-        .join(exe);
+        .join(format!("{exe}{}", std::env::consts::EXE_SUFFIX));
     path.is_file().then_some(path)
 }
 
