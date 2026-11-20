@@ -576,6 +576,7 @@ version = "0.1.6"
 dependencies = [
  "esp32bench-distro",
  "esp32bench-library",
+ "getrandom 0.3.4",
  "libc",
  "serde",
  "serde_json",

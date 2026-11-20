@@ -303,10 +303,11 @@ impl<P: Clone + PartialEq> Consent<P> {
     }
 }
 
+/// 128 random bits from the system's own source (getrandom: the kernel on Linux and
+/// macOS, BCryptGenRandom on Windows, which has no /dev/urandom).
 fn random_token() -> Result<String, Error> {
-    use std::io::Read;
     let mut buf = [0u8; 16];
-    std::fs::File::open("/dev/urandom")?.read_exact(&mut buf)?;
+    getrandom::fill(&mut buf).map_err(|e| std::io::Error::other(e.to_string()))?;
     Ok(hex(&buf))
 }
 
