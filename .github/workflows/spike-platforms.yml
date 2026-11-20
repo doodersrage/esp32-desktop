@@ -66,12 +66,20 @@ jobs:
           sh build_libqemu-esp32.sh > ../libbuild.log 2>&1 || { tail -60 ../libbuild.log; exit 1; }
           for a in xtensa riscv32; do sh ../tests/platforms/link-library.sh build $a; done
       - name: Hooks tests against the library
+        shell: bash
         env:
           ESP32BENCH_TEST_QEMU_LIB_XTENSA: ${{ github.workspace }}/fork/build/libqemu-xtensa.dylib
           ESP32BENCH_TEST_QEMU_LIB_RISCV32: ${{ github.workspace }}/fork/build/libqemu-riscv32.dylib
         run: |
           ls -la fork/build/*.dylib
           cargo test --manifest-path core/Cargo.toml -p esp32bench-qemu-host --test hooks -- --nocapture 2>&1 | tee hooks.log
+      - name: All core tests
+        if: always()
+        shell: bash
+        env:
+          ESP32BENCH_TEST_QEMU_LIB_XTENSA: ${{ github.workspace }}/fork/build/libqemu-xtensa.dylib
+          ESP32BENCH_TEST_QEMU_LIB_RISCV32: ${{ github.workspace }}/fork/build/libqemu-riscv32.dylib
+        run: cargo test --manifest-path core/Cargo.toml --workspace 2>&1 | tee core.log
       - name: Keep the logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,6 +87,7 @@ jobs:
           name: macos-logs
           path: |
             hooks.log
+            core.log
             libbuild.log
           if-no-files-found: ignore
 

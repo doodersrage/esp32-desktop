@@ -205,6 +205,9 @@ impl Session {
         // SAFETY: prctl is async-signal-safe and touches no memory of the parent.
         // The death signal fires when the spawning thread exits; Tokio worker threads
         // live as long as the runtime, and kill_on_drop covers orderly shutdown.
+        // Linux only: elsewhere kill_on_drop alone stops QEMU (phase 6 adds a
+        // watcher there for a core that dies without shutting down).
+        #[cfg(target_os = "linux")]
         unsafe {
             cmd.pre_exec(|| {
                 if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {

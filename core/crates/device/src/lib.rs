@@ -4,8 +4,6 @@
 //! about the chip; Espressif's own USB IDs narrow it down. Identifying the chip for
 //! sure needs the ROM bootloader, which is phase 2 work.
 
-use std::ffi::CString;
-use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use serde::Serialize;
@@ -113,9 +111,19 @@ pub fn classify(vid: u16, pid: u16) -> (Option<Bridge>, Vec<&'static str>) {
         })
 }
 
+/// Whether this user may open `path` for reading and writing. On Windows there is no
+/// such check short of opening the port, which would take it from whoever has it, so
+/// every port counts as accessible there; opening one says if it is not.
+#[cfg(windows)]
+pub fn access(_path: &Path) -> Access {
+    Access::Ok
+}
+
 /// Whether this user may open `path` for reading and writing.
+#[cfg(unix)]
 pub fn access(path: &Path) -> Access {
-    let Ok(c) = CString::new(path.as_os_str().as_bytes()) else {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
         return Access::Denied;
     };
     // SAFETY: access(2) with a valid NUL-terminated path; it only reads the string.
@@ -170,10 +178,10 @@ fn from_info(path: String, ty: serialport::SerialPortType) -> Port {
     }
 }
 
-/// Waits for serial ports to appear or disappear, using a udev monitor on the `tty`
-/// subsystem. libudev handles are not thread-safe, so the monitor lives on its own
-/// thread and signals changes over a channel; that thread ends within half a second
-/// of the `Monitor` being dropped.
+/// Waits for serial ports to appear or disappear: on Linux with a udev monitor on the
+/// `tty` subsystem, elsewhere by listing the ports every second. Either way the watch
+/// lives on its own thread (libudev handles are not thread-safe) and signals changes
+/// over a channel; that thread ends within a second of the `Monitor` being dropped.
 pub struct Monitor {
     rx: tokio::sync::mpsc::UnboundedReceiver<()>,
 }
@@ -181,6 +189,7 @@ pub struct Monitor {
 /// How long to wait for a burst of udev events (one plug-in sends several) to settle.
 const SETTLE: std::time::Duration = std::time::Duration::from_millis(300);
 /// How often the monitor thread checks whether anyone is still listening.
+#[cfg(target_os = "linux")]
 const POLL_MS: libc::c_int = 500;
 
 impl Monitor {
@@ -188,7 +197,7 @@ impl Monitor {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<(), String>>();
         std::thread::Builder::new()
-            .name("udev-monitor".into())
+            .name("port-monitor".into())
             .spawn(move || monitor_thread(tx, ready_tx))
             .map_err(|e| Error::Monitor(e.to_string()))?;
         match ready_rx.recv() {
@@ -210,6 +219,40 @@ impl Monitor {
     }
 }
 
+/// Without udev: list the ports every second and signal when the set changes.
+#[cfg(not(target_os = "linux"))]
+fn monitor_thread(
+    tx: tokio::sync::mpsc::UnboundedSender<()>,
+    ready: std::sync::mpsc::Sender<Result<(), String>>,
+) {
+    let names = || -> Option<Vec<String>> {
+        let mut v: Vec<String> = serialport::available_ports()
+            .ok()?
+            .into_iter()
+            .map(|p| p.port_name)
+            .collect();
+        v.sort();
+        Some(v)
+    };
+    let Some(mut last) = names() else {
+        let _ = ready.send(Err("cannot list serial ports".into()));
+        return;
+    };
+    let _ = ready.send(Ok(()));
+    while !tx.is_closed() {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        if let Some(now) = names()
+            && now != last
+        {
+            last = now;
+            if tx.send(()).is_err() {
+                return;
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn monitor_thread(
     tx: tokio::sync::mpsc::UnboundedSender<()>,
     ready: std::sync::mpsc::Sender<Result<(), String>>,
@@ -271,7 +314,7 @@ mod tests {
         std::fs::read_dir("/proc/self/task")
             .unwrap()
             .filter_map(|t| std::fs::read_to_string(t.ok()?.path().join("comm")).ok())
-            .filter(|name| name.trim() == "udev-monitor")
+            .filter(|name| name.trim() == "port-monitor")
             .count()
     }
 

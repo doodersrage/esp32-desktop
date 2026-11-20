@@ -611,19 +611,39 @@ fn pty() -> (std::os::fd::OwnedFd, PathBuf) {
     // name buffer for ptsname_r.
     let master = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC) };
     assert!(master >= 0, "posix_openpt failed");
-    let mut name = [0 as libc::c_char; 128];
     unsafe {
         assert_eq!(libc::grantpt(master), 0);
         assert_eq!(libc::unlockpt(master), 0);
-        assert_eq!(libc::ptsname_r(master, name.as_mut_ptr(), name.len()), 0);
     }
-    let path = unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }
-        .to_string_lossy()
-        .into_owned();
+    let path = pty_slave_name(master);
     (
         unsafe { std::os::fd::OwnedFd::from_raw_fd(master) },
         PathBuf::from(path),
     )
+}
+
+#[cfg(target_os = "linux")]
+fn pty_slave_name(master: libc::c_int) -> String {
+    let mut name = [0 as libc::c_char; 128];
+    // SAFETY: ptsname_r writes at most name.len() bytes into the buffer.
+    assert_eq!(
+        unsafe { libc::ptsname_r(master, name.as_mut_ptr(), name.len()) },
+        0
+    );
+    unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// macOS has no ptsname_r; ptsname's static buffer is copied straight away.
+#[cfg(not(target_os = "linux"))]
+fn pty_slave_name(master: libc::c_int) -> String {
+    // SAFETY: ptsname returns NULL or a NUL-terminated name in a static buffer.
+    let p = unsafe { libc::ptsname(master) };
+    assert!(!p.is_null(), "ptsname failed");
+    unsafe { std::ffi::CStr::from_ptr(p) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// A daemon whose serial.open may open `allowed` (a pty) in place of device.list ports.

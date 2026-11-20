@@ -12,6 +12,9 @@ serde.workspace = true
 serialport.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+
+# Hotplug events on Linux; elsewhere the monitor polls the port list.
+[target.'cfg(target_os = "linux")'.dependencies]
 udev.workspace = true
 
 [dev-dependencies]
