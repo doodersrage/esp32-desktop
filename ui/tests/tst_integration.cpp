@@ -199,7 +199,8 @@ private slots:
         QSignalSpy finished(&core, &CoreConnection::buildFinished);
         build->click();
         QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 10000);
-        QCOMPARE(window.asked, 1);
+        // A build that ends before asking failed early; say why.
+        QVERIFY2(window.asked == 1, qPrintable(finished.at(0).at(1).toString()));
         QVERIFY2(finished.at(0).at(0).toBool(), qPrintable(finished.at(0).at(1).toString()));
         QVERIFY(window.buildPanel()->logText().contains(u"Sketch uses 1234 bytes"_s));
 
