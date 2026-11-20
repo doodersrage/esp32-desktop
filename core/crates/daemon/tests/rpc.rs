@@ -676,6 +676,10 @@ fn un_b64(s: &str) -> Vec<u8> {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
 async fn serial_streams_bytes_both_ways() {
     use std::os::fd::AsRawFd;
     let (master, port) = pty();
@@ -747,6 +751,10 @@ async fn serial_streams_bytes_both_ways() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
 async fn serial_refuses_paths_and_other_connections() {
     let (_master, port) = pty();
     let (_d, sock, _lock) = serial_daemon(&port).await;
@@ -816,6 +824,10 @@ async fn serial_refuses_paths_and_other_connections() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
 async fn serial_reports_when_the_board_goes_away() {
     let (master, port) = pty();
     let (_d, sock, _lock) = serial_daemon(&port).await;

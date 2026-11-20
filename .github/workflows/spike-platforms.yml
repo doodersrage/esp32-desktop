@@ -28,15 +28,12 @@ jobs:
         run: |
           git config --global --add safe.directory '*'
           export IDF_PATH=/opt/esp/idf
-          for p in hello gpio i2c-scan; do bash tests/firmware/build.sh "$p"; done
+          for p in hello gpio i2c-scan adc ssd1306 bme280 mpu6050 ds3231 light-sleep; do bash tests/firmware/build.sh "$p"; done
           ls -la tests/firmware/out
       - uses: actions/upload-artifact@v4
         with:
           name: firmware
-          path: |
-            tests/firmware/out/hello-*.bin
-            tests/firmware/out/gpio-*.bin
-            tests/firmware/out/i2c-scan-*.bin
+          path: tests/firmware/out/*.bin
           if-no-files-found: error
 
   macos:
@@ -65,6 +62,16 @@ jobs:
           # makes no library on macOS, so tests/platforms/link-library.sh links it.
           sh build_libqemu-esp32.sh > ../libbuild.log 2>&1 || { tail -60 ../libbuild.log; exit 1; }
           for a in xtensa riscv32; do sh ../tests/platforms/link-library.sh build $a; done
+      - name: Lay the build out as the setup step installs it
+        shell: bash
+        run: |
+          # <root>/src is the tree, <root>/installed names the commit and recipe
+          # (esp32bench_sim::lcgamboa::Build), so every test finds it.
+          mkdir -p "$RUNNER_TEMP/lcgamboa" && mv fork "$RUNNER_TEMP/lcgamboa/src" && ln -s "$RUNNER_TEMP/lcgamboa/src" fork
+          recipe=$(sed -n 's/^pub const RECIPE: u32 = \([0-9]*\);/\1/p' core/crates/sim/src/lcgamboa.rs)
+          printf '%s\nrecipe %s\n' "$FORK_COMMIT" "$recipe" > "$RUNNER_TEMP/lcgamboa/installed"
+          echo "ESP32BENCH_LCGAMBOA_DIR=$RUNNER_TEMP/lcgamboa" >> "$GITHUB_ENV"
+          cat "$RUNNER_TEMP/lcgamboa/installed"
       - name: Hooks tests against the library
         shell: bash
         env:
@@ -79,7 +86,7 @@ jobs:
         env:
           ESP32BENCH_TEST_QEMU_LIB_XTENSA: ${{ github.workspace }}/fork/build/libqemu-xtensa.dylib
           ESP32BENCH_TEST_QEMU_LIB_RISCV32: ${{ github.workspace }}/fork/build/libqemu-riscv32.dylib
-        run: cargo test --manifest-path core/Cargo.toml --workspace 2>&1 | tee core.log
+        run: cargo test --manifest-path core/Cargo.toml --workspace --no-fail-fast 2>&1 | tee core.log
       - name: Keep the logs
         if: always()
         uses: actions/upload-artifact@v4

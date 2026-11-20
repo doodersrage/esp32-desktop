@@ -16,10 +16,23 @@ case "$(uname -s)" in
   MINGW*|MSYS*) target="qemu-system-$arch.exe"; out="libqemu-$arch.dll"; kind="-shared" ;;
   *) target="qemu-system-$arch"; out="libqemu-$arch.so"; kind="-shared" ;;
 esac
-cmd=$(ninja -t commands "$target" | tail -n 1)
-case $cmd in *" -o $target "*) ;; *) echo "link-library.sh: no link command for $target: $cmd" >&2; exit 1 ;; esac
 main_obj="$target.p/system_main.c.o"
-cmd=$(printf '%s' "$cmd" | sed -e "s| $main_obj | |" -e "s| -o $target | $kind -o $out |")
+cmd=$(ninja -t commands "$target" | tail -n 1)
+case $cmd in
+  *"@$target.rsp"*)
+    # Windows: the arguments are in a response file, which ninja deletes after
+    # linking; relink once keeping it, then rewrite the file rather than the command.
+    [ -f "$target.rsp" ] || { rm -f "$target"; ninja -d keeprsp "$target" > /dev/null; }
+    sed -e "s|$main_obj||" -e "s|-o $target|$kind -o $out|" -e "s|-o \"$target\"|$kind -o $out|" \
+      "$target.rsp" > "$out.rsp"
+    grep -q -- "-o $out" "$out.rsp" || { echo "link-library.sh: no -o $target in $target.rsp" >&2; exit 1; }
+    cmd=$(printf '%s' "$cmd" | sed -e "s|@$target.rsp|@$out.rsp|")
+    ;;
+  *" -o $target "*)
+    cmd=$(printf '%s' "$cmd" | sed -e "s| $main_obj | |" -e "s| -o $target | $kind -o $out |")
+    ;;
+  *) echo "link-library.sh: no link command for $target: $cmd" >&2; exit 1 ;;
+esac
 echo "linking $out"
 eval "$cmd"
 ls -la "$out"

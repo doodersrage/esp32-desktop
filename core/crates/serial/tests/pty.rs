@@ -82,6 +82,10 @@ async fn next(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>) -> Event {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
 async fn bytes_flow_both_ways_and_stay_bytes() {
     let (master, path) = pty();
     let (mut port, mut rx) = Port::open(&path, 115_200).unwrap();
@@ -102,6 +106,10 @@ async fn bytes_flow_both_ways_and_stay_bytes() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
 async fn reports_when_the_board_goes_away() {
     let (master, path) = pty();
     let (_port, mut rx) = Port::open(&path, 115_200).unwrap();
@@ -115,6 +123,10 @@ async fn reports_when_the_board_goes_away() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
 async fn dropping_the_port_stops_its_reader_thread() {
     let (_master, path) = pty();
     let (port, mut rx) = Port::open(&path, 115_200).unwrap();
@@ -131,6 +143,10 @@ async fn dropping_the_port_stops_its_reader_thread() {
 }
 
 #[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
 fn reports_a_port_held_by_someone_else_as_busy() {
     let (_master, path) = pty();
     let (_first, _rx) = Port::open(&path, 115_200).unwrap();
@@ -151,6 +167,10 @@ fn refuses_bad_baud_and_missing_ports() {
 }
 
 #[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
 fn writing_to_a_port_nobody_reads_returns_promptly() {
     // A port nobody reads must not block a write. (A pty does not reproduce the
     // original hang: its drain returns at once. The real case, a C3 whose firmware

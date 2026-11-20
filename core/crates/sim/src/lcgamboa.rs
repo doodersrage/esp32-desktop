@@ -131,6 +131,15 @@ pub fn root() -> Result<PathBuf, Error> {
         .join(format!("lcgamboa-{}", short_commit())))
 }
 
+/// Shared libraries' file extension here.
+const LIBRARY_EXT: &str = if cfg!(target_os = "macos") {
+    "dylib"
+} else if cfg!(windows) {
+    "dll"
+} else {
+    "so"
+};
+
 /// A finished build of the pinned commit.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Build {
@@ -160,11 +169,12 @@ impl Build {
         self.root.join("src/build-exe").join(arch.binary_name())
     }
 
-    /// The library build (`libqemu-xtensa.so`, `libqemu-riscv32.so`).
+    /// The library build (`libqemu-xtensa.so`, `libqemu-riscv32.so`; `.dylib` on
+    /// macOS, `.dll` on Windows).
     pub fn library(&self, arch: Arch) -> PathBuf {
         self.root
             .join("src/build")
-            .join(format!("libqemu-{}.so", arch.as_str()))
+            .join(format!("libqemu-{}.{}", arch.as_str(), LIBRARY_EXT))
     }
 
     /// ROM directory to pass with `-L`.
