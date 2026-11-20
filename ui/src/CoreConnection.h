@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 22;
+    static constexpr int ProtocolMinor = 24;
 
     explicit CoreConnection(QObject *parent = nullptr);
 

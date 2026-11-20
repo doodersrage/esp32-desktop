@@ -344,6 +344,15 @@ enum CircuitCmd {
         control: String,
         value: f64,
     },
+    /// The parts a library project's wiring names that the simulator has models for,
+    /// read from the cached library. With --apply, place them (replacing the board's
+    /// parts).
+    Suggest {
+        project: String,
+        board: String,
+        #[arg(long)]
+        apply: bool,
+    },
     /// Remove a part.
     Remove {
         project: String,
@@ -365,7 +374,7 @@ fn circuits_root() -> Result<PathBuf> {
     Ok(esp32bench_sim::install::data_dir()?.join("circuits"))
 }
 
-fn circuit_command(cmd: CircuitCmd) -> Result<()> {
+async fn circuit_command(cmd: CircuitCmd) -> Result<()> {
     let root = circuits_root()?;
     let ids = |project: &str, board: &str| -> Result<()> {
         for id in [project, board] {
@@ -395,6 +404,60 @@ fn circuit_command(cmd: CircuitCmd) -> Result<()> {
                     what.push(format!("controls {}", c.join(",")));
                 }
                 println!("{:<10} {:<16} {}", m.id, m.name, what.join("; "));
+            }
+        }
+        CircuitCmd::Suggest {
+            project,
+            board,
+            apply,
+        } => {
+            ids(&project, &board)?;
+            let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+            let Some(m) = cache.load().await? else {
+                bail!("no project library cached yet; run `esp32bench library refresh`");
+            };
+            let Some(p) = m.project(&project) else {
+                bail!("no project `{project}` in the library");
+            };
+            let Some(build) = p.builds.iter().find(|b| b.board == board) else {
+                bail!("`{project}` has no build for `{board}`");
+            };
+            let wiring: Vec<esp32bench_circuit::suggest::Wire> = build
+                .wiring
+                .iter()
+                .map(|w| esp32bench_circuit::suggest::Wire {
+                    from: &w.from,
+                    to: &w.to,
+                })
+                .collect();
+            let hints: Vec<&str> = p.parts.iter().map(|x| x.name.as_str()).collect();
+            let s = esp32bench_circuit::suggest::from_wiring(&wiring, &hints);
+            s.circuit.validate()?;
+            for part in &s.circuit.parts {
+                let at = match (&part.pin, &part.i2c) {
+                    (Some(g), _) => format!("GPIO {g}"),
+                    (_, Some(i)) => format!("I2C {}:{:#04x}", i.bus, i.address),
+                    _ => part
+                        .pins
+                        .iter()
+                        .map(|(n, g)| format!("{n}=GPIO {g}"))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                };
+                println!("{:<16} {:<14} {at:<20} {}", part.id, part.kind, part.label);
+            }
+            if s.circuit.parts.is_empty() {
+                println!("no parts the simulator has models for");
+            }
+            if !s.unmatched.is_empty() {
+                println!("not simulated: {}", s.unmatched.join(", "));
+            }
+            if apply {
+                esp32bench_circuit::save(&root, &project, &board, &s.circuit)?;
+                println!(
+                    "placed {} parts on {project} / {board}",
+                    s.circuit.parts.len()
+                );
             }
         }
         CircuitCmd::Show { project, board } => {
@@ -898,7 +961,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 }
             }
         }
-        Cmd::Circuit(cmd) => circuit_command(cmd)?,
+        Cmd::Circuit(cmd) => circuit_command(cmd).await?,
         Cmd::Board(cmd) => {
             // espflash blocks; it has the terminal to itself here.
             tokio::task::spawn_blocking(move || board_command(cmd)).await??;

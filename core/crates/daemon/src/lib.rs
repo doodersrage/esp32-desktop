@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.23.0";
+pub const PROTOCOL: &str = "0.24.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -175,7 +175,13 @@ pub fn router(state: Arc<State>) -> Router {
         state.clone(),
         state.clone(),
     );
-    let (c1, c2, c3, c4) = (state.clone(), state.clone(), state.clone(), state);
+    let (c1, c2, c3, c4, c5) = (
+        state.clone(),
+        state.clone(),
+        state.clone(),
+        state.clone(),
+        state,
+    );
     Router::new()
         .method("sim.start", move |p, ctx| {
             let s = s13.clone();
@@ -208,6 +214,10 @@ pub fn router(state: Arc<State>) -> Router {
         .method("circuit.get", move |p, _ctx| {
             let s = c2.clone();
             async move { circuit_get(p, s).await }
+        })
+        .method("circuit.suggest", move |p, _ctx| {
+            let s = c5.clone();
+            async move { circuit_suggest(p, s).await }
         })
         .method("circuit.set", move |p, _ctx| {
             let s = c3.clone();
@@ -1450,6 +1460,38 @@ async fn circuit_get(params: Value, state: Arc<State>) -> Result<Value, RpcError
     let c = esp32bench_circuit::load(&state.circuits_root, &p.project, &p.board)
         .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
     Ok(json!({ "circuit": c }))
+}
+
+/// Parts for the simulator from a library project's wiring for a board
+/// (`esp32bench_circuit::suggest`), and the parts it names that have no model. Nothing
+/// is saved: the app offers them, and `circuit.set` places them. A project that is not
+/// in the library (the user's own) gets none.
+async fn circuit_suggest(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: CircuitRef = parse_params(params)?;
+    check_ids(&p.project, &p.board)?;
+    let manifest = state
+        .library
+        .load()
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    let project = manifest.as_ref().and_then(|m| m.project(&p.project));
+    let build = project.and_then(|proj| proj.builds.iter().find(|b| b.board == p.board));
+    let hints: Vec<&str> = project
+        .map(|proj| proj.parts.iter().map(|x| x.name.as_str()).collect())
+        .unwrap_or_default();
+    let wiring: Vec<esp32bench_circuit::suggest::Wire> = build
+        .map(|b| {
+            b.wiring
+                .iter()
+                .map(|w| esp32bench_circuit::suggest::Wire {
+                    from: &w.from,
+                    to: &w.to,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let s = esp32bench_circuit::suggest::from_wiring(&wiring, &hints);
+    Ok(json!({ "circuit": s.circuit, "unmatched": s.unmatched }))
 }
 
 async fn circuit_set(params: Value, state: Arc<State>) -> Result<Value, RpcError> {

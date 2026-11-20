@@ -1995,6 +1995,59 @@ async fn sim_trace_save_checks_its_arguments() {
 }
 
 #[tokio::test]
+async fn circuit_suggest_reads_the_wiring() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let params = json!({ "project": "blink", "board": "esp32" });
+    assert_valid(
+        &method_def("circuit.suggest")["params"],
+        &params,
+        "circuit.suggest params",
+    );
+    // No library yet: nothing to read, so nothing suggested.
+    let r = c.call("circuit.suggest", params.clone()).await.unwrap();
+    assert_eq!(r["circuit"]["parts"], json!([]));
+    c.call("library.refresh", json!({})).await.unwrap();
+    c.next_notification().await.unwrap();
+
+    let r = c.call("circuit.suggest", params).await.unwrap();
+    assert_valid(
+        &method_def("circuit.suggest")["result"],
+        &r,
+        "circuit.suggest result",
+    );
+    // The example's blink wires an LED to GPIO 2.
+    assert_eq!(
+        r["circuit"]["parts"],
+        json!([{ "id": "led-1", "kind": "led", "pin": 2, "label": "LED" }])
+    );
+    // What it suggests is a circuit circuit.set takes; nothing was saved by asking.
+    let got = c
+        .call(
+            "circuit.get",
+            json!({ "project": "blink", "board": "esp32" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(got["circuit"]["parts"], json!([]));
+    c.call(
+        "circuit.set",
+        json!({ "project": "blink", "board": "esp32", "circuit": r["circuit"] }),
+    )
+    .await
+    .unwrap();
+    // A project the library does not have gets none.
+    let r = c
+        .call(
+            "circuit.suggest",
+            json!({ "project": "local-3f9a0c21b4de", "board": "esp32" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r["circuit"]["parts"], json!([]));
+}
+
+#[tokio::test]
 async fn circuit_round_trip() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
