@@ -3,6 +3,8 @@
 #include "CoreConnection.h"
 #include "Labels.h"
 
+#include <algorithm>
+
 #include <QDateTime>
 #include <QFileDialog>
 #include <QMenu>
@@ -13,6 +15,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
+#include <QStyle>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -33,6 +36,16 @@ public:
         return QTreeWidgetItem::operator<(other);
     }
 };
+
+// How wide column `c` needs to be for its header and every row's text.
+int contentWidth(const QTreeWidget *tree, int c)
+{
+    const int padding = 2 * tree->style()->pixelMetric(QStyle::PM_FocusFrameHMargin, nullptr, tree) + 8;
+    int w = tree->header()->sectionSizeHint(c);
+    for (int i = 0; i < tree->topLevelItemCount(); ++i)
+        w = std::max(w, tree->fontMetrics().horizontalAdvance(tree->topLevelItem(i)->text(c)) + padding);
+    return w;
+}
 
 } // namespace
 
@@ -74,10 +87,18 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     m_tree->setUniformRowHeights(true);
     m_tree->setSortingEnabled(true);
     m_tree->sortByColumn(-1, Qt::AscendingOrder); // keep the site's order until the user sorts
-    m_tree->header()->setSectionResizeMode(NameColumn, QHeaderView::Stretch);
-    m_tree->header()->setStretchLastSection(false);
-    for (int c = LevelColumn; c < ColumnCount; ++c)
-        m_tree->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
+    // Every column can be dragged wider or narrower; the last one shown takes what is
+    // left. The name column starts as wide as the longest name (fitColumns).
+    m_tree->header()->setSectionResizeMode(QHeaderView::Interactive);
+    m_tree->header()->setStretchLastSection(true);
+    m_tree->header()->setMinimumSectionSize(m_tree->fontMetrics().averageCharWidth() * 4);
+    connect(m_tree->header(), &QHeaderView::sectionResized, this, [this](int column) {
+        // The last column shown follows the panel's width; only the others are the user's.
+        QHeaderView *h = m_tree->header();
+        const int last = h->logicalIndex(h->count() - 1 - h->hiddenSectionCount());
+        if (!m_fitting && column != last && !h->isSectionHidden(column))
+            m_userSized = true;
+    });
     // The name, level and chips are what a choice needs; time and firmware are in the
     // project view. Right-click the header to show them again.
     m_tree->setColumnHidden(TimeColumn, true);
@@ -93,6 +114,8 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
         }
         menu.exec(m_tree->header()->viewport()->mapToGlobal(pos));
     });
+    m_defaultColumns = m_tree->header()->saveState();
+    m_userSized = false; // hiding columns above resized them; that was not the user
     connect(m_tree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
         if (item)
             emit projectSelected(item->data(NameColumn, IdRole).toString());
@@ -222,6 +245,7 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
     }
     addLocalItems();
     m_tree->setSortingEnabled(true);
+    fitColumns();
 
     const qint64 fetched = library.value(u"fetchedAt"_s).toInteger();
     const QString when = fetched > 0
@@ -252,6 +276,7 @@ void LibraryPanel::showLocal(const QJsonArray &projects)
     }
     addLocalItems();
     m_tree->setSortingEnabled(true);
+    fitColumns();
     applyFilter();
     if (!m_pendingSelect.isEmpty())
         selectProject(std::exchange(m_pendingSelect, {}));
@@ -287,6 +312,58 @@ void LibraryPanel::addLocalItems()
                           .toLower());
         m_tree->insertTopLevelItem(at++, item);
     }
+}
+
+void LibraryPanel::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    fitColumns(); // the name gets the room a wider panel gives, until the user sizes it
+}
+
+void LibraryPanel::fitColumns()
+{
+    if (m_userSized)
+        return;
+    m_fitting = true;
+    for (int c = LevelColumn; c < ColumnCount; ++c)
+        m_tree->resizeColumnToContents(c);
+    // The other columns' room, by what they hold (the last one's width includes its
+    // stretch); the name gets the rest.
+    int others = 0;
+    for (int c = LevelColumn; c < ColumnCount; ++c) {
+        if (!m_tree->isColumnHidden(c))
+            others += contentWidth(m_tree, c);
+    }
+    m_tree->resizeColumnToContents(NameColumn);
+    // It takes the room the others leave, so a long name is cut only when the panel
+    // is too narrow for it; then dragging it wider scrolls the others into view.
+    const int room = m_tree->viewport()->width() - others;
+    if (room > m_tree->header()->minimumSectionSize() * 4)
+        m_tree->setColumnWidth(NameColumn, room);
+    m_fitting = false;
+}
+
+QByteArray LibraryPanel::saveColumns() const
+{
+    return m_userSized ? m_tree->header()->saveState() : QByteArray();
+}
+
+void LibraryPanel::restoreColumns(const QByteArray &state)
+{
+    if (state.isEmpty())
+        return;
+    m_fitting = true;
+    m_userSized = m_tree->header()->restoreState(state);
+    m_fitting = false;
+}
+
+void LibraryPanel::resetColumns()
+{
+    m_fitting = true;
+    m_tree->header()->restoreState(m_defaultColumns);
+    m_fitting = false;
+    m_userSized = false;
+    fitColumns();
 }
 
 void LibraryPanel::selectProject(const QString &id)

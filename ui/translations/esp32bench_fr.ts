@@ -429,7 +429,7 @@
     </message>
     <message>
         <source>Not debugging. Build a project for an ESP32, ESP32-S3 or ESP32-C3 board, then choose Debug in the toolbar.</source>
-        <translation>Pas de débogage en cours. Compilez un projet pour une carte ESP32, ESP32-S3 ou ESP32-C3, puis choisissez Déboguer dans la barre d'outils.</translation>
+        <translation>Pas de débogage en cours. Compilez un projet pour une carte ESP32, ESP32-S3 ou ESP32-C3, puis choisissez Déboguer dans la barre d&apos;outils.</translation>
     </message>
     <message>
         <source>%1 (%2, line %3)</source>
@@ -789,7 +789,7 @@
     </message>
     <message>
         <source>Main toolbar</source>
-        <translation>Barre d'outils principale</translation>
+        <translation>Barre d&apos;outils principale</translation>
     </message>
     <message>
         <source>Stop</source>
@@ -1120,7 +1120,7 @@ SHA-256 du code : %2</translation>
     </message>
     <message>
         <source>&lt;h3&gt;Getting started&lt;/h3&gt;&lt;ol&gt;&lt;li&gt;Pick a project from the list, or open one of your own ESP-IDF project folders.&lt;/li&gt;&lt;li&gt;Choose your board, then press &lt;b&gt;Build&lt;/b&gt;.&lt;/li&gt;&lt;li&gt;Press &lt;b&gt;Run in simulator&lt;/b&gt; to try it without hardware, or plug in a board, choose its port and press &lt;b&gt;Flash&lt;/b&gt;.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;The first build needs the build tools: &lt;b&gt;Tools → Toolchain setup&lt;/b&gt; installs them.&lt;/p&gt;</source>
-        <translation>&lt;h3&gt;Pour commencer&lt;/h3&gt;&lt;ol&gt;&lt;li&gt;Choisissez un projet dans la liste, ou ouvrez l'un de vos propres dossiers de projets ESP-IDF.&lt;/li&gt;&lt;li&gt;Choisissez votre carte, puis appuyez sur &lt;b&gt;Compiler&lt;/b&gt;.&lt;/li&gt;&lt;li&gt;Appuyez sur &lt;b&gt;Exécuter dans le simulateur&lt;/b&gt; pour l'essayer sans matériel, ou branchez une carte, choisissez son port et appuyez sur &lt;b&gt;Flasher&lt;/b&gt;.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;La première compilation a besoin des outils : &lt;b&gt;Outils → Configuration des outils&lt;/b&gt; les installe.&lt;/p&gt;</translation>
+        <translation>&lt;h3&gt;Pour commencer&lt;/h3&gt;&lt;ol&gt;&lt;li&gt;Choisissez un projet dans la liste, ou ouvrez l&apos;un de vos propres dossiers de projets ESP-IDF.&lt;/li&gt;&lt;li&gt;Choisissez votre carte, puis appuyez sur &lt;b&gt;Compiler&lt;/b&gt;.&lt;/li&gt;&lt;li&gt;Appuyez sur &lt;b&gt;Exécuter dans le simulateur&lt;/b&gt; pour l&apos;essayer sans matériel, ou branchez une carte, choisissez son port et appuyez sur &lt;b&gt;Flasher&lt;/b&gt;.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;La première compilation a besoin des outils : &lt;b&gt;Outils → Configuration des outils&lt;/b&gt; les installe.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Loading…</source>

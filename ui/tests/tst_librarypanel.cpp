@@ -4,6 +4,7 @@
 #include "LibraryPanel.h"
 
 #include <QFile>
+#include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLineEdit>
@@ -42,6 +43,42 @@ private slots:
                  u"https://esp32bench.dev/projects/blink"_s);
         QCOMPARE(t->topLevelItem(1)->text(LibraryPanel::ChipsColumn), u"ESP32-S3, ESP32-C3"_s);
         QVERIFY(panel.statusText().contains(u"Projects: 2"_s));
+    }
+
+    void nameColumnFitsAndCanBeDragged()
+    {
+        CoreConnection core;
+        LibraryPanel panel(&core);
+        panel.resize(500, 300);
+        panel.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&panel));
+        panel.showLibrary(library());
+        QTreeWidget *t = panel.tree();
+        QHeaderView *h = t->header();
+        // Every column can be dragged, the name included.
+        QCOMPARE(h->sectionResizeMode(LibraryPanel::NameColumn), QHeaderView::Interactive);
+        // At first the name column is as wide as the longest name, so none is cut off.
+        const int longest = t->fontMetrics().horizontalAdvance(u"Blink and heartbeat"_s);
+        QVERIFY2(t->columnWidth(LibraryPanel::NameColumn) > longest,
+                 qPrintable(u"%1 <= %2"_s.arg(t->columnWidth(LibraryPanel::NameColumn)).arg(longest)));
+        QVERIFY(panel.saveColumns().isEmpty()); // nothing the user chose yet
+
+        // A width the user drags stays, through a new list and a resize, and is saved.
+        h->resizeSection(LibraryPanel::NameColumn, 300);
+        panel.showLibrary(library());
+        panel.resize(600, 300);
+        QCOMPARE(t->columnWidth(LibraryPanel::NameColumn), 300);
+        const QByteArray saved = panel.saveColumns();
+        QVERIFY(!saved.isEmpty());
+
+        LibraryPanel again(&core);
+        again.restoreColumns(saved);
+        QCOMPARE(again.tree()->columnWidth(LibraryPanel::NameColumn), 300);
+        QVERIFY(again.tree()->isColumnHidden(LibraryPanel::TimeColumn));
+        // Reset layout fits it again.
+        panel.resetColumns();
+        QVERIFY(panel.saveColumns().isEmpty());
+        QVERIFY(t->columnWidth(LibraryPanel::NameColumn) > longest);
     }
 
     void showsLocalProjectsFirst()

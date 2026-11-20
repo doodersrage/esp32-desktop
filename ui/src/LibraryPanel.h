@@ -39,14 +39,25 @@ public:
     // Select a project by id (for links), now or once the list has arrived.
     void selectProject(const QString &id);
     QString statusText() const;
+    // The list's column widths, order and hidden columns, which the main window saves
+    // with its layout. Widths the user dragged are kept; until then the name column
+    // fits the longest name.
+    QByteArray saveColumns() const;
+    void restoreColumns(const QByteArray &state);
+    void resetColumns();
 
 signals:
     // The user picked a project in the list.
     void projectSelected(const QString &id);
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
     void applyFilter();
     void addLocalItems();
+    // Size the columns to their contents, unless the user has sized them.
+    void fitColumns();
     void setStatus(const QString &text);
     void updateEnabled();
 
@@ -58,5 +69,8 @@ private:
     QToolButton *m_open;
     QJsonArray m_local;
     QTreeWidget *m_tree;
+    QByteArray m_defaultColumns;
+    bool m_userSized = false; // the user dragged a column edge, or a saved layout did
+    bool m_fitting = false;
     bool m_autoRefreshed = false; // fetched once automatically when nothing was cached
 };

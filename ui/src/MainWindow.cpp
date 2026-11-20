@@ -396,6 +396,7 @@ void MainWindow::resetLayout()
 {
     restoreState(m_defaultState, LayoutVersion);
     applyDefaultSizes();
+    m_library->resetColumns();
 }
 
 QString MainWindow::connectionText() const
@@ -493,6 +494,7 @@ void MainWindow::restoreLayout()
         return;
     }
     m_split->restoreState(settings.value(u"mainWindow/librarySplit"_s).toByteArray());
+    m_library->restoreColumns(settings.value(u"mainWindow/libraryColumns"_s).toByteArray());
 }
 
 void MainWindow::saveLayout()
@@ -501,6 +503,7 @@ void MainWindow::saveLayout()
     settings.setValue(u"mainWindow/geometry"_s, saveGeometry());
     settings.setValue(u"mainWindow/state"_s, saveState(LayoutVersion));
     settings.setValue(u"mainWindow/librarySplit"_s, m_split->saveState());
+    settings.setValue(u"mainWindow/libraryColumns"_s, m_library->saveColumns());
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
