@@ -181,6 +181,7 @@ jobs:
         shell: bash
         run: packaging/windows/build.sh "$PWD" core/target build/ui sim-out dist
       - name: Smoke test
+        timeout-minutes: 60
         env:
           ESP32BENCH_SMOKE_BUILD: '1'
           ESP32BENCH_SMOKE_IDF: '1'

@@ -291,9 +291,10 @@ impl Session {
         self.qmp.execute("cont", None).await.map(|_| ())
     }
 
-    /// Ask QEMU to quit, then kill it if it does not exit promptly.
+    /// Ask QEMU to quit, then kill it if it does not exit promptly. A QEMU that no
+    /// longer answers QMP is killed too, instead of waiting for its reply forever.
     pub async fn shutdown(mut self) -> Result<(), Error> {
-        let _ = self.qmp.execute("quit", None).await;
+        let _ = tokio::time::timeout(QUIT_TIMEOUT, self.qmp.execute("quit", None)).await;
         if tokio::time::timeout(QUIT_TIMEOUT, self.child.wait())
             .await
             .is_err()

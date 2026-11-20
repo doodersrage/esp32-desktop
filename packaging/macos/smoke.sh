@@ -10,6 +10,23 @@ dmg=$1
 fw=$2
 fail() { echo "smoke: FAIL: $*" >&2; exit 1; }
 
+# Stop a background `sim run` with Ctrl-C, as a user would. One that has not exited
+# 10 s later is a failure, shown with its error output, the core's log and the
+# processes left, rather than a job that hangs until the runner cancels it.
+stop() {
+  local pid=$1 err=$2
+  kill -INT "$pid" 2> /dev/null || true
+  for _ in $(seq 50); do
+    kill -0 "$pid" 2> /dev/null || { wait "$pid" 2> /dev/null || true; return 0; }
+    sleep 0.2
+  done
+  echo "smoke: sim run did not stop on Ctrl-C; its errors, the core's log, the processes:" >&2
+  cat "$err" "$work/core.log" >&2 || true
+  ps -axo pid,ppid,stat,etime,command | grep -i '[e]sp32bench' >&2 || true
+  kill -KILL "$pid" 2> /dev/null || true
+  fail "sim run did not stop on Ctrl-C"
+}
+
 work=$(mktemp -d)
 mnt="$work/mnt"
 hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" > /dev/null
@@ -47,8 +64,7 @@ for chip in esp32 esp32s3 esp32c3; do
     grep -aq "esp32bench-hello ready" "$work/hello-$chip.log" && { ok=1; break; }
     sleep 0.2
   done
-  kill -INT $pid 2> /dev/null || true
-  wait $pid 2> /dev/null || true
+  stop $pid "$work/hello-$chip.err"
   [ -n "$ok" ] || { cat "$work/hello-$chip.err"; tail -20 "$work/hello-$chip.log"; fail "$chip did not boot"; }
   grep -q "engine: lcgamboa" "$work/hello-$chip.err" || fail "$chip did not run on the bundled simulator"
   echo "smoke: $chip boots on the bundled simulator"
@@ -57,8 +73,7 @@ done
   --trace "$work/gpio.vcd" "$fw/gpio-esp32c3.bin" > /dev/null 2> "$work/gpio.err" &
 pid=$!
 sleep 8
-kill -INT $pid 2> /dev/null || true
-wait $pid 2> /dev/null || true
+stop $pid "$work/gpio.err"
 grep -q '\$var wire 1 ! GPIO2' "$work/gpio.vcd" || { cat "$work/gpio.err"; fail "no GPIO trace"; }
 echo "smoke: GPIO 2 traced ($(grep -c '^#' "$work/gpio.vcd") times)"
 
@@ -81,8 +96,7 @@ if [ "${ESP32BENCH_SMOKE_BUILD:-}" = 1 ]; then
     sleep 0.2
   done
   sleep 3
-  kill -INT $pid 2> /dev/null || true
-  wait $pid 2> /dev/null || true
+  stop $pid "$work/blink.err"
   [ -n "$ok" ] || { cat "$work/blink.err"; tail -20 "$work/blink.log"; fail "the blink build did not start"; }
   grep -aq "Guru Meditation\|abort()" "$work/blink.log" && fail "the blink build crashed"
   echo "smoke: built blink with the app's arduino-cli and ran it in the simulator"
