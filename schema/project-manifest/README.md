@@ -12,6 +12,10 @@ The file carries `format` and `version`. Readers check that `format` is `esp32be
 - Adding an optional field is a minor bump. Add it to `v1.schema.json` in the same change.
 - Removing or renaming a field, making one required, or changing what one means is a major bump, needs the owner's sign-off, and gets a new `v2.schema.json`. The core keeps reading v1, because cached manifests exist on users' machines.
 
+## Versions
+
+- 1.1 (2026-11-20): a build of prebuilt firmware may carry `image` (an https URL, its SHA-256 and size), the merged image the browser flasher also uses. The app downloads it, after asking, checks it, and runs it in the simulator or flashes it.
+
 ## Tests
 
 - `core/crates/library/tests/manifest.rs` validates `example.json` against the schema and checks the reader. Set `ESP32BENCH_TEST_MANIFEST` to a site build's `dist/desktop-manifest.json` to validate the real file too.

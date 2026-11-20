@@ -6,6 +6,7 @@
 #include <QWidget>
 
 class ConsoleView;
+class ConsoleBar;
 class CoreConnection;
 class QCheckBox;
 class QComboBox;
@@ -17,6 +18,7 @@ class SimulatorPanel : public QWidget {
     Q_OBJECT
 
 public:
+    ConsoleBar *consoleBar() const { return m_tools; }
     explicit SimulatorPanel(CoreConnection *core, QWidget *parent = nullptr);
 
     QString outputText() const;
@@ -49,4 +51,5 @@ private:
     QLineEdit *m_input;
     QComboBox *m_ending;
     QPushButton *m_send;
+    ConsoleBar *m_tools = nullptr;
 };

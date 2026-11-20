@@ -889,6 +889,17 @@ void CoreConnection::loadCircuit(const QString &project, const QString &board)
                    });
 }
 
+void CoreConnection::saveConsole(const QString &path, const QString &text)
+{
+    m_client->call(u"console.save"_s, {{u"path"_s, path}, {u"text"_s, text}}, this, [this, path](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"console.save"_s, r.errorMessage);
+            return;
+        }
+        emit consoleSaved(path);
+    });
+}
+
 void CoreConnection::suggestCircuit(const QString &project, const QString &board)
 {
     m_client->call(u"circuit.suggest"_s, {{u"project"_s, project}, {u"board"_s, board}}, this,

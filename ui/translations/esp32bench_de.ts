@@ -311,6 +311,65 @@
     </message>
 </context>
 <context>
+    <name>ConsoleBar</name>
+    <message>
+        <source>Time stamps</source>
+        <translation>Zeitstempel</translation>
+    </message>
+    <message>
+        <source>Find in the output</source>
+        <translation>In der Ausgabe suchen</translation>
+    </message>
+    <message>
+        <source>Previous</source>
+        <translation>Zurück</translation>
+    </message>
+    <message>
+        <source>Find the previous match</source>
+        <translation>Den vorherigen Treffer suchen</translation>
+    </message>
+    <message>
+        <source>Next</source>
+        <translation>Weiter</translation>
+    </message>
+    <message>
+        <source>Find the next match (Enter)</source>
+        <translation>Den nächsten Treffer suchen (Eingabe)</translation>
+    </message>
+    <message>
+        <source>Not found</source>
+        <translation>Nicht gefunden</translation>
+    </message>
+    <message>
+        <source>Start each new line with this computer&apos;s time. In the simulator this is not the simulated chip&apos;s time.</source>
+        <translation>Jede neue Zeile mit der Uhrzeit dieses Rechners beginnen. Im Simulator ist das nicht die Zeit des simulierten Chips.</translation>
+    </message>
+    <message>
+        <source>Save…</source>
+        <translation>Speichern…</translation>
+    </message>
+    <message>
+        <source>Save the output to a text file</source>
+        <translation>Die Ausgabe in eine Textdatei speichern</translation>
+    </message>
+    <message>
+        <source>Save the output</source>
+        <translation>Die Ausgabe speichern</translation>
+    </message>
+    <message>
+        <source>Text files (*.txt);;All files (*)</source>
+        <translation>Textdateien (*.txt);;Alle Dateien (*)</translation>
+    </message>
+    <message>
+        <source>Saved the output to %1.</source>
+        <translation>Ausgabe in %1 gespeichert.</translation>
+    </message>
+    <message>
+        <source>Could not save the output: %1</source>
+        <translation>Die Ausgabe konnte nicht gespeichert werden: %1</translation>
+    </message>
+</context>
+<context>
     <name>CoreConnection</name>
     <message>
         <source>The connection to the core was lost.</source>
@@ -922,6 +981,14 @@ Der Bereich Build unten enthält das ganze Protokoll.</translation>
         <translation>ESP-IDF-Projekt ö&amp;ffnen…</translation>
     </message>
     <message>
+        <source>Recent projects</source>
+        <translation>Zuletzt geöffnete Projekte</translation>
+    </message>
+    <message>
+        <source>None yet</source>
+        <translation>Noch keine</translation>
+    </message>
+    <message>
         <source>&amp;Quit</source>
         <translation>&amp;Beenden</translation>
     </message>
@@ -1000,6 +1067,28 @@ Install esp32benchd, or set ESP32BENCH_DAEMON to its path.</source>
         <translation>%1
 
 Installiere esp32benchd oder setze ESP32BENCH_DAEMON auf seinen Pfad.</translation>
+    </message>
+    <message>
+        <source>Download prebuilt firmware?</source>
+        <translation>Fertige Firmware herunterladen?</translation>
+    </message>
+    <message>
+        <source>“%1” for %2 is ready-made firmware from esp32bench.dev. It is downloaded and checked against the library&apos;s SHA-256, so the app can run it in the simulator or flash it to a board, which asks again.</source>
+        <translation>„%1“ für %2 ist fertige Firmware von esp32bench.dev. Sie wird heruntergeladen und mit der SHA-256 der Bibliothek geprüft, damit die App sie im Simulator ausführen oder auf ein Board flashen kann; dabei wird erneut gefragt.</translation>
+    </message>
+    <message>
+        <source>%1 will be downloaded.</source>
+        <translation>%1 werden heruntergeladen.</translation>
+    </message>
+    <message>
+        <source>From: %1
+SHA-256: %2</source>
+        <translation>Von: %1
+SHA-256: %2</translation>
+    </message>
+    <message>
+        <source>Download</source>
+        <translation>Herunterladen</translation>
     </message>
     <message>
         <source>Build a downloaded project?</source>
@@ -1156,6 +1245,14 @@ Code-SHA-256: %2</translation>
         <translation>Auf esp32bench.dev öffnen</translation>
     </message>
     <message>
+        <source>Edit</source>
+        <translation>Bearbeiten</translation>
+    </message>
+    <message>
+        <source>Open one of the project&apos;s source files in your editor</source>
+        <translation>Eine der Quelldateien des Projekts in deinem Editor öffnen</translation>
+    </message>
+    <message>
         <source>Build</source>
         <translation>Kompilieren</translation>
     </message>
@@ -1310,6 +1407,14 @@ Code-SHA-256: %2</translation>
     <message>
         <source>This project ships as prebuilt firmware, so there is no sketch to show.</source>
         <translation>Dieses Projekt kommt als fertige Firmware, daher gibt es keinen Sketch zum Anzeigen.</translation>
+    </message>
+    <message>
+        <source>Download</source>
+        <translation>Herunterladen</translation>
+    </message>
+    <message>
+        <source>Download this board&apos;s ready-made firmware from esp32bench.dev and check it, to run it in the simulator or flash it</source>
+        <translation>Die fertige Firmware für dieses Board von esp32bench.dev herunterladen und prüfen, um sie im Simulator auszuführen oder zu flashen</translation>
     </message>
 </context>
 <context>

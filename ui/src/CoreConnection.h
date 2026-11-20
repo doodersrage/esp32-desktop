@@ -152,6 +152,8 @@ public:
     void saveCircuit(const QString &project, const QString &board, const QJsonObject &circuit);
     // circuit.suggest: the parts a library project's wiring names, with circuitSuggested.
     void suggestCircuit(const QString &project, const QString &board);
+    // console.save: the core writes `text` to `path` (absolute); consoleSaved after.
+    void saveConsole(const QString &path, const QString &text);
 
     // debug.*: on the simulator started with debug. Results come as signals.
     void debugBreak(const QString &location);
@@ -222,6 +224,7 @@ signals:
     // sim.partPicture: a display part's picture, lit pixels white on black.
     void partPicture(const QString &id, const QImage &image);
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
+    void consoleSaved(const QString &path);
     // Parts to place (a circuit) and the parts named that have no model.
     void circuitSuggested(const QString &project, const QString &board, const QJsonObject &circuit,
                           const QStringList &unmatched);

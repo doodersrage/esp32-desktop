@@ -1,5 +1,6 @@
 // SerialMonitor and CoreConnection's serial calls against a fake core.
 
+#include "ConsoleView.h"
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
 #include "MainWindow.h"
@@ -15,6 +16,7 @@
 #include <QPushButton>
 #include <QTemporaryDir>
 #include <QStandardPaths>
+#include <QRegularExpression>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -84,8 +86,14 @@ private:
             reply(id, QJsonObject{});
         } else if (m == u"core.unsubscribe") {
             reply(id, QJsonObject{});
+        } else if (m == u"console.save") {
+            saved.insert(p.value(u"path"_s).toString(), p.value(u"text"_s).toString());
+            reply(id, QJsonObject{});
         }
     }
+public:
+    QHash<QString, QString> saved;
+private:
 
     QLocalServer *m_server;
     QPointer<QLocalSocket> m_sock;
@@ -131,6 +139,42 @@ private slots:
         QTRY_VERIFY(!core.isSerialOpen());
         QVERIFY(mon->outputText().contains(u"Disconnected"_s));
         QVERIFY(!mon->input()->isEnabled());
+    }
+
+    void consoleFindsStampsAndSaves()
+    {
+        ConsoleView view;
+        view.appendBytes("boot\nready\n");
+        view.setTimestamps(true);
+        view.appendBytes("tick 1\ntick");
+        view.appendBytes(" 2\n");
+        const QStringList lines = view.toPlainText().split(u'\n');
+        // Lines from before stay as they were; new ones start with this computer's time,
+        // once each, even when a line arrives in pieces.
+        QCOMPARE(lines.at(0), u"boot"_s);
+        QVERIFY(QRegularExpression(u"^\\[\\d\\d:\\d\\d:\\d\\d\\.\\d{3}\\] tick 1$"_s).match(lines.at(2)).hasMatch());
+        QVERIFY(QRegularExpression(u"^\\[[^\\]]+\\] tick 2$"_s).match(lines.at(3)).hasMatch());
+        // Find wraps round, both ways.
+        QVERIFY(view.findText(u"tick"_s));
+        const int first = view.textCursor().selectionStart();
+        QVERIFY(view.findText(u"tick"_s));
+        QVERIFY(view.textCursor().selectionStart() > first);
+        QVERIFY(view.findText(u"tick"_s)); // round to the first
+        QCOMPARE(view.textCursor().selectionStart(), first);
+        QVERIFY(view.findText(u"ready"_s, true));
+        QVERIFY(!view.findText(u"nowhere"_s));
+
+        // Save… hands the text to the core, which writes it, and says so.
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        ConsoleBar bar(&view, &core, u"test/timestamps"_s);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        const QString text = view.toPlainText();
+        bar.saveTo(u"/tmp/out.txt"_s);
+        QTRY_COMPARE(fake.saved.value(u"/tmp/out.txt"_s), text);
+        QTRY_VERIFY(view.toPlainText().contains(u"Saved the output to /tmp/out.txt."_s));
     }
 
     void doubleClickingAPortOpensIt()

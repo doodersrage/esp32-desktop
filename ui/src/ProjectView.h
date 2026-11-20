@@ -13,6 +13,7 @@ class QLabel;
 class QPlainTextEdit;
 class QAction;
 class QPushButton;
+class QToolButton;
 class QStackedWidget;
 class QTabWidget;
 class QTreeWidget;
@@ -53,6 +54,8 @@ public:
     QString currentBuildBoard() const;
     QString currentBoardName() const;
     QPushButton *openButton() const { return m_openSite; }
+    // A local project's source files, to open in the user's editor.
+    QToolButton *editButton() const { return m_edit; }
     QString summaryText() const;
     QString notesText() const;
 
@@ -85,6 +88,7 @@ private:
     QLabel *m_meta;
     QLabel *m_summary;
     QPushButton *m_openSite;
+    QToolButton *m_edit;
     QPushButton *m_build;
     QAction *m_buildAction;
     QComboBox *m_board;

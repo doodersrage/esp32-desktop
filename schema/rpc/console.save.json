@@ -1,0 +1,57 @@
+{
+  "method": "console.save",
+  "description": "Write a console's text (the serial monitor's or the simulator's, as the app shows it) to a file the user chose. The UI does no file access of its own (CLAUDE.md, rule 2).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "text"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Absolute path of the file to write; replaced if it exists."
+      },
+      "text": {
+        "type": "string",
+        "maxLength": 67108864
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "bytes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "bytes": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "path": "/home/me/esp32bench-20261120-1650.txt",
+        "text": "ets Jul 29 2019 12:21:46\ntick 1000 ms\n"
+      },
+      "result": {
+        "path": "/home/me/esp32bench-20261120-1650.txt",
+        "bytes": 38
+      }
+    }
+  ]
+}

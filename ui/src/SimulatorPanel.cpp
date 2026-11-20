@@ -85,6 +85,8 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     layout->addLayout(top);
     layout->addWidget(m_network);
     layout->addWidget(m_output, 1);
+    m_tools = new ConsoleBar(m_output, m_core, u"simulator/timestamps"_s, this);
+    layout->addWidget(m_tools);
     layout->addLayout(bottom);
 
     connect(m_core, &CoreConnection::simStarted, this,

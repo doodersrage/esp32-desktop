@@ -148,6 +148,48 @@ pub struct Build {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
     pub sample: Vec<String>,
+    /// For prebuilt firmware (manifest 1.1): the merged image to download, written at
+    /// offset 0, with its SHA-256 and size so the app can check what it got.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<Image>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Image {
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+}
+
+/// An image's URL as the app may fetch it: an https URL, or, when the library itself
+/// is a local file (development and tests), a path relative to that file's folder
+/// that stays inside it. Anything else (http, other schemes, absolute or escaping
+/// paths) is refused, so a manifest cannot make the app read other local files.
+pub fn image_source(library_source: &str, url: &str) -> Result<String, Error> {
+    if url.starts_with("https://") {
+        return Ok(url.to_owned());
+    }
+    let refused = |detail: &str| Error::Download {
+        from: url.to_owned(),
+        detail: detail.to_owned(),
+    };
+    if url.contains("://") || library_source.starts_with("https://") {
+        return Err(refused("firmware images are only downloaded over https"));
+    }
+    let rel = std::path::Path::new(url);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return Err(refused(
+            "a local image must be a path inside the library's folder",
+        ));
+    }
+    let dir = std::path::Path::new(library_source)
+        .parent()
+        .unwrap_or(std::path::Path::new("."));
+    Ok(dir.join(rel).to_string_lossy().into_owned())
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -249,7 +291,8 @@ impl Manifest {
                     tags: p.tags.clone(),
                     firmware: p.firmware,
                     boards,
-                    simulator: p.firmware == Firmware::Sketch
+                    simulator: (p.firmware == Firmware::Sketch
+                        || p.builds.iter().any(|b| b.image.is_some()))
                         && chips.iter().any(|c| SIMULATED_CHIPS.contains(&c.as_str()))
                         && !uses_bluetooth(p),
                     chips,

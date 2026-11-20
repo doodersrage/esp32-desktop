@@ -6,6 +6,7 @@
 #include <QWidget>
 
 class ConsoleView;
+class ConsoleBar;
 class CoreConnection;
 class QJsonArray;
 class QComboBox;
@@ -17,6 +18,7 @@ class SerialMonitor : public QWidget {
     Q_OBJECT
 
 public:
+    ConsoleBar *consoleBar() const { return m_tools; }
     explicit SerialMonitor(CoreConnection *core, QWidget *parent = nullptr);
 
     // Open `path` (e.g. from a double-click in the Devices panel).
@@ -49,4 +51,5 @@ private:
     QComboBox *m_ending;
     QPushButton *m_send;
     bool m_open_ = false;
+    ConsoleBar *m_tools = nullptr;
 };

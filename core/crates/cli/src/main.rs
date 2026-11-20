@@ -51,9 +51,10 @@ enum Cmd {
     /// work wherever a library project's does (build, the app's simulator, flashing).
     #[command(subcommand)]
     Local(LocalCmd),
-    /// Build a library project with arduino-cli, or a local ESP-IDF project (`local
-    /// open`) with idf.py. For a library project it shows what will run and stops,
-    /// unless --yes says you agree: library projects are downloaded code.
+    /// Build a library project with arduino-cli (or download and check its prebuilt
+    /// firmware), or a local ESP-IDF project (`local open`) with idf.py. For a library
+    /// project it shows what will run and stops, unless --yes says you agree: library
+    /// projects are downloaded code.
     Build {
         /// Project id, as in `library list` or `local list`.
         project: String,
@@ -882,6 +883,33 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 bail!("no project library cached yet; run `esp32bench library refresh`");
             };
             let (plan, code) = esp32bench_build::plan(&m, &project, &board)?;
+            // Prebuilt firmware: downloaded and checked instead of built, after --yes.
+            if let Some(image) = &plan.image {
+                eprintln!(
+                    "Download prebuilt firmware {} for {}",
+                    plan.project, plan.board
+                );
+                eprintln!("  from      {}", image.url);
+                eprintln!("  sha256    {} ({} bytes)", image.sha256, image.size);
+                if !yes {
+                    eprintln!("\nThis firmware is downloaded. Run again with --yes to fetch it.");
+                    return Ok(ExitCode::from(2));
+                }
+                let source = esp32bench_library::image_source(
+                    &esp32bench_library::default_source(),
+                    &image.url,
+                )?;
+                let dirs = esp32bench_build::Dirs::new(
+                    &esp32bench_library::cache_dir()?.join("builds"),
+                    &plan,
+                );
+                let out = esp32bench_build::fetch_image(&plan, &source, &dirs, |_, line| {
+                    eprintln!("{line}")
+                })
+                .await?;
+                eprintln!("\nimage {}", out.image.display());
+                return Ok(ExitCode::SUCCESS);
+            }
             let sketchbook = esp32bench_build::default_sketchbook()
                 .context("no data directory: set XDG_DATA_HOME or HOME")?;
             let tools = esp32bench_build::Toolchain::detect(sketchbook)?;

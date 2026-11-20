@@ -203,6 +203,9 @@ pub fn router(state: Arc<State>) -> Router {
             let s = c1.clone();
             async move { sim_control(p, ctx, s).await }
         })
+        .method("console.save", move |p, _ctx| async move {
+            console_save(p).await
+        })
         .method("sim.traceSave", move |p, ctx| {
             let s = c4.clone();
             async move { sim_trace_save(p, ctx, s).await }
@@ -534,6 +537,12 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         })?;
     let (plan, code) =
         esp32bench_build::plan(&manifest, &p.project, &p.board).map_err(build_error)?;
+    // Prebuilt firmware is downloaded, not built: no toolchain, but the same consent.
+    if let Some(image) = &plan.image {
+        let source = esp32bench_library::image_source(&state.library_source, &image.url)
+            .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+        return prebuilt_start(p.consent.as_deref(), plan, source, ctx, state);
+    }
     // Check the toolchain before asking for consent, so nobody agrees to a build that
     // cannot run.
     let tools = match &state.arduino_cli {
@@ -570,6 +579,47 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         let _one_at_a_time = state.build_lock.lock().await;
         let dirs = esp32bench_build::Dirs::new(&state.builds_root, &plan);
         let r = esp32bench_build::run(&plan, &code, &tools, &dirs, |stream, line| {
+            sub.send("build.log", json!({ "stream": stream, "line": line }));
+        })
+        .await;
+        let event = match r {
+            Ok(out) => json!({ "ok": true, "image": out.image, "elf": out.elf }),
+            Err(e) => json!({ "ok": false, "error": e.to_string() }),
+        };
+        sub.send("build.finished", event);
+    });
+    Ok(json!({ "job": job, "plan": result_plan }))
+}
+
+/// A library project's prebuilt firmware: after consent for exactly this image, a job
+/// that downloads it, checks it against the library and keeps it where a build's image
+/// goes. The events are build.start's.
+fn prebuilt_start(
+    consent: Option<&str>,
+    plan: esp32bench_build::Plan,
+    source: String,
+    ctx: Ctx,
+    state: Arc<State>,
+) -> Result<Value, RpcError> {
+    let granted = consent.is_some_and(|t| state.consent.redeem(t, &plan));
+    if !granted {
+        let token = state
+            .consent
+            .issue(&plan)
+            .map_err(|e| RpcError::internal(e.to_string()))?;
+        let message = if consent.is_some() {
+            "the consent token is not valid for this download; ask the user again"
+        } else {
+            "this firmware is downloaded; ask the user before fetching it"
+        };
+        return Err(RpcError::new(code::CONSENT_REQUIRED, message)
+            .with_data(json!({ "token": token, "plan": plan })));
+    }
+    let result_plan = plan.clone();
+    let job = ctx.subscribe(move |sub| async move {
+        let _one_at_a_time = state.build_lock.lock().await;
+        let dirs = esp32bench_build::Dirs::new(&state.builds_root, &plan);
+        let r = esp32bench_build::fetch_image(&plan, &source, &dirs, |stream, line| {
             sub.send("build.log", json!({ "stream": stream, "line": line }));
         })
         .await;
@@ -662,6 +712,7 @@ async fn local_get(params: Value, state: Arc<State>) -> Result<Value, RpcError> 
         "boards": local_boards(&state).await,
         "idf": state.idf(),
         "exists": exists,
+        "sources": esp32bench_build::idf::sources(&project.path),
     }))
 }
 
@@ -1278,6 +1329,32 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
 struct TraceSaveParams {
     subscription: u64,
     path: PathBuf,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConsoleSaveParams {
+    path: PathBuf,
+    text: String,
+}
+
+/// The most a saved console may hold: the UI keeps 10 000 lines, far below this.
+const CONSOLE_SAVE_MAX: usize = 64 * 1024 * 1024;
+
+/// Write a console's text (the serial monitor's or the simulator's, as the app shows
+/// it) to `path`, which the user chose. The UI does no file access of its own.
+async fn console_save(params: Value) -> Result<Value, RpcError> {
+    let p: ConsoleSaveParams = parse_params(params)?;
+    if !p.path.is_absolute() {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    if p.text.len() > CONSOLE_SAVE_MAX {
+        return Err(RpcError::invalid_params("the text is too long to save"));
+    }
+    tokio::fs::write(&p.path, p.text.as_bytes())
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("writing {}: {e}", p.path.display())))?;
+    Ok(json!({ "path": p.path, "bytes": p.text.len() }))
 }
 
 /// Write a simulation's signal trace (running or ended) to `path` as VCD.

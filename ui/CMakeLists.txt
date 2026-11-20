@@ -36,6 +36,7 @@ add_library(esp32bench_ui STATIC
     src/MainWindow.cpp src/MainWindow.h
     src/MessageBar.cpp src/MessageBar.h
     src/Translations.cpp src/Translations.h
+    src/Icons.cpp src/Icons.h
     src/TracePanel.cpp src/TracePanel.h
 )
 target_include_directories(esp32bench_ui PUBLIC src)
@@ -66,6 +67,51 @@ qt_add_translations(esp32bench_ui
     LUPDATE_OPTIONS -locations none -no-obsolete
 )
 
+# Icons for systems without an icon theme (macOS, Windows): Icons::install().
+qt_add_resources(esp32bench_ui "fallback_icons"
+    PREFIX "/icons"
+    BASE icons
+    FILES
+        icons/esp32bench-fallback/index.theme
+        icons/esp32bench-fallback/scalable/application-exit.svg
+        icons/esp32bench-fallback/scalable/application-menu.svg
+        icons/esp32bench-fallback/scalable/configure.svg
+        icons/esp32bench-fallback/scalable/debug-run.svg
+        icons/esp32bench-fallback/scalable/debug-step-into.svg
+        icons/esp32bench-fallback/scalable/debug-step-out.svg
+        icons/esp32bench-fallback/scalable/debug-step-over.svg
+        icons/esp32bench-fallback/scalable/dialog-error.svg
+        icons/esp32bench-fallback/scalable/dialog-warning.svg
+        icons/esp32bench-fallback/scalable/document-edit.svg
+        icons/esp32bench-fallback/scalable/document-open-recent.svg
+        icons/esp32bench-fallback/scalable/document-open-folder.svg
+        icons/esp32bench-fallback/scalable/document-properties.svg
+        icons/esp32bench-fallback/scalable/document-save.svg
+        icons/esp32bench-fallback/scalable/document-send.svg
+        icons/esp32bench-fallback/scalable/download.svg
+        icons/esp32bench-fallback/scalable/edit-clear.svg
+        icons/esp32bench-fallback/scalable/edit-delete.svg
+        icons/esp32bench-fallback/scalable/folder-open.svg
+        icons/esp32bench-fallback/scalable/help-about.svg
+        icons/esp32bench-fallback/scalable/internet-web-browser.svg
+        icons/esp32bench-fallback/scalable/list-add.svg
+        icons/esp32bench-fallback/scalable/list-remove.svg
+        icons/esp32bench-fallback/scalable/media-flash.svg
+        icons/esp32bench-fallback/scalable/media-playback-pause.svg
+        icons/esp32bench-fallback/scalable/media-playback-start.svg
+        icons/esp32bench-fallback/scalable/media-playback-stop.svg
+        icons/esp32bench-fallback/scalable/network-serial.svg
+        icons/esp32bench-fallback/scalable/preferences-system-network.svg
+        icons/esp32bench-fallback/scalable/preferences-system.svg
+        icons/esp32bench-fallback/scalable/process-stop.svg
+        icons/esp32bench-fallback/scalable/run-build.svg
+        icons/esp32bench-fallback/scalable/tools-report-bug.svg
+        icons/esp32bench-fallback/scalable/utilities-terminal.svg
+        icons/esp32bench-fallback/scalable/view-refresh.svg
+        icons/esp32bench-fallback/scalable/view-restore.svg
+        icons/esp32bench-fallback/scalable/window-close.svg
+)
+
 qt_add_executable(esp32bench-gui src/main.cpp)
 # A GUI program on Windows (no console window); the macOS bundle is assembled by
 # packaging/macos/build.sh.
@@ -83,7 +129,7 @@ if(NOT BUILD_TESTING)
     return()
 endif()
 enable_testing()
-foreach(t tst_rpcclient tst_devicespanel tst_librarypanel tst_projectview tst_build tst_serialmonitor tst_setup tst_board tst_simulator tst_debugger tst_display tst_pins tst_circuit tst_trace tst_translations tst_integration)
+foreach(t tst_rpcclient tst_devicespanel tst_librarypanel tst_projectview tst_build tst_serialmonitor tst_setup tst_board tst_simulator tst_debugger tst_display tst_pins tst_circuit tst_trace tst_translations tst_icons tst_integration)
     qt_add_executable(${t} tests/${t}.cpp)
     target_link_libraries(${t} PRIVATE esp32bench_ui Qt6::Test)
     target_compile_definitions(${t} PRIVATE ESP32BENCH_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

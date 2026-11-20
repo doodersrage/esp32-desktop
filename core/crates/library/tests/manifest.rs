@@ -41,11 +41,55 @@ fn example_matches_schema_and_parses() {
     seen.dedup();
     assert_eq!(seen.len(), sketch.chips.len());
     assert!(sketch.chips.iter().all(|c| c.starts_with("esp32")));
-    // A sketch for the ESP32 without Bluetooth runs in the simulator; prebuilt
-    // firmware the library does not link does not.
+    // A sketch for the ESP32 without Bluetooth runs in the simulator, and so does
+    // prebuilt firmware the library links an image of (1.1); without one, it does not.
     assert!(sketch.simulator);
     let prebuilt = s.iter().find(|p| p.firmware == Firmware::Prebuilt).unwrap();
-    assert!(!prebuilt.simulator);
+    assert!(prebuilt.simulator);
+    let image = m
+        .projects
+        .iter()
+        .find(|p| p.firmware == Firmware::Prebuilt)
+        .unwrap()
+        .builds[0]
+        .image
+        .clone()
+        .unwrap();
+    assert!(image.url.starts_with("https://"));
+    let mut without = m.clone();
+    for p in &mut without.projects {
+        for b in &mut p.builds {
+            b.image = None;
+        }
+    }
+    let s = without.summaries();
+    assert!(
+        !s.iter()
+            .find(|p| p.firmware == Firmware::Prebuilt)
+            .unwrap()
+            .simulator
+    );
+}
+
+#[test]
+fn image_sources_are_https_or_inside_a_local_librarys_folder() {
+    use esp32bench_library::image_source;
+    let url = "https://esp32bench.dev/firmware/x/x.bin";
+    assert_eq!(
+        image_source("https://esp32bench.dev/desktop-manifest.json", url).unwrap(),
+        url
+    );
+    // A downloaded library may only point at https.
+    assert!(image_source("https://esp32bench.dev/m.json", "x.bin").is_err());
+    assert!(image_source("https://esp32bench.dev/m.json", "http://evil/x.bin").is_err());
+    // A local one (development, tests) may use paths inside its folder, and no others.
+    assert_eq!(
+        image_source("/lib/m.json", "fw/x.bin").unwrap(),
+        "/lib/fw/x.bin"
+    );
+    assert!(image_source("/lib/m.json", "/etc/passwd").is_err());
+    assert!(image_source("/lib/m.json", "../secret.bin").is_err());
+    assert!(image_source("/lib/m.json", "file:///etc/passwd").is_err());
 }
 
 #[test]

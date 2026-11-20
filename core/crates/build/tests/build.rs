@@ -35,7 +35,18 @@ fn variant_boards_build_as_their_parent() {
 
 #[test]
 fn refuses_what_cannot_be_built() {
-    let m = example();
+    let mut m = example();
+    // Prebuilt firmware with an image (manifest 1.1) is planned as a download of
+    // exactly that image; without one there is nothing to do.
+    let (p, code) = plan(&m, "probeharbor-probe", "esp32").unwrap();
+    let image = p.image.clone().unwrap();
+    assert_eq!(p.code_sha256, image.sha256);
+    assert!(p.fqbn.is_empty() && p.install.is_empty() && code.is_empty());
+    for proj in &mut m.projects {
+        for b in &mut proj.builds {
+            b.image = None;
+        }
+    }
     assert!(matches!(
         plan(&m, "probeharbor-probe", "esp32"),
         Err(Error::Prebuilt(_))

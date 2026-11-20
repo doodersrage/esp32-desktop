@@ -1,11 +1,15 @@
-// Read-only console for a byte stream (serial port or simulator UART): decodes UTF-8
-// with state, so characters split across chunks survive; drops CR; keeps notices on
-// their own line; scrolls only when already at the end.
+// Read-only text view for serial and simulator output, shared by the serial monitor
+// and the simulator panel, and the tool row under it (find, time stamps, save).
 
 #pragma once
 
 #include <QPlainTextEdit>
 #include <QStringDecoder>
+
+class CoreConnection;
+class QCheckBox;
+class QLineEdit;
+class QToolButton;
 
 class ConsoleView : public QPlainTextEdit {
     Q_OBJECT
@@ -18,7 +22,40 @@ public:
     void appendNotice(const QString &text);
     // Start a new stream: forget any half-decoded character.
     void resetDecoder();
+    // Start each new line with this computer's time (hh:mm:ss.zzz). Lines already
+    // shown keep what they have.
+    void setTimestamps(bool on);
+    bool timestamps() const { return m_timestamps; }
+    // Select the next (or previous) match after the cursor, wrapping round; false if
+    // there is none.
+    bool findText(const QString &text, bool backward = false);
 
 private:
     QStringDecoder m_decoder{QStringDecoder::Utf8};
+    bool m_timestamps = false;
+    bool m_atLineStart = true;
+};
+
+// Find, time stamps and Save… for a ConsoleView. Saving goes through the core
+// (console.save), which writes the file.
+class ConsoleBar : public QWidget {
+    Q_OBJECT
+
+public:
+    // `setting` names where the time-stamps choice is kept (QSettings).
+    ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &setting, QWidget *parent = nullptr);
+
+    QLineEdit *findField() const { return m_find; }
+    QCheckBox *timestampBox() const { return m_stamps; }
+    // Ask the core to write the console's text to `path` (Save… asks for it).
+    void saveTo(const QString &path);
+
+private:
+    ConsoleView *m_view;
+    CoreConnection *m_core;
+    QLineEdit *m_find;
+    QToolButton *m_prev;
+    QToolButton *m_next;
+    QCheckBox *m_stamps;
+    QToolButton *m_save;
 };

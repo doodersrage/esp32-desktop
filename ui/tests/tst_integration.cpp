@@ -404,6 +404,11 @@ private slots:
             again.start();
             QTRY_COMPARE_WITH_TIMEOUT(second.projectView()->currentProjectId(), u"blink"_s, 10000);
             QTRY_COMPARE(second.projectView()->currentBuildBoard(), u"esp32-doit"_s);
+            // And File → Recent projects lists what was shown, newest first.
+            const QStringList recent = QSettings().value(u"project/recent"_s).toStringList();
+            QVERIFY(!recent.isEmpty());
+            QCOMPARE(recent.first(), u"blink"_s);
+            QCOMPARE(recent.count(u"blink"_s), 1);
         }
 
 

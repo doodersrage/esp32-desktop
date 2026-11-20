@@ -404,6 +404,31 @@
                     "type": "string"
                   },
                   "description": "Lines the firmware prints when it works."
+                },
+                "image": {
+                  "type": "object",
+                  "required": [
+                    "url",
+                    "sha256",
+                    "size"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Since 1.1. For prebuilt firmware: the merged image for this board, written at offset 0, which the app downloads, checks and then runs in its simulator or flashes (asking first). An https URL on the site.",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "pattern": "^https://"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 33554432
+                    }
+                  }
                 }
               }
             }

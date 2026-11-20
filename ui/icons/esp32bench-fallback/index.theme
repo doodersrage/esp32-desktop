@@ -1,0 +1,10 @@
+[Icon Theme]
+Name=esp32bench-fallback
+Comment=Icons from Lucide (ISC and MIT, see LICENSE-lucide), for systems without an icon theme
+Directories=scalable
+
+[scalable]
+Size=24
+MinSize=8
+MaxSize=512
+Type=Scalable

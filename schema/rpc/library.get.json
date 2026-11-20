@@ -332,6 +332,31 @@
                     "type": "string"
                   },
                   "description": "Lines the firmware prints when it works."
+                },
+                "image": {
+                  "type": "object",
+                  "required": [
+                    "url",
+                    "sha256",
+                    "size"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Since 1.1. For prebuilt firmware: the merged image for this board, written at offset 0, which the app downloads, checks and then runs in its simulator or flashes (asking first). An https URL on the site.",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "pattern": "^https://"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 33554432
+                    }
+                  }
                 }
               }
             }
@@ -425,7 +450,7 @@
             },
             {
               "quantity": 1,
-              "name": "LED and 220 \u03a9 resistor, only if your board has no LED on GPIO 2"
+              "name": "LED and 220 Ω resistor, only if your board has no LED on GPIO 2"
             }
           ],
           "expect": {
@@ -443,7 +468,7 @@
               ],
               "wiring": [
                 {
-                  "from": "LED anode, through 220 \u03a9",
+                  "from": "LED anode, through 220 Ω",
                   "to": "GPIO 2",
                   "note": "Skip if your board has an onboard LED"
                 },
@@ -470,7 +495,7 @@
               ],
               "wiring": [
                 {
-                  "from": "LED anode, through 220 \u03a9",
+                  "from": "LED anode, through 220 Ω",
                   "to": "GPIO 2",
                   "note": "Skip if your board has an onboard LED"
                 },

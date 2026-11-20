@@ -13,6 +13,8 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTabWidget>
+#include <QMenu>
+#include <QToolButton>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -83,6 +85,23 @@ private slots:
         result[u"project"_s] = p;
         view.showResult(result);
         QVERIFY(view.codeView()->toPlainText().contains(u"prebuilt firmware"_s));
+        // No image linked: nothing to build or download.
+        QVERIFY(view.buildButton()->isHidden());
+
+        // With the library's image (manifest 1.1) it is downloaded instead of built.
+        QJsonArray withImage;
+        for (const QJsonValue &v : builds) {
+            QJsonObject b = v.toObject();
+            b[u"image"_s] = QJsonObject{{u"url"_s, u"https://esp32bench.dev/firmware/x.bin"_s},
+                                        {u"sha256"_s, QString(64, u'a')}, {u"size"_s, 1000}};
+            withImage.append(b);
+        }
+        p[u"builds"_s] = withImage;
+        result[u"project"_s] = p;
+        view.showResult(result);
+        QVERIFY(!view.buildButton()->isHidden());
+        QCOMPARE(view.buildButton()->text(), u"Download"_s);
+        QCOMPARE(view.buildAction()->text(), u"Download"_s);
     }
 
     void escapesNotesAndIgnoresStaleReplies()
@@ -136,6 +155,12 @@ private slots:
         QCOMPARE(view.boardPicker()->itemText(1), u"ESP32-S3"_s);
         QVERIFY(view.tabs()->isHidden());
         QCOMPARE(view.openButton()->text(), u"Open folder"_s);
+        // Its source files, from local.get, to open in the user's editor.
+        QVERIFY(!view.editButton()->isHidden());
+        QStringList files;
+        for (QAction *a : view.editButton()->menu()->actions())
+            files << a->text();
+        QCOMPARE(files, (QStringList{u"CMakeLists.txt"_s, u"main/CMakeLists.txt"_s, u"main/blinky.c"_s}));
         QVERIFY(!view.buildButton()->isHidden());
         QCOMPARE(selected.last(), (QStringList{u"local-3f9a0c21b4de"_s, u"esp32"_s}));
         view.boardPicker()->setCurrentIndex(2);

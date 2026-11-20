@@ -586,7 +586,8 @@ async fn build_refuses_prebuilt_and_unknown_projects() {
     let mut c = Client::connect(&sock).await.unwrap();
     with_library(&mut c).await;
     for (project, board, want) in [
-        ("probeharbor-probe", "esp32", code::FAILED),
+        // Prebuilt firmware the library links an image of is downloaded, after asking.
+        ("probeharbor-probe", "esp32", code::CONSENT_REQUIRED),
         ("no-such-project", "esp32", code::NOT_FOUND),
         ("blink", "esp32c6", code::NOT_FOUND),
         ("../../etc", "esp32", code::INVALID_PARAMS),
@@ -601,6 +602,144 @@ async fn build_refuses_prebuilt_and_unknown_projects() {
             other => panic!("{project}/{board}: expected an error, got {other:?}"),
         }
     }
+}
+
+#[tokio::test]
+async fn console_save_writes_the_text_where_asked() {
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let path = d.path().join("console.txt");
+    let params = json!({ "path": path, "text": "ets Jul 29 2019\ncafé\n" });
+    assert_valid(
+        &method_def("console.save")["params"],
+        &params,
+        "console.save params",
+    );
+    let r = c.call("console.save", params).await.unwrap();
+    assert_valid(
+        &method_def("console.save")["result"],
+        &r,
+        "console.save result",
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "ets Jul 29 2019\ncafé\n"
+    );
+    assert_eq!(r["bytes"], "ets Jul 29 2019\ncafé\n".len());
+    match c
+        .call(
+            "console.save",
+            json!({ "path": "relative.txt", "text": "x" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("wrote to a relative path: {other:?}"),
+    }
+    match c
+        .call(
+            "console.save",
+            json!({ "path": d.path().join("no/such/dir/x.txt"), "text": "x" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
+        other => panic!("wrote into a missing folder: {other:?}"),
+    }
+}
+
+/// The build.finished event of a build job, checking every event on the way.
+async fn build_finished(c: &mut Client, job: &Value) -> Value {
+    loop {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&n["params"]["subscription"], job);
+        let event = n["method"].as_str().unwrap().to_owned();
+        assert_valid(&method_def(&event)["params"], &n["params"], &event);
+        if event == "build.finished" {
+            return n["params"].clone();
+        }
+    }
+}
+
+/// Prebuilt firmware: consent for exactly the image, then a download that is checked
+/// against the library and kept where a build's image goes; a file that does not match
+/// is refused and nothing is kept.
+#[tokio::test]
+async fn prebuilt_firmware_is_downloaded_after_consent_and_checked() {
+    use sha2::{Digest, Sha256};
+    let lib = tempfile::tempdir().unwrap();
+    let firmware = b"\xe9 a merged image stands in here".to_vec();
+    std::fs::create_dir_all(lib.path().join("fw")).unwrap();
+    std::fs::write(lib.path().join("fw/probe.bin"), &firmware).unwrap();
+    let sha: String = Sha256::digest(&firmware)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    // The example manifest, its prebuilt project's image at a path beside it (a local
+    // library may do that; a downloaded one must use https).
+    let mut m: Value = serde_json::from_slice(&std::fs::read(example_manifest()).unwrap()).unwrap();
+    for p in m["projects"].as_array_mut().unwrap() {
+        if p["firmware"] == "prebuilt" {
+            for b in p["builds"].as_array_mut().unwrap() {
+                b["image"] =
+                    json!({ "url": "fw/probe.bin", "sha256": sha, "size": firmware.len() });
+            }
+        }
+    }
+    let manifest = lib.path().join("desktop-manifest.json");
+    std::fs::write(&manifest, serde_json::to_vec(&m).unwrap()).unwrap();
+    let (d, sock, _lock) = daemon_with_source(&manifest).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+
+    let params = json!({ "project": "probeharbor-probe", "board": "esp32" });
+    let refusal = match c.call("build.start", params.clone()).await {
+        Err(ClientError::Rpc(e)) => e,
+        other => panic!("expected consent required, got {other:?}"),
+    };
+    assert_eq!(refusal.code, code::CONSENT_REQUIRED);
+    let data = refusal.data.unwrap();
+    // What the user is asked about: this image, by hash.
+    assert_eq!(data["plan"]["image"]["sha256"], sha);
+    assert_eq!(data["plan"]["codeSha256"], sha);
+    assert_eq!(data["plan"]["fqbn"], "");
+    let mut with_token = params.clone();
+    with_token["consent"] = data["token"].clone();
+    let r = c.call("build.start", with_token).await.unwrap();
+    assert_valid(
+        &method_def("build.start")["result"],
+        &r,
+        "build.start result",
+    );
+    let done = build_finished(&mut c, &r["job"]).await;
+    assert_eq!(done["ok"], true, "{done}");
+    let image = PathBuf::from(done["image"].as_str().unwrap());
+    assert_eq!(std::fs::read(&image).unwrap(), firmware);
+    assert!(image.starts_with(d.path().join("builds")));
+
+    // The file on the server changes: the download is refused, and the image kept
+    // before is not replaced by it.
+    std::fs::write(lib.path().join("fw/probe.bin"), b"something else entirely").unwrap();
+    let token = match c.call("build.start", params.clone()).await {
+        Err(ClientError::Rpc(e)) => e.data.unwrap()["token"].clone(),
+        other => panic!("expected consent required, got {other:?}"),
+    };
+    let mut with_token = params;
+    with_token["consent"] = token;
+    let r = c.call("build.start", with_token).await.unwrap();
+    let done = build_finished(&mut c, &r["job"]).await;
+    assert_eq!(done["ok"], false);
+    assert!(
+        done["error"]
+            .as_str()
+            .unwrap()
+            .contains("not the one the library lists"),
+        "{done}"
+    );
+    assert_eq!(std::fs::read(&image).unwrap(), firmware);
 }
 
 /// A pty pair: the master fd (the "board") and the slave path (the "port").
@@ -1497,6 +1636,11 @@ async fn local_idf_projects_open_build_and_run() {
         .collect();
     assert_eq!(boards, ["esp32", "esp32s3", "esp32c3"]);
     assert_eq!(got["exists"], true);
+    // Its source files, to open in the user's editor.
+    assert_eq!(
+        got["sources"],
+        json!(["CMakeLists.txt", "main/CMakeLists.txt", "main/hello.c"])
+    );
 
     if got["idf"].is_null() {
         eprintln!("skipping the build: ESP-IDF is not installed");

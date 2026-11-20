@@ -81,6 +81,8 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     layout->addWidget(m_output, 1);
+    m_tools = new ConsoleBar(m_output, m_core, u"serial/timestamps"_s, this);
+    layout->addWidget(m_tools);
     layout->addLayout(bottom);
 
     connect(m_core, &CoreConnection::devicesListed, this, &SerialMonitor::setPorts);

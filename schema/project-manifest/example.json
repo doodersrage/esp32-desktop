@@ -1,6 +1,6 @@
 {
  "format": "esp32bench-project-manifest",
- "version": "1.0.0",
+ "version": "1.1.0",
  "generated": "2026-11-16T12:00:00.000Z",
  "site": "https://esp32bench.dev",
  "licence": {
@@ -425,7 +425,12 @@
       "TT wifi ok",
       "TT tls: server certificate verified",
       "TT post 200 probes=1"
-     ]
+     ],
+     "image": {
+      "url": "https://esp32bench.dev/firmware/probeharbor-probe/probeharbor-probe-esp32.bin",
+      "sha256": "d5f1abf9be34425ef43ad0ced7ddd0b08b1ca12c215d257958bd681d7ce44eeb",
+      "size": 1183424
+     }
     },
     {
      "board": "esp32-doit",
@@ -510,7 +515,12 @@
       "TT wifi ok",
       "TT tls: server certificate verified",
       "TT post 200 probes=1"
-     ]
+     ],
+     "image": {
+      "url": "https://esp32bench.dev/firmware/probeharbor-probe/probeharbor-probe-esp32.bin",
+      "sha256": "d5f1abf9be34425ef43ad0ced7ddd0b08b1ca12c215d257958bd681d7ce44eeb",
+      "size": 1183424
+     }
     }
    ]
   }

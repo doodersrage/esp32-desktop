@@ -10,6 +10,7 @@
     "circuit.models",
     "circuit.set",
     "circuit.suggest",
+    "console.save",
     "core.hello",
     "core.unsubscribe",
     "debug.break",

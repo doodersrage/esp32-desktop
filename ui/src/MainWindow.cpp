@@ -77,6 +77,16 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     setCentralWidget(centre);
     connect(core, &CoreConnection::buildStarted, m_messages, &QWidget::hide);
     connect(core, &CoreConnection::boardStarted, m_messages, &QWidget::hide);
+    // A build or flash can take minutes: when it ends with the window behind others, ask
+    // for attention (the taskbar entry is highlighted; on macOS the Dock icon bounces).
+    connect(core, &CoreConnection::buildFinished, this, [this] {
+        if (!isActiveWindow())
+            QApplication::alert(this);
+    });
+    connect(core, &CoreConnection::boardFinished, this, [this](const QString &op) {
+        if (op == u"flash" && !isActiveWindow())
+            QApplication::alert(this);
+    });
     connect(core, &CoreConnection::buildFinished, this, [this](bool ok, const QString &error) {
         if (!ok)
             m_messages->showError(tr("The build failed: %1\nThe Build panel below has the whole log.").arg(error));
@@ -394,6 +404,19 @@ void MainWindow::buildToolBar()
             QSettings settings;
             settings.setValue(u"project/last"_s, id);
             settings.setValue(u"project/lastBoard"_s, m_project->currentBuildBoard());
+            // Newest first, each once, at most eight.
+            QStringList ids = settings.value(u"project/recent"_s).toStringList();
+            QStringList titles = settings.value(u"project/recentTitles"_s).toStringList();
+            while (titles.size() < ids.size())
+                titles << ids.at(titles.size());
+            if (const qsizetype at = ids.indexOf(id); at >= 0) {
+                ids.removeAt(at);
+                titles.removeAt(at);
+            }
+            ids.prepend(id);
+            titles.prepend(m_project->currentProjectTitle());
+            settings.setValue(u"project/recent"_s, ids.mid(0, 8));
+            settings.setValue(u"project/recentTitles"_s, titles.mid(0, 8));
         }
         m_buildPanel->setTarget(m_project->currentProjectId(), m_project->currentBuildBoard(),
                                 m_project->buildAction()->isEnabled());
@@ -501,6 +524,22 @@ void MainWindow::buildMenus()
     QAction *openIdf = file->addAction(QIcon::fromTheme(u"document-open-folder"_s), tr("&Open ESP-IDF Project…"));
     openIdf->setShortcut(QKeySequence::Open);
     connect(openIdf, &QAction::triggered, m_library, &LibraryPanel::openFolder);
+    // The projects shown lately, newest first (project/recent in the settings).
+    QMenu *recent = file->addMenu(QIcon::fromTheme(u"document-open-recent"_s), tr("Recent projects"));
+    connect(recent, &QMenu::aboutToShow, this, [this, recent] {
+        recent->clear();
+        QSettings settings;
+        const QStringList ids = settings.value(u"project/recent"_s).toStringList();
+        const QStringList titles = settings.value(u"project/recentTitles"_s).toStringList();
+        for (int i = 0; i < ids.size(); ++i) {
+            const QString id = ids.at(i);
+            recent->addAction(i < titles.size() ? titles.at(i) : id, this, [this, id] {
+                m_library->selectProject(id);
+            });
+        }
+        if (ids.isEmpty())
+            recent->addAction(tr("None yet"))->setEnabled(false);
+    });
     file->addSeparator();
     QAction *quit = file->addAction(QIcon::fromTheme(u"application-exit"_s), tr("&Quit"));
     quit->setShortcut(QKeySequence::Quit);
@@ -614,6 +653,23 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 bool MainWindow::confirmBuild(const QString &project, const QString &board, const QJsonObject &plan)
 {
+    // Prebuilt firmware: downloaded and checked, not built; nothing runs on this computer.
+    if (const QJsonObject image = plan.value(u"image"_s).toObject(); !image.isEmpty()) {
+        QMessageBox box(QMessageBox::Question, tr("Download prebuilt firmware?"),
+                        tr("“%1” for %2 is ready-made firmware from esp32bench.dev. It is downloaded and "
+                           "checked against the library's SHA-256, so the app can run it in the simulator "
+                           "or flash it to a board, which asks again.")
+                            .arg(project, board),
+                        QMessageBox::Cancel, this);
+        box.setInformativeText(tr("%1 will be downloaded.")
+                                   .arg(QLocale().formattedDataSize(image.value(u"size"_s).toInteger())));
+        box.setDetailedText(tr("From: %1\nSHA-256: %2")
+                                .arg(image.value(u"url"_s).toString(), image.value(u"sha256"_s).toString()));
+        QPushButton *download = box.addButton(tr("Download"), QMessageBox::AcceptRole);
+        box.setDefaultButton(QMessageBox::Cancel);
+        box.exec();
+        return box.clickedButton() == download;
+    }
     QStringList libs;
     for (const QJsonValue &v : plan.value(u"install"_s).toArray())
         libs << v.toString();

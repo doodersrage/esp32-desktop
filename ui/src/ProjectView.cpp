@@ -6,6 +6,9 @@
 #include <QAction>
 #include <QComboBox>
 #include <QDesktopServices>
+#include <QToolButton>
+#include <QMenu>
+#include <QDir>
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -71,6 +74,16 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     m_summary = new QLabel(page);
     m_summary->setWordWrap(true);
     m_openSite = new QPushButton(QIcon::fromTheme(u"internet-web-browser"_s), tr("Open on esp32bench.dev"), page);
+    // For the user's own project: its source files (local.get's sources), each opened
+    // in the editor the system has for it. The app has no editor of its own.
+    m_edit = new QToolButton(page);
+    m_edit->setText(tr("Edit"));
+    m_edit->setIcon(QIcon::fromTheme(u"document-edit"_s));
+    m_edit->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_edit->setPopupMode(QToolButton::InstantPopup);
+    m_edit->setMenu(new QMenu(m_edit));
+    m_edit->setToolTip(tr("Open one of the project's source files in your editor"));
+    m_edit->hide();
     connect(m_openSite, &QPushButton::clicked, this, [this] {
         if (m_local) {
             QDesktopServices::openUrl(QUrl::fromLocalFile(m_project.value(u"path"_s).toString()));
@@ -97,7 +110,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
 
     m_board = new QComboBox(page);
     connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::showBuild);
-    connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::currentChanged);
+    connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::updateBuildButton);
 
     m_tabs = new QTabWidget(page);
 
@@ -146,6 +159,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     headText->addWidget(m_meta);
     head->addLayout(headText, 1);
     head->addWidget(m_build, 0, Qt::AlignTop);
+    head->addWidget(m_edit, 0, Qt::AlignTop);
     head->addWidget(m_openSite, 0, Qt::AlignTop);
     auto *boardRow = new QFormLayout;
     m_boardLabel = new QLabel(tr("Board:"), page);
@@ -301,6 +315,14 @@ void ProjectView::showLocal(const QJsonObject &result)
 
     m_openSite->setText(tr("Open folder"));
     m_openSite->setIcon(QIcon::fromTheme(u"folder-open"_s));
+    m_edit->menu()->clear();
+    for (const QJsonValue &v : result.value(u"sources"_s).toArray()) {
+        const QString rel = v.toString();
+        m_edit->menu()->addAction(rel, this, [path, rel] {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(QDir(path).filePath(rel)));
+        });
+    }
+    m_edit->setVisible(exists && !m_edit->menu()->isEmpty());
     setBuildToolTip(tr("Build this project for the selected chip with ESP-IDF"));
     m_tabs->hide();
 
@@ -336,6 +358,7 @@ void ProjectView::showResult(const QJsonObject &result)
     m_builds = p.value(u"builds"_s).toArray();
     m_openSite->setText(tr("Open on esp32bench.dev"));
     m_openSite->setIcon(QIcon::fromTheme(u"internet-web-browser"_s));
+    m_edit->hide();
     setBuildToolTip(tr("Build this project for the selected board with arduino-cli"));
     m_tabs->show();
     m_boardLabel->setText(tr("Board:"));
@@ -441,10 +464,21 @@ void ProjectView::showBuild(int index)
 void ProjectView::updateBuildButton()
 {
     const bool sketch = m_project.value(u"firmware"_s).toString() == u"sketch";
-    const bool buildable = m_local ? m_localBuildable : sketch;
-    m_build->setVisible(m_local || sketch);
+    // Prebuilt firmware the library links for this board is downloaded instead of built
+    // (build.start does either, after asking).
+    const int b = m_board->currentIndex();
+    const bool download = !m_local && !sketch && b >= 0 && b < m_builds.size()
+                          && m_builds.at(b).toObject().contains(u"image"_s);
+    const bool buildable = m_local ? m_localBuildable : (sketch || download);
+    const QString text = download ? tr("Download") : tr("Build");
+    m_build->setText(text);
+    m_buildAction->setText(text);
+    if (download)
+        setBuildToolTip(tr("Download this board's ready-made firmware from esp32bench.dev and check it, "
+                           "to run it in the simulator or flash it"));
+    m_build->setVisible(m_local || sketch || download);
     m_build->setEnabled(buildable && m_core->state() == CoreConnection::State::Connected
                         && !m_core->isBuilding());
-    m_buildAction->setEnabled(m_stack->currentIndex() == 1 && (m_local || sketch) && m_build->isEnabled());
+    m_buildAction->setEnabled(m_stack->currentIndex() == 1 && m_build->isVisibleTo(this) && m_build->isEnabled());
     emit currentChanged();
 }

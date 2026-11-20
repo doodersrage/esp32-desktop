@@ -560,6 +560,43 @@ pub struct Plan {
     pub idf: Idf,
 }
 
+/// A local project's source files to offer for editing, relative to its folder with
+/// `/`: the top-level CMakeLists.txt, then the C, C++, header and assembly files in
+/// `main/` and one level below it, sorted; at most 64. Links are not followed.
+pub fn sources(project: &Path) -> Vec<String> {
+    const EXTS: &[&str] = &["c", "cc", "cpp", "h", "hpp", "s", "S"];
+    let mut out = Vec::new();
+    if project.join("CMakeLists.txt").is_file() {
+        out.push("CMakeLists.txt".to_owned());
+    }
+    let mut found = Vec::new();
+    let mut dirs = vec![(project.join("main"), "main".to_owned(), 0)];
+    while let Some((dir, rel, depth)) = dirs.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let Ok(kind) = e.file_type() else { continue };
+            let name = e.file_name().to_string_lossy().into_owned();
+            let path = format!("{rel}/{name}");
+            if kind.is_dir() && depth < 1 {
+                dirs.push((e.path(), path, depth + 1));
+            } else if kind.is_file()
+                && (name == "CMakeLists.txt"
+                    || std::path::Path::new(&name)
+                        .extension()
+                        .is_some_and(|x| EXTS.contains(&x.to_string_lossy().as_ref())))
+            {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    out.extend(found);
+    out.truncate(64);
+    out
+}
+
 /// Work out a build of `project` for `board` without running anything.
 pub fn plan(project: &LocalProject, board: &str, idf: &Idf) -> Result<Plan, Error> {
     let target = TARGETS
@@ -744,6 +781,39 @@ mod tests {
     }
 
     const CMAKE: &str = "cmake_minimum_required(VERSION 3.16)\ninclude($ENV{IDF_PATH}/tools/cmake/project.cmake)\nproject(blinky)\n";
+
+    #[test]
+    fn sources_are_the_projects_code_files() {
+        let dir = tempfile::tempdir().unwrap();
+        project(dir.path(), CMAKE);
+        for f in [
+            "main/CMakeLists.txt",
+            "main/app.c",
+            "main/app.h",
+            "main/lib/util.cpp",
+            "main/notes.txt",
+        ] {
+            let p = dir.path().join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "").unwrap();
+        }
+        // Too deep, and outside main/: not listed.
+        std::fs::create_dir_all(dir.path().join("main/lib/deeper")).unwrap();
+        std::fs::write(dir.path().join("main/lib/deeper/x.c"), "").unwrap();
+        std::fs::create_dir_all(dir.path().join("build")).unwrap();
+        std::fs::write(dir.path().join("build/gen.c"), "").unwrap();
+        assert_eq!(
+            sources(dir.path()),
+            [
+                "CMakeLists.txt",
+                "main/CMakeLists.txt",
+                "main/app.c",
+                "main/app.h",
+                "main/lib/util.cpp"
+            ]
+        );
+        assert!(sources(&dir.path().join("gone")).is_empty());
+    }
 
     #[test]
     fn images_take_the_projects_flash_size_when_qemu_has_it() {

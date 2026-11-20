@@ -1,6 +1,6 @@
 {
   "method": "build.start",
-  "description": "Build a library project for one board with arduino-cli. Library projects are downloaded, so they are untrusted (CLAUDE.md rule 4): without a valid `consent` token the call fails with -32002, and the error's data carries a token and the plan to show the user. Calling again with that token starts the build. A token is single-use, expires after 10 minutes, and only covers that exact plan. Returns a job; build.log and build.finished report progress; job.cancel stops it. A local project's id (local-..., local.open) builds with ESP-IDF's idf.py instead, without consent (the user chose the folder): its plan has project, board, target, path and idf.",
+  "description": "Build a library project for one board with arduino-cli. Library projects are downloaded, so they are untrusted (CLAUDE.md rule 4): without a valid `consent` token the call fails with -32002, and the error's data carries a token and the plan to show the user. Calling again with that token starts the build. A token is single-use, expires after 10 minutes, and only covers that exact plan. Returns a job; build.log and build.finished report progress; job.cancel stops it. A local project's id (local-..., local.open) builds with ESP-IDF's idf.py instead, without consent (the user chose the folder): its plan has project, board, target, path and idf. A prebuilt library project (manifest 1.1 image) is downloaded and checked instead, with the same consent and events.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -73,6 +73,29 @@
                   "type": "string"
                 },
                 "description": "Arduino libraries that will be downloaded and installed."
+              },
+              "image": {
+                "type": "object",
+                "required": [
+                  "url",
+                  "sha256",
+                  "size"
+                ],
+                "additionalProperties": false,
+                "description": "Prebuilt firmware: the image downloaded instead of building (the manifest's build image). fqbn is then empty and codeSha256 is the image's.",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
               }
             }
           },
@@ -180,6 +203,29 @@
                 "type": "string"
               },
               "description": "Arduino libraries that will be downloaded and installed."
+            },
+            "image": {
+              "type": "object",
+              "required": [
+                "url",
+                "sha256",
+                "size"
+              ],
+              "additionalProperties": false,
+              "description": "Prebuilt firmware: the image downloaded instead of building (the manifest's build image). fqbn is then empty and codeSha256 is the image's.",
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
             }
           }
         }

@@ -21,7 +21,8 @@
       "project",
       "boards",
       "idf",
-      "exists"
+      "exists",
+      "sources"
     ],
     "additionalProperties": false,
     "properties": {
@@ -100,6 +101,14 @@
       "exists": {
         "type": "boolean",
         "description": "Whether the folder still holds the project."
+      },
+      "sources": {
+        "type": "array",
+        "maxItems": 64,
+        "items": {
+          "type": "string"
+        },
+        "description": "Source files to offer for editing, relative to the project folder with /: the top-level CMakeLists.txt, then the C, C++, header and assembly files in main/ and one level below it, sorted. Empty when the folder is gone."
       }
     }
   },
@@ -138,7 +147,12 @@
           "path": "/home/u/esp/esp-idf",
           "version": "6.0.2"
         },
-        "exists": true
+        "exists": true,
+        "sources": [
+          "CMakeLists.txt",
+          "main/CMakeLists.txt",
+          "main/blinky.c"
+        ]
       }
     }
   ]

@@ -92,8 +92,14 @@ const CONSENT_LIFETIME: Duration = Duration::from_secs(10 * 60);
 pub enum Error {
     #[error("no project `{0}` in the library")]
     NoProject(String),
-    #[error("`{0}` ships as prebuilt firmware; there is nothing to build")]
+    #[error(
+        "`{0}` ships as prebuilt firmware, and the library links no image of it for this board"
+    )]
     Prebuilt(String),
+    #[error("could not download the firmware: {0}")]
+    Download(String),
+    #[error("the downloaded firmware is not the one the library lists ({0}); nothing was kept")]
+    ImageMismatch(String),
     #[error("`{project}` has no build for board `{board}`")]
     NoBuild { project: String, board: String },
     #[error("board `{0}` is not one this program can build for")]
@@ -163,6 +169,10 @@ pub struct Plan {
     pub code_sha256: String,
     /// Arduino library names that will be downloaded and installed.
     pub install: Vec<String>,
+    /// Prebuilt firmware: the image that is downloaded instead of building (fqbn is
+    /// empty and code_sha256 is the image's).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<esp32bench_library::Image>,
 }
 
 /// Ids from downloaded data become path components; allow only `[a-z0-9-]`.
@@ -204,9 +214,6 @@ pub fn plan(manifest: &Manifest, project: &str, board: &str) -> Result<(Plan, St
     let p = manifest
         .project(project)
         .ok_or_else(|| Error::NoProject(project.to_owned()))?;
-    if p.firmware == Firmware::Prebuilt {
-        return Err(Error::Prebuilt(project.to_owned()));
-    }
     let build = p
         .builds
         .iter()
@@ -215,6 +222,26 @@ pub fn plan(manifest: &Manifest, project: &str, board: &str) -> Result<(Plan, St
             project: project.to_owned(),
             board: board.to_owned(),
         })?;
+    if p.firmware == Firmware::Prebuilt {
+        // Nothing to compile: the plan is the image to download, and consent is for
+        // exactly that image.
+        let image = build
+            .image
+            .clone()
+            .ok_or_else(|| Error::Prebuilt(project.to_owned()))?;
+        return Ok((
+            Plan {
+                project: project.to_owned(),
+                board: board.to_owned(),
+                target: board.to_owned(),
+                fqbn: String::new(),
+                code_sha256: image.sha256.clone(),
+                install: Vec::new(),
+                image: Some(image),
+            },
+            String::new(),
+        ));
+    }
     let code = build.code.clone().ok_or_else(|| Error::NoBuild {
         project: project.to_owned(),
         board: board.to_owned(),
@@ -256,8 +283,64 @@ pub fn plan(manifest: &Manifest, project: &str, board: &str) -> Result<(Plan, St
             .iter()
             .map(|i| i.arduino_name().to_owned())
             .collect(),
+        image: None,
     };
     Ok((plan, code))
+}
+
+/// Download a prebuilt plan's image from `source` (esp32bench_library::image_source),
+/// check its size and SHA-256 against the plan, and keep it where a build's image goes,
+/// so the simulator and flashing use it like a built one. Nothing is kept if it does
+/// not match. There is no ELF, so it cannot be debugged.
+pub async fn fetch_image(
+    plan: &Plan,
+    source: &str,
+    dirs: &Dirs,
+    mut log: impl FnMut(Stream, String),
+) -> Result<Output, Error> {
+    let image = plan
+        .image
+        .as_ref()
+        .ok_or_else(|| Error::Prebuilt(plan.project.clone()))?;
+    log(Stream::Stdout, format!("Downloading {}", image.url));
+    let bytes = esp32bench_library::fetch(source)
+        .await
+        .map_err(|e| Error::Download(e.to_string()))?;
+    let got = hex(&Sha256::digest(&bytes));
+    if bytes.len() as u64 != image.size || got != image.sha256 {
+        return Err(Error::ImageMismatch(format!(
+            "{} bytes with SHA-256 {got}, expected {} bytes with {}",
+            bytes.len(),
+            image.size,
+            image.sha256
+        )));
+    }
+    log(
+        Stream::Stdout,
+        format!("Checked: {} bytes, SHA-256 {got}", bytes.len()),
+    );
+    tokio::fs::create_dir_all(&dirs.out).await?;
+    let out = Output {
+        image: dirs.out.join(format!("{}.ino.merged.bin", plan.project)),
+        elf: dirs.out.join(format!("{}.ino.elf", plan.project)),
+    };
+    // Written whole, then moved into place; an ELF from an older build of the same
+    // name would describe other code, so it goes.
+    let part = out.image.with_extension("bin.part");
+    tokio::fs::write(&part, &bytes).await?;
+    tokio::fs::rename(&part, &out.image).await?;
+    match tokio::fs::remove_file(&out.elf).await {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+        _ => {}
+    }
+    log(
+        Stream::Stdout,
+        format!(
+            "Ready to run in the simulator or flash: {}",
+            out.image.display()
+        ),
+    );
+    Ok(out)
 }
 
 /// Single-use permission to run one exact plan, issued after the user has seen it
