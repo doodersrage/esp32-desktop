@@ -35,7 +35,8 @@ Type-checking the workspace for `x86_64-pc-windows-gnu` listed what Windows lack
 - **Data folders.** The core found its data folder through `HOME`, which a Windows program started normally does not have. `esp32bench_distro::dirs` gives each system's own: `%LOCALAPPDATA%\esp32bench` (cache in `…\cache`) on Windows, `~/Library/Application Support` and `~/Library/Caches` on macOS, the XDG folders on Linux; and arduino-cli's own data folder on each (`%LOCALAPPDATA%\Arduino15`, `~/Library/Arduino15`, `~/.arduino15`), where the core reads installed cores and the debugger's GDB.
 - **Consent tokens** came from `/dev/urandom`, which Windows does not have, so every build or flash of a downloaded project failed before asking. They come from the system's random source (`getrandom`).
 - **Program names** need `.exe` on Windows: the host and the GDBs are looked up with the system's suffix.
-- **Not checked yet:** the serial monitor and flashing over COM ports with a real board (CP210x and CH340 boards need their maker's driver, which the toolchain status says), and the user's own ESP-IDF projects, whose build runs ESP-IDF's `export.sh`: on Windows that needs ESP-IDF's own shell set-up, not supported yet.
+- **The user's own ESP-IDF projects.** On Linux and macOS their builds source ESP-IDF's `export.sh` in bash. Windows has no POSIX shell, so there the core does what ESP-IDF's activation does, with no shell: ESP-IDF's Python runs `idf_tools.py export --format key-value`, and `<python> tools\idf.py` runs with what it printed. Espressif's installation manager (EIM) lays its tools out where `idf_tools.py` does not look (`C:\esp\<tool>\<version>` in CI), so for an install EIM recorded the environment comes from EIM's own activation script instead (`powershell -File <its PowerShell profile> -e` prints it) and its recorded Python. ESP-IDF is found at `IDF_PATH`, in EIM's record (`C:\Espressif\tools\eim_idf.json`; EIM 3.0 can leave `idfSelectedId` naming none of its installs), at `%USERPROFILE%\esp\esp-idf` (Espressif's guide) or in the classic installer's `C:\Espressif\frameworks`. `idf.py` and `idf_tools.py` refuse to run when `MSYSTEM` is set ("MSys/Mingw is not supported"), which Git Bash sets, so the core drops it for them. Both installs are checked in CI: `install.ps1` (the smoke test builds a project from a folder with a space in its name and boots it) and EIM through Espressif's action (whose own deactivate script failed after installing, so that step may fail).
+- **Not checked yet:** the serial monitor and flashing over COM ports with a real board (CP210x and CH340 boards need their maker's driver, which the toolchain status says).
 
 ## Decision: the simulator ships prebuilt on macOS and Windows
 
@@ -54,13 +55,13 @@ The UI's 16 tests pass on both, including the integration test, which starts the
 - boots the hello firmware on the ESP32, S3 and C3 through it;
 - drives pins both ways over the pin link (macOS: a GPIO trace; Windows: GPIO 2's toggling reaches the core and GPIO 4 driven from the core reaches the firmware);
 - installs the pinned arduino-cli and the ESP32 core with the app's own toolchain install, builds the library's `blink` project, and boots the build in the simulator;
+- on Windows, builds the user's own ESP-IDF project with ESP-IDF installed as Espressif's guide does, and boots it (and a second job builds one with an EIM install);
 - keeps the UI up headless.
 
 What is left:
 
 1. Real boards, which needs hardware: the serial monitor, flashing and the automatic reset over USB serial on both.
-2. The user's own ESP-IDF projects on Windows (`export.sh`; see above).
-3. Named pipes for the simulator's links on Windows.
-4. The release workflow attaching the `.dmg`, `.zip` and installer to each release, and the site's /desktop/ page offering them.
-5. Signing: unsigned until the owner decides (macOS Gatekeeper asks users to allow an app from the internet; Windows SmartScreen warns).
-6. An Intel Mac build (the `.dmg` is arm64 only) and Windows on Arm, if wanted.
+2. Named pipes for the simulator's links on Windows.
+3. A release with the `.dmg`, `.zip` and installer (a version tag's `packages.yml` run now builds and attaches them; a manual run gathers them without uploading), and the site's /desktop/ page offering them.
+4. Signing: unsigned until the owner decides (macOS Gatekeeper asks users to allow an app from the internet; Windows SmartScreen warns).
+5. An Intel Mac build (the `.dmg` is arm64 only) and Windows on Arm, if wanted.

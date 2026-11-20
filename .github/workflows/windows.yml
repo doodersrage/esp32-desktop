@@ -221,13 +221,6 @@ jobs:
           Get-ChildItem -Path C:\esp, C:\Espressif, "$env:USERPROFILE\.espressif", "$env:LOCALAPPDATA", "$env:APPDATA" -Filter eim_idf.json -Recurse -Depth 4 -ErrorAction SilentlyContinue |
             ForEach-Object { Write-Output "== $($_.FullName)"; Get-Content $_.FullName }
           Write-Output "IDF_PATH=$env:IDF_PATH IDF_TOOLS_PATH=$env:IDF_TOOLS_PATH IDF_PYTHON_ENV_PATH=$env:IDF_PYTHON_ENV_PATH"
-          # Where EIM put the tools, and how its activation finds them.
-          Get-ChildItem C:\esp, C:\esp\tools, C:\Espressif, C:\Espressif\tools -ErrorAction SilentlyContinue |
-            ForEach-Object { $_.FullName }
-          Get-ChildItem C:\esp, C:\Espressif -Recurse -Depth 4 -Filter 'xtensa-esp-elf*' -ErrorAction SilentlyContinue |
-            Select-Object -First 5 | ForEach-Object { $_.FullName }
-          Get-ChildItem C:\Espressif\tools -Filter '*.ps1' -ErrorAction SilentlyContinue |
-            ForEach-Object { Write-Output "== $($_.FullName)"; Get-Content $_.FullName | Select-Object -First 80 }
       - name: Build a local project
         shell: bash
         run: |
