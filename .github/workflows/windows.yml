@@ -7,7 +7,6 @@ name: Windows
 on:
   push:
     branches: [main]
-    tags: ['v*']
     paths:
       - 'core/**'
       - 'ui/**'
@@ -15,6 +14,8 @@ on:
       - 'tests/platforms/**'
       - '.github/workflows/windows.yml'
   workflow_dispatch:
+  # Release builds: packages.yml calls this on a version tag and attaches the result.
+  workflow_call:
 
 permissions:
   contents: read
@@ -193,3 +194,43 @@ jobs:
             dist/*.zip
             dist/*-setup.exe
           if-no-files-found: error
+
+  # ESP-IDF installed by Espressif's installation manager (EIM, through Espressif's
+  # action), found by the packaged app without IDF_PATH, from what EIM recorded
+  # (eim_idf.json), and a local project built with it.
+  idf-eim:
+    name: ESP-IDF from Espressif's installer
+    needs: [app]
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-packages
+          path: dist
+      - uses: espressif/install-esp-idf-action@v1
+        with:
+          version: v6.0.2
+      - name: What EIM recorded
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path C:\esp, C:\Espressif, "$env:USERPROFILE\.espressif" -Filter eim_idf.json -Recurse -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Output "== $($_.FullName)"; Get-Content $_.FullName }
+          Write-Output "IDF_PATH=$env:IDF_PATH IDF_TOOLS_PATH=$env:IDF_TOOLS_PATH IDF_PYTHON_ENV_PATH=$env:IDF_PYTHON_ENV_PATH"
+      - name: Build a local project
+        shell: bash
+        run: |
+          set -euo pipefail
+          # As a user's app sees it: none of the action's variables.
+          unset IDF_PATH IDF_TOOLS_PATH IDF_PYTHON_ENV_PATH ESP_IDF_VERSION
+          work=$(mktemp -d)
+          unzip -q dist/*.zip -d "$work"
+          bin=$(dirname "$(find "$work" -name esp32bench.exe | head -1)")
+          "$bin/esp32bench.exe" local list 2>&1 | tee "$work/list.txt"
+          grep -q "ESP-IDF 6.0.2 at " "$work/list.txt"
+          cp -R tests/firmware/hello "$work/hello"
+          id=$("$bin/esp32bench.exe" local open "$(cygpath -w "$work/hello")" | awk '{ print $1 }')
+          "$bin/esp32bench.exe" build "$id" --board esp32c3 > "$work/build.log" 2>&1 || { tail -60 "$work/build.log"; exit 1; }
+          find "$(cygpath -u "$LOCALAPPDATA")/esp32bench/cache" -name "$id.ino.merged.bin" | grep -q . 
+          echo "built with the EIM install"

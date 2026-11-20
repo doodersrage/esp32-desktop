@@ -286,6 +286,11 @@ fn parse_export(stdout: &str, path: &OsString) -> Vec<(String, OsString)> {
         .collect()
 }
 
+/// Set by MSYS2 and Git Bash shells; idf_tools.py and idf.py refuse to run when they
+/// see it ("MSys/Mingw is not supported"). The core runs ESP-IDF's own Windows Python
+/// with no shell, so a CLI started from Git Bash drops it for them.
+const MSYSTEM: &str = "MSYSTEM";
+
 /// ESP-IDF's environment, as its activation computes it, for [`Activation::Direct`].
 pub async fn environment(idf: &Idf) -> Result<Environment, Error> {
     let (python, tools) = python_env(idf).ok_or_else(|| Error::NoIdfPython(idf.path.clone()))?;
@@ -305,6 +310,7 @@ pub async fn environment(idf: &Idf) -> Result<Environment, Error> {
     cmd.arg(idf.path.join("tools").join("idf_tools.py"))
         .args(["export", "--format", "key-value"])
         .envs(base.iter().map(|(k, v)| (k, v)))
+        .env_remove(MSYSTEM)
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
     #[cfg(windows)]
@@ -506,7 +512,8 @@ fn idf_py(idf: &Idf, env: Option<&Environment>, args: Vec<OsString>) -> Command 
         let mut cmd = Command::new(&env.python);
         cmd.arg(idf.path.join("tools").join("idf.py"))
             .args(args)
-            .envs(env.vars.iter().map(|(k, v)| (k, v)));
+            .envs(env.vars.iter().map(|(k, v)| (k, v)))
+            .env_remove(MSYSTEM);
         return cmd;
     }
     const SCRIPT: &str = r#"set -e
