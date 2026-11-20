@@ -150,6 +150,8 @@ public:
     // with circuitLoaded (set with what was saved).
     void loadCircuit(const QString &project, const QString &board);
     void saveCircuit(const QString &project, const QString &board, const QJsonObject &circuit);
+    // circuit.suggest: the parts a library project's wiring names, with circuitSuggested.
+    void suggestCircuit(const QString &project, const QString &board);
 
     // debug.*: on the simulator started with debug. Results come as signals.
     void debugBreak(const QString &location);
@@ -220,6 +222,9 @@ signals:
     // sim.partPicture: a display part's picture, lit pixels white on black.
     void partPicture(const QString &id, const QImage &image);
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
+    // Parts to place (a circuit) and the parts named that have no model.
+    void circuitSuggested(const QString &project, const QString &board, const QJsonObject &circuit,
+                          const QStringList &unmatched);
     void modelsLoaded(const QJsonArray &models);
     void simStopped(const QString &reason);
 

@@ -186,6 +186,10 @@
         <translation>Quitar</translation>
     </message>
     <message>
+        <source>Add the project&apos;s parts</source>
+        <translation>Añadir las piezas del proyecto</translation>
+    </message>
+    <message>
         <source>Add part</source>
         <translation>Añadir pieza</translation>
     </message>
@@ -208,6 +212,14 @@
     <message>
         <source>Select a project to place virtual parts on its board.</source>
         <translation>Selecciona un proyecto para colocar piezas virtuales en su placa.</translation>
+    </message>
+    <message>
+        <source>Not simulated: %1.</source>
+        <translation>Sin simular: %1.</translation>
+    </message>
+    <message>
+        <source>The project&apos;s wiring has parts the simulator can show: %1. Add them to see them work when it runs.</source>
+        <translation>El cableado del proyecto tiene piezas que el simulador puede mostrar: %1. Añádelas para verlas funcionar cuando se ejecute.</translation>
     </message>
     <message>
         <source>No parts on this board yet. Add an LED, a button or another part on its pins.</source>
@@ -818,6 +830,26 @@ El panel Compilación de abajo tiene el registro completo.</translation>
         <translation>Puerto:</translation>
     </message>
     <message>
+        <source>Board</source>
+        <translation>Placa</translation>
+    </message>
+    <message>
+        <source>Serial monitor, inspect and erase for the board on the selected port</source>
+        <translation>Monitor serie, inspeccionar y borrar la placa del puerto elegido</translation>
+    </message>
+    <message>
+        <source>Open in serial monitor</source>
+        <translation>Abrir en el monitor serie</translation>
+    </message>
+    <message>
+        <source>Inspect board…</source>
+        <translation>Inspeccionar placa…</translation>
+    </message>
+    <message>
+        <source>Erase flash…</source>
+        <translation>Borrar flash…</translation>
+    </message>
+    <message>
         <source>No project selected</source>
         <translation>Ningún proyecto elegido</translation>
     </message>
@@ -847,7 +879,7 @@ El panel Compilación de abajo tiene el registro completo.</translation>
     </message>
     <message>
         <source>First, &lt;a href=&quot;setup&quot;&gt;install the build tools&lt;/a&gt;.</source>
-        <translation>Primero, &lt;a href="setup"&gt;instala las herramientas de compilación&lt;/a&gt;.</translation>
+        <translation>Primero, &lt;a href=&quot;setup&quot;&gt;instala las herramientas de compilación&lt;/a&gt;.</translation>
     </message>
     <message>
         <source>Next: build it, or press Run in simulator, which builds it first.</source>

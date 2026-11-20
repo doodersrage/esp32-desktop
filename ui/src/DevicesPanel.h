@@ -22,6 +22,8 @@ public:
 
     // A device.list bridge id ("cp210x") as people know it ("CP210x USB to UART").
     static QString bridgeName(const QJsonValue &bridge);
+    // What to do about a port the user may not open (device.list's access "denied").
+    static QString accessHint();
 
     // Render a device.list result. Public so tests can feed fixed data.
     void showPorts(const QJsonArray &ports);

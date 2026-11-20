@@ -227,7 +227,13 @@ void BuildPanel::setPorts(const QJsonArray &ports)
                                                 : DevicesPanel::bridgeName(bridge);
         const QString name = path.section(u'/', -1);
         m_port->addItem(what.isEmpty() ? name : tr("%1 – %2").arg(what, name), path);
-        m_port->setItemData(m_port->count() - 1, path, Qt::ToolTipRole);
+        if (p.value(u"access"_s).toString() == u"denied") {
+            m_port->setItemIcon(m_port->count() - 1, QIcon::fromTheme(u"dialog-warning"_s));
+            m_port->setItemData(m_port->count() - 1, u"%1\n%2"_s.arg(path, DevicesPanel::accessHint()),
+                                Qt::ToolTipRole);
+        } else {
+            m_port->setItemData(m_port->count() - 1, path, Qt::ToolTipRole);
+        }
     }
     // A board just plugged in is the one to flash; otherwise keep the port that was
     // chosen, else take the first. (With a placeholder text the combo selects nothing

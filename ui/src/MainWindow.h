@@ -23,6 +23,7 @@ class QLabel;
 class QPushButton;
 class QAction;
 class QToolBar;
+class QToolButton;
 class QProgressBar;
 class MessageBar;
 
@@ -47,6 +48,8 @@ public:
     QToolBar *toolBar() const { return m_toolBar; }
     QString nextStepText() const;
     MessageBar *messageBar() const { return m_messages; }
+    // The toolbar's Board menu: serial monitor, inspect and erase for the chosen port.
+    QToolButton *boardMenuButton() const { return m_boardMenu; }
     CircuitPanel *circuit() const { return m_circuit; }
     void showSetup();
     // Open an esp32bench:// link: select the project (and board) it names. It is
@@ -78,6 +81,9 @@ private:
     void startCore();
     void restoreLayout();
     void freePort(const QString &port);
+    void openSerialPort(const QString &path);
+    void inspectPort(const QString &port);
+    void erasePort(const QString &port);
     void saveLayout();
 
     CoreConnection *m_core;
@@ -112,6 +118,7 @@ private:
     QLabel *m_current = nullptr;
     QLabel *m_nextStep = nullptr;
     QAction *m_stopSim = nullptr;
+    QToolButton *m_boardMenu = nullptr;
     QProgressBar *m_busy = nullptr;
     QAction *m_busyAction = nullptr;
     MessageBar *m_messages = nullptr;

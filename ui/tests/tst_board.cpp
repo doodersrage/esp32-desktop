@@ -17,6 +17,9 @@
 #include <QPushButton>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QToolButton>
+#include <QMenu>
+#include <QAction>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -215,6 +218,23 @@ private slots:
         QVERIFY(fake.calls.isEmpty());
         window.eraseAnswer = true;
         emit window.devicesPanel()->eraseRequested(u"/dev/ttyACM0"_s);
+        QTRY_COMPARE(fake.calls, QStringList{u"board.erase confirm=true"_s});
+
+        // The toolbar's Board menu does the same for the port chosen there.
+        QTRY_VERIFY(window.boardMenuButton()->isEnabled());
+        QCOMPARE(window.buildPanel()->portPicker()->currentData().toString(), u"/dev/ttyACM0"_s);
+        const auto action = [&](const QString &text) -> QAction * {
+            for (QAction *a : window.boardMenuButton()->menu()->actions()) {
+                if (a->text() == text)
+                    return a;
+            }
+            return nullptr;
+        };
+        QVERIFY(action(u"Inspect board…"_s));
+        QVERIFY(action(u"Erase flash…"_s));
+        fake.calls.clear();
+        action(u"Erase flash…"_s)->trigger();
+        QCOMPARE(window.eraseAsked, 3);
         QTRY_COMPARE(fake.calls, QStringList{u"board.erase confirm=true"_s});
     }
 };

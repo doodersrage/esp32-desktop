@@ -14,6 +14,7 @@
 #include <QLocalSocket>
 #include <QMenu>
 #include <QPointer>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
@@ -35,6 +36,9 @@ public:
                       {u"parts"_s, QJsonArray{QJsonObject{{u"id"_s, u"led-1"_s}, {u"kind"_s, u"led"_s}, {u"pin"_s, 2}}}}};
     QList<QJsonObject> controls;
     bool rejectNext = false;
+    // What circuit.suggest answers.
+    QJsonObject suggestion{{u"circuit"_s, QJsonObject{{u"schemaVersion"_s, u"1.2.0"_s}, {u"parts"_s, QJsonArray{}}}},
+                           {u"unmatched"_s, QJsonArray{}}};
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -112,6 +116,8 @@ private:
                     return m;
                 }(),
             }}});
+        } else if (m == u"circuit.suggest") {
+            reply(id, suggestion);
         } else if (m == u"circuit.get") {
             reply(id, QJsonObject{{u"circuit"_s, saved}});
         } else if (m == u"circuit.set") {
@@ -177,6 +183,42 @@ private slots:
         QCOMPARE(panel.partStripLength(u"ws2812-1"_s), 3);
         core.stopSim();
         QTRY_VERIFY(!core.isSimRunning());
+    }
+
+    void offersTheProjectsPartsOnAnEmptyBoard()
+    {
+        FakeCore fake(path());
+        fake.saved = QJsonObject{{u"schemaVersion"_s, u"1.2.0"_s}, {u"parts"_s, QJsonArray{}}};
+        const QJsonObject wired{
+            {u"schemaVersion"_s, u"1.2.0"_s},
+            {u"parts"_s, QJsonArray{QJsonObject{{u"id"_s, u"led-1"_s}, {u"kind"_s, u"led"_s}, {u"pin"_s, 16},
+                                                {u"label"_s, u"Green LED"_s}},
+                                    QJsonObject{{u"id"_s, u"button-1"_s}, {u"kind"_s, u"button"_s}, {u"pin"_s, 25},
+                                                {u"label"_s, u"Green button"_s},
+                                                {u"props"_s, QJsonObject{{u"activeLow"_s, true}}}}}}};
+        fake.suggestion = {{u"circuit"_s, wired}, {u"unmatched"_s, QJsonArray{u"Buzzer"_s}}};
+        CoreConnection core;
+        core.setSocketPath(path());
+        CircuitPanel panel(&core);
+        panel.show();
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        panel.showBoard(u"simon"_s, u"esp32"_s, QJsonArray{u"16"_s, u"25"_s});
+        // Empty board: the wiring's parts are offered, and what is not simulated is said.
+        QTRY_VERIFY(panel.addSuggestedButton()->isVisibleTo(&panel));
+        QVERIFY(panel.statusText().contains(u"Green LED, Green button"_s));
+        QVERIFY(panel.statusText().contains(u"Not simulated: Buzzer."_s));
+        QVERIFY(panel.parts().isEmpty()); // nothing placed by asking
+        panel.addSuggestedButton()->click();
+        QTRY_COMPARE(panel.parts().size(), 2);
+        QCOMPARE(fake.saved, wired);
+        QVERIFY(!panel.addSuggestedButton()->isVisibleTo(&panel));
+
+        // A board that has parts is left alone.
+        panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s});
+        QTRY_COMPARE(panel.parts().size(), 2);
+        QTest::qWait(100);
+        QVERIFY(!panel.addSuggestedButton()->isVisibleTo(&panel));
     }
 
     void editsAndRunsParts()

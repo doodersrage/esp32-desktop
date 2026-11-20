@@ -186,6 +186,10 @@
         <translation>Entfernen</translation>
     </message>
     <message>
+        <source>Add the project&apos;s parts</source>
+        <translation>Bauteile des Projekts hinzufügen</translation>
+    </message>
+    <message>
         <source>Add part</source>
         <translation>Bauteil hinzufügen</translation>
     </message>
@@ -208,6 +212,14 @@
     <message>
         <source>Select a project to place virtual parts on its board.</source>
         <translation>Wähle ein Projekt, um virtuelle Bauteile auf sein Board zu setzen.</translation>
+    </message>
+    <message>
+        <source>Not simulated: %1.</source>
+        <translation>Nicht simuliert: %1.</translation>
+    </message>
+    <message>
+        <source>The project&apos;s wiring has parts the simulator can show: %1. Add them to see them work when it runs.</source>
+        <translation>Die Verdrahtung des Projekts enthält Bauteile, die der Simulator zeigen kann: %1. Füge sie hinzu, um sie bei der Ausführung arbeiten zu sehen.</translation>
     </message>
     <message>
         <source>No parts on this board yet. Add an LED, a button or another part on its pins.</source>
@@ -818,6 +830,26 @@ Der Bereich Build unten enthält das ganze Protokoll.</translation>
         <translation>Port:</translation>
     </message>
     <message>
+        <source>Board</source>
+        <translation>Board</translation>
+    </message>
+    <message>
+        <source>Serial monitor, inspect and erase for the board on the selected port</source>
+        <translation>Serieller Monitor, Untersuchen und Löschen für das Board am ausgewählten Port</translation>
+    </message>
+    <message>
+        <source>Open in serial monitor</source>
+        <translation>Im seriellen Monitor öffnen</translation>
+    </message>
+    <message>
+        <source>Inspect board…</source>
+        <translation>Board untersuchen…</translation>
+    </message>
+    <message>
+        <source>Erase flash…</source>
+        <translation>Flash löschen…</translation>
+    </message>
+    <message>
         <source>No project selected</source>
         <translation>Kein Projekt ausgewählt</translation>
     </message>
@@ -847,7 +879,7 @@ Der Bereich Build unten enthält das ganze Protokoll.</translation>
     </message>
     <message>
         <source>First, &lt;a href=&quot;setup&quot;&gt;install the build tools&lt;/a&gt;.</source>
-        <translation>Zuerst &lt;a href="setup"&gt;die Build-Werkzeuge installieren&lt;/a&gt;.</translation>
+        <translation>Zuerst &lt;a href=&quot;setup&quot;&gt;die Build-Werkzeuge installieren&lt;/a&gt;.</translation>
     </message>
     <message>
         <source>Next: build it, or press Run in simulator, which builds it first.</source>

@@ -55,6 +55,9 @@ public:
     // The middle of a part on the canvas, in scene coordinates.
     QPointF partCentre(const QString &id) const;
     QToolButton *addPartButton() const { return m_add; }
+    // Shown when the board has no parts and the project's wiring names some the
+    // simulator has (circuit.suggest): places them all.
+    QPushButton *addSuggestedButton() const { return m_addSuggested; }
     // The spin box for a selected part's number control, or null.
     QDoubleSpinBox *controlBox(const QString &name) const;
     // Select a part on the canvas, as a click does.
@@ -62,6 +65,8 @@ public:
 
 private:
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
+    void circuitSuggested(const QString &project, const QString &board, const QJsonObject &circuit,
+                          const QStringList &unmatched);
     void modelsLoaded(const QJsonArray &models);
     void rebuildScene();
     void resetStates();
@@ -75,6 +80,10 @@ private:
     QLabel *m_status;
     QToolButton *m_add;
     QPushButton *m_remove;
+    QPushButton *m_addSuggested;
+    // What the project's wiring gives (circuit.suggest) for the board shown.
+    QJsonObject m_suggested;
+    QStringList m_unmatched;
     QGraphicsScene *m_scene;
     QGraphicsView *m_view;
     QGroupBox *m_controls;

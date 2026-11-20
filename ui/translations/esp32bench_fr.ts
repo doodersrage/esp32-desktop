@@ -124,15 +124,15 @@
     </message>
     <message>
         <source>Run the selected project in the simulator, building it first if needed (ESP32, ESP32-S3 and ESP32-C3 boards)</source>
-        <translation>Exécuter le projet choisi dans le simulateur, en le compilant d'abord si besoin (cartes ESP32, ESP32-S3 et ESP32-C3)</translation>
+        <translation>Exécuter le projet choisi dans le simulateur, en le compilant d&apos;abord si besoin (cartes ESP32, ESP32-S3 et ESP32-C3)</translation>
     </message>
     <message>
         <source>Run the selected project in the simulator under GDB, paused before it starts, building it first if needed</source>
-        <translation>Exécuter le projet choisi dans le simulateur sous GDB, en pause avant le démarrage, en le compilant d'abord si besoin</translation>
+        <translation>Exécuter le projet choisi dans le simulateur sous GDB, en pause avant le démarrage, en le compilant d&apos;abord si besoin</translation>
     </message>
     <message>
         <source>Write the selected project to the board on the selected port, building it first if needed</source>
-        <translation>Écrire le projet choisi sur la carte du port choisi, en le compilant d'abord si besoin</translation>
+        <translation>Écrire le projet choisi sur la carte du port choisi, en le compilant d&apos;abord si besoin</translation>
     </message>
     <message>
         <source>No board</source>
@@ -186,6 +186,10 @@
         <translation>Retirer</translation>
     </message>
     <message>
+        <source>Add the project&apos;s parts</source>
+        <translation>Ajouter les composants du projet</translation>
+    </message>
+    <message>
         <source>Add part</source>
         <translation>Ajouter un composant</translation>
     </message>
@@ -208,6 +212,14 @@
     <message>
         <source>Select a project to place virtual parts on its board.</source>
         <translation>Sélectionnez un projet pour placer des composants virtuels sur sa carte.</translation>
+    </message>
+    <message>
+        <source>Not simulated: %1.</source>
+        <translation>Non simulé : %1.</translation>
+    </message>
+    <message>
+        <source>The project&apos;s wiring has parts the simulator can show: %1. Add them to see them work when it runs.</source>
+        <translation>Le câblage du projet comporte des composants que le simulateur sait montrer : %1. Ajoutez-les pour les voir fonctionner pendant l'exécution.</translation>
     </message>
     <message>
         <source>No parts on this board yet. Add an LED, a button or another part on its pins.</source>
@@ -818,6 +830,26 @@ Le panneau Compilation en dessous contient tout le journal.</translation>
         <translation>Port :</translation>
     </message>
     <message>
+        <source>Board</source>
+        <translation>Carte</translation>
+    </message>
+    <message>
+        <source>Serial monitor, inspect and erase for the board on the selected port</source>
+        <translation>Moniteur série, inspection et effacement pour la carte du port choisi</translation>
+    </message>
+    <message>
+        <source>Open in serial monitor</source>
+        <translation>Ouvrir dans le moniteur série</translation>
+    </message>
+    <message>
+        <source>Inspect board…</source>
+        <translation>Inspecter la carte…</translation>
+    </message>
+    <message>
+        <source>Erase flash…</source>
+        <translation>Effacer la flash…</translation>
+    </message>
+    <message>
         <source>No project selected</source>
         <translation>Aucun projet choisi</translation>
     </message>
@@ -847,11 +879,11 @@ Le panneau Compilation en dessous contient tout le journal.</translation>
     </message>
     <message>
         <source>First, &lt;a href=&quot;setup&quot;&gt;install the build tools&lt;/a&gt;.</source>
-        <translation>D'abord, &lt;a href="setup"&gt;installez les outils de compilation&lt;/a&gt;.</translation>
+        <translation>D&apos;abord, &lt;a href=&quot;setup&quot;&gt;installez les outils de compilation&lt;/a&gt;.</translation>
     </message>
     <message>
         <source>Next: build it, or press Run in simulator, which builds it first.</source>
-        <translation>Ensuite : compilez-le, ou appuyez sur Exécuter dans le simulateur, qui le compile d'abord.</translation>
+        <translation>Ensuite : compilez-le, ou appuyez sur Exécuter dans le simulateur, qui le compile d&apos;abord.</translation>
     </message>
     <message>
         <source>&amp;File</source>

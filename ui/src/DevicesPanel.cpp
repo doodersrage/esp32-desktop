@@ -28,6 +28,13 @@ QString DevicesPanel::bridgeName(const QJsonValue &bridge)
     return tr("Unknown");
 }
 
+QString DevicesPanel::accessHint()
+{
+    return tr("You cannot open this port. Install the esp32bench package, which adds "
+              "a udev rule, or add yourself to the group that owns serial ports: uucp on "
+              "Arch, dialout on Debian, Ubuntu and Fedora.");
+}
+
 DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
     : QWidget(parent)
     , m_core(core)
@@ -155,10 +162,7 @@ void DevicesPanel::showPorts(const QJsonArray &ports)
         if (p.value(u"access"_s).toString() == u"denied") {
             ++denied;
             item->setIcon(PortColumn, QIcon::fromTheme(u"dialog-warning"_s));
-            item->setToolTip(PortColumn,
-                             tr("You cannot open this port. Install the esp32bench package, which adds "
-                                "a udev rule, or add yourself to the group that owns serial ports: uucp on "
-                                "Arch, dialout on Debian, Ubuntu and Fedora."));
+            item->setToolTip(PortColumn, accessHint());
         } else {
             item->setIcon(PortColumn, QIcon::fromTheme(u"network-serial"_s,
                                                         QIcon::fromTheme(u"preferences-system-network"_s)));

@@ -186,6 +186,10 @@
         <translation>Remover</translation>
     </message>
     <message>
+        <source>Add the project&apos;s parts</source>
+        <translation>Adicionar as peças do projeto</translation>
+    </message>
+    <message>
         <source>Add part</source>
         <translation>Adicionar peça</translation>
     </message>
@@ -208,6 +212,14 @@
     <message>
         <source>Select a project to place virtual parts on its board.</source>
         <translation>Selecione um projeto para colocar peças virtuais na placa dele.</translation>
+    </message>
+    <message>
+        <source>Not simulated: %1.</source>
+        <translation>Sem simulação: %1.</translation>
+    </message>
+    <message>
+        <source>The project&apos;s wiring has parts the simulator can show: %1. Add them to see them work when it runs.</source>
+        <translation>A fiação do projeto tem peças que o simulador consegue mostrar: %1. Adicione-as para vê-las funcionar quando ele rodar.</translation>
     </message>
     <message>
         <source>No parts on this board yet. Add an LED, a button or another part on its pins.</source>
@@ -818,6 +830,26 @@ O painel Compilação abaixo tem o registro completo.</translation>
         <translation>Porta:</translation>
     </message>
     <message>
+        <source>Board</source>
+        <translation>Placa</translation>
+    </message>
+    <message>
+        <source>Serial monitor, inspect and erase for the board on the selected port</source>
+        <translation>Monitor serial, inspecionar e apagar para a placa da porta escolhida</translation>
+    </message>
+    <message>
+        <source>Open in serial monitor</source>
+        <translation>Abrir no monitor serial</translation>
+    </message>
+    <message>
+        <source>Inspect board…</source>
+        <translation>Inspecionar placa…</translation>
+    </message>
+    <message>
+        <source>Erase flash…</source>
+        <translation>Apagar a flash…</translation>
+    </message>
+    <message>
         <source>No project selected</source>
         <translation>Nenhum projeto escolhido</translation>
     </message>
@@ -847,7 +879,7 @@ O painel Compilação abaixo tem o registro completo.</translation>
     </message>
     <message>
         <source>First, &lt;a href=&quot;setup&quot;&gt;install the build tools&lt;/a&gt;.</source>
-        <translation>Primeiro, &lt;a href="setup"&gt;instale as ferramentas de compilação&lt;/a&gt;.</translation>
+        <translation>Primeiro, &lt;a href=&quot;setup&quot;&gt;instale as ferramentas de compilação&lt;/a&gt;.</translation>
     </message>
     <message>
         <source>Next: build it, or press Run in simulator, which builds it first.</source>

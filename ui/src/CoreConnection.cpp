@@ -889,6 +889,22 @@ void CoreConnection::loadCircuit(const QString &project, const QString &board)
                    });
 }
 
+void CoreConnection::suggestCircuit(const QString &project, const QString &board)
+{
+    m_client->call(u"circuit.suggest"_s, {{u"project"_s, project}, {u"board"_s, board}}, this,
+                   [this, project, board](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"circuit.suggest"_s, r.errorMessage);
+                           return;
+                       }
+                       const QJsonObject o = r.result.toObject();
+                       QStringList unmatched;
+                       for (const QJsonValue &v : o.value(u"unmatched"_s).toArray())
+                           unmatched << v.toString();
+                       emit circuitSuggested(project, board, o.value(u"circuit"_s).toObject(), unmatched);
+                   });
+}
+
 void CoreConnection::saveCircuit(const QString &project, const QString &board, const QJsonObject &circuit)
 {
     m_client->call(u"circuit.set"_s, {{u"project"_s, project}, {u"board"_s, board}, {u"circuit"_s, circuit}}, this,

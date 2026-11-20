@@ -290,6 +290,7 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     , m_status(new QLabel(this))
     , m_add(new QToolButton(this))
     , m_remove(new QPushButton(QIcon::fromTheme(u"list-remove"_s), tr("Remove"), this))
+    , m_addSuggested(new QPushButton(QIcon::fromTheme(u"list-add"_s), tr("Add the project's parts"), this))
     , m_scene(new QGraphicsScene(this))
     , m_view(new QGraphicsView(m_scene, this))
     , m_controls(new QGroupBox(this))
@@ -319,7 +320,15 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
         rebuildControls();
     });
 
+    m_addSuggested->setVisible(false);
+    connect(m_addSuggested, &QPushButton::clicked, this, [this] {
+        if (!m_project.isEmpty() && !m_suggested.value(u"parts"_s).toArray().isEmpty())
+            m_core->saveCircuit(m_project, m_board, m_suggested);
+    });
+    connect(core, &CoreConnection::circuitSuggested, this, &CircuitPanel::circuitSuggested);
+
     auto *tools = new QHBoxLayout;
+    tools->addWidget(m_addSuggested);
     tools->addWidget(m_add);
     tools->addWidget(m_remove);
     tools->addStretch(1);
@@ -448,6 +457,9 @@ void CircuitPanel::showBoard(const QString &project, const QString &board, const
             m_projectPins << gpio;
     }
     m_circuit = {};
+    m_suggested = {};
+    m_unmatched.clear();
+    m_addSuggested->setVisible(false);
     rebuildScene();
     m_add->setEnabled(!m_models.isEmpty());
     if (m_core->state() == CoreConnection::State::Connected)
@@ -460,6 +472,25 @@ void CircuitPanel::circuitLoaded(const QString &project, const QString &board, c
         return; // an answer for a board no longer shown
     m_circuit = circuit;
     rebuildScene();
+    // An empty board: ask what the project's wiring has, to offer it.
+    if (parts().isEmpty() && m_suggested.isEmpty())
+        m_core->suggestCircuit(project, board);
+    m_addSuggested->setVisible(parts().isEmpty() && !m_suggested.value(u"parts"_s).toArray().isEmpty());
+    updateStatus();
+}
+
+void CircuitPanel::circuitSuggested(const QString &project, const QString &board, const QJsonObject &circuit,
+                                    const QStringList &unmatched)
+{
+    if (project != m_project || board != m_board)
+        return;
+    m_suggested = circuit;
+    m_unmatched = unmatched;
+    QStringList names;
+    for (const QJsonValue &v : circuit.value(u"parts"_s).toArray())
+        names << v.toObject().value(u"label"_s).toString();
+    m_addSuggested->setToolTip(names.join(u", "_s));
+    m_addSuggested->setVisible(parts().isEmpty() && !names.isEmpty());
     updateStatus();
 }
 
@@ -467,8 +498,21 @@ void CircuitPanel::updateStatus()
 {
     if (m_project.isEmpty())
         return;
-    if (parts().isEmpty()) {
-        m_status->setText(tr("No parts on this board yet. Add an LED, a button or another part on its pins."));
+    // The project's parts that have no model, said once there is something to say.
+    const QString missing = m_unmatched.isEmpty()
+        ? QString()
+        : tr("Not simulated: %1.").arg(m_unmatched.join(u", "_s));
+    QStringList suggested;
+    for (const QJsonValue &v : m_suggested.value(u"parts"_s).toArray())
+        suggested << v.toObject().value(u"label"_s).toString();
+    if (parts().isEmpty() && !suggested.isEmpty()) {
+        m_status->setText(tr("The project's wiring has parts the simulator can show: %1. Add them to see them "
+                             "work when it runs.")
+                              .arg(suggested.join(u", "_s))
+                          + (missing.isEmpty() ? QString() : u" "_s + missing));
+    } else if (parts().isEmpty()) {
+        m_status->setText(tr("No parts on this board yet. Add an LED, a button or another part on its pins.")
+                          + (missing.isEmpty() ? QString() : u" "_s + missing));
     } else if (m_core->isSimRunning()) {
         m_status->setText(m_core->simPartsActive()
                               ? tr("Running: parts follow the firmware. Hold the mouse on a button to press it; "

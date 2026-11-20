@@ -27,7 +27,9 @@
 #include <QJsonArray>
 #include <QLocale>
 #include <QLabel>
+#include <QMenu>
 #include <QMenuBar>
+#include <QToolButton>
 #include <QMessageBox>
 #include <memory>
 #include <QProgressBar>
@@ -193,11 +195,7 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
         m_debugDock->show();
         m_debugDock->raise();
     });
-    connect(m_devices, &DevicesPanel::portActivated, this, [this](const QString &path) {
-        m_serialDock->show();
-        m_serialDock->raise();
-        m_serial->openPort(path);
-    });
+    connect(m_devices, &DevicesPanel::portActivated, this, &MainWindow::openSerialPort);
     connect(core, &CoreConnection::buildConsentRequired, this,
             [this](const QString &project, const QString &board, const QString &token, const QJsonObject &plan) {
                 if (confirmBuild(project, board, plan))
@@ -221,18 +219,8 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
                 else
                     m_reopenSerial.clear();
             });
-    connect(m_devices, &DevicesPanel::inspectRequested, this, [this](const QString &port) {
-        freePort(port);
-        statusBar()->showMessage(tr("Reading the board on %1…").arg(port));
-        m_core->inspectBoard(port);
-    });
-    connect(m_devices, &DevicesPanel::eraseRequested, this, [this](const QString &port) {
-        if (confirmErase(port)) {
-            freePort(port);
-            statusBar()->showMessage(tr("Erasing the board on %1…").arg(port));
-            m_core->eraseBoard(port);
-        }
-    });
+    connect(m_devices, &DevicesPanel::inspectRequested, this, &MainWindow::inspectPort);
+    connect(m_devices, &DevicesPanel::eraseRequested, this, &MainWindow::erasePort);
     connect(core, &CoreConnection::boardStarted, this, [this](const QString &, const QString &port) {
         m_lastBoardPort = port;
     });
@@ -325,6 +313,9 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     // monitor open when a build starts or a port is opened.
     m_buildDock->hide();
     m_serialDock->hide();
+    // The toolbar picks the port and its Board menu has what the Devices panel's
+    // context menu has; the panel, with every port's details, is in the View menu.
+    m_devicesDock->hide();
 
     buildToolBar();
     buildMenus();
@@ -363,6 +354,25 @@ void MainWindow::buildToolBar()
     portLabel->setBuddy(m_buildPanel->portPicker());
     m_toolBar->addWidget(portLabel);
     m_toolBar->addWidget(m_buildPanel->portPicker());
+    // What the Devices panel's context menu does, for the port chosen here.
+    m_boardMenu = new QToolButton(m_toolBar);
+    m_boardMenu->setIcon(QIcon::fromTheme(u"application-menu"_s, QIcon::fromTheme(u"preferences-system"_s)));
+    m_boardMenu->setText(tr("Board"));
+    m_boardMenu->setToolTip(tr("Serial monitor, inspect and erase for the board on the selected port"));
+    m_boardMenu->setPopupMode(QToolButton::InstantPopup);
+    auto *boardMenu = new QMenu(m_boardMenu);
+    const auto port = [this] { return m_buildPanel->portPicker()->currentData().toString(); };
+    boardMenu->addAction(QIcon::fromTheme(u"utilities-terminal"_s), tr("Open in serial monitor"), this,
+                         [this, port] { openSerialPort(port()); });
+    boardMenu->addAction(QIcon::fromTheme(u"document-properties"_s), tr("Inspect board…"), this,
+                         [this, port] { inspectPort(port()); });
+    boardMenu->addSeparator();
+    boardMenu->addAction(QIcon::fromTheme(u"edit-delete"_s), tr("Erase flash…"), this,
+                         [this, port] { erasePort(port()); });
+    boardMenu->addSeparator();
+    boardMenu->addAction(m_devicesDock->toggleViewAction());
+    m_boardMenu->setMenu(boardMenu);
+    m_toolBar->addWidget(m_boardMenu);
     m_toolBar->addAction(m_buildPanel->flashAction());
     // Busy while a build or a board operation runs; the Build panel has the details.
     m_busy = new QProgressBar(m_toolBar);
@@ -433,6 +443,8 @@ void MainWindow::updateToolBar()
     m_current->setText(m_current->fontMetrics().elidedText(current, Qt::ElideRight, 360));
     m_current->setToolTip(current);
     m_stopSim->setEnabled(m_core->isSimRunning());
+    m_boardMenu->setEnabled(m_buildPanel->portPicker()->currentIndex() >= 0
+                            && m_core->state() == CoreConnection::State::Connected && !m_core->isBoardBusy());
     m_busyAction->setVisible(m_core->isBuilding() || m_core->isBoardBusy());
 
     const QString id = m_project->currentProjectId();
@@ -669,6 +681,29 @@ bool MainWindow::confirmErase(const QString &port)
     box.setDefaultButton(QMessageBox::Cancel);
     box.exec();
     return box.clickedButton() == erase;
+}
+
+void MainWindow::openSerialPort(const QString &path)
+{
+    m_serialDock->show();
+    m_serialDock->raise();
+    m_serial->openPort(path);
+}
+
+void MainWindow::inspectPort(const QString &port)
+{
+    freePort(port);
+    statusBar()->showMessage(tr("Reading the board on %1…").arg(port));
+    m_core->inspectBoard(port);
+}
+
+void MainWindow::erasePort(const QString &port)
+{
+    if (confirmErase(port)) {
+        freePort(port);
+        statusBar()->showMessage(tr("Erasing the board on %1…").arg(port));
+        m_core->eraseBoard(port);
+    }
 }
 
 void MainWindow::freePort(const QString &port)
