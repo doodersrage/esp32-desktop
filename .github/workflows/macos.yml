@@ -106,6 +106,8 @@ jobs:
       - name: App and .dmg
         run: packaging/macos/build.sh "$PWD" core/target build/ui sim-out dist
       - name: Smoke test
+        env:
+          ESP32BENCH_SMOKE_BUILD: '1'
         run: packaging/macos/smoke.sh dist/*.dmg tests/firmware/out
 
       - uses: actions/upload-artifact@v4

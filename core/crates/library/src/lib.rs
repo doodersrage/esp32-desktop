@@ -283,15 +283,10 @@ pub async fn fetch(source: &str) -> Result<Vec<u8>, Error> {
     Ok(bytes)
 }
 
-/// `$XDG_CACHE_HOME/esp32bench`, or `~/.cache/esp32bench`.
+/// The app's cache directory (`esp32bench_distro::dirs::cache_dir`):
+/// `$XDG_CACHE_HOME/esp32bench`, `~/.cache/esp32bench`, or the system's own place.
 pub fn cache_dir() -> Result<PathBuf, Error> {
-    if let Some(d) = std::env::var_os("XDG_CACHE_HOME").filter(|d| !d.is_empty()) {
-        return Ok(PathBuf::from(d).join("esp32bench"));
-    }
-    let home = std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .ok_or(Error::NoCacheDir)?;
-    Ok(PathBuf::from(home).join(".cache/esp32bench"))
+    esp32bench_distro::dirs::cache_dir().ok_or(Error::NoCacheDir)
 }
 
 /// The library as last fetched, from `dir`.

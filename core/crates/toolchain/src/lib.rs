@@ -195,14 +195,10 @@ pub fn in_group(group: &str) -> bool {
 }
 
 impl Env {
-    /// `$ARDUINO_DIRECTORIES_DATA`, else `~/.arduino15`.
+    /// `$ARDUINO_DIRECTORIES_DATA`, else arduino-cli's default for this system
+    /// (`~/.arduino15` on Linux; `esp32bench_distro::dirs::arduino_data`).
     pub fn default_arduino_data() -> Option<PathBuf> {
-        if let Some(d) = std::env::var_os("ARDUINO_DIRECTORIES_DATA").filter(|d| !d.is_empty()) {
-            return Some(PathBuf::from(d));
-        }
-        std::env::var_os("HOME")
-            .filter(|h| !h.is_empty())
-            .map(|h| PathBuf::from(h).join(".arduino15"))
+        esp32bench_distro::dirs::arduino_data()
     }
 
     fn toolchain(&self) -> Option<Toolchain> {

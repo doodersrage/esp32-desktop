@@ -159,6 +159,8 @@ jobs:
         shell: bash
         run: packaging/windows/build.sh "$PWD" core/target build/ui sim-out dist
       - name: Smoke test
+        env:
+          ESP32BENCH_SMOKE_BUILD: '1'
         shell: bash
         run: packaging/windows/smoke.sh dist/*.zip tests/firmware/out
 

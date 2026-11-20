@@ -5,6 +5,8 @@
 
 use std::path::Path;
 
+pub mod dirs;
+
 /// A family of distributions that share package names and tools.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Distro {

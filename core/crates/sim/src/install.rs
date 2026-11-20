@@ -14,14 +14,9 @@ use crate::{Arch, Error};
 pub const APP_DIR: &str = "esp32bench";
 pub const QEMU_DIR_ENV: &str = "ESP32BENCH_QEMU_DIR";
 
+/// The app's data directory (`esp32bench_distro::dirs::data_dir`).
 pub fn data_dir() -> Result<PathBuf, Error> {
-    if let Some(d) = std::env::var_os("XDG_DATA_HOME").filter(|d| !d.is_empty()) {
-        return Ok(PathBuf::from(d).join(APP_DIR));
-    }
-    let home = std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .ok_or(Error::NoDataDir)?;
-    Ok(PathBuf::from(home).join(".local/share").join(APP_DIR))
+    esp32bench_distro::dirs::data_dir().ok_or(Error::NoDataDir)
 }
 
 /// Install directory for one architecture of the pinned release.

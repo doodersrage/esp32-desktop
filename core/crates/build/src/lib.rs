@@ -80,22 +80,11 @@ pub mod arduino_cli_pin {
     pub const BINARY: &str = this::BINARY;
 }
 
-/// Where the app installs its own arduino-cli: `$XDG_DATA_HOME/esp32bench/arduino-cli/
-/// <version>/`, the binary at its top.
+/// Where the app installs its own arduino-cli: `<data dir>/arduino-cli/<version>/`
+/// (`esp32bench_distro::dirs::data_dir`), the binary at its top.
 pub fn app_arduino_cli_dir() -> Option<PathBuf> {
-    let data = std::env::var_os("XDG_DATA_HOME")
-        .filter(|d| !d.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .filter(|h| !h.is_empty())
-                .map(|h| PathBuf::from(h).join(".local/share"))
-        })?;
-    Some(
-        data.join("esp32bench")
-            .join("arduino-cli")
-            .join(arduino_cli_pin::VERSION),
-    )
+    let data = esp32bench_distro::dirs::data_dir()?;
+    Some(data.join("arduino-cli").join(arduino_cli_pin::VERSION))
 }
 const CONSENT_LIFETIME: Duration = Duration::from_secs(10 * 60);
 
@@ -321,18 +310,11 @@ fn random_token() -> Result<String, Error> {
     Ok(hex(&buf))
 }
 
-/// `$XDG_DATA_HOME/esp32bench/arduino` (or `~/.local/share/...`): the sketchbook
+/// `<data dir>/arduino` (`esp32bench_distro::dirs::data_dir`): the sketchbook
 /// whose `libraries/` folder holds what builds install.
 pub fn default_sketchbook() -> Option<PathBuf> {
-    let data = std::env::var_os("XDG_DATA_HOME")
-        .filter(|d| !d.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .filter(|h| !h.is_empty())
-                .map(|h| PathBuf::from(h).join(".local/share"))
-        })?;
-    Some(data.join("esp32bench").join("arduino"))
+    let data = esp32bench_distro::dirs::data_dir()?;
+    Some(data.join("arduino"))
 }
 
 /// Where arduino-cli is, and the private sketchbook its libraries go into.

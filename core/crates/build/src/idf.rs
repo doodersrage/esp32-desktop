@@ -49,8 +49,8 @@ pub fn detect() -> Option<Idf> {
     if let Some(p) = std::env::var_os(IDF_PATH_ENV).filter(|p| !p.is_empty()) {
         candidates.push(PathBuf::from(p));
     }
-    if let Some(home) = std::env::var_os("HOME") {
-        candidates.push(PathBuf::from(home).join("esp/esp-idf"));
+    if let Some(home) = esp32bench_distro::dirs::home() {
+        candidates.push(home.join("esp/esp-idf"));
     }
     candidates.push(PathBuf::from("/opt/esp-idf"));
     candidates.into_iter().find_map(|p| at(&p))

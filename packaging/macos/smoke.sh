@@ -62,6 +62,32 @@ wait $pid 2> /dev/null || true
 grep -q '\$var wire 1 ! GPIO2' "$work/gpio.vcd" || { cat "$work/gpio.err"; fail "no GPIO trace"; }
 echo "smoke: GPIO 2 traced ($(grep -c '^#' "$work/gpio.vcd") times)"
 
+
+# What the app is for: install the pinned arduino-cli and ESP32 core, build a library
+# project, and run the build in the bundled simulator (downloads about 1 GB).
+if [ "${ESP32BENCH_SMOKE_BUILD:-}" = 1 ]; then
+  "$bin/esp32bench" toolchain install arduino-cli
+  "$bin/esp32bench" toolchain install esp32-core
+  "$bin/esp32bench" library refresh
+  "$bin/esp32bench" build blink --board esp32 --yes > "$work/build.log" 2>&1 \
+    || { tail -40 "$work/build.log"; fail "building blink failed"; }
+  img=$(find "$HOME/Library/Caches/esp32bench" -name 'blink.ino.merged.bin' | head -1)
+  [ -n "$img" ] || fail "no blink image under $HOME/Library/Caches/esp32bench"
+  (sleep 30) | "$bin/esp32bench" sim run --chip esp32 --no-network "$img" > "$work/blink.log" 2> "$work/blink.err" &
+  pid=$!
+  ok=
+  for _ in $(seq 100); do
+    grep -aq "entry 0x" "$work/blink.log" && { ok=1; break; }
+    sleep 0.2
+  done
+  sleep 3
+  kill -INT $pid 2> /dev/null || true
+  wait $pid 2> /dev/null || true
+  [ -n "$ok" ] || { cat "$work/blink.err"; tail -20 "$work/blink.log"; fail "the blink build did not start"; }
+  grep -aq "Guru Meditation\|abort()" "$work/blink.log" && fail "the blink build crashed"
+  echo "smoke: built blink with the app's arduino-cli and ran it in the simulator"
+fi
+
 # The UI starts and stays up headless.
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui" --version
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui" > "$work/gui.log" 2>&1 &

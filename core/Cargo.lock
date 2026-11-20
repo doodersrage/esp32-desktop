@@ -574,6 +574,7 @@ dependencies = [
 name = "esp32bench-build"
 version = "0.1.6"
 dependencies = [
+ "esp32bench-distro",
  "esp32bench-library",
  "libc",
  "serde",
@@ -665,6 +666,7 @@ dependencies = [
 name = "esp32bench-library"
 version = "0.1.6"
 dependencies = [
+ "esp32bench-distro",
  "jsonschema",
  "serde",
  "serde_json",

@@ -48,6 +48,32 @@ for chip in esp32 esp32s3 esp32c3; do
   echo "smoke: $chip boots on the bundled simulator"
 done
 
+
+# What the app is for: install the pinned arduino-cli and ESP32 core, build a library
+# project, and run the build in the bundled simulator (downloads about 1 GB).
+if [ "${ESP32BENCH_SMOKE_BUILD:-}" = 1 ]; then
+  "$bin/esp32bench.exe" toolchain install arduino-cli
+  "$bin/esp32bench.exe" toolchain install esp32-core
+  "$bin/esp32bench.exe" library refresh
+  "$bin/esp32bench.exe" build blink --board esp32 --yes > "$work/build.log" 2>&1 \
+    || { tail -40 "$work/build.log"; fail "building blink failed"; }
+  img=$(find "$(cygpath -u "$LOCALAPPDATA")/esp32bench/cache" -name 'blink.ino.merged.bin' | head -1)
+  [ -n "$(cygpath -w "$img")" ] || fail "no blink image under $(cygpath -u "$LOCALAPPDATA")/esp32bench/cache"
+  (sleep 30) | "$bin/esp32bench.exe" sim run --chip esp32 --no-network "$(cygpath -w "$img")" > "$work/blink.log" 2> "$work/blink.err" &
+  pid=$!
+  ok=
+  for _ in $(seq 100); do
+    grep -aq "entry 0x" "$work/blink.log" && { ok=1; break; }
+    sleep 0.2
+  done
+  sleep 3
+  kill $pid 2> /dev/null || true
+  wait $pid 2> /dev/null || true
+  [ -n "$ok" ] || { cat "$work/blink.err"; tail -20 "$work/blink.log"; fail "the blink build did not start"; }
+  grep -aq "Guru Meditation\|abort()" "$work/blink.log" && fail "the blink build crashed"
+  echo "smoke: built blink with the app's arduino-cli and ran it in the simulator"
+fi
+
 # The UI starts and stays up headless.
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui.exe" --version || true
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui.exe" > "$work/gui.log" 2>&1 &
