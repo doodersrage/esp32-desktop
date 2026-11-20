@@ -49,6 +49,21 @@ for chip in esp32 esp32s3 esp32c3; do
 done
 
 
+# Pins, both ways over the host's pin link (loopback TCP on Windows): GPIO 2's toggling
+# reaches the core, and GPIO 4 driven from the core reaches the firmware.
+(sleep 4; echo ":set 4 1"; sleep 30) | "$bin/esp32bench.exe" sim run --chip esp32c3 --no-network --pins 2,4 \
+  "$fw\\gpio-esp32c3.bin" > "$work/gpio.log" 2> "$work/gpio.err" &
+pid=$!
+ok=
+for _ in $(seq 150); do
+  grep -aq "esp32bench-gpio in 4=1" "$work/gpio.log" && grep -aq "gpio 2 = 1" "$work/gpio.err" && { ok=1; break; }
+  sleep 0.2
+done
+kill $pid 2> /dev/null || true
+wait $pid 2> /dev/null || true
+[ -n "$ok" ] || { cat "$work/gpio.err"; tail -20 "$work/gpio.log"; fail "pins did not reach the host and back"; }
+echo "smoke: GPIO 2 seen toggling and GPIO 4 driven, over the loopback pin link"
+
 # What the app is for: install the pinned arduino-cli and ESP32 core, build a library
 # project, and run the build in the bundled simulator (downloads about 1 GB).
 if [ "${ESP32BENCH_SMOKE_BUILD:-}" = 1 ]; then
