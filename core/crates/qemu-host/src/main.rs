@@ -10,7 +10,8 @@
 //!
 //! - `ESP32BENCH_QEMU_LIB`: path to `libqemu-xtensa.so` or `libqemu-riscv32.so`.
 //! - `ESP32BENCH_GPIO_PINS` (optional): comma-separated GPIO numbers to bridge, e.g. `2,4`.
-//! - `ESP32BENCH_GPIO_SOCK` (optional): Unix socket path to listen on for one client.
+//! - `ESP32BENCH_GPIO_SOCK` (optional): Unix socket path to listen on for one client
+//!   (on Windows `127.0.0.1:<port>`, a loopback TCP port; `esp32bench_sim::link`).
 //!   Without it nothing is bridged: a plain simulation with nothing attached, where
 //!   the I2C buses answer no address.
 //! - `ESP32BENCH_CIRCUIT` (optional): a circuit file (schema/circuit) whose virtual
@@ -42,8 +43,11 @@
 use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_int, c_void};
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::ffi::OsStrExt;
-use std::os::unix::net::UnixListener;
+
+#[cfg(windows)]
+use std::net::{TcpListener as Listener, TcpStream as Stream};
+#[cfg(unix)]
+use std::os::unix::net::{UnixListener as Listener, UnixStream as Stream};
 use std::process::ExitCode;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, OnceLock};
@@ -607,7 +611,7 @@ fn run() -> Result<c_int, String> {
     }));
 
     if let Some(sock) = &sock {
-        let listener = UnixListener::bind(sock).map_err(|e| format!("binding {sock:?}: {e}"))?;
+        let listener = bind(sock).map_err(|e| format!("binding {sock:?}: {e}"))?;
         let (tx, rx) = mpsc::channel::<Msg>();
         let _ = EVENTS.set(tx.clone());
         start_bridge(
@@ -623,7 +627,7 @@ fn run() -> Result<c_int, String> {
 
     // argv for qemu_init: our own argv, unchanged. The strings must stay valid.
     let args: Vec<CString> = std::env::args_os()
-        .map(|a| CString::new(a.as_bytes()).map_err(|_| "argument contains NUL".to_string()))
+        .map(|a| CString::new(os_bytes(&a)).map_err(|_| "argument contains NUL".to_string()))
         .collect::<Result<_, _>>()?;
     let _ = SOC.set(Soc::detect(&lib, &args));
     let mut argv: Vec<*mut c_char> = args.iter().map(|a| a.as_ptr().cast_mut()).collect();
@@ -641,6 +645,7 @@ fn run() -> Result<c_int, String> {
         (qemu.cleanup)(status);
         status
     };
+    #[cfg(unix)]
     if let Some(sock) = &sock {
         let _ = std::fs::remove_file(sock);
     }
@@ -681,7 +686,7 @@ fn parse_i2c(s: &str) -> Result<Vec<(u8, u8)>, String> {
 /// Accept one client; send it pin events and apply its `set` commands. With a
 /// circuit, also run the parts' pin and control hooks and apply their effects.
 fn start_bridge(
-    listener: UnixListener,
+    listener: Listener,
     tx: Sender<Msg>,
     rx: mpsc::Receiver<Msg>,
     set_pin: SetPinFn,
@@ -742,7 +747,7 @@ struct PendingPicture {
 }
 
 struct Worker {
-    out: std::os::unix::net::UnixStream,
+    out: Stream,
     set_pin: SetPinFn,
     set_apin: SetApinFn,
     bql_lock: LockFn,
@@ -945,19 +950,106 @@ impl Worker {
     }
 }
 
-/// dlopen the library and resolve the functions we use.
-fn load(path: &std::ffi::OsStr) -> Result<Qemu, String> {
-    let cpath =
-        CString::new(path.as_bytes()).map_err(|_| "library path contains NUL".to_string())?;
-    // SAFETY: dlopen with a valid C string. The handle is never closed, so resolved
-    // symbols stay valid for the life of the process.
-    let handle = unsafe { libc::dlopen(cpath.as_ptr(), libc::RTLD_NOW | libc::RTLD_GLOBAL) };
-    if handle.is_null() {
-        return Err(format!("dlopen {path:?}: {}", dl_error()));
+/// The bytes of an argument or path as C wants them: as they are on Unix; on Windows
+/// UTF-8 (QEMU's own argv there comes from the C runtime, so a name outside ASCII may
+/// not reach it intact).
+fn os_bytes(s: &std::ffi::OsStr) -> Vec<u8> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        s.as_bytes().to_vec()
     }
-    let sym = |name: &std::ffi::CStr| -> Result<*mut c_void, String> {
+    #[cfg(windows)]
+    {
+        s.to_string_lossy().into_owned().into_bytes()
+    }
+}
+
+/// Listen for the core's pin link at `sock`: a Unix socket path, or on Windows
+/// `127.0.0.1:<port>`.
+fn bind(sock: &std::ffi::OsStr) -> std::io::Result<Listener> {
+    #[cfg(unix)]
+    {
+        Listener::bind(sock)
+    }
+    #[cfg(windows)]
+    {
+        Listener::bind(sock.to_string_lossy().as_ref())
+    }
+}
+
+#[cfg(unix)]
+mod dl {
+    use std::ffi::{CStr, CString, c_void};
+
+    /// dlopen `path`; the handle is never closed, so its symbols stay valid.
+    pub fn open(path: &std::ffi::OsStr) -> Result<*mut c_void, String> {
+        let c = CString::new(super::os_bytes(path))
+            .map_err(|_| "library path contains NUL".to_string())?;
+        // SAFETY: dlopen with a valid C string.
+        let h = unsafe { libc::dlopen(c.as_ptr(), libc::RTLD_NOW | libc::RTLD_GLOBAL) };
+        if h.is_null() {
+            Err(format!("dlopen {path:?}: {}", error()))
+        } else {
+            Ok(h)
+        }
+    }
+
+    pub fn symbol(handle: *mut c_void, name: &CStr) -> *mut c_void {
         // SAFETY: handle is a live dlopen handle and name is a valid C string.
-        let p = unsafe { libc::dlsym(handle, name.as_ptr()) };
+        unsafe { libc::dlsym(handle, name.as_ptr()) }
+    }
+
+    fn error() -> String {
+        // SAFETY: dlerror returns NULL or a valid C string owned by libc.
+        let e = unsafe { libc::dlerror() };
+        if e.is_null() {
+            "unknown error".into()
+        } else {
+            // SAFETY: non-null pointer from dlerror, valid until the next dl* call.
+            unsafe { CStr::from_ptr(e) }.to_string_lossy().into_owned()
+        }
+    }
+}
+
+#[cfg(windows)]
+mod dl {
+    use std::ffi::{CStr, c_char, c_void};
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn LoadLibraryW(name: *const u16) -> *mut c_void;
+        fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
+        fn GetLastError() -> u32;
+    }
+
+    /// LoadLibraryW `path`; the module is never freed, so its symbols stay valid.
+    pub fn open(path: &std::ffi::OsStr) -> Result<*mut c_void, String> {
+        let wide: Vec<u16> = path.encode_wide().chain(std::iter::once(0)).collect();
+        // SAFETY: LoadLibraryW with a NUL-terminated UTF-16 path.
+        let h = unsafe { LoadLibraryW(wide.as_ptr()) };
+        if h.is_null() {
+            // SAFETY: GetLastError has no preconditions.
+            Err(format!("LoadLibrary {path:?}: error {}", unsafe {
+                GetLastError()
+            }))
+        } else {
+            Ok(h)
+        }
+    }
+
+    pub fn symbol(handle: *mut c_void, name: &CStr) -> *mut c_void {
+        // SAFETY: handle is a loaded module and name a valid C string.
+        unsafe { GetProcAddress(handle, name.as_ptr()) }
+    }
+}
+
+/// Load the library and resolve the functions we use.
+fn load(path: &std::ffi::OsStr) -> Result<Qemu, String> {
+    let handle = dl::open(path)?;
+    let sym = |name: &std::ffi::CStr| -> Result<*mut c_void, String> {
+        let p = dl::symbol(handle, name);
         if p.is_null() {
             Err(format!("{path:?} has no symbol {name:?}"))
         } else {
@@ -987,19 +1079,6 @@ fn load(path: &std::ffi::OsStr) -> Result<Qemu, String> {
                 .ok()
                 .map(|p| std::mem::transmute::<*mut c_void, ClockFn>(p)),
         })
-    }
-}
-
-fn dl_error() -> String {
-    // SAFETY: dlerror returns NULL or a valid C string owned by libc.
-    let e = unsafe { libc::dlerror() };
-    if e.is_null() {
-        "unknown error".into()
-    } else {
-        // SAFETY: non-null pointer from dlerror, valid until the next dl* call.
-        unsafe { std::ffi::CStr::from_ptr(e) }
-            .to_string_lossy()
-            .into_owned()
     }
 }
 

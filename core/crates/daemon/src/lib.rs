@@ -2,17 +2,14 @@
 //! and handles signals; everything here is testable without a running daemon.
 
 use std::collections::HashMap;
-use std::fs::File;
 use std::io;
-use std::os::fd::AsRawFd;
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use esp32bench_rpc::Listener;
 use esp32bench_rpc::{Ctx, Router, RpcError, code, parse_params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tokio::net::UnixListener;
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
 pub const PROTOCOL: &str = "0.23.0";
@@ -2012,11 +2009,13 @@ async fn device_watch(params: Value, ctx: Ctx) -> Result<Value, RpcError> {
 }
 
 /// Holds the daemon's lock file; the lock is released when this is dropped.
+#[cfg(unix)]
 pub struct InstanceLock {
-    _file: File,
+    _file: std::fs::File,
     socket: PathBuf,
 }
 
+#[cfg(unix)]
 impl Drop for InstanceLock {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.socket);
@@ -2026,7 +2025,10 @@ impl Drop for InstanceLock {
 /// Take the single-instance lock next to `socket`, then bind the socket (mode 0600).
 /// Fails if another daemon holds the lock. A stale socket left by a crashed daemon is
 /// replaced, which is safe because the lock proves nobody is serving it.
-pub fn bind(socket: &Path) -> io::Result<(UnixListener, InstanceLock)> {
+#[cfg(unix)]
+pub fn bind(socket: &Path) -> io::Result<(Listener, InstanceLock)> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     let dir = socket.parent().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "socket path has no directory")
     })?;
@@ -2036,7 +2038,7 @@ pub fn bind(socket: &Path) -> io::Result<(UnixListener, InstanceLock)> {
         .create(dir)?;
 
     let lock_path = dir.join("core.lock");
-    let file = File::options()
+    let file = std::fs::File::options()
         .create(true)
         .truncate(false)
         .write(true)
@@ -2057,7 +2059,7 @@ pub fn bind(socket: &Path) -> io::Result<(UnixListener, InstanceLock)> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => return Err(e),
     }
-    let listener = UnixListener::bind(socket)?;
+    let listener = Listener::bind(socket)?;
     std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o600))?;
     Ok((
         listener,
@@ -2066,4 +2068,27 @@ pub fn bind(socket: &Path) -> io::Result<(UnixListener, InstanceLock)> {
             socket: socket.to_owned(),
         },
     ))
+}
+
+/// On Windows the pipe itself is the lock: creating its first instance fails while
+/// another daemon has it (esp32bench_rpc::transport).
+#[cfg(windows)]
+pub struct InstanceLock;
+
+#[cfg(windows)]
+pub fn bind(socket: &Path) -> io::Result<(Listener, InstanceLock)> {
+    let listener = Listener::bind(socket).map_err(|e| {
+        if e.kind() == io::ErrorKind::PermissionDenied {
+            io::Error::new(
+                io::ErrorKind::AddrInUse,
+                format!(
+                    "another esp32benchd is running ({} is taken)",
+                    socket.display()
+                ),
+            )
+        } else {
+            e
+        }
+    })?;
+    Ok((listener, InstanceLock))
 }

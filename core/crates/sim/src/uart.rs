@@ -4,8 +4,8 @@
 
 use std::time::Duration;
 
+use crate::link::Stream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
 use tokio::time::Instant;
 
 use crate::Error;
@@ -37,18 +37,18 @@ pub enum WaitOutcome {
 }
 
 pub struct Uart {
-    stream: UnixStream,
+    stream: Stream,
     /// The USB-Serial-JTAG serial port, when the machine has one wired.
-    usb: Option<UnixStream>,
+    usb: Option<Stream>,
 }
 
 impl Uart {
-    pub fn new(stream: UnixStream) -> Self {
+    pub fn new(stream: Stream) -> Self {
         Uart { stream, usb: None }
     }
 
     /// Also read from (and write to) the chip's USB serial port.
-    pub fn with_usb(mut self, usb: UnixStream) -> Self {
+    pub fn with_usb(mut self, usb: Stream) -> Self {
         self.usb = Some(usb);
         self
     }
@@ -176,10 +176,12 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     find(haystack, needle).is_some()
 }
 
-#[cfg(test)]
+// Socket pairs are Unix only; the code under test is the same everywhere.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use tokio::io::AsyncWriteExt;
+    use tokio::net::UnixStream;
 
     #[tokio::test]
     async fn finds_marker_split_across_chunks() {

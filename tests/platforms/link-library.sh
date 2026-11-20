@@ -13,7 +13,9 @@ arch=${2:?arch}
 cd "$build"
 case "$(uname -s)" in
   Darwin) target="qemu-system-$arch-unsigned"; out="libqemu-$arch.dylib"; kind="-dynamiclib" ;;
-  MINGW*|MSYS*) target="qemu-system-$arch.exe"; out="libqemu-$arch.dll"; kind="-shared" ;;
+  # Export everything: QEMU marks a few symbols dllexport (its plugin API), which
+  # stops MinGW exporting the rest automatically, qemu_init and the hooks included.
+  MINGW*|MSYS*) target="qemu-system-$arch.exe"; out="libqemu-$arch.dll"; kind="-shared -Wl,--export-all-symbols" ;;
   *) target="qemu-system-$arch"; out="libqemu-$arch.so"; kind="-shared" ;;
 esac
 # main()'s object: system_main.c.o, or .c.obj on Windows.

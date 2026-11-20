@@ -7,6 +7,10 @@
 #include <QFileInfo>
 #include <QJsonObject>
 #include <QProcess>
+
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#endif
 #include <QStandardPaths>
 #include <QTimer>
 
@@ -91,13 +95,23 @@ QString CoreConnection::defaultSocketPath()
     if (!env.isEmpty())
         return env;
     // As the core's esp32bench_rpc::default_socket_path: $XDG_RUNTIME_DIR on Linux,
-    // $TMPDIR on macOS (per user; QDir::tempPath reads it).
-#if defined(Q_OS_MACOS)
+    // $TMPDIR on macOS (per user; QDir::tempPath reads it), and on Windows the named
+    // pipe esp32bench-<user>-core (QLocalSocket adds \\.\pipe\).
+#if defined(Q_OS_WIN)
+    QString user = qEnvironmentVariable("USERNAME");
+    for (QChar &c : user) {
+        if (!(c.isLetterOrNumber() && c.unicode() < 128))
+            c = u'_';
+    }
+    return u"esp32bench-%1-core"_s.arg(user);
+#elif defined(Q_OS_MACOS)
     const QString runtime = QDir::tempPath();
 #else
     const QString runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
 #endif
+#if !defined(Q_OS_WIN)
     return QDir(runtime).filePath(u"esp32bench/core.sock"_s);
+#endif
 }
 
 void CoreConnection::setSocketPath(const QString &path)
@@ -171,8 +185,12 @@ bool CoreConnection::startCore()
 {
     QString program = qEnvironmentVariable("ESP32BENCH_DAEMON");
     if (program.isEmpty()) {
-        const QString beside =
-            QDir(QCoreApplication::applicationDirPath()).filePath(u"esp32benchd"_s);
+#if defined(Q_OS_WIN)
+        const QString name = u"esp32benchd.exe"_s;
+#else
+        const QString name = u"esp32benchd"_s;
+#endif
+        const QString beside = QDir(QCoreApplication::applicationDirPath()).filePath(name);
         program = QFileInfo(beside).isExecutable()
                       ? beside
                       : QStandardPaths::findExecutable(u"esp32benchd"_s);
@@ -192,6 +210,13 @@ bool CoreConnection::startCore()
     process.setStandardInputFile(QProcess::nullDevice());
     process.setStandardOutputFile(QProcess::nullDevice());
     process.setStandardErrorFile(QProcess::nullDevice());
+#if defined(Q_OS_WIN)
+    // The core is a console program: run it without a console window. The simulator
+    // processes it starts share its hidden console.
+    process.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *a) {
+        a->flags |= CREATE_NO_WINDOW;
+    });
+#endif
     qint64 pid = 0;
     if (!process.startDetached(&pid)) {
         m_lastError = tr("Could not start %1.").arg(program);

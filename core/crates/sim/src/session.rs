@@ -1,4 +1,5 @@
-//! A supervised QEMU session: one child process with UART0 and QMP on Unix sockets.
+//! A supervised QEMU session: one child process with UART0 and QMP on local links
+//! (Unix sockets; loopback TCP on Windows, [`crate::link`]).
 //!
 //! QEMU starts paused (`-S`). The session connects QMP and UART first, then sends
 //! `cont`, so no early boot output is lost. The child is killed when the session is
@@ -11,11 +12,11 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
 use tokio::time::Instant;
 
 use crate::gpio::GpioLink;
+use crate::link::{self, Endpoint};
 use crate::qmp::Qmp;
 use crate::uart::Uart;
 use crate::{Chip, Error, image};
@@ -74,26 +75,26 @@ pub const ICOUNT: &str = "shift=2,sleep=on";
 pub struct SessionPaths {
     pub dir: PathBuf,
     pub flash: PathBuf,
-    pub gpio: PathBuf,
-    pub uart: PathBuf,
-    pub qmp: PathBuf,
+    pub gpio: Endpoint,
+    pub uart: Endpoint,
+    pub qmp: Endpoint,
     pub stderr: PathBuf,
     pub efuse: PathBuf,
-    pub usb: PathBuf,
+    pub usb: Endpoint,
 }
 
 impl SessionPaths {
-    pub fn in_dir(dir: PathBuf) -> Self {
-        SessionPaths {
+    pub fn in_dir(dir: PathBuf) -> std::io::Result<Self> {
+        Ok(SessionPaths {
             flash: dir.join("flash.bin"),
-            gpio: dir.join("gpio.sock"),
-            uart: dir.join("uart0.sock"),
-            qmp: dir.join("qmp.sock"),
+            gpio: Endpoint::new(&dir, "gpio.sock")?,
+            uart: Endpoint::new(&dir, "uart0.sock")?,
+            qmp: Endpoint::new(&dir, "qmp.sock")?,
             stderr: dir.join("qemu.stderr"),
             efuse: dir.join("efuse.bin"),
-            usb: dir.join("usb.sock"),
+            usb: Endpoint::new(&dir, "usb.sock")?,
             dir,
-        }
+        })
     }
 }
 
@@ -116,11 +117,9 @@ pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
     let mut drive = OsString::from("file=");
     drive.push(&paths.flash);
     drive.push(",if=mtd,format=raw");
-    let mut serial = OsString::from("unix:");
-    serial.push(&paths.uart);
+    let mut serial = paths.uart.chardev();
     serial.push(",server=on,wait=off");
-    let mut qmp = OsString::from("unix:");
-    qmp.push(&paths.qmp);
+    let mut qmp = paths.qmp.chardev();
     qmp.push(",server=on,wait=off");
 
     args.extend([
@@ -153,8 +152,18 @@ pub fn qemu_args(cfg: &SessionConfig, paths: &SessionPaths) -> Vec<OsString> {
     }
     if cfg.usb_console {
         // The USB-Serial-JTAG's serial port (patch 0006) on its own socket, by name.
-        let mut chardev = OsString::from("socket,id=esp32bench-usb,path=");
-        chardev.push(&paths.usb);
+        // As a -chardev: `socket,id=…,path=<p>` or `socket,id=…,host=127.0.0.1,port=<n>`.
+        let spec = paths.usb.chardev();
+        let spec = spec.to_string_lossy();
+        let mut chardev = OsString::from("socket,id=esp32bench-usb,");
+        match spec.split_once(':') {
+            Some(("unix", p)) => chardev.push(format!("path={p}")),
+            Some(("tcp", hp)) => {
+                let (h, port) = hp.rsplit_once(':').unwrap_or((hp, ""));
+                chardev.push(format!("host={h},port={port}"));
+            }
+            _ => chardev.push(spec.as_ref()),
+        }
         chardev.push(",server=on,wait=off");
         args.extend([
             "-chardev".into(),
@@ -190,7 +199,7 @@ impl Session {
         let info = image::inspect(cfg.chip, &data)?;
         let data = image::pad(data, &info);
 
-        let paths = SessionPaths::in_dir(new_runtime_dir()?);
+        let paths = SessionPaths::in_dir(new_runtime_dir()?)?;
         let guard = DirGuard(Some(paths.dir.clone()));
         tokio::fs::write(&paths.flash, &data).await?;
 
@@ -220,7 +229,7 @@ impl Session {
         if linked {
             let pins: Vec<String> = cfg.bridge.iter().map(u8::to_string).collect();
             cmd.env("ESP32BENCH_GPIO_PINS", pins.join(","))
-                .env("ESP32BENCH_GPIO_SOCK", &paths.gpio);
+                .env("ESP32BENCH_GPIO_SOCK", paths.gpio.as_env());
         }
         if let Some(efuse) = &cfg.efuse {
             tokio::fs::write(&paths.efuse, efuse).await?;
@@ -338,26 +347,47 @@ fn runtime_dir() -> Option<PathBuf> {
 
 /// A private directory for one session under `<runtime dir>/esp32bench/`.
 fn new_runtime_dir() -> Result<PathBuf, Error> {
-    use std::os::unix::fs::DirBuilderExt;
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
     let base = runtime_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join(crate::install::APP_DIR);
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&base)?;
+    private_dir(&base, true)?;
     remove_stale_sessions(&base);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = base.join(format!("session-{}-{n}", std::process::id()));
-    std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
+    private_dir(&dir, false)?;
     Ok(dir)
+}
+
+/// Create a directory only this user can open (mode 0700). On Windows the user's
+/// temporary directory is already private to them.
+fn private_dir(dir: &Path, recursive: bool) -> std::io::Result<()> {
+    let mut b = std::fs::DirBuilder::new();
+    b.recursive(recursive);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
+    }
+    b.create(dir)
+}
+
+/// Whether the process `pid` still runs.
+#[cfg(unix)]
+fn running(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    // SAFETY: signal 0 only checks that the process exists; EPERM means it does.
+    let alive = unsafe { libc::kill(pid, 0) } == 0;
+    alive || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 /// Remove session directories whose owning process no longer runs, for example after
 /// the core was killed with SIGKILL. QEMU itself is gone by then (`PR_SET_PDEATHSIG`).
 /// Directories of live processes are left alone, so a reused PID only delays cleanup.
+#[cfg(unix)]
 fn remove_stale_sessions(base: &Path) {
     let Ok(entries) = std::fs::read_dir(base) else {
         return;
@@ -365,9 +395,29 @@ fn remove_stale_sessions(base: &Path) {
     for entry in entries.flatten() {
         if let Some(pid) = session_owner(&entry.file_name().to_string_lossy())
             && pid != std::process::id()
-            && !Path::new("/proc").join(pid.to_string()).exists()
+            && !running(pid)
         {
             let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// Windows: a running QEMU keeps its flash image open, and Windows does not delete an
+/// open file, so a session whose image can be deleted has ended; only then is the rest
+/// of its directory removed.
+#[cfg(windows)]
+fn remove_stale_sessions(base: &Path) {
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if let Some(pid) = session_owner(&entry.file_name().to_string_lossy())
+            && pid != std::process::id()
+        {
+            let flash = entry.path().join("flash.bin");
+            if !flash.exists() || std::fs::remove_file(&flash).is_ok() {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
         }
     }
 }
@@ -417,9 +467,9 @@ async fn exit_error(child: &mut Child, stderr: &Path) -> Option<Error> {
 /// Retry connecting to a socket QEMU is about to create, failing fast if QEMU exits.
 async fn connect_when_ready(
     child: &mut Child,
-    sock: &Path,
+    sock: &Endpoint,
     stderr: &Path,
-) -> Result<UnixStream, Error> {
+) -> Result<link::Stream, Error> {
     let deadline = Instant::now() + READY_TIMEOUT;
     loop {
         if child.try_wait()?.is_some()
@@ -427,7 +477,7 @@ async fn connect_when_ready(
         {
             return Err(e);
         }
-        if let Ok(s) = UnixStream::connect(sock).await {
+        if let Ok(s) = sock.connect().await {
             return Ok(s);
         }
         if Instant::now() >= deadline {
@@ -486,7 +536,7 @@ mod tests {
 
     #[test]
     fn builds_args_without_gdb() {
-        let paths = SessionPaths::in_dir("/run/s".into());
+        let paths = SessionPaths::in_dir("/run/s".into()).unwrap();
         let args = strs(qemu_args(&cfg(Chip::Esp32c3, None), &paths));
         assert_eq!(
             args,
@@ -512,7 +562,7 @@ mod tests {
 
     #[test]
     fn efuse_image_is_a_file_in_the_session_directory() {
-        let paths = SessionPaths::in_dir("/run/s".into());
+        let paths = SessionPaths::in_dir("/run/s".into()).unwrap();
         let mut c = cfg(Chip::Esp32c3, None);
         c.efuse = Some(vec![0; 1024]);
         let args = strs(qemu_args(&c, &paths));
@@ -535,7 +585,7 @@ mod tests {
 
     #[test]
     fn usb_console_is_a_named_chardev_on_the_device() {
-        let paths = SessionPaths::in_dir("/run/s".into());
+        let paths = SessionPaths::in_dir("/run/s".into()).unwrap();
         let mut c = cfg(Chip::Esp32c3, None);
         c.usb_console = true;
         let args = strs(qemu_args(&c, &paths));
@@ -560,7 +610,7 @@ mod tests {
 
     #[test]
     fn machine_override_and_extra_args_are_passed_verbatim() {
-        let paths = SessionPaths::in_dir("/run/s".into());
+        let paths = SessionPaths::in_dir("/run/s".into()).unwrap();
         let mut c = cfg(Chip::Esp32, None);
         c.machine = Some("esp32-picsimlab".into());
         c.extra_args = vec!["-nic".into(), "user,model=esp32_wifi; rm -rf /".into()];
@@ -574,7 +624,7 @@ mod tests {
 
     #[test]
     fn no_network_by_default() {
-        let paths = SessionPaths::in_dir("/tmp/x".into());
+        let paths = SessionPaths::in_dir("/tmp/x".into()).unwrap();
         let args = qemu_args(&cfg(Chip::Esp32, None), &paths);
         let i = args.iter().position(|a| a == "-nic").unwrap();
         assert_eq!(args[i + 1], "none");
@@ -582,7 +632,7 @@ mod tests {
 
     #[test]
     fn gdb_stub_binds_loopback_only() {
-        let paths = SessionPaths::in_dir("/run/s".into());
+        let paths = SessionPaths::in_dir("/run/s".into()).unwrap();
         let args = strs(qemu_args(&cfg(Chip::Esp32, Some(3333)), &paths));
         let i = args.iter().position(|a| a == "-gdb").unwrap();
         assert_eq!(args[i + 1], "tcp:127.0.0.1:3333");
@@ -637,6 +687,7 @@ mod tests {
         assert!(other.exists());
     }
 
+    #[cfg(unix)]
     #[test]
     fn runtime_dirs_are_private_and_unique() {
         use std::os::unix::fs::PermissionsExt;

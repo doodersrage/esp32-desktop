@@ -83,9 +83,11 @@ jobs:
           cp -R pc-bios ../sim-out/pc-bios
           git rev-parse HEAD > ../sim-out/COMMIT
 
+      # Qt 6.10: 6.8's CMake files link the AGL framework, which current macOS SDKs
+      # no longer have.
       - uses: jurplel/install-qt-action@v4
         with:
-          version: '6.8.*'
+          version: '6.10.*'
           cache: true
 
       - name: Core

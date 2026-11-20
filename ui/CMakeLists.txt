@@ -44,7 +44,11 @@ target_compile_definitions(esp32bench_ui PUBLIC
     QT_NO_URL_CAST_FROM_STRING
     ESP32BENCH_UI_VERSION="${PROJECT_VERSION}"
 )
-target_compile_options(esp32bench_ui PUBLIC -Wall -Wextra -Wpedantic)
+if(MSVC)
+    target_compile_options(esp32bench_ui PUBLIC /W3 /utf-8)
+else()
+    target_compile_options(esp32bench_ui PUBLIC -Wall -Wextra -Wpedantic)
+endif()
 
 # The UI's translations (Translations::languages()), compiled into the library as
 # :/i18n/esp32bench_<lang>.qm. After changing UI strings, refresh the .ts files with
@@ -62,6 +66,9 @@ qt_add_translations(esp32bench_ui
 )
 
 qt_add_executable(esp32bench-gui src/main.cpp)
+# A GUI program on Windows (no console window); the macOS bundle is assembled by
+# packaging/macos/build.sh.
+set_target_properties(esp32bench-gui PROPERTIES WIN32_EXECUTABLE ON)
 target_link_libraries(esp32bench-gui PRIVATE esp32bench_ui)
 # The app icon, for the window when the installed theme icon is not there (dev builds).
 qt_add_resources(esp32bench-gui "icon"

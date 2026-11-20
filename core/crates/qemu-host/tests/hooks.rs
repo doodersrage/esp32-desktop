@@ -11,16 +11,26 @@
 //! the fork with `esp32bench toolchain install qemu-lcgamboa`; the ROMs
 //! are taken from `<fork>/pc-bios`. Without them the test is skipped.
 
+#[cfg(unix)]
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::time::Duration;
 
+#[cfg(unix)]
+use esp32bench_sim::SessionConfig;
 use esp32bench_sim::uart::WaitOutcome;
-use esp32bench_sim::{Chip, Session, SessionConfig};
+use esp32bench_sim::{Chip, Session};
+#[cfg(unix)]
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(unix)]
 use tokio::net::UnixStream;
+#[cfg(unix)]
 use tokio::sync::mpsc;
 
+// Speaks to the host's Unix socket directly; elsewhere the session tests cover it.
+#[cfg(unix)]
 /// Start `project` through the host with the given extra environment. Returns the
 /// session and the host's socket path, or None if the library or image is missing.
 async fn start(
@@ -92,6 +102,8 @@ async fn start(
     Some((Session::start(cfg).await.unwrap(), sock))
 }
 
+// Speaks to the host's Unix socket directly; elsewhere the session tests cover it.
+#[cfg(unix)]
 async fn round_trip(chip: Chip, machine: &str, lib_var: &str) {
     let Some((mut s, sock)) = start(chip, machine, lib_var, "gpio", &[]).await else {
         return;
@@ -153,6 +165,7 @@ async fn round_trip(chip: Chip, machine: &str, lib_var: &str) {
     let _ = std::fs::remove_file(&sock);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn esp32_gpio_round_trip() {
     round_trip(
@@ -163,6 +176,7 @@ async fn esp32_gpio_round_trip() {
     .await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn esp32c3_gpio_round_trip() {
     round_trip(
@@ -173,11 +187,14 @@ async fn esp32c3_gpio_round_trip() {
     .await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn esp32s3_gpio_round_trip() {
     round_trip(Chip::Esp32s3, "esp32s3", "ESP32BENCH_TEST_QEMU_LIB_XTENSA").await;
 }
 
+// Speaks to the host's Unix socket directly; elsewhere the session tests cover it.
+#[cfg(unix)]
 /// The firmware scans I2C bus 0 and reads two registers from 0x3C. The host models
 /// one device there; register n holds n + 0x40.
 async fn i2c_device(chip: Chip, machine: &str, lib_var: &str) {
@@ -223,6 +240,7 @@ async fn i2c_device(chip: Chip, machine: &str, lib_var: &str) {
     let _ = std::fs::remove_file(&sock);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn esp32_i2c_device() {
     i2c_device(
@@ -233,6 +251,7 @@ async fn esp32_i2c_device() {
     .await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn esp32c3_i2c_device() {
     i2c_device(
@@ -243,6 +262,7 @@ async fn esp32c3_i2c_device() {
     .await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn esp32s3_i2c_device() {
     i2c_device(Chip::Esp32s3, "esp32s3", "ESP32BENCH_TEST_QEMU_LIB_XTENSA").await;

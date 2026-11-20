@@ -11,12 +11,10 @@
 //! `set <gpio> <0|1>` to drive an input and `control <id> <name> <JSON value>` to work
 //! a part.
 
-use std::path::Path;
 use std::time::Duration;
 
+use crate::link::{Endpoint, OwnedReadHalf, OwnedWriteHalf};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::net::UnixStream;
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 use crate::Error;
 
@@ -133,10 +131,10 @@ pub struct GpioLink {
 
 impl GpioLink {
     /// Connect to the host's socket, waiting up to `timeout` for it to appear.
-    pub async fn connect(path: &Path, timeout: Duration) -> Result<Self, Error> {
+    pub async fn connect(endpoint: &Endpoint, timeout: Duration) -> Result<Self, Error> {
         let deadline = tokio::time::Instant::now() + timeout;
         let stream = loop {
-            match UnixStream::connect(path).await {
+            match endpoint.connect().await {
                 Ok(s) => break s,
                 Err(e) if tokio::time::Instant::now() >= deadline => return Err(e.into()),
                 Err(_) => tokio::time::sleep(Duration::from_millis(20)).await,

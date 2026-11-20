@@ -363,7 +363,8 @@ pub async fn status(env: &Env) -> Vec<Component> {
         env.distro,
     ));
 
-    if cfg!(target_os = "linux") {
+    #[cfg(target_os = "linux")]
+    {
         let rule = UDEV_DIRS
             .iter()
             .any(|d| Path::new(d).join(UDEV_RULE).is_file());
@@ -372,9 +373,9 @@ pub async fn status(env: &Env) -> Vec<Component> {
             in_group(env.distro.serial_group()),
             env.distro,
         ));
-    } else {
-        out.push(board_access_without_udev());
     }
+    #[cfg(not(target_os = "linux"))]
+    out.push(board_access_without_udev());
     out
 }
 

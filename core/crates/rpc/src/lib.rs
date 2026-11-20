@@ -1,4 +1,5 @@
-//! JSON-RPC 2.0 over a Unix socket, one JSON object per line. See `docs/rpc.md`.
+//! JSON-RPC 2.0 over a Unix socket (a named pipe on Windows, [`transport`]), one
+//! JSON object per line. See `docs/rpc.md`.
 //!
 //! The server side is a [`Router`] of async method handlers served by [`serve`];
 //! the client side is [`Client`], used by the CLI and tests.
@@ -13,8 +14,10 @@ use std::sync::{Arc, Mutex};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
+
+pub mod transport;
+pub use transport::Listener;
 
 /// Largest message accepted, in bytes. Longer lines close the connection.
 pub const MAX_MESSAGE: usize = 16 * 1024 * 1024;
@@ -24,8 +27,9 @@ pub const RUNTIME_DIR: &str = "esp32bench";
 pub const SOCKET_NAME: &str = "core.sock";
 
 /// The per-user directory for sockets and other files that last one login:
-/// `$XDG_RUNTIME_DIR` on Linux; on macOS, which has none, `$TMPDIR` (per user, private,
-/// emptied at reboot), which is also what Qt's `QDir::tempPath()` gives the UI.
+/// `$XDG_RUNTIME_DIR` on Linux; on macOS and Windows, which have none, the user's
+/// temporary directory (`$TMPDIR`, per user and private on macOS; `%TEMP%` on
+/// Windows), which is also what Qt's `QDir::tempPath()` gives the UI.
 pub fn runtime_dir() -> Option<PathBuf> {
     if cfg!(target_os = "linux") {
         std::env::var_os("XDG_RUNTIME_DIR")
@@ -36,9 +40,22 @@ pub fn runtime_dir() -> Option<PathBuf> {
     }
 }
 
-/// Default socket path: `<runtime dir>/esp32bench/core.sock`.
+/// Default socket path: `<runtime dir>/esp32bench/core.sock`; on Windows the named
+/// pipe `\\.\pipe\esp32bench-<user>-core`, which the UI reaches as the local
+/// server `esp32bench-<user>-core`.
+#[cfg(not(windows))]
 pub fn default_socket_path() -> Option<PathBuf> {
     runtime_dir().map(|d| d.join(RUNTIME_DIR).join(SOCKET_NAME))
+}
+
+#[cfg(windows)]
+pub fn default_socket_path() -> Option<PathBuf> {
+    let user = std::env::var("USERNAME").unwrap_or_default();
+    let user: String = user
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    Some(PathBuf::from(format!(r"\\.\pipe\esp32bench-{user}-core")))
 }
 
 /// Error codes. Protocol codes are JSON-RPC's; application codes are listed in `docs/rpc.md`.
@@ -320,9 +337,9 @@ async fn read_line<R: AsyncRead + Unpin>(r: &mut BufReader<R>) -> std::io::Resul
 }
 
 /// Accept connections forever, serving each with `router`.
-pub async fn serve(listener: UnixListener, router: Arc<Router>) -> std::io::Result<()> {
+pub async fn serve(mut listener: Listener, router: Arc<Router>) -> std::io::Result<()> {
     loop {
-        let (stream, _) = listener.accept().await?;
+        let stream = listener.accept().await?;
         let router = router.clone();
         tokio::spawn(async move {
             let _ = serve_connection(stream, router).await;
@@ -331,8 +348,11 @@ pub async fn serve(listener: UnixListener, router: Arc<Router>) -> std::io::Resu
 }
 
 /// Serve one connection until the client closes it.
-pub async fn serve_connection(stream: UnixStream, router: Arc<Router>) -> std::io::Result<()> {
-    let (r, mut w) = stream.into_split();
+pub async fn serve_connection(
+    stream: impl transport::Stream,
+    router: Arc<Router>,
+) -> std::io::Result<()> {
+    let (r, mut w) = tokio::io::split(stream);
     let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
     let writer = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
@@ -416,21 +436,22 @@ pub enum ClientError {
 
 /// A simple sequential client: one request at a time, notifications are collected.
 pub struct Client {
-    reader: BufReader<tokio::net::unix::OwnedReadHalf>,
-    writer: tokio::net::unix::OwnedWriteHalf,
+    reader: BufReader<tokio::io::ReadHalf<Box<dyn transport::Stream>>>,
+    writer: tokio::io::WriteHalf<Box<dyn transport::Stream>>,
     next_id: u64,
     notifications: Vec<Value>,
 }
 
 impl Client {
     pub async fn connect(path: &Path) -> Result<Self, ClientError> {
-        let s = UnixStream::connect(path)
+        let s = transport::connect(path)
             .await
             .map_err(|source| ClientError::Connect {
                 path: path.to_owned(),
                 source,
             })?;
-        let (r, w) = s.into_split();
+        let s: Box<dyn transport::Stream> = Box::new(s);
+        let (r, w) = tokio::io::split(s);
         Ok(Client {
             reader: BufReader::new(r),
             writer: w,
@@ -569,7 +590,7 @@ mod tests {
     async fn serve_router(router: Router) -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("core.sock");
-        let listener = UnixListener::bind(&path).unwrap();
+        let listener = Listener::bind(&path).unwrap();
         tokio::spawn(serve(listener, Arc::new(router)));
         (dir, path)
     }
@@ -634,14 +655,14 @@ mod tests {
     async fn server() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("core.sock");
-        let listener = UnixListener::bind(&path).unwrap();
+        let listener = Listener::bind(&path).unwrap();
         tokio::spawn(serve(listener, Arc::new(test_router())));
         (dir, path)
     }
 
     async fn raw(path: &Path, lines: &[&str]) -> Vec<Value> {
-        let s = UnixStream::connect(path).await.unwrap();
-        let (r, mut w) = s.into_split();
+        let s = transport::connect(path).await.unwrap();
+        let (r, mut w) = tokio::io::split(s);
         for l in lines {
             w.write_all(l.as_bytes()).await.unwrap();
             w.write_all(b"\n").await.unwrap();
@@ -735,8 +756,8 @@ mod tests {
         assert_eq!(n[0]["params"]["n"], 7);
 
         // A request without an id gets no response; the next call still works.
-        let s = UnixStream::connect(&path).await.unwrap();
-        let (r, mut w) = s.into_split();
+        let s = transport::connect(&path).await.unwrap();
+        let (r, mut w) = tokio::io::split(s);
         w.write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"test.echo\"}\n{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"test.echo\",\"params\":{\"x\":1}}\n")
             .await
             .unwrap();
@@ -749,8 +770,8 @@ mod tests {
     #[tokio::test]
     async fn closes_connection_on_oversized_message() {
         let (_d, path) = server().await;
-        let s = UnixStream::connect(&path).await.unwrap();
-        let (r, mut w) = s.into_split();
+        let s = transport::connect(&path).await.unwrap();
+        let (r, mut w) = tokio::io::split(s);
         let big = vec![b'x'; MAX_MESSAGE + 10];
         let _ = w.write_all(&big).await;
         let mut reader = BufReader::new(r);

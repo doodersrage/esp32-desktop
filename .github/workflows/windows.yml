@@ -1,0 +1,163 @@
+name: Windows
+
+# Build ESP32 Bench for Windows (x86-64) and smoke-test it: the core and UI with MSVC,
+# and lcgamboa's QEMU fork with esp32bench's patches, built statically with MSYS2 and
+# shipped with the app as DLLs (docs/platforms.md). Phase 6 (docs/PLAN.md).
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'core/**'
+      - 'ui/**'
+      - 'packaging/windows/**'
+      - 'tests/platforms/**'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORK_REPO: https://github.com/lcgamboa/qemu.git
+  FORK_COMMIT: 885a6e7061fb70fac78a074a719423810bc19a17
+
+jobs:
+  firmware:
+    name: Smoke-test firmware
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: bash
+        run: |
+          git config --global --add safe.directory '*'
+          export IDF_PATH=/opt/esp/idf
+          for p in hello gpio; do bash tests/firmware/build.sh "$p"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-firmware
+          path: tests/firmware/out/*.bin
+          if-no-files-found: error
+
+  simulator:
+    name: Simulator (MSYS2)
+    runs-on: windows-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: No line-ending conversion
+        shell: pwsh
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - name: From the cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: sim-out
+          key: windows-sim-${{ env.FORK_COMMIT }}-${{ hashFiles('core/crates/sim/patches/**', 'tests/platforms/link-library.sh') }}
+      - uses: msys2/setup-msys2@v2
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git make diffutils
+            mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-pixman mingw-w64-ucrt-x86_64-libgcrypt
+            mingw-w64-ucrt-x86_64-libslirp
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git config --global core.autocrlf false
+          mkdir fork && cd fork
+          git init -q && git remote add origin "$FORK_REPO"
+          git fetch -q --depth 1 origin "$FORK_COMMIT" && git checkout -q FETCH_HEAD
+          git apply ../core/crates/sim/patches/*.patch
+          mkdir build && cd build
+          # Statically: the fork links libslirp statically, and on MSYS2 that brings
+          # glib's static library in beside its DLL (docs/platforms.md).
+          ../configure --target-list=xtensa-softmmu,riscv32-softmmu --enable-slirp \
+            --enable-gcrypt --enable-pixman --disable-werror --static
+          make -j"$(nproc)"
+          cd ..
+          for a in xtensa riscv32; do sh ../tests/platforms/link-library.sh build $a; done
+          # The functions esp32bench-qemu-host looks up must be exported.
+          for a in xtensa riscv32; do
+            for f in qemu_init qemu_main_loop qemu_picsimlab_register_callbacks \
+                     qemu_picsimlab_set_pin qemu_picsimlab_set_apin bql_lock_impl qemu_clock_get_ns; do
+              objdump -p build/libqemu-$a.dll | grep -qw "$f" || { echo "libqemu-$a.dll does not export $f"; exit 1; }
+            done
+          done
+          mkdir -p ../sim-out/build
+          cp build/libqemu-*.dll ../sim-out/build/
+          cp -R pc-bios ../sim-out/pc-bios
+          git rev-parse HEAD > ../sim-out/COMMIT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-simulator
+          path: sim-out
+          if-no-files-found: error
+
+  app:
+    name: Build and smoke-test the app
+    needs: [firmware, simulator]
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: smoke-firmware
+          path: tests/firmware/out
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-simulator
+          path: sim-out
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Core
+        shell: bash
+        run: cargo build --release --locked --manifest-path core/Cargo.toml
+      - name: UI
+        shell: bash
+        run: |
+          cmake -S ui -B build/ui -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/ui
+      - name: UI tests
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          export ESP32BENCH_DAEMON="$(cygpath -w "$PWD/core/target/release/esp32benchd.exe")"
+          ctest --test-dir build/ui --output-on-failure
+
+      - name: Package
+        shell: bash
+        run: packaging/windows/build.sh "$PWD" core/target build/ui sim-out dist
+      - name: Smoke test
+        shell: bash
+        run: packaging/windows/smoke.sh dist/*.zip tests/firmware/out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          path: |
+            dist/*.zip
+            dist/*-setup.exe
+          if-no-files-found: error

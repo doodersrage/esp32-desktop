@@ -472,12 +472,23 @@ pub async fn run(
 struct GroupGuard(Option<i32>);
 
 impl Drop for GroupGuard {
+    #[cfg(unix)]
     fn drop(&mut self) {
         if let Some(pgid) = self.0 {
             // SAFETY: kill(2) on a process group we created; harmless if it is gone.
             unsafe {
                 libc::kill(-pgid, libc::SIGKILL);
             }
+        }
+    }
+
+    /// Windows has no process groups: end the process and its children.
+    #[cfg(windows)]
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/T", "/F", "/PID", &pid.to_string()])
+                .output();
         }
     }
 }
@@ -512,13 +523,13 @@ pub(crate) async fn run_logged(
     name: &'static str,
     log: &mut impl FnMut(Stream, String),
 ) -> Result<(), Error> {
-    let mut child = cmd
-        .stdin(Stdio::null())
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .process_group(0)
-        .kill_on_drop(true)
-        .spawn()?;
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
+    let mut child = cmd.spawn()?;
     let mut guard = GroupGuard(child.id().and_then(|p| i32::try_from(p).ok()));
 
     // One reader task per stream; the channel closes when both streams have ended.

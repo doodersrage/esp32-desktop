@@ -300,10 +300,16 @@ fn on_path(cmd: &str) -> bool {
     })
 }
 
+#[cfg(unix)]
 fn is_executable(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     p.metadata()
         .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(windows)]
+fn is_executable(p: &Path) -> bool {
+    p.is_file()
 }
 
 /// What is missing to build the fork. Runs `pkg-config --exists` only; no network.
@@ -473,12 +479,23 @@ impl Drop for RemoveOnDrop {
 struct GroupGuard(Option<u32>);
 
 impl Drop for GroupGuard {
+    #[cfg(unix)]
     fn drop(&mut self) {
         if let Some(pid) = self.0.and_then(|p| i32::try_from(p).ok()) {
             // SAFETY: killpg on the group this guard's child leads.
             unsafe {
                 libc::killpg(pid, libc::SIGKILL);
             }
+        }
+    }
+
+    /// Windows has no process groups: end the process and its children.
+    #[cfg(windows)]
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/T", "/F", "/PID", &pid.to_string()])
+                .output();
         }
     }
 }
@@ -489,15 +506,17 @@ async fn run_step(base: &Path, step: &Step, log: &mut impl FnMut(String)) -> Res
         detail,
     };
     log(format!("{}…", step.what));
-    let mut child = Command::new(step.program)
-        .args(&step.args)
+    let mut cmd = Command::new(step.program);
+    cmd.args(&step.args)
         .current_dir(base.join(step.dir))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env("LC_ALL", "C")
-        .process_group(0)
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
+    let mut child = cmd
         .spawn()
         .map_err(|e| fail(format!("could not run {}: {e}", step.program)))?;
     let mut guard = GroupGuard(child.id());

@@ -250,6 +250,8 @@ async fn device_list_round_trip() {
     }
 }
 
+// The Unix lock file and socket; on Windows the pipe is the lock.
+#[cfg(unix)]
 #[tokio::test]
 async fn second_daemon_cannot_take_the_socket() {
     let (_d, sock, lock) = daemon().await;
@@ -275,6 +277,7 @@ async fn second_daemon_cannot_take_the_socket() {
     panic!("the lock was not released after the first daemon stopped");
 }
 
+#[cfg(unix)]
 #[test]
 fn socket_is_private() {
     use std::os::unix::fs::PermissionsExt;
@@ -601,6 +604,7 @@ async fn build_refuses_prebuilt_and_unknown_projects() {
 }
 
 /// A pty pair: the master fd (the "board") and the slave path (the "port").
+#[cfg(unix)]
 fn pty() -> (std::os::fd::OwnedFd, PathBuf) {
     use std::os::fd::FromRawFd;
     // posix_openpt with O_CLOEXEC, not openpty: openpty's descriptors are inheritable
@@ -636,7 +640,7 @@ fn pty_slave_name(master: libc::c_int) -> String {
 }
 
 /// macOS has no ptsname_r; ptsname's static buffer is copied straight away.
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(unix, not(target_os = "linux")))]
 fn pty_slave_name(master: libc::c_int) -> String {
     // SAFETY: ptsname returns NULL or a NUL-terminated name in a static buffer.
     let p = unsafe { libc::ptsname(master) };
@@ -665,16 +669,19 @@ async fn serial_daemon(
     (dir, sock, lock)
 }
 
+#[cfg(unix)]
 fn b64(bytes: &[u8]) -> String {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
+#[cfg(unix)]
 fn un_b64(s: &str) -> Vec<u8> {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.decode(s).unwrap()
 }
 
+#[cfg(unix)]
 #[tokio::test]
 #[cfg_attr(
     target_os = "macos",
@@ -702,8 +709,11 @@ async fn serial_streams_bytes_both_ways() {
     // SAFETY: write a valid buffer to the pty master.
     unsafe { libc::write(master.as_raw_fd(), out.as_ptr().cast(), out.len()) };
     let mut got = Vec::new();
+    // One deadline for the loop: other events keep arriving, so a per-event
+    // timeout would never fire.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(6);
     while got.len() < out.len() {
-        let n = tokio::time::timeout(std::time::Duration::from_secs(2), c.next_notification())
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
             .await
             .unwrap()
             .unwrap();
@@ -750,6 +760,7 @@ async fn serial_streams_bytes_both_ways() {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 #[cfg_attr(
     target_os = "macos",
@@ -823,6 +834,7 @@ async fn serial_refuses_paths_and_other_connections() {
     assert!(reopened, "the port stayed busy after unsubscribe");
 }
 
+#[cfg(unix)]
 #[tokio::test]
 #[cfg_attr(
     target_os = "macos",
@@ -1198,8 +1210,11 @@ async fn board_erase_needs_confirmation_and_the_stub() {
 /// Wait for sim.output until `marker` has appeared; checks each event's schema.
 async fn sim_wait_for(c: &mut Client, sub: &Value, marker: &str) {
     let mut text = String::new();
+    // One deadline for the loop: other events keep arriving, so a per-event
+    // timeout would never fire.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(90);
     while !text.contains(marker) {
-        let n = tokio::time::timeout(std::time::Duration::from_secs(30), c.next_notification())
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
             .await
             .unwrap_or_else(|_| panic!("no `{marker}` in: {text}"))
             .unwrap();
@@ -1381,10 +1396,13 @@ async fn sim_joins_a_sketch_to_the_simulated_wifi() {
         .unwrap();
     let sub = r["subscription"].clone();
     let (mut joined, mut text) = (false, String::new());
+    // One deadline for the whole start-up: pin and output events keep coming, so a
+    // per-event timeout never fires if the sketch never serves.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(90);
     while !text.contains("esp32bench-wifi serving") {
-        let n = tokio::time::timeout(std::time::Duration::from_secs(40), c.next_notification())
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
             .await
-            .unwrap_or_else(|_| panic!("not serving: {text}"))
+            .unwrap_or_else(|_| panic!("not serving after 90 s: {text}"))
             .unwrap();
         let event = n["method"].as_str().unwrap();
         assert_valid(&method_def(event)["params"], &n["params"], event);
@@ -1406,7 +1424,13 @@ async fn sim_joins_a_sketch_to_the_simulated_wifi() {
         .unwrap();
     tcp.write_all(b"GET / HTTP/1.0\r\n\r\n").await.unwrap();
     let mut reply = String::new();
-    tcp.read_to_string(&mut reply).await.unwrap();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        tcp.read_to_string(&mut reply),
+    )
+    .await
+    .expect("no web reply in 30 s")
+    .unwrap();
     assert!(reply.contains("esp32bench-web ok"), "{reply}");
 }
 
@@ -1663,8 +1687,11 @@ async fn sim_debugs_a_build_with_gdb() {
     .unwrap();
     // It runs on: the firmware gets to its ready line.
     let mut seen = String::new();
+    // One deadline for the loop: other events keep arriving, so a per-event
+    // timeout would never fire.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(90);
     while !seen.contains("esp32bench-hello ready") {
-        let n = tokio::time::timeout(std::time::Duration::from_secs(30), c.next_notification())
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
             .await
             .unwrap()
             .unwrap();
@@ -1851,8 +1878,11 @@ async fn sim_bridges_the_projects_pins() {
     let (mut high, mut low) = (false, false);
     let mut text = String::new();
     let mut traced: Vec<Value> = Vec::new();
+    // One deadline for the loop: other events keep arriving, so a per-event
+    // timeout would never fire.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
     while !(high && low && traced.iter().filter(|e| e["gpio"] == 2).count() >= 2) {
-        let n = tokio::time::timeout(std::time::Duration::from_secs(20), c.next_notification())
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
             .await
             .expect("GPIO 2 did not toggle")
             .unwrap();
@@ -1884,8 +1914,11 @@ async fn sim_bridges_the_projects_pins() {
     .await
     .unwrap();
     let input_traced = |t: &[Value]| t.iter().any(|e| e["gpio"] == 4 && e["input"] == true);
+    // One deadline for the loop: other events keep arriving, so a per-event
+    // timeout would never fire.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     while !(text.contains("esp32bench-gpio in 4=1") && input_traced(&traced)) {
-        let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
             .await
             .unwrap_or_else(|_| panic!("firmware never read GPIO 4 high: {text}"))
             .unwrap();
@@ -2057,8 +2090,11 @@ async fn sim_runs_the_boards_parts() {
     let mut text = String::new();
     let mut led = Vec::new();
     // Wait until the LED has been seen on and off.
+    // One deadline for the loop: other events keep arriving, so a per-event
+    // timeout would never fire.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
     while !(led.contains(&true) && led.contains(&false) && led.len() >= 3) {
-        let n = tokio::time::timeout(std::time::Duration::from_secs(20), c.next_notification())
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
             .await
             .expect("the LED did not blink")
             .unwrap();
@@ -2086,8 +2122,11 @@ async fn sim_runs_the_boards_parts() {
     );
     c.call("sim.control", press).await.unwrap();
     let mut pressed_seen = false;
+    // One deadline for the loop: other events keep arriving, so a per-event
+    // timeout would never fire.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     while !(text.contains("esp32bench-gpio in 4=1") && pressed_seen) {
-        let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
             .await
             .unwrap_or_else(|_| panic!("the press did not reach the firmware: {text}"))
             .unwrap();

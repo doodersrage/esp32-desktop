@@ -569,6 +569,7 @@ impl ExitCode {
 async fn main() {
     // Exit quietly when stdout is a closed pipe (e.g. `| head`) instead of panicking.
     // SAFETY: setting a signal disposition to the default before any threads use it.
+    #[cfg(unix)]
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }

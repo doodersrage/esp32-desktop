@@ -1,11 +1,8 @@
-//! Minimal QMP client: newline-delimited JSON over a Unix socket.
+//! Minimal QMP client: newline-delimited JSON over a local link ([`crate::link`]).
 
-use std::path::Path;
-
+use crate::link::{Endpoint, OwnedReadHalf, OwnedWriteHalf, Stream};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 use crate::Error;
 
@@ -17,11 +14,11 @@ pub struct Qmp {
 
 impl Qmp {
     /// Connect, read the greeting and enter command mode.
-    pub async fn connect(path: &Path) -> Result<Self, Error> {
-        Self::handshake(UnixStream::connect(path).await?).await
+    pub async fn connect(endpoint: &Endpoint) -> Result<Self, Error> {
+        Self::handshake(endpoint.connect().await?).await
     }
 
-    pub async fn handshake(stream: UnixStream) -> Result<Self, Error> {
+    pub async fn handshake(stream: Stream) -> Result<Self, Error> {
         let (r, w) = stream.into_split();
         let mut qmp = Qmp {
             reader: BufReader::new(r),
@@ -87,10 +84,12 @@ impl Qmp {
     }
 }
 
-#[cfg(test)]
+// Socket pairs are Unix only; the code under test is the same everywhere.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::UnixStream;
 
     /// A fake QMP server that checks each request and sends scripted replies.
     async fn fake_server(stream: UnixStream, script: Vec<(&'static str, Vec<&'static str>)>) {

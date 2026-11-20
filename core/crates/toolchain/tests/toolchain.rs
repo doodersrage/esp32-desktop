@@ -274,6 +274,7 @@ fn board_access_needs_the_rule_or_the_group() {
     assert!(none.hint.unwrap().contains("usermod -aG dialout"));
 }
 
+#[cfg(unix)]
 #[test]
 fn group_membership_matches_id() {
     let out = std::process::Command::new("id")

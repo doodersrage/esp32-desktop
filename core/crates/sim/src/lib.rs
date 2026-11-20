@@ -12,6 +12,7 @@ pub mod gpio;
 pub mod image;
 pub mod install;
 pub mod lcgamboa;
+pub mod link;
 pub mod network;
 pub mod pin;
 pub mod qmp;

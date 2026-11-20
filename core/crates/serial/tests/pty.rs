@@ -1,3 +1,6 @@
+// Pseudo-terminals are Unix only.
+#![cfg(unix)]
+
 //! Port against a pseudo-terminal pair: the test holds the "board" end (the pty
 //! master) and Port opens the other end like a serial device.
 

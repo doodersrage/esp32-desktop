@@ -1,10 +1,10 @@
-//! `esp32benchd`: serves the core's JSON-RPC API on a Unix socket. See `docs/rpc.md`.
+//! `esp32benchd`: serves the core's JSON-RPC API on a Unix socket (a named pipe on
+//! Windows). See `docs/rpc.md`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use tokio::signal::unix::{SignalKind, signal};
 
 fn usage() -> ! {
     eprintln!("usage: esp32benchd [--socket PATH]");
@@ -43,13 +43,30 @@ async fn main() -> Result<()> {
     let state = esp32bench_daemon::State::from_env().context("setting up the library cache")?;
     eprintln!("esp32benchd: project library from {}", state.library_source);
     let router = Arc::new(esp32bench_daemon::router(Arc::new(state)));
-    let mut term = signal(SignalKind::terminate())?;
+    let term = terminated();
     tokio::select! {
         r = esp32bench_rpc::serve(listener, router) => r.context("serving")?,
         _ = tokio::signal::ctrl_c() => {}
-        _ = term.recv() => {}
+        () = term => {}
     }
     // Dropping the lock removes the socket.
     eprintln!("esp32benchd: shutting down");
     Ok(())
+}
+
+/// Resolves when the process is asked to stop: SIGTERM on Unix. Windows has no such
+/// signal for a console program (Ctrl-C, and closing the console, end it).
+async fn terminated() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut t) => {
+                t.recv().await;
+            }
+            Err(_) => std::future::pending().await,
+        }
+    }
+    #[cfg(not(unix))]
+    std::future::pending::<()>().await
 }
