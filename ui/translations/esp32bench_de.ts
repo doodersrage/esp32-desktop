@@ -1071,6 +1071,14 @@ Code-SHA-256: %2</translation>
         <translation>Das Projekt liegt nicht mehr in %1. Vergiss es in der Liste der Bibliothek oder leg es zurück.</translation>
     </message>
     <message>
+        <source>ESP-IDF was not found, so this project cannot be built yet. Install it with Espressif&apos;s installer, or as Espressif&apos;s guide does into %USERPROFILE%\esp\esp-idf, or set IDF_PATH, then select the project again.</source>
+        <translation>ESP-IDF wurde nicht gefunden, daher lässt sich dieses Projekt noch nicht kompilieren. Installiere es mit Espressifs Installationsprogramm oder nach Espressifs Anleitung in %USERPROFILE%\esp\esp-idf oder setze IDF_PATH und wähle das Projekt dann erneut.</translation>
+    </message>
+    <message>
+        <source>ESP-IDF was not found, so this project cannot be built yet. Install it as Espressif&apos;s guide does, into ~/esp/esp-idf, or set IDF_PATH, then select the project again.</source>
+        <translation>ESP-IDF wurde nicht gefunden, daher lässt sich dieses Projekt noch nicht kompilieren. Installiere es nach Espressifs Anleitung in ~/esp/esp-idf oder setze IDF_PATH und wähle das Projekt dann erneut.</translation>
+    </message>
+    <message>
         <source>ESP-IDF was not found, so this project cannot be built yet. Install it (the esp-idf package, or Espressif&apos;s guide into ~/esp/esp-idf) or set IDF_PATH, then select the project again.</source>
         <translation>ESP-IDF wurde nicht gefunden, daher lässt sich dieses Projekt noch nicht kompilieren. Installiere es (das Paket esp-idf oder nach Espressifs Anleitung in ~/esp/esp-idf) oder setze IDF_PATH und wähle das Projekt dann erneut.</translation>
     </message>

@@ -9,10 +9,13 @@
 //! find them there. The board is one of the generic chip boards (`esp32`,
 //! `esp32s3`, `esp32c3`), which set ESP-IDF's target.
 //!
-//! The build runs `idf.py` from an ESP-IDF install found by [`detect`], through that
-//! install's `export.sh`. Its build directory and `sdkconfig` are in the cache, so the
-//! project folder is not written to. Every argument is passed as is: the shell script
-//! is fixed text, and paths go in as its positional parameters.
+//! The build runs `idf.py` from an ESP-IDF install found by [`detect`], in that
+//! install's environment ([`Activation`]): on Linux and macOS through its `export.sh`,
+//! on Windows, where there is no POSIX shell, the way ESP-IDF's own activation does it
+//! (`idf_tools.py export` run by ESP-IDF's Python, then `idf.py` with that
+//! environment). Its build directory and `sdkconfig` are in the cache, so the project
+//! folder is not written to. Every argument is passed as is: the shell script is fixed
+//! text, and paths go in as its positional parameters.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -42,23 +45,47 @@ pub struct Idf {
     pub version: String,
 }
 
-/// ESP-IDF: `$IDF_PATH`, else `~/esp/esp-idf` (Espressif's guide), else
-/// `/opt/esp-idf` (the AUR package). None if none has `export.sh` and `tools/idf.py`.
+/// ESP-IDF: `$IDF_PATH`, else what Espressif's installation manager (EIM) recorded,
+/// its selected install first, else `~/esp/esp-idf` (Espressif's guide), else on
+/// Windows the classic installer's `C:\Espressif\frameworks\esp-idf-v*` (newest
+/// first), else `/opt/esp-idf` (the AUR package). None if none is an install ([`at`]).
 pub fn detect() -> Option<Idf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(p) = std::env::var_os(IDF_PATH_ENV).filter(|p| !p.is_empty()) {
         candidates.push(PathBuf::from(p));
     }
-    if let Some(home) = esp32bench_distro::dirs::home() {
-        candidates.push(home.join("esp/esp-idf"));
+    candidates.extend(eim_installs().into_iter().map(|i| i.path));
+    let home = esp32bench_distro::dirs::home();
+    if let Some(home) = &home {
+        candidates.push(home.join("esp").join("esp-idf"));
     }
-    candidates.push(PathBuf::from("/opt/esp-idf"));
+    if cfg!(windows) {
+        let mut classic: Vec<PathBuf> = std::fs::read_dir(r"C:\Espressif\frameworks")
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("esp-idf-v"))
+            })
+            .collect();
+        classic.sort_by_key(|p| std::cmp::Reverse(version_key(&p.to_string_lossy())));
+        candidates.extend(classic);
+    } else {
+        candidates.push(PathBuf::from("/opt/esp-idf"));
+    }
     candidates.into_iter().find_map(|p| at(&p))
 }
 
-/// The install at `path`, if it is one.
+/// The install at `path`, if it is one: `tools/idf.py` and `tools/idf_tools.py`, and
+/// on Linux and macOS the `export.sh` builds go through.
 pub fn at(path: &Path) -> Option<Idf> {
-    if !path.join("export.sh").is_file() || !path.join("tools/idf.py").is_file() {
+    let tools = path.join("tools");
+    if !tools.join("idf.py").is_file()
+        || !tools.join("idf_tools.py").is_file()
+        || (Activation::platform() == Activation::ExportSh && !path.join("export.sh").is_file())
+    {
         return None;
     }
     let text = std::fs::read_to_string(path.join("tools/cmake/version.cmake")).ok()?;
@@ -71,6 +98,240 @@ pub fn at(path: &Path) -> Option<Idf> {
         path: path.to_owned(),
         version: format!("{}.{}.{}", part("MAJOR")?, part("MINOR")?, part("PATCH")?),
     })
+}
+
+/// An install Espressif's installation manager recorded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EimInstall {
+    pub path: PathBuf,
+    /// The Python of its environment, when recorded.
+    pub python: Option<PathBuf>,
+    /// Where its tools are (`IDF_TOOLS_PATH`), when recorded.
+    pub tools: Option<PathBuf>,
+}
+
+/// Where EIM keeps its record of installs: `C:\Espressif\tools\eim_idf.json` on
+/// Windows, `~/.espressif/tools/eim_idf.json` elsewhere.
+fn eim_files() -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    if cfg!(windows) {
+        v.push(PathBuf::from(r"C:\Espressif\tools\eim_idf.json"));
+    }
+    if let Some(home) = esp32bench_distro::dirs::home() {
+        v.push(home.join(".espressif").join("tools").join("eim_idf.json"));
+    }
+    v
+}
+
+/// The installs EIM recorded, its selected one first.
+pub fn eim_installs() -> Vec<EimInstall> {
+    eim_files()
+        .iter()
+        .filter_map(|f| std::fs::read(f).ok())
+        .flat_map(|bytes| parse_eim(&bytes))
+        .collect()
+}
+
+/// Read `eim_idf.json`: `idfInstalled` is a list of installs (`id`, `path`, `python`,
+/// `idfToolsPath`), `idfSelectedId` the one in use. Unknown or missing fields are
+/// skipped, so a newer EIM's file still gives what it can.
+fn parse_eim(bytes: &[u8]) -> Vec<EimInstall> {
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return Vec::new();
+    };
+    let selected = v.get("idfSelectedId").and_then(|s| s.as_str());
+    let path = |o: &serde_json::Value, k: &str| {
+        o.get(k)
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+    };
+    let mut all: Vec<(bool, EimInstall)> = v
+        .get("idfInstalled")
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|o| {
+            let is_selected =
+                selected.is_some() && o.get("id").and_then(|s| s.as_str()) == selected;
+            Some((
+                is_selected,
+                EimInstall {
+                    path: path(o, "path")?,
+                    python: path(o, "python"),
+                    tools: path(o, "idfToolsPath"),
+                },
+            ))
+        })
+        .collect();
+    all.sort_by_key(|(sel, _)| !*sel);
+    all.into_iter().map(|(_, i)| i).collect()
+}
+
+/// Version numbers in `s` (`esp-idf-v5.4.1` → [5, 4, 1]), to sort installs newest first.
+fn version_key(s: &str) -> Vec<u32> {
+    s.split(|c: char| !c.is_ascii_digit())
+        .filter_map(|n| n.parse().ok())
+        .collect()
+}
+
+/// How a build gets ESP-IDF's environment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Activation {
+    /// `bash`, sourcing the install's `export.sh` (Linux and macOS).
+    ExportSh,
+    /// ESP-IDF's Python runs `idf_tools.py export` and then `idf.py` with what it
+    /// printed, with no shell (Windows; usable anywhere the install has its Python).
+    Direct,
+}
+
+impl Activation {
+    pub fn platform() -> Self {
+        if cfg!(windows) {
+            Activation::Direct
+        } else {
+            Activation::ExportSh
+        }
+    }
+}
+
+/// ESP-IDF's environment for [`Activation::Direct`]: its Python and the variables
+/// `idf_tools.py export` gives.
+#[derive(Debug, Clone)]
+pub struct Environment {
+    pub python: PathBuf,
+    pub vars: Vec<(String, OsString)>,
+}
+
+/// The Python in a virtual environment at `env`.
+fn venv_python(env: &Path) -> Option<PathBuf> {
+    [
+        env.join("Scripts").join("python.exe"),
+        env.join("bin").join("python"),
+    ]
+    .into_iter()
+    .find(|p| p.is_file())
+}
+
+/// ESP-IDF's Python environment for `idf` and the tools folder it is in:
+/// `$IDF_PYTHON_ENV_PATH`, else what EIM recorded for this install, else
+/// `<tools>/python_env/idf<major>.<minor>_py*_env` (the newest Python) in
+/// `$IDF_TOOLS_PATH`, `~/.espressif` or, on Windows, `C:\Espressif`.
+pub fn python_env(idf: &Idf) -> Option<(PathBuf, Option<PathBuf>)> {
+    let tools_env = std::env::var_os("IDF_TOOLS_PATH")
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from);
+    if let Some(env) = std::env::var_os("IDF_PYTHON_ENV_PATH").filter(|p| !p.is_empty()) {
+        return venv_python(Path::new(&env)).map(|p| (p, tools_env));
+    }
+    let eim = eim_installs().into_iter().find(|i| i.path == idf.path);
+    if let Some(i) = &eim
+        && let Some(py) = i.python.as_ref().filter(|p| p.is_file())
+    {
+        return Some((py.clone(), i.tools.clone().or(tools_env)));
+    }
+    let mut roots: Vec<PathBuf> = Vec::new();
+    roots.extend(tools_env);
+    roots.extend(eim.and_then(|i| i.tools));
+    if let Some(home) = esp32bench_distro::dirs::home() {
+        roots.push(home.join(".espressif"));
+    }
+    if cfg!(windows) {
+        roots.push(PathBuf::from(r"C:\Espressif"));
+    }
+    let (major_minor, _) = idf.version.rsplit_once('.')?;
+    let prefix = format!("idf{major_minor}_py");
+    roots.into_iter().find_map(|root| {
+        let mut envs: Vec<PathBuf> = std::fs::read_dir(root.join("python_env"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with(&prefix))
+            })
+            .collect();
+        envs.sort_by_key(|p| std::cmp::Reverse(version_key(&p.to_string_lossy())));
+        envs.iter()
+            .find_map(|e| venv_python(e))
+            .map(|py| (py, Some(root.clone())))
+    })
+}
+
+/// The variables in `idf_tools.py export --format key-value` output, with its PATH's
+/// `$PATH` or `%PATH%` replaced by `path` (this process's PATH).
+fn parse_export(stdout: &str, path: &OsString) -> Vec<(String, OsString)> {
+    stdout
+        .lines()
+        .filter_map(|l| l.trim_end().split_once('='))
+        .filter(|(k, _)| !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        .map(|(k, v)| {
+            let v = if k == "PATH" {
+                let (head, tail) =
+                    match v.strip_suffix("%PATH%").or_else(|| v.strip_suffix("$PATH")) {
+                        Some(head) => (head, true),
+                        None => (v, false),
+                    };
+                let mut out = OsString::from(head);
+                if tail {
+                    out.push(path);
+                }
+                out
+            } else {
+                OsString::from(v)
+            };
+            (k.to_owned(), v)
+        })
+        .collect()
+}
+
+/// ESP-IDF's environment, as its activation computes it, for [`Activation::Direct`].
+pub async fn environment(idf: &Idf) -> Result<Environment, Error> {
+    let (python, tools) = python_env(idf).ok_or_else(|| Error::NoIdfPython(idf.path.clone()))?;
+    let env_dir = python
+        .parent()
+        .and_then(Path::parent)
+        .map(Path::to_owned)
+        .unwrap_or_default();
+    let mut base: Vec<(String, OsString)> = vec![
+        (IDF_PATH_ENV.into(), idf.path.clone().into()),
+        ("IDF_PYTHON_ENV_PATH".into(), env_dir.into()),
+    ];
+    if let Some(t) = tools {
+        base.push(("IDF_TOOLS_PATH".into(), t.into()));
+    }
+    let mut cmd = Command::new(&python);
+    cmd.arg(idf.path.join("tools").join("idf_tools.py"))
+        .args(["export", "--format", "key-value"])
+        .envs(base.iter().map(|(k, v)| (k, v)))
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd.output().await?;
+    if !out.status.success() {
+        return Err(Error::IdfExport(
+            String::from_utf8_lossy(&out.stderr).trim().to_owned(),
+        ));
+    }
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut vars = parse_export(&String::from_utf8_lossy(&out.stdout), &path);
+    // The variables idf_tools.py leaves out when they are already right.
+    for (k, v) in base {
+        if !vars.iter().any(|(n, _)| *n == k) {
+            vars.push((k, v));
+        }
+    }
+    if let Some((major_minor, _)) = idf.version.rsplit_once('.')
+        && !vars.iter().any(|(n, _)| n == "ESP_IDF_VERSION")
+    {
+        vars.push(("ESP_IDF_VERSION".into(), major_minor.into()));
+    }
+    Ok(Environment { python, vars })
 }
 
 /// A local ESP-IDF project.
@@ -236,9 +497,18 @@ impl Dirs {
     }
 }
 
-/// `idf.py` with ESP-IDF's environment: `bash -c <script> esp32bench-idf <idf> <args>`.
-/// The script is fixed; ESP-IDF's path and idf.py's arguments are its parameters.
-fn idf_py(idf: &Idf, args: Vec<OsString>) -> Command {
+/// `idf.py` with ESP-IDF's environment. Through `export.sh`:
+/// `bash -c <script> esp32bench-idf <idf> <args>`, the script fixed and ESP-IDF's path
+/// and idf.py's arguments its parameters. Direct: `<python> <idf>/tools/idf.py <args>`
+/// with the environment's variables.
+fn idf_py(idf: &Idf, env: Option<&Environment>, args: Vec<OsString>) -> Command {
+    if let Some(env) = env {
+        let mut cmd = Command::new(&env.python);
+        cmd.arg(idf.path.join("tools").join("idf.py"))
+            .args(args)
+            .envs(env.vars.iter().map(|(k, v)| (k, v)));
+        return cmd;
+    }
     const SCRIPT: &str = r#"set -e
 idf="$1"; shift
 args=("$@"); set --
@@ -304,15 +574,30 @@ fn image_size(flasher_args: &[u8]) -> &'static str {
 pub async fn run(
     plan: &Plan,
     dirs: &Dirs,
+    log: impl FnMut(Stream, String),
+) -> Result<Output, Error> {
+    run_with(plan, dirs, Activation::platform(), log).await
+}
+
+/// [`run`] with the environment got as `activation` says.
+pub async fn run_with(
+    plan: &Plan,
+    dirs: &Dirs,
+    activation: Activation,
     mut log: impl FnMut(Stream, String),
 ) -> Result<Output, Error> {
     tokio::fs::create_dir_all(&dirs.build).await?;
     tokio::fs::create_dir_all(&dirs.out).await?;
     let out = outputs(plan, dirs);
+    let env = match activation {
+        Activation::ExportSh => None,
+        Activation::Direct => Some(environment(&plan.idf).await?),
+    };
+    let env = env.as_ref();
 
     let mut args = common_args(plan, dirs);
     args.push("build".into());
-    run_logged(idf_py(&plan.idf, args), "idf.py build", &mut log).await?;
+    run_logged(idf_py(&plan.idf, env, args), "idf.py build", &mut log).await?;
 
     let size = image_size(
         &tokio::fs::read(dirs.build.join("flasher_args.json"))
@@ -329,7 +614,7 @@ pub async fn run(
         "--pad-to-size".into(),
         size.into(),
     ]);
-    run_logged(idf_py(&plan.idf, args), "idf.py merge-bin", &mut log).await?;
+    run_logged(idf_py(&plan.idf, env, args), "idf.py merge-bin", &mut log).await?;
 
     // The ELF's name is the project's; ESP-IDF records it in project_description.json.
     let desc: serde_json::Value = serde_json::from_slice(
@@ -463,6 +748,7 @@ mod tests {
         std::fs::create_dir_all(t.path().join("tools/cmake")).unwrap();
         std::fs::write(t.path().join("export.sh"), "").unwrap();
         std::fs::write(t.path().join("tools/idf.py"), "").unwrap();
+        std::fs::write(t.path().join("tools/idf_tools.py"), "").unwrap();
         std::fs::write(
             t.path().join("tools/cmake/version.cmake"),
             "set(IDF_VERSION_MAJOR 6)\nset(IDF_VERSION_MINOR 0)\nset(IDF_VERSION_PATCH 2)\n",
@@ -470,5 +756,55 @@ mod tests {
         .unwrap();
         assert_eq!(at(t.path()).unwrap().version, "6.0.2");
         assert!(at(&t.path().join("nope")).is_none());
+    }
+
+    #[test]
+    fn reads_eims_record_selected_install_first() {
+        let json = br#"{
+            "eimPath": "C:\\Espressif\\eim.exe",
+            "idfSelectedId": "esp-idf-b",
+            "idfInstalled": [
+                {"id": "esp-idf-a", "name": "v5.4.1", "path": "C:\\Espressif\\v5.4.1\\esp-idf",
+                 "python": "C:\\Espressif\\tools\\python\\v5.4.1\\venv\\Scripts\\python.exe",
+                 "idfToolsPath": "C:\\Espressif\\tools"},
+                {"id": "esp-idf-b", "name": "v6.0.2", "path": "C:\\Espressif\\v6.0.2\\esp-idf"},
+                {"id": "broken"}
+            ]
+        }"#;
+        let all = parse_eim(json);
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].path, PathBuf::from(r"C:\Espressif\v6.0.2\esp-idf"));
+        assert_eq!(all[0].python, None);
+        assert_eq!(all[1].tools, Some(PathBuf::from(r"C:\Espressif\tools")));
+        assert!(parse_eim(b"not json").is_empty());
+    }
+
+    #[test]
+    fn export_output_becomes_variables_with_this_path() {
+        let path = OsString::from("/usr/bin");
+        let unix = parse_export(
+            "IDF_PYTHON_ENV_PATH=/e/py\nPATH=/t/bin:/idf/tools:$PATH\nnoise line\n",
+            &path,
+        );
+        assert_eq!(
+            unix,
+            vec![
+                ("IDF_PYTHON_ENV_PATH".to_owned(), OsString::from("/e/py")),
+                (
+                    "PATH".to_owned(),
+                    OsString::from("/t/bin:/idf/tools:/usr/bin")
+                ),
+            ]
+        );
+        let win = parse_export("PATH=C:\\t\\bin;%PATH%\r\nESP_IDF_VERSION=6.0\r\n", &path);
+        assert_eq!(win[0].1, OsString::from("C:\\t\\bin;/usr/bin"));
+        assert_eq!(win[1].1, OsString::from("6.0"));
+    }
+
+    #[test]
+    fn sorts_versions_numerically() {
+        let mut v = ["idf6.0_py3.9_env", "idf6.0_py3.14_env", "idf6.0_py3.11_env"];
+        v.sort_by_key(|p| std::cmp::Reverse(version_key(p)));
+        assert_eq!(v[0], "idf6.0_py3.14_env");
     }
 }

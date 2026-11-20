@@ -113,7 +113,7 @@ jobs:
     name: Build and smoke-test the app
     needs: [firmware, simulator]
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -160,12 +160,29 @@ jobs:
             exit 1
           }
 
+      # ESP-IDF as Espressif's guide installs it on Windows (a clone in
+      # %USERPROFILE%\esp\esp-idf and its install.ps1), for the smoke test's build of a
+      # local ESP-IDF project. Python 3.12: the runner's newest Python can be ahead of
+      # what ESP-IDF's requirements have wheels for.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: ESP-IDF
+        shell: pwsh
+        run: |
+          $v = (Get-Content tests/firmware/IDF_VERSION).Trim()
+          $idf = "$env:USERPROFILE\esp\esp-idf"
+          git clone -q -b $v --depth 1 --recursive --shallow-submodules https://github.com/espressif/esp-idf.git $idf
+          & "$idf\install.ps1" esp32s3
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
       - name: Package
         shell: bash
         run: packaging/windows/build.sh "$PWD" core/target build/ui sim-out dist
       - name: Smoke test
         env:
           ESP32BENCH_SMOKE_BUILD: '1'
+          ESP32BENCH_SMOKE_IDF: '1'
         shell: bash
         run: packaging/windows/smoke.sh dist/*.zip tests/firmware/out
 

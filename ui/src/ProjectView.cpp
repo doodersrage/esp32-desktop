@@ -225,9 +225,18 @@ void ProjectView::showLocal(const QJsonObject &result)
     if (!exists)
         m_summary->setText(tr("The project is no longer in %1. Forget it from the library's list, or put it back.").arg(path));
     else if (idf.isEmpty())
+#if defined(Q_OS_WIN)
+        m_summary->setText(tr("ESP-IDF was not found, so this project cannot be built yet. Install it with "
+                              "Espressif's installer, or as Espressif's guide does into %USERPROFILE%\\esp\\esp-idf, "
+                              "or set IDF_PATH, then select the project again."));
+#elif defined(Q_OS_MACOS)
+        m_summary->setText(tr("ESP-IDF was not found, so this project cannot be built yet. Install it as Espressif's "
+                              "guide does, into ~/esp/esp-idf, or set IDF_PATH, then select the project again."));
+#else
         m_summary->setText(tr("ESP-IDF was not found, so this project cannot be built yet. Install it (the esp-idf "
                               "package, or Espressif's guide into ~/esp/esp-idf) or set IDF_PATH, then select the "
                               "project again."));
+#endif
     else
         m_summary->setText(tr("Builds with ESP-IDF %1 (%2) for the chip you choose. Build files go to the app's "
                               "cache; the project folder is not changed. Then flash it, or run it in the simulator, "

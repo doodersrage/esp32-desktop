@@ -24,15 +24,32 @@ async fn builds_a_local_idf_project_into_one_flash_image() {
     let dirs = idf::Dirs::new(&cache, &plan);
     let mut lines = 0;
     let out = idf::run(&plan, &dirs, |_, _| lines += 1).await.unwrap();
+    check_build(&out, lines);
+
+    // The way Windows builds run (no shell: ESP-IDF's Python and idf_tools.py export),
+    // checked here too, into its own cache.
+    if idf::python_env(&install).is_some() {
+        let cache = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("idf-builds-direct");
+        let dirs = idf::Dirs::new(&cache, &plan);
+        let mut lines = 0;
+        let out = idf::run_with(&plan, &dirs, idf::Activation::Direct, |_, _| lines += 1)
+            .await
+            .unwrap();
+        check_build(&out, lines);
+    }
+
+    let after: Vec<_> = std::fs::read_dir(&root)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(before, after, "the project folder was written to");
+}
+
+fn check_build(out: &esp32bench_build::Output, lines: usize) {
     assert!(lines > 10);
     let image = std::fs::read(&out.image).unwrap();
     assert_eq!(image.len(), 4 * 1024 * 1024, "padded to 4 MB");
     // The S3's bootloader sits at 0: an image header (0xE9) there.
     assert_eq!(image[0], 0xE9);
     assert!(Path::new(&out.elf).is_file());
-    let after: Vec<_> = std::fs::read_dir(&root)
-        .unwrap()
-        .map(|e| e.unwrap().file_name())
-        .collect();
-    assert_eq!(before, after, "the project folder was written to");
 }

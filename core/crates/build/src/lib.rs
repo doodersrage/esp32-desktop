@@ -113,9 +113,15 @@ pub enum Error {
     #[error("the build finished but {0} is missing")]
     MissingOutput(PathBuf),
     #[error(
-        "ESP-IDF was not found: install it (the esp-idf package, or Espressif's guide into ~/esp/esp-idf) or set IDF_PATH"
+        "ESP-IDF was not found: install it (on Windows with Espressif's installer; on Linux the esp-idf package or Espressif's guide into ~/esp/esp-idf) or set IDF_PATH"
     )]
     NoIdf,
+    #[error(
+        "ESP-IDF at {0} has no Python environment yet: run its install script (install.bat or install.ps1 on Windows, install.sh elsewhere) or Espressif's installer"
+    )]
+    NoIdfPython(PathBuf),
+    #[error("ESP-IDF's environment could not be set up: {0}")]
+    IdfExport(String),
     #[error("{0}")]
     NotAnIdfProject(String),
     #[error("no local project `{0}`; open its folder first")]

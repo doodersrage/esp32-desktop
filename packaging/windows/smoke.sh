@@ -89,6 +89,36 @@ if [ "${ESP32BENCH_SMOKE_BUILD:-}" = 1 ]; then
   echo "smoke: built blink with the app's arduino-cli and ran it in the simulator"
 fi
 
+# The user's own ESP-IDF project: with ESP-IDF installed as Espressif's guide does
+# (found without IDF_PATH), open a copy of tests/firmware/hello, build it for the S3
+# (no shell: ESP-IDF's Python and idf_tools.py export) and boot the build.
+if [ "${ESP32BENCH_SMOKE_IDF:-}" = 1 ]; then
+  proj="$work/my hello"
+  cp -R "$(dirname "$0")/../../tests/firmware/hello" "$proj"
+  rm -rf "${proj:?}/build" "${proj:?}/sdkconfig"
+  "$bin/esp32bench.exe" local list 2> "$work/idf-list.err" || true
+  grep -q "ESP-IDF .* at " "$work/idf-list.err" || { cat "$work/idf-list.err"; fail "ESP-IDF was not found"; }
+  id=$("$bin/esp32bench.exe" local open "$(cygpath -w "$proj")" | awk '{ print $1 }')
+  [ -n "$id" ] || fail "the ESP-IDF project did not open"
+  "$bin/esp32bench.exe" build "$id" --board esp32s3 > "$work/idf-build.log" 2>&1 \
+    || { tail -60 "$work/idf-build.log"; fail "building the ESP-IDF project failed"; }
+  img=$(find "$(cygpath -u "$LOCALAPPDATA")/esp32bench/cache" -name "$id.ino.merged.bin" | head -1)
+  [ -n "$img" ] || fail "no image for $id"
+  (sleep 30) | "$bin/esp32bench.exe" sim run --chip esp32s3 --no-network "$(cygpath -w "$img")" > "$work/idf-run.log" 2> "$work/idf-run.err" &
+  pid=$!
+  ok=
+  for _ in $(seq 150); do
+    grep -aq "esp32bench-hello ready" "$work/idf-run.log" && { ok=1; break; }
+    sleep 0.2
+  done
+  kill $pid 2> /dev/null || true
+  wait $pid 2> /dev/null || true
+  [ -n "$ok" ] || { cat "$work/idf-run.err"; tail -20 "$work/idf-run.log"; fail "the ESP-IDF build did not boot"; }
+  [ -z "$(ls "$proj" | grep -v '^\(main\|CMakeLists.txt\|README.md\|sdkconfig.defaults\)$')" ] \
+    || { ls "$proj"; fail "the build wrote into the project folder"; }
+  echo "smoke: built a local ESP-IDF project with ESP-IDF $(sed -n 's/^ESP-IDF \([^ ]*\).*/\1/p' "$work/idf-list.err") and ran it in the simulator"
+fi
+
 # The UI starts and stays up headless.
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui.exe" --version || true
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui.exe" > "$work/gui.log" 2>&1 &
