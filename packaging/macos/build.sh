@@ -53,6 +53,18 @@ printf '%s\nrecipe %s\n' "$commit" "$recipe" > "$sim/installed"
 # Their Homebrew libraries (glib, pixman, libgcrypt, libslirp...), beside them.
 dylibbundler -of -b -cd -d "$sim/src/build/libs" -p @loader_path/libs/ \
   -x "$sim/src/build/libqemu-xtensa.dylib" -x "$sim/src/build/libqemu-riscv32.dylib"
+# dylibbundler can add the same LC_RPATH more than once, and dyld refuses to load a
+# library with a duplicate ("duplicate LC_RPATH"): keep one of each.
+find "$sim/src/build" -name '*.dylib' | while read -r lib; do
+  otool -l "$lib" | awk '/cmd LC_RPATH/ { getline; getline; print $2 }' | sort | uniq -d |
+    while read -r rp; do
+      n=$(otool -l "$lib" | awk -v rp="$rp" '/cmd LC_RPATH/ { getline; getline; if ($2 == rp) c++ } END { print c }')
+      while [ "$n" -gt 1 ]; do
+        install_name_tool -delete_rpath "$rp" "$lib"
+        n=$((n - 1))
+      done
+    done
+done
 
 # Qt's frameworks and plugins for the UI.
 macdeployqt "$app" -always-overwrite

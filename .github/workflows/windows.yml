@@ -131,11 +131,12 @@ jobs:
           arch: win64_msvc2022_64
           cache: true
 
+      # PowerShell, not Git Bash: Git Bash's /usr/bin/link shadows MSVC's link.exe.
       - name: Core
-        shell: bash
+        shell: pwsh
         run: cargo build --release --locked --manifest-path core/Cargo.toml
       - name: UI
-        shell: bash
+        shell: pwsh
         run: |
           cmake -S ui -B build/ui -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build/ui
