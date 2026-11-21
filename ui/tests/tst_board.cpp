@@ -17,6 +17,7 @@
 #include <QLocalSocket>
 #include <QPointer>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QToolButton>
@@ -36,6 +37,9 @@ class FakeCore : public QObject {
 public:
     int openedBaud = 0;
     QStringList calls; // "method" or "method consent=..." etc.
+    // Only the board jobs: the window's other requests (status, lists) can
+    // arrive at any time on a loaded machine.
+    QStringList boardCalls() const { return calls.filter(QRegularExpression(u"^board\\."_s)); }
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -258,10 +262,10 @@ private slots:
         emit window.devicesPanel()->eraseRequested(u"/dev/ttyACM0"_s);
         QCOMPARE(window.eraseAsked, 1);
         QTest::qWait(100);
-        QVERIFY(fake.calls.isEmpty());
+        QVERIFY2(fake.boardCalls().isEmpty(), qPrintable(fake.calls.join(u", "_s)));
         window.eraseAnswer = true;
         emit window.devicesPanel()->eraseRequested(u"/dev/ttyACM0"_s);
-        QTRY_COMPARE(fake.calls, QStringList{u"board.erase confirm=true"_s});
+        QTRY_COMPARE(fake.boardCalls(), QStringList{u"board.erase confirm=true"_s});
 
         // The toolbar's Board menu does the same for the port chosen there.
         QTRY_VERIFY(window.boardMenuButton()->isEnabled());
@@ -278,7 +282,7 @@ private slots:
         fake.calls.clear();
         action(u"Erase flash…"_s)->trigger();
         QCOMPARE(window.eraseAsked, 3);
-        QTRY_COMPARE(fake.calls, QStringList{u"board.erase confirm=true"_s});
+        QTRY_COMPARE(fake.boardCalls(), QStringList{u"board.erase confirm=true"_s});
     }
 };
 
