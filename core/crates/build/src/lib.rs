@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+pub mod diagnostics;
 pub mod idf;
 
 /// Overrides the arduino-cli binary (tests use a stand-in).
@@ -132,8 +133,30 @@ pub enum Error {
     NotAnIdfProject(String),
     #[error("no local project `{0}`; open its folder first")]
     NoLocalProject(String),
+    #[error("`{0}` is prebuilt firmware; it has no code to save")]
+    NoCode(String),
+    #[error("{0} already exists; choose another folder")]
+    Exists(PathBuf),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+/// Save a library sketch where the user chose, as the Arduino IDE opens it: the
+/// folder `<dir>/<project>/` holding `<project>.ino`. Nothing is overwritten.
+/// Returns the sketch file.
+pub fn export_sketch(plan: &Plan, code: &str, dir: &Path) -> Result<PathBuf, Error> {
+    safe_id(&plan.project)?;
+    if plan.image.is_some() || code.is_empty() {
+        return Err(Error::NoCode(plan.project.clone()));
+    }
+    let folder = dir.join(&plan.project);
+    if folder.exists() {
+        return Err(Error::Exists(folder));
+    }
+    std::fs::create_dir_all(&folder)?;
+    let ino = folder.join(format!("{}.ino", plan.project));
+    std::fs::write(&ino, code)?;
+    Ok(ino)
 }
 
 /// Arduino-ESP32 board ids for each build target, and the partition scheme that gives
@@ -463,6 +486,48 @@ impl Dirs {
     pub fn ino(&self, plan: &Plan) -> PathBuf {
         self.sketch.join(format!("{}.ino", plan.project))
     }
+}
+
+/// Written next to a build's image when it succeeds: which plan made it and when, so
+/// a later run can tell whether that build is still the one the library asks for.
+pub const STAMP: &str = "esp32bench-build.json";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stamp {
+    /// SHA-256 of the plan, as JSON.
+    pub plan: String,
+    /// Seconds since the Unix epoch.
+    pub built_at: u64,
+}
+
+/// A plan's identity for the stamp: the hash of what it will do.
+pub fn plan_id(plan: &impl Serialize) -> String {
+    hex(&Sha256::digest(
+        serde_json::to_vec(plan).unwrap_or_default(),
+    ))
+}
+
+/// Record that `plan` built what is in `out` now. Best effort.
+pub fn write_stamp(out: &Path, plan: &impl Serialize) {
+    let built_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let stamp = Stamp {
+        plan: plan_id(plan),
+        built_at,
+    };
+    if let Ok(bytes) = serde_json::to_vec_pretty(&stamp) {
+        let _ = std::fs::write(out.join(STAMP), bytes);
+    }
+}
+
+/// The stamp of the build in `out`, if it has one and its image is still there.
+pub fn read_stamp(out: &Path, image: &Path) -> Option<Stamp> {
+    if !image.is_file() {
+        return None;
+    }
+    serde_json::from_slice(&std::fs::read(out.join(STAMP)).ok()?).ok()
 }
 
 pub fn lib_install_args(plan: &Plan) -> Vec<OsString> {

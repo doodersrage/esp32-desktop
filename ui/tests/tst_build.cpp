@@ -4,6 +4,7 @@
 #include "BuildPanel.h"
 #include "CoreConnection.h"
 #include "MainWindow.h"
+#include "MessageBar.h"
 
 #include <QComboBox>
 #include <QJsonArray>
@@ -63,7 +64,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.25.0"_s}}}});
+                                               {u"protocol"_s, u"0.26.0"_s}}}});
         } else if (method == u"build.start") {
             const QString consent = params.value(u"consent"_s).toString();
             buildRequests << (consent.isEmpty() ? u"-"_s : consent);
@@ -76,12 +77,23 @@ private:
             }
             send(s, event(u"build.log"_s, {{u"stream"_s, u"stdout"_s}, {u"line"_s, u"Installed Adafruit NeoPixel"_s}}));
             send(s, event(u"build.log"_s, {{u"stream"_s, u"stdout"_s}, {u"line"_s, u"Sketch uses 1234 bytes"_s}}));
-            send(s, event(u"build.finished"_s, {{u"ok"_s, true}, {u"image"_s, u"/tmp/blink.bin"_s}}));
+            if (fail)
+                send(s, event(u"build.finished"_s,
+                              {{u"ok"_s, false}, {u"error"_s, u"compile failed (exit status 1)"_s},
+                               {u"firstError"_s, QJsonObject{{u"file"_s, u"blink.ino"_s}, {u"line"_s, 12},
+                                                             {u"column"_s, 3},
+                                                             {u"message"_s, u"'ledd' was not declared"_s}}}}));
+            else
+                send(s, event(u"build.finished"_s, {{u"ok"_s, true}, {u"image"_s, u"/tmp/blink.bin"_s}}));
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"job"_s, 9}, {u"plan"_s, plan}}}});
         }
     }
 
+public:
+    bool fail = false; // the build fails, with a compiler error
+
+private:
     QLocalServer *m_server;
 };
 
@@ -171,6 +183,21 @@ private slots:
         QCOMPARE(finished.at(0).at(2).toString(), u"/tmp/blink.bin"_s);
         QVERIFY(!core.isBuilding());
         QCOMPARE(fake.buildRequests, (QStringList{u"-"_s, u"tok123"_s}));
+    }
+
+    void aFailedBuildSaysItsFirstError()
+    {
+        FakeCore fake(path());
+        fake.fail = true;
+        CoreConnection core;
+        core.setSocketPath(path());
+        AnsweringWindow window(&core);
+        window.answer = true;
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        core.startBuild(u"blink"_s, u"esp32"_s);
+        QTRY_VERIFY(window.messageBar()->text().contains(u"blink.ino, line 12"_s));
+        QVERIFY(window.messageBar()->text().contains(u"'ledd' was not declared"_s));
     }
 
     void windowAsksAndBuildsOnlyIfTheUserAgrees()

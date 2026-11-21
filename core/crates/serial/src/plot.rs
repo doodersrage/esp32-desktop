@@ -3,11 +3,11 @@
 //! number (`temp:21.5`, `temp=21.5`, `temp = 21.5`). A line with anything else in it
 //! is text, not a plot row. Lines are assembled across chunks.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// One value of a row: its name (`1`, `2`, ... for unnamed values, by position) and
 /// the number.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Value {
     pub name: String,
     pub value: f64,
@@ -81,6 +81,43 @@ pub fn parse(line: &str) -> Option<Vec<Value>> {
     (!row.is_empty()).then_some(row)
 }
 
+/// Rows as CSV: a `row` column, then one column per series in the order they first
+/// appear; a series a row does not have is left empty. Names are quoted when needed.
+pub fn csv(rows: &[Vec<Value>]) -> String {
+    let mut names: Vec<&str> = Vec::new();
+    for row in rows {
+        for v in row {
+            if !names.contains(&v.name.as_str()) {
+                names.push(&v.name);
+            }
+        }
+    }
+    let quote = |s: &str| {
+        if s.contains([',', '"', '\n', '\r']) {
+            format!("\"{}\"", s.replace('"', "\"\""))
+        } else {
+            s.to_owned()
+        }
+    };
+    let mut out = String::from("row");
+    for n in &names {
+        out.push(',');
+        out.push_str(&quote(n));
+    }
+    out.push('\n');
+    for (i, row) in rows.iter().enumerate() {
+        out.push_str(&(i + 1).to_string());
+        for n in &names {
+            out.push(',');
+            if let Some(v) = row.iter().find(|v| v.name == *n) {
+                out.push_str(&v.value.to_string());
+            }
+        }
+        out.push('\n');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,6 +161,30 @@ mod tests {
         ] {
             assert_eq!(parse(line), None, "{line}");
         }
+    }
+
+    #[test]
+    fn rows_make_csv() {
+        let rows = vec![
+            parse("temp:21.5 hum:45").unwrap(),
+            parse("temp:22").unwrap(),
+            // Not a name a line can give, but a name to quote all the same.
+            vec![
+                Value {
+                    name: "temp".into(),
+                    value: 22.5,
+                },
+                Value {
+                    name: "odd,name".into(),
+                    value: 1.0,
+                },
+            ],
+        ];
+        assert_eq!(
+            csv(&rows),
+            "row,temp,hum,\"odd,name\"\n1,21.5,45,\n2,22,,\n3,22.5,,1\n"
+        );
+        assert_eq!(csv(&[]), "row\n");
     }
 
     #[test]

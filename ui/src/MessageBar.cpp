@@ -25,6 +25,7 @@ MessageBar::MessageBar(QWidget *parent)
     m_text->setOpenExternalLinks(true);
     m_close->setIcon(QIcon::fromTheme(u"window-close"_s, style()->standardIcon(QStyle::SP_TitleBarCloseButton)));
     m_close->setAutoRaise(true);
+    m_close->setAccessibleName(tr("Close this message"));
     m_close->setToolTip(tr("Close this message"));
     connect(m_close, &QToolButton::clicked, this, [this] {
         hide();
@@ -52,7 +53,7 @@ void MessageBar::showNotice(const QString &text, const QString &url, const QStri
     setIcon(true);
     m_key = key;
     QString html = text.toHtmlEscaped();
-    if (url.startsWith(u"https://"_s))
+    if (url.startsWith(u"https://"_s) || url.startsWith(u"file:"_s))
         html += u" <a href=\"%1\">%2</a>"_s.arg(url.toHtmlEscaped(), linkText.toHtmlEscaped());
     m_text->setTextFormat(Qt::RichText);
     m_text->setText(html);
@@ -60,12 +61,19 @@ void MessageBar::showNotice(const QString &text, const QString &url, const QStri
     show();
 }
 
-void MessageBar::showError(const QString &text)
+void MessageBar::showError(const QString &text, const QString &url, const QString &linkText)
 {
     setIcon(false);
     m_key.clear();
-    m_text->setTextFormat(Qt::PlainText);
-    m_text->setText(text);
+    if (url.isEmpty()) {
+        m_text->setTextFormat(Qt::PlainText);
+        m_text->setText(text);
+    } else {
+        m_text->setTextFormat(Qt::RichText);
+        m_text->setText(u"%1 <a href=\"%2\">%3</a>"_s.arg(text.toHtmlEscaped().replace(u'\n', u"<br>"_s),
+                                                           url.toHtmlEscaped(), linkText.toHtmlEscaped()));
+        m_plain = text;
+    }
     show();
 }
 

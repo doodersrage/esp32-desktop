@@ -28,6 +28,37 @@
       "error": {
         "type": "string",
         "description": "What went wrong, when not ok."
+      },
+      "firstError": {
+        "type": "object",
+        "description": "Since protocol 0.26: the first compiler or linker error in the log, when the build failed and one was printed.",
+        "required": [
+          "file",
+          "line",
+          "message"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Relative to a local project's folder, else the file's name."
+          },
+          "path": {
+            "type": "string",
+            "description": "The file, for opening it: only for a file inside a local project."
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "message": {
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -45,6 +76,19 @@
         "subscription": 7,
         "ok": false,
         "error": "compiling failed (exit status: 1)"
+      }
+    },
+    {
+      "params": {
+        "subscription": 3,
+        "ok": false,
+        "error": "arduino-cli compile failed (exit status 1)",
+        "firstError": {
+          "file": "blink.ino",
+          "line": 12,
+          "column": 3,
+          "message": "'ledd' was not declared in this scope"
+        }
       }
     }
   ]

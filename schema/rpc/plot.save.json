@@ -1,0 +1,87 @@
+{
+  "method": "plot.save",
+  "description": "Since protocol 0.26: write plot rows (as serial.data's and sim.output's plot carry them) to a file the user chose, as CSV: a row column, then one column per series in the order they first appear. The UI does no file access of its own.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "rows"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Absolute path of the file to write; replaced if it exists."
+      },
+      "rows": {
+        "type": "array",
+        "maxItems": 100000,
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "value"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "rows"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "rows": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "path": "/home/me/plot.csv",
+        "rows": [
+          [
+            {
+              "name": "temp",
+              "value": 21.5
+            },
+            {
+              "name": "hum",
+              "value": 45
+            }
+          ]
+        ]
+      },
+      "result": {
+        "path": "/home/me/plot.csv",
+        "rows": 1
+      }
+    }
+  ]
+}

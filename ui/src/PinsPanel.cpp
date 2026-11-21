@@ -22,6 +22,7 @@ PinsPanel::PinsPanel(CoreConnection *core, QWidget *parent)
     , m_status(new QLabel(this))
     , m_tree(new QTreeWidget(this))
 {
+    m_tree->setAccessibleName(tr("Pins"));
     m_status->setWordWrap(true);
     m_tree->setColumnCount(ColumnCount);
     m_tree->setHeaderLabels({tr("GPIO"), tr("Direction"), tr("Level"), tr("Drive")});

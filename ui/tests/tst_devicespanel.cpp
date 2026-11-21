@@ -61,6 +61,24 @@ private slots:
         QVERIFY(panel.statusText().contains(u"No boards found"_s));
     }
 
+    void namesAChipABoardCheckFound()
+    {
+        CoreConnection core;
+        DevicesPanel panel(&core);
+        panel.showPorts(QJsonArray{
+            QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s}, {u"kind"_s, u"usb"_s}, {u"bridge"_s, u"cp210x"_s},
+                        {u"chips"_s, QJsonArray{u"esp32"_s}}, {u"access"_s, u"ok"_s}, {u"identified"_s, true}},
+            QJsonObject{{u"path"_s, u"/dev/ttyUSB1"_s}, {u"kind"_s, u"usb"_s}, {u"bridge"_s, u"ch340"_s},
+                        {u"chips"_s, QJsonArray{}}, {u"access"_s, u"ok"_s}}});
+        QTreeWidgetItem *known = panel.tree()->topLevelItem(0);
+        QTreeWidgetItem *unknown = panel.tree()->topLevelItem(1);
+        QCOMPARE(known->text(DevicesPanel::ChipsColumn), u"ESP32"_s);
+        QVERIFY(known->toolTip(DevicesPanel::ChipsColumn).contains(u"board check"_s));
+        QVERIFY(!known->data(DevicesPanel::ChipsColumn, DevicesPanel::UnknownChipRole).toBool());
+        QVERIFY(unknown->data(DevicesPanel::ChipsColumn, DevicesPanel::UnknownChipRole).toBool());
+        QVERIFY(unknown->toolTip(DevicesPanel::ChipsColumn).contains(u"Identify the chip"_s));
+    }
+
     void explainsWhyNoBoardShows()
     {
         CoreConnection core;

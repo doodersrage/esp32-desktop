@@ -39,6 +39,8 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
                           this))
     , m_progress(new QProgressBar(this))
 {
+    m_log->setAccessibleName(tr("Build log"));
+    m_port->setAccessibleName(tr("Board port"));
     m_simulate->setToolTip(tr("Run the selected project in the simulator, building it first if needed "
                               "(ESP32, ESP32-S3 and ESP32-C3 boards)"));
     m_simulate->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
@@ -184,7 +186,22 @@ QString BuildPanel::targetBoard() const
 
 bool BuildPanel::targetBuilt() const
 {
-    return !m_builtProject.isEmpty() && targetProject() == m_builtProject && targetBoard() == m_builtBoard;
+    if (!m_builtProject.isEmpty() && targetProject() == m_builtProject && targetBoard() == m_builtBoard)
+        return true;
+    // Built before this session, and still what the library asks for (build.status).
+    return !m_currentProject.isEmpty() && targetProject() == m_currentProject && targetBoard() == m_currentBoard;
+}
+
+void BuildPanel::setBuildCurrent(const QString &project, const QString &board, bool current)
+{
+    if (current) {
+        m_currentProject = project;
+        m_currentBoard = board;
+    } else if (project == m_currentProject && board == m_currentBoard) {
+        m_currentProject.clear();
+        m_currentBoard.clear();
+    }
+    updateFlashButton();
 }
 
 void BuildPanel::act(Then what)

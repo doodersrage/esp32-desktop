@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.25.0";
+pub const PROTOCOL: &str = "0.26.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -39,6 +39,8 @@ pub struct State {
     serial_ports: std::sync::Mutex<HashMap<(u64, u64), SharedPort>>,
     /// Ports serial.open may open instead of those device.list reports (tests).
     pub serial_allow: Option<Vec<PathBuf>>,
+    /// How long a port opened with `reconnect` is waited for after it goes away.
+    pub serial_reconnect_for: std::time::Duration,
     /// Arduino's data directory (~/.arduino15), for package index files.
     pub arduino_data: PathBuf,
     /// Consent tokens handed out for flashing downloaded projects (rule 4).
@@ -56,6 +58,8 @@ pub struct State {
     pub local: esp32bench_build::idf::Registry,
     /// Library projects the user starred (library.star).
     pub starred: esp32bench_library::starred::Starred,
+    /// Chips found behind USB serial adapters by board.inspect.
+    pub known_boards: esp32bench_device::Known,
     /// ESP-IDF to use instead of detecting one (tests).
     pub idf_path: Option<PathBuf>,
 }
@@ -116,6 +120,7 @@ impl State {
             build_lock: tokio::sync::Mutex::new(()),
             serial_ports: std::sync::Mutex::new(HashMap::new()),
             serial_allow: None,
+            serial_reconnect_for: std::time::Duration::from_secs(30),
             arduino_data: esp32bench_toolchain::Env::default_arduino_data()
                 .unwrap_or_else(|| PathBuf::from(".arduino15")),
             flash_consent: esp32bench_build::Consent::new(),
@@ -134,6 +139,11 @@ impl State {
                 esp32bench_sim::install::data_dir()
                     .map(|d| d.join("starred.json"))
                     .unwrap_or_else(|_| PathBuf::from("esp32bench-starred.json")),
+            ),
+            known_boards: esp32bench_device::Known::new(
+                esp32bench_sim::install::data_dir()
+                    .map(|d| d.join("boards.json"))
+                    .unwrap_or_else(|_| PathBuf::from("esp32bench-boards.json")),
             ),
             idf_path: None,
         }
@@ -170,6 +180,7 @@ impl State {
 pub fn router(state: Arc<State>) -> Router {
     let local = state.clone();
     let stars = state.clone();
+    let devices = state.clone();
     let (s1, s2, s3, s4) = (state.clone(), state.clone(), state.clone(), state.clone());
     let (s5, s6, s7) = (state.clone(), state.clone(), state.clone());
     let links = state.clone();
@@ -296,6 +307,21 @@ pub fn router(state: Arc<State>) -> Router {
             let s = s3.clone();
             async move { library_get(p, s).await }
         })
+        .method("build.status", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { build_status(p, s).await }
+            }
+        })
+        .method("library.export", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { library_export(p, s).await }
+            }
+        })
+        .method("plot.save", |p, _| async move { plot_save(p).await })
         .method("library.star", {
             let s = stars.clone();
             move |p, _| {
@@ -345,9 +371,19 @@ pub fn router(state: Arc<State>) -> Router {
         .method("core.unsubscribe", |p, ctx| async move {
             core_unsubscribe(p, ctx)
         })
-        .method("device.list", |p, _| async move { device_list(p).await })
-        .method("device.watch", |p, ctx| async move {
-            device_watch(p, ctx).await
+        .method("device.list", {
+            let s = devices.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { device_list(p, s).await }
+            }
+        })
+        .method("device.watch", {
+            let s = devices.clone();
+            move |p, ctx| {
+                let s = s.clone();
+                async move { device_watch(p, ctx, s).await }
+            }
         })
 }
 
@@ -626,7 +662,9 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
     let job = ctx.subscribe(move |sub| async move {
         let _one_at_a_time = state.build_lock.lock().await;
         let dirs = esp32bench_build::Dirs::new(&state.builds_root, &plan);
+        let mut first = esp32bench_build::diagnostics::Finder::new(None);
         let r = esp32bench_build::run(&plan, &code, &tools, &dirs, |stream, line| {
+            first.line(&line);
             let mut params = json!({ "stream": stream, "line": line });
             let found = explain.line_findings(&line);
             if !found.is_empty() {
@@ -635,13 +673,100 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
             sub.send("build.log", params);
         })
         .await;
-        let event = match r {
-            Ok(out) => json!({ "ok": true, "image": out.image, "elf": out.elf }),
-            Err(e) => json!({ "ok": false, "error": e.to_string() }),
-        };
+        if r.is_ok() {
+            esp32bench_build::write_stamp(&dirs.out, &plan);
+        }
+        let event = finished_event(r, first.first());
         sub.send("build.finished", event);
     });
     Ok(json!({ "job": job, "plan": result_plan }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExportParams {
+    id: String,
+    board: String,
+    dir: PathBuf,
+}
+
+/// Save a library project's sketch for one board into a folder the user chose, for
+/// the Arduino IDE. Nothing is built, so no consent is asked.
+async fn library_export(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: ExportParams = parse_params(params)?;
+    if !p.dir.is_absolute() {
+        return Err(RpcError::invalid_params("dir must be an absolute path"));
+    }
+    let manifest = state
+        .library
+        .load()
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                "the project library has not been downloaded",
+            )
+        })?;
+    let (plan, code) = esp32bench_build::plan(&manifest, &p.id, &p.board).map_err(build_error)?;
+    let ino = esp32bench_build::export_sketch(&plan, &code, &p.dir).map_err(build_error)?;
+    Ok(json!({ "path": ino, "libraries": plan.install }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BuildStatusParams {
+    project: String,
+    board: String,
+}
+
+/// Whether `project` is built for `board`, when, and (for a library project) whether
+/// that build is what the library asks for now.
+async fn build_status(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: BuildStatusParams = parse_params(params)?;
+    for id in [&p.project, &p.board] {
+        esp32bench_build::safe_id(id).map_err(build_error)?;
+    }
+    let out = state
+        .builds_root
+        .join(&p.project)
+        .join(&p.board)
+        .join("out");
+    let image = out.join(format!("{}.ino.merged.bin", p.project));
+    let Some(stamp) = esp32bench_build::read_stamp(&out, &image) else {
+        return Ok(json!({ "built": false }));
+    };
+    let mut r = json!({ "built": true, "builtAt": stamp.built_at });
+    // A local project's files can change at any time, so its build is never called
+    // current; a library build is current while the plan is the same.
+    if !esp32bench_build::idf::is_local(&p.project) {
+        let current = match state.library.load().await {
+            Ok(Some(m)) => esp32bench_build::plan(&m, &p.project, &p.board)
+                .map(|(plan, _)| esp32bench_build::plan_id(&plan) == stamp.plan)
+                .unwrap_or(false),
+            _ => false,
+        };
+        r["current"] = json!(current);
+    }
+    Ok(r)
+}
+
+/// build.finished's params for a build's result, with the first compiler error when
+/// it failed and one was printed.
+fn finished_event<E: std::fmt::Display>(
+    r: Result<esp32bench_build::Output, E>,
+    first: Option<&esp32bench_build::diagnostics::FirstError>,
+) -> Value {
+    match r {
+        Ok(out) => json!({ "ok": true, "image": out.image, "elf": out.elf }),
+        Err(e) => {
+            let mut v = json!({ "ok": false, "error": e.to_string() });
+            if let Some(f) = first {
+                v["firstError"] = json!(f);
+            }
+            v
+        }
+    }
 }
 
 /// A library project's prebuilt firmware: after consent for exactly this image, a job
@@ -676,6 +801,9 @@ fn prebuilt_start(
             sub.send("build.log", json!({ "stream": stream, "line": line }));
         })
         .await;
+        if r.is_ok() {
+            esp32bench_build::write_stamp(&dirs.out, &plan);
+        }
         let event = match r {
             Ok(out) => json!({ "ok": true, "image": out.image, "elf": out.elf }),
             Err(e) => json!({ "ok": false, "error": e.to_string() }),
@@ -700,14 +828,16 @@ fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Valu
     let job = ctx.subscribe(move |sub| async move {
         let _one_at_a_time = state.build_lock.lock().await;
         let dirs = idf::Dirs::new(&state.builds_root, &plan);
+        let mut first = esp32bench_build::diagnostics::Finder::new(Some(&plan.path));
         let r = idf::run(&plan, &dirs, |stream, line| {
+            first.line(&line);
             sub.send("build.log", json!({ "stream": stream, "line": line }));
         })
         .await;
-        let event = match r {
-            Ok(out) => json!({ "ok": true, "image": out.image, "elf": out.elf }),
-            Err(e) => json!({ "ok": false, "error": e.to_string() }),
-        };
+        if r.is_ok() {
+            esp32bench_build::write_stamp(&dirs.out, &plan);
+        }
+        let event = finished_event(r, first.first());
         sub.send("build.finished", event);
     });
     Ok(json!({ "job": job, "plan": result_plan }))
@@ -1474,6 +1604,32 @@ async fn console_save(params: Value) -> Result<Value, RpcError> {
     Ok(json!({ "path": p.path, "bytes": p.text.len() }))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlotSaveParams {
+    path: PathBuf,
+    rows: Vec<Vec<esp32bench_serial::plot::Value>>,
+}
+
+/// Most plot rows plot.save takes.
+const PLOT_SAVE_MAX: usize = 100_000;
+
+/// Write plot rows (as serial.data and sim.output carry them) to `path` as CSV.
+async fn plot_save(params: Value) -> Result<Value, RpcError> {
+    let p: PlotSaveParams = parse_params(params)?;
+    if !p.path.is_absolute() {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    if p.rows.len() > PLOT_SAVE_MAX {
+        return Err(RpcError::invalid_params("too many rows to save"));
+    }
+    let text = esp32bench_serial::plot::csv(&p.rows);
+    tokio::fs::write(&p.path, text.as_bytes())
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("writing {}: {e}", p.path.display())))?;
+    Ok(json!({ "path": p.path, "rows": p.rows.len() }))
+}
+
 /// Write a simulation's signal trace (running or ended) to `path` as VCD.
 async fn sim_trace_save(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: TraceSaveParams = parse_params(params)?;
@@ -1780,6 +1936,8 @@ async fn sim_reset(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
 struct SerialOpenParams {
     path: PathBuf,
     baud: u32,
+    #[serde(default)]
+    reconnect: bool,
 }
 
 #[derive(Deserialize)]
@@ -1901,7 +2059,13 @@ impl Drop for SetOnDrop {
 /// Run `op` on a blocking thread, reporting stages as board.progress and the outcome
 /// as board.finished. espflash cannot be interrupted mid-operation, so job.cancel
 /// takes effect between steps, never in the middle of a write.
-fn board_job(ctx: &Ctx, state: Arc<State>, opts: esp32bench_flash::Options, op: BoardOp) -> u64 {
+fn board_job(
+    ctx: &Ctx,
+    state: Arc<State>,
+    opts: esp32bench_flash::Options,
+    op: BoardOp,
+    adapter: Option<esp32bench_device::Port>,
+) -> u64 {
     ctx.subscribe(move |sub| {
         let sub = Arc::new(sub);
         let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -1917,6 +2081,10 @@ fn board_job(ctx: &Ctx, state: Arc<State>, opts: esp32bench_flash::Options, op: 
             .unwrap_or_else(|e| Err(e.to_string()));
             let event = match r {
                 Ok(mut done) => {
+                    if let (Some(port), Some(chip)) = (&adapter, done["info"]["chip"].as_str()) {
+                        // Best effort: not being able to remember it fails nothing.
+                        let _ = state.known_boards.remember(port, chip);
+                    }
                     done["ok"] = json!(true);
                     done
                 }
@@ -2003,7 +2171,13 @@ async fn board_inspect(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Val
     check_port(&state, &p.port).await?;
     let scratch = state.builds_root.join(".scratch");
     let opts = board_options(&p.port, p.reset, p.stub);
-    let job = board_job(&ctx, state, opts, BoardOp::Inspect { scratch });
+    // What is found is remembered for this adapter, so its port names the chip next
+    // time (device.list's identified).
+    let adapter = list_ports(true)
+        .await
+        .ok()
+        .and_then(|ports| ports.into_iter().find(|x| Path::new(&x.path) == p.port));
+    let job = board_job(&ctx, state, opts, BoardOp::Inspect { scratch }, adapter);
     Ok(json!({ "job": job }))
 }
 
@@ -2014,7 +2188,7 @@ async fn board_erase(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
     }
     check_port(&state, &p.port).await?;
     let opts = board_options(&p.port, p.reset, p.stub);
-    let job = board_job(&ctx, state, opts, BoardOp::Erase);
+    let job = board_job(&ctx, state, opts, BoardOp::Erase, None);
     Ok(json!({ "job": job }))
 }
 
@@ -2087,7 +2261,7 @@ async fn board_flash(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         .with_data(json!({ "token": token, "plan": plan })));
     }
     let opts = board_options(&p.port, p.reset, p.stub);
-    let job = board_job(&ctx, state, opts, BoardOp::Flash { image, chip });
+    let job = board_job(&ctx, state, opts, BoardOp::Flash { image, chip }, None);
     Ok(json!({ "job": job }))
 }
 
@@ -2124,6 +2298,7 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
     };
     let port: SharedPort = Arc::new(std::sync::Mutex::new(port));
     let conn = ctx.connection_id();
+    let (path, baud, reconnect) = (p.path.clone(), p.baud, p.reconnect);
     let id = ctx.subscribe(move |sub| {
         // Registered before the task can run, and removed by `entry` when the task
         // ends or is aborted, so the table never holds a closed subscription's port.
@@ -2132,7 +2307,7 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
             .serial_ports
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(key, port);
+            .insert(key, port.clone());
         let entry = PortEntry {
             state: state.clone(),
             key,
@@ -2163,6 +2338,23 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                         }
                     }
                     esp32bench_serial::Event::Closed(reason) => {
+                        // A board that resets over its own USB, or is plugged back
+                        // in, comes back at the same path: open it again.
+                        if reconnect {
+                            if !sub.send("serial.lost", json!({ "reason": reason })) {
+                                break;
+                            }
+                            if let Some((again, again_rx)) = reopen_port(&state, &path, baud).await
+                            {
+                                *port.lock().unwrap_or_else(|p| p.into_inner()) = again;
+                                rx = again_rx;
+                                plot = esp32bench_serial::plot::Lines::new();
+                                if !sub.send("serial.reconnected", json!({})) {
+                                    break;
+                                }
+                                continue;
+                            }
+                        }
                         sub.send("serial.closed", json!({ "reason": reason }));
                         break;
                     }
@@ -2171,6 +2363,32 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         }
     });
     Ok(json!({ "subscription": id }))
+}
+
+/// Open `path` again once it is back, trying every quarter second for
+/// `state.serial_reconnect_for`; None if it does not come back in time.
+async fn reopen_port(
+    state: &State,
+    path: &Path,
+    baud: u32,
+) -> Option<(
+    esp32bench_serial::Port,
+    tokio::sync::mpsc::UnboundedReceiver<esp32bench_serial::Event>,
+)> {
+    let until = tokio::time::Instant::now() + state.serial_reconnect_for;
+    while tokio::time::Instant::now() < until {
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        if check_port(state, path).await.is_err() {
+            continue;
+        }
+        let p = path.to_owned();
+        if let Ok(Ok(opened)) =
+            tokio::task::spawn_blocking(move || esp32bench_serial::Port::open(&p, baud)).await
+        {
+            return Some(opened);
+        }
+    }
+    None
 }
 
 /// The port a connection opened under `subscription`.
@@ -2233,9 +2451,11 @@ async fn list_ports(all: bool) -> Result<Vec<esp32bench_device::Port>, RpcError>
 
 /// The ports and the advice on them (`esp32bench_device::advice`).
 async fn list_with_advice(
+    state: &State,
     all: bool,
 ) -> Result<(Vec<esp32bench_device::Port>, Vec<esp32bench_device::Advice>), RpcError> {
-    let ports = list_ports(all).await?;
+    let mut ports = list_ports(all).await?;
+    state.known_boards.apply(&mut ports);
     let for_advice = ports.clone();
     let advice = tokio::task::spawn_blocking(move || esp32bench_device::advice(&for_advice))
         .await
@@ -2243,24 +2463,24 @@ async fn list_with_advice(
     Ok((ports, advice))
 }
 
-async fn device_list(params: Value) -> Result<Value, RpcError> {
+async fn device_list(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
     let p: DeviceListParams = parse_params(params)?;
-    let (ports, advice) = list_with_advice(p.all).await?;
+    let (ports, advice) = list_with_advice(&state, p.all).await?;
     Ok(json!({ "ports": ports, "advice": advice }))
 }
 
-async fn device_watch(params: Value, ctx: Ctx) -> Result<Value, RpcError> {
+async fn device_watch(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: DeviceListParams = parse_params(params)?;
     // Start monitoring before listing, so a change in between is not missed.
     let mut monitor = esp32bench_device::Monitor::new()
         .map_err(|e| RpcError::new(code::UNAVAILABLE, e.to_string()))?;
-    let (ports, advice) = list_with_advice(p.all).await?;
+    let (ports, advice) = list_with_advice(&state, p.all).await?;
     let mut last = (ports.clone(), advice.clone());
     let id = ctx.subscribe(move |sub| async move {
         // Events go out only after the monitor's settle delay (300 ms), so in
         // practice the client has the subscription id before the first one arrives.
         while monitor.changed().await.is_ok() {
-            let Ok(now) = list_with_advice(p.all).await else {
+            let Ok(now) = list_with_advice(&state, p.all).await else {
                 continue;
             };
             if now == last {

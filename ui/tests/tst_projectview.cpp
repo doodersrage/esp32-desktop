@@ -121,6 +121,9 @@ private slots:
         result[u"project"_s] = p;
         view.showResult(result);
         QVERIFY(view.codeView()->toPlainText().contains(u"prebuilt firmware"_s));
+        // No code to copy or save.
+        QVERIFY(view.copyCodeButton()->isHidden());
+        QVERIFY(view.saveCodeButton()->isHidden());
         // No image linked: nothing to build or download.
         QVERIFY(view.buildButton()->isHidden());
 
@@ -138,6 +141,25 @@ private slots:
         QVERIFY(!view.buildButton()->isHidden());
         QCOMPARE(view.buildButton()->text(), u"Download"_s);
         QCOMPARE(view.buildAction()->text(), u"Download"_s);
+    }
+
+    void saysWhetherItIsBuilt()
+    {
+        CoreConnection core;
+        ProjectView view(&core);
+        view.showResult(example());
+        QVERIFY(!view.copyCodeButton()->isHidden());
+        QVERIFY(!view.saveCodeButton()->isHidden());
+        QSignalSpy current(&view, &ProjectView::buildCurrent);
+        view.showBuildState(QJsonObject{{u"built"_s, false}});
+        QVERIFY(view.buildStateText().contains(u"Not built"_s));
+        QCOMPARE(current.last().at(2).toBool(), false);
+        view.showBuildState(QJsonObject{{u"built"_s, true}, {u"builtAt"_s, 1795000000}, {u"current"_s, true}});
+        QVERIFY(view.buildStateText().contains(u"ready to run"_s));
+        QCOMPARE(current.last().at(2).toBool(), true);
+        view.showBuildState(QJsonObject{{u"built"_s, true}, {u"builtAt"_s, 1795000000}, {u"current"_s, false}});
+        QVERIFY(view.buildStateText().contains(u"built again"_s));
+        QCOMPARE(current.last().at(2).toBool(), false);
     }
 
     void escapesNotesAndIgnoresStaleReplies()

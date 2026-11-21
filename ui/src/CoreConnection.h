@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 25;
+    static constexpr int ProtocolMinor = 26;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -156,6 +156,12 @@ public:
     void suggestCircuit(const QString &project, const QString &board);
     // console.save: the core writes `text` to `path` (absolute); consoleSaved after.
     void saveConsole(const QString &path, const QString &text);
+    // plot.save: the core writes plot rows to `path` as CSV; plotSaved after.
+    void savePlot(const QString &path, const QJsonArray &rows);
+    // library.export: the core saves the sketch for `board` under `dir`; sketchExported after.
+    void exportSketch(const QString &project, const QString &board, const QString &dir);
+    // build.status: whether the project is built for the board; buildStatusReady after.
+    void requestBuildStatus(const QString &project, const QString &board);
 
     // debug.*: on the simulator started with debug. Results come as signals.
     void debugBreak(const QString &location);
@@ -238,6 +244,15 @@ signals:
     void partPicture(const QString &id, const QImage &image);
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
     void consoleSaved(const QString &path);
+    void plotSaved(const QString &path, qint64 rows);
+    void sketchExported(const QString &path, const QStringList &libraries);
+    void buildStatusReady(const QString &project, const QString &board, const QJsonObject &status);
+    // A failed build's first compiler error (build.finished's firstError); sent just
+    // before buildFinished.
+    void buildFirstError(const QJsonObject &error);
+    // A port opened with reconnect went away; the core waits for it to come back.
+    void serialLost(const QString &reason);
+    void serialReconnected();
     // Parts to place (a circuit) and the parts named that have no model.
     void circuitSuggested(const QString &project, const QString &board, const QJsonObject &circuit,
                           const QStringList &unmatched);

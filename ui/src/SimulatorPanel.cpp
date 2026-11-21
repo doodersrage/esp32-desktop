@@ -52,6 +52,9 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     , m_ending(new QComboBox(this))
     , m_send(new QPushButton(tr("Send"), this))
 {
+    m_output->setAccessibleName(tr("Simulator output"));
+    m_input->setAccessibleName(tr("Text to send"));
+    m_ending->setAccessibleName(tr("Line ending"));
     m_status->setWordWrap(true);
     m_status->setToolTip(tr("The simulator runs the firmware. Parts placed in the Circuit dock run with it; "
                             "there is no Bluetooth."));

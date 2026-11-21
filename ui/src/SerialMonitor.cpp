@@ -3,6 +3,7 @@
 #include "ConsoleView.h"
 #include "CoreConnection.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFontDatabase>
 #include <QHBoxLayout>
@@ -36,8 +37,20 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     , m_input(new QLineEdit(this))
     , m_ending(new QComboBox(this))
     , m_send(new QPushButton(tr("Send"), this))
+    , m_hex(new QCheckBox(tr("Hex"), this))
 {
+    m_hex->setToolTip(tr("Show what the board sends as hex bytes, and send what you type as hex (\"01 a0 ff\")"));
+    connect(m_hex, &QCheckBox::toggled, this, [this](bool on) {
+        m_output->setHex(on);
+        m_ending->setEnabled(!on);
+        m_input->setPlaceholderText(on ? tr("Hex bytes to send, such as 01 a0 ff") : tr("Text to send to the board"));
+    });
     m_port->setMinimumContentsLength(14);
+    m_port->setAccessibleName(tr("Serial port"));
+    m_baud->setAccessibleName(tr("Baud rate"));
+    m_output->setAccessibleName(tr("What the board sent"));
+    m_input->setAccessibleName(tr("Text to send"));
+    m_ending->setAccessibleName(tr("Line ending"));
     m_port->setToolTip(tr("Serial port"));
     for (int b : BaudRates)
         m_baud->addItem(tr("%1 baud").arg(b), b);
@@ -78,6 +91,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     auto *bottom = new QHBoxLayout;
     bottom->addWidget(m_input, 1);
     bottom->addWidget(m_ending);
+    bottom->addWidget(m_hex);
     bottom->addWidget(m_send);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
@@ -98,6 +112,18 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
         setOpen(true);
     });
     connect(m_core, &CoreConnection::serialData, m_output, &ConsoleView::appendBytes);
+    // The core reopens a port that comes back (a reset over the board's own USB, or
+    // plugging it in again).
+    connect(m_core, &CoreConnection::serialLost, this, [this] {
+        m_output->appendNotice(tr("The board went away; waiting for it to come back…"));
+        m_input->setEnabled(false);
+        m_send->setEnabled(false);
+    });
+    connect(m_core, &CoreConnection::serialReconnected, this, [this] {
+        m_output->resetDecoder();
+        m_output->appendNotice(tr("Reconnected."));
+        setOpen(true);
+    });
     connect(m_core, &CoreConnection::serialClosed, this, [this](const QString &reason) {
         if (m_open_)
             m_output->appendNotice(tr("Disconnected: %1").arg(reason));
@@ -180,11 +206,36 @@ void SerialMonitor::send()
 {
     if (!m_open_)
         return;
+    if (m_hex->isChecked()) {
+        const QByteArray bytes = hexBytes(m_input->text());
+        if (bytes.isEmpty()) {
+            m_output->appendNotice(tr("Not hex bytes: type pairs of digits 0-9 and a-f, such as 01 a0 ff."));
+            return;
+        }
+        m_core->writeSerial(bytes);
+        m_input->clear();
+        return;
+    }
     const QString line = m_input->text() + m_ending->currentData().toString();
     if (line.isEmpty())
         return;
     m_core->writeSerial(line.toUtf8());
     m_input->clear();
+}
+
+QByteArray SerialMonitor::hexBytes(const QString &text)
+{
+    QString digits = text;
+    digits.remove(u' ').remove(u',').remove(u'\t');
+    if (digits.startsWith(u"0x"_s, Qt::CaseInsensitive) && !digits.contains(u' '))
+        digits = digits.mid(2);
+    if (digits.isEmpty() || digits.size() % 2 != 0)
+        return {};
+    for (const QChar c : std::as_const(digits)) {
+        if (!c.isDigit() && !(c.toLower() >= u'a' && c.toLower() <= u'f'))
+            return {};
+    }
+    return QByteArray::fromHex(digits.toLatin1());
 }
 
 void SerialMonitor::setOpen(bool open)

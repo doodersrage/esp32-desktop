@@ -1,0 +1,68 @@
+{
+  "method": "library.export",
+  "description": "Since protocol 0.26: save a library sketch's code for one board into a folder the user chose, as the Arduino IDE opens it: <dir>/<id>/<id>.ino. Nothing is overwritten (an existing folder fails) and nothing is built. Prebuilt firmware has no code to save.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "id",
+      "board",
+      "dir"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "board": {
+        "type": "string"
+      },
+      "dir": {
+        "type": "string",
+        "description": "An absolute folder path."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "libraries"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "The .ino file written."
+      },
+      "libraries": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Arduino libraries the sketch needs, to install in the Arduino IDE."
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "id": "blink",
+        "board": "esp32",
+        "dir": "/home/u/Arduino"
+      },
+      "result": {
+        "path": "/home/u/Arduino/blink/blink.ino",
+        "libraries": [
+          "Adafruit NeoPixel"
+        ]
+      }
+    }
+  ]
+}

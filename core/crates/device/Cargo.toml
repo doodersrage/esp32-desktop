@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 libc.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 serialport.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -18,4 +19,4 @@ tokio.workspace = true
 udev.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+tempfile.workspace = true

@@ -50,6 +50,11 @@ public:
     QPlainTextEdit *codeView() const { return m_code; }
     QTabWidget *tabs() const { return m_tabs; }
     QPushButton *buildButton() const { return m_build; }
+    QPushButton *copyCodeButton() const { return m_copyCode; }
+    QPushButton *saveCodeButton() const { return m_saveCode; }
+    QString buildStateText() const;
+    // Render a build.status result for the project and board shown. Public for tests.
+    void showBuildState(const QJsonObject &status);
     // The same as the Build button, for the main window's toolbar: enabled when the
     // project shown can be built now.
     QAction *buildAction() const { return m_buildAction; }
@@ -73,9 +78,13 @@ signals:
     void currentChanged();
     // The guide's Try Blink button.
     void tryRequested();
+    // build.status said whether this project's build for this board can be used as it
+    // is (true), or must be built first.
+    void buildCurrent(const QString &project, const QString &board, bool current);
 
 private:
     void showBuild(int index);
+    void requestBuildState();
     // The chip id of `board` in a library.get result.
     static QString chipOf(const QJsonObject &result, const QString &board);
     // The index of a build for a connected board's chip, or -1.
@@ -119,6 +128,9 @@ private:
     QTreeWidget *m_wiring;
     QLabel *m_pins;
     QPlainTextEdit *m_code;
+    QPushButton *m_copyCode;
+    QPushButton *m_saveCode;
+    QLabel *m_buildState;
     QPlainTextEdit *m_output;
     QLabel *m_notes;
 };

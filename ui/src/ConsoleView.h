@@ -32,6 +32,11 @@ public:
     // Make the text bigger (steps > 0) or smaller, or back to the system's size; kept
     // for every console (QSettings console/zoom). Ctrl+= / Ctrl+- / Ctrl+0 and
     // Ctrl+wheel do the same.
+    // Show bytes as hex digits (`48 69 0a`), for binary protocols; lines already
+    // shown stay as they are.
+    void setHex(bool on);
+    bool hex() const { return m_hex; }
+    static QString hexText(const QByteArray &bytes);
     void zoom(int steps);
     void resetZoom();
     int zoomSteps() const { return m_zoom; }
@@ -44,6 +49,7 @@ private:
 
     QStringDecoder m_decoder{QStringDecoder::Utf8};
     int m_zoom = 0;
+    bool m_hex = false;
     bool m_timestamps = false;
     bool m_atLineStart = true;
 };

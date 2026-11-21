@@ -38,6 +38,10 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     , m_stack(new QTreeWidget(this))
     , m_registers(new QTreeWidget(this))
 {
+    m_location->setAccessibleName(tr("Breakpoint location"));
+    m_breakpoints->setAccessibleName(tr("Breakpoints"));
+    m_stack->setAccessibleName(tr("Call stack"));
+    m_registers->setAccessibleName(tr("Registers"));
     m_status->setWordWrap(true);
     m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_continue->setToolTip(tr("Run until a breakpoint or Pause"));

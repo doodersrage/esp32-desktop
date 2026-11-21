@@ -119,6 +119,16 @@ enum LibraryCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Save a sketch's code for one board as <dir>/<id>/<id>.ino, for the Arduino
+    /// IDE (as `library.export`).
+    Export {
+        id: String,
+        #[arg(long)]
+        board: String,
+        /// Folder to save the sketch folder in.
+        #[arg(long)]
+        dir: PathBuf,
+    },
     /// Star a project (as `library.star`), or unstar it with --off.
     Star {
         /// Project id, as in `library list`.
@@ -218,6 +228,10 @@ enum SerialCmd {
         /// End sent lines with CR LF instead of LF.
         #[arg(long)]
         crlf: bool,
+        /// When the port goes away (a reset over the board's own USB, or unplugging),
+        /// wait up to 30 s for it to come back instead of ending.
+        #[arg(long)]
+        reconnect: bool,
     },
 }
 
@@ -831,6 +845,19 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 }
             }
         }
+        Cmd::Library(LibraryCmd::Export { id, board, dir }) => {
+            let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+            let Some(m) = cache.load().await? else {
+                bail!("no project library cached yet; run `esp32bench library refresh`");
+            };
+            let (plan, code) = esp32bench_build::plan(&m, &id, &board)?;
+            let dir = std::path::absolute(&dir)?;
+            let ino = esp32bench_build::export_sketch(&plan, &code, &dir)?;
+            println!("{}", ino.display());
+            if !plan.install.is_empty() {
+                eprintln!("libraries to install: {}", plan.install.join(", "));
+            }
+        }
         Cmd::Library(LibraryCmd::Star { id, off }) => {
             let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
             if let Some(m) = cache.load().await?
@@ -890,6 +917,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 esp32bench_build::Stream::Stderr => eprintln!("{line}"),
             })
             .await?;
+            esp32bench_build::write_stamp(&dirs.out, &plan);
             eprintln!(
                 "\nimage {}\nelf   {}",
                 out.image.display(),
@@ -930,6 +958,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                     eprintln!("{line}")
                 })
                 .await?;
+                esp32bench_build::write_stamp(&dirs.out, &plan);
                 eprintln!("\nimage {}", out.image.display());
                 return Ok(ExitCode::SUCCESS);
             }
@@ -962,6 +991,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                     esp32bench_build::Stream::Stderr => eprintln!("{line}"),
                 })
                 .await?;
+            esp32bench_build::write_stamp(&dirs.out, &plan);
             eprintln!(
                 "\nimage {}\nelf   {}",
                 out.image.display(),
@@ -973,6 +1003,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             baud,
             reset,
             crlf,
+            reconnect,
         }) => {
             let (mut p, mut rx) = esp32bench_serial::Port::open(&port, baud)?;
             eprintln!(
@@ -1000,7 +1031,26 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         }
                         Some(esp32bench_serial::Event::Closed(reason)) => {
                             eprintln!("\nport closed: {reason}");
-                            return Ok(ExitCode::FAILURE);
+                            if !reconnect {
+                                return Ok(ExitCode::FAILURE);
+                            }
+                            eprintln!("waiting for {} to come back…", port.display());
+                            let until = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+                            let again = loop {
+                                if tokio::time::Instant::now() >= until {
+                                    break None;
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                                if let Ok(opened) = esp32bench_serial::Port::open(&port, baud) {
+                                    break Some(opened);
+                                }
+                            };
+                            let Some((again, again_rx)) = again else {
+                                eprintln!("it did not come back");
+                                return Ok(ExitCode::FAILURE);
+                            };
+                            (p, rx) = (again, again_rx);
+                            eprintln!("reconnected to {}", port.display());
                         }
                         None => break,
                     },
@@ -1294,6 +1344,13 @@ fn board_command(cmd: BoardCmd) -> Result<()> {
         BoardCmd::Inspect { conn } => {
             let mut b = esp32bench_flash::Board::connect(&conn.options())?;
             let info = b.info()?;
+            // Remembered for this adapter, as the daemon does, so `device list` names it.
+            if let Some(port) = esp32bench_device::list(true).ok().and_then(|ps| {
+                ps.into_iter()
+                    .find(|x| std::path::Path::new(&x.path) == conn.port)
+            }) {
+                let _ = known_boards()?.remember(&port, &info.chip);
+            }
             println!(
                 "chip      {} {}",
                 info.chip,
@@ -1404,6 +1461,13 @@ fn on_off(b: bool) -> &'static str {
 }
 
 /// Print ports as a table, or as one JSON object (`{"ports": [...]}`) on one line.
+/// The chips found behind USB serial adapters, where the daemon keeps them.
+fn known_boards() -> Result<esp32bench_device::Known> {
+    Ok(esp32bench_device::Known::new(
+        esp32bench_sim::install::data_dir()?.join("boards.json"),
+    ))
+}
+
 /// The starred library projects, where the daemon keeps them.
 fn starred_store() -> Result<esp32bench_library::starred::Starred> {
     Ok(esp32bench_library::starred::Starred::new(
@@ -1412,6 +1476,9 @@ fn starred_store() -> Result<esp32bench_library::starred::Starred> {
 }
 
 fn print_ports(ports: &[esp32bench_device::Port], json: bool, pretty: bool) -> Result<()> {
+    let mut ports = ports.to_vec();
+    known_boards()?.apply(&mut ports);
+    let ports = &ports[..];
     let advice = esp32bench_device::advice(ports);
     if json {
         let v = serde_json::json!({ "ports": ports, "advice": advice });
@@ -1438,6 +1505,8 @@ fn print_ports(ports: &[esp32bench_device::Port], json: bool, pretty: bool) -> R
             .unwrap_or_else(|| "unknown".into());
         let chips = if p.chips.is_empty() {
             "any".to_owned()
+        } else if p.identified {
+            format!("{} (found by a board check)", p.chips.join(","))
         } else {
             p.chips.join(",")
         };

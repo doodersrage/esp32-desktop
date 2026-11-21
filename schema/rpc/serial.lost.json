@@ -1,0 +1,30 @@
+{
+  "event": "serial.lost",
+  "description": "Since protocol 0.26: a port opened with reconnect went away; the core is waiting for it to come back (serial.reconnected) or gives up (serial.closed).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "reason"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "reason": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "reason": "the port was closed"
+      }
+    }
+  ]
+}

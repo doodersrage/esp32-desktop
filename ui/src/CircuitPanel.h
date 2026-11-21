@@ -68,6 +68,9 @@ public:
     // Select a part on the canvas, as a click does.
     void selectPart(const QString &id, bool selected);
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
     void circuitSuggested(const QString &project, const QString &board, const QJsonObject &circuit,

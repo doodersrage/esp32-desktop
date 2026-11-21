@@ -4,6 +4,10 @@
 <context>
     <name>BoardInfoDialog</name>
     <message>
+        <source>Partitions</source>
+        <translation>Partitions</translation>
+    </message>
+    <message>
         <source>Board</source>
         <translation>Carte</translation>
     </message>
@@ -123,6 +127,14 @@
         <translation>Déboguer</translation>
     </message>
     <message>
+        <source>Build log</source>
+        <translation>Journal de compilation</translation>
+    </message>
+    <message>
+        <source>Board port</source>
+        <translation>Port de la carte</translation>
+    </message>
+    <message>
         <source>Run the selected project in the simulator, building it first if needed (ESP32, ESP32-S3 and ESP32-C3 boards)</source>
         <translation>Exécuter le projet choisi dans le simulateur, en le compilant d&apos;abord si besoin (cartes ESP32, ESP32-S3 et ESP32-C3)</translation>
     </message>
@@ -192,6 +204,14 @@
     <message>
         <source>Undo</source>
         <translation>Annuler</translation>
+    </message>
+    <message>
+        <source>Circuit: the board and its parts</source>
+        <translation>Circuit : la carte et ses composants</translation>
+    </message>
+    <message>
+        <source>Tab moves between parts; the arrow keys move the selected one (with Shift, in small steps), and Space presses or switches it.</source>
+        <translation>Tab passe d’un composant à l’autre ; les flèches déplacent celui qui est sélectionné (avec Maj, par petits pas) et Espace l’appuie ou le bascule.</translation>
     </message>
     <message>
         <source>Add part</source>
@@ -443,6 +463,14 @@
         <translation>Retirer</translation>
     </message>
     <message>
+        <source>Breakpoint location</source>
+        <translation>Emplacement du point d’arrêt</translation>
+    </message>
+    <message>
+        <source>Registers</source>
+        <translation>Registres</translation>
+    </message>
+    <message>
         <source>Run until a breakpoint or Pause</source>
         <translation>Exécuter jusqu’à un point d’arrêt ou Pause</translation>
     </message>
@@ -618,12 +646,20 @@
         <translation>Ouvrir dans le moniteur série</translation>
     </message>
     <message>
+        <source>Identify the chip (resets the board)</source>
+        <translation>Identifier la puce (réinitialise la carte)</translation>
+    </message>
+    <message>
         <source>Inspect board…</source>
         <translation>Inspecter la carte…</translation>
     </message>
     <message>
         <source>Erase flash…</source>
         <translation>Effacer la flash…</translation>
+    </message>
+    <message>
+        <source>Serial ports</source>
+        <translation>Ports série</translation>
     </message>
     <message>
         <source>Could not list devices: %1</source>
@@ -638,10 +674,6 @@
         <translation>Toutes</translation>
     </message>
     <message>
-        <source>A USB to UART bridge does not tell which chip is behind it.</source>
-        <translation>Un pont USB vers UART n’indique pas quelle puce se trouve derrière lui.</translation>
-    </message>
-    <message>
         <source>USB ID %1</source>
         <translation>ID USB %1</translation>
     </message>
@@ -652,6 +684,14 @@
     <message>
         <source>You cannot open this port. Install the esp32bench package, which adds a udev rule, or add yourself to the group that owns serial ports: uucp on Arch, dialout on Debian, Ubuntu and Fedora.</source>
         <translation>Vous ne pouvez pas ouvrir ce port. Installez le paquet esp32bench, qui ajoute une règle udev, ou ajoutez-vous au groupe propriétaire des ports série : uucp sous Arch, dialout sous Debian, Ubuntu et Fedora.</translation>
+    </message>
+    <message>
+        <source>A USB to UART bridge does not tell which chip is behind it. Right-click → Identify the chip to find out.</source>
+        <translation>Un pont USB-UART ne dit pas quelle puce se trouve derrière. Clic droit → Identifier la puce pour le savoir.</translation>
+    </message>
+    <message>
+        <source>Found by a board check on this adapter.</source>
+        <translation>Trouvée par une vérification de la carte sur cet adaptateur.</translation>
     </message>
     <message>
         <source>No boards found. Plug one in and press Refresh.</source>
@@ -710,6 +750,10 @@
     <message>
         <source>Search projects</source>
         <translation>Rechercher des projets</translation>
+    </message>
+    <message>
+        <source>Projects</source>
+        <translation>Projets</translation>
     </message>
     <message>
         <source>Refresh</source>
@@ -925,6 +969,18 @@ Le panneau Compilation en dessous contient tout le journal.</translation>
         <translation>Le flash a échoué : %1</translation>
     </message>
     <message>
+        <source>Saved the sketch to %1.</source>
+        <translation>Croquis enregistré dans %1.</translation>
+    </message>
+    <message>
+        <source>Saved the sketch to %1. In the Arduino IDE, install these libraries too: %2.</source>
+        <translation>Croquis enregistré dans %1. Dans l’IDE Arduino, installez aussi ces bibliothèques : %2.</translation>
+    </message>
+    <message>
+        <source>Open the folder</source>
+        <translation>Ouvrir le dossier</translation>
+    </message>
+    <message>
         <source>Note: %1</source>
         <translation>Remarque : %1</translation>
     </message>
@@ -935,6 +991,24 @@ Le panneau Compilation en dessous contient tout le journal.</translation>
     <message>
         <source>Get it from esp32bench.dev</source>
         <translation>Le télécharger sur esp32bench.dev</translation>
+    </message>
+    <message>
+        <source>%1, line %2</source>
+        <translation>%1, ligne %2</translation>
+    </message>
+    <message>
+        <source>The build failed at %1: %2</source>
+        <translation>La compilation a échoué à %1 : %2</translation>
+    </message>
+    <message>
+        <source>%1
+The Build panel below has the whole log.</source>
+        <translation>%1
+Le panneau Compilation ci-dessous contient tout le journal.</translation>
+    </message>
+    <message>
+        <source>Open the file</source>
+        <translation>Ouvrir le fichier</translation>
     </message>
     <message>
         <source>Plot</source>
@@ -951,6 +1025,14 @@ Le panneau Compilation en dessous contient tout le journal.</translation>
     <message>
         <source>Opened %1 from a link. Building or flashing it will ask first.</source>
         <translation>%1 ouvert depuis un lien. La compilation ou le flash demandera d’abord votre accord.</translation>
+    </message>
+    <message>
+        <source>Could not save the sketch: %1</source>
+        <translation>Impossible d’enregistrer le croquis : %1</translation>
+    </message>
+    <message>
+        <source>Could not save the plot: %1</source>
+        <translation>Impossible d’enregistrer le graphique : %1</translation>
     </message>
     <message>
         <source>Could not open the link: %1</source>
@@ -1274,6 +1356,10 @@ SHA-256 du code : %2</translation>
 <context>
     <name>PinsPanel</name>
     <message>
+        <source>Pins</source>
+        <translation>Broches</translation>
+    </message>
+    <message>
         <source>GPIO</source>
         <translation>GPIO</translation>
     </message>
@@ -1372,8 +1458,32 @@ SHA-256 du code : %2</translation>
         <translation>Effacer</translation>
     </message>
     <message>
+        <source>Save CSV…</source>
+        <translation>Enregistrer en CSV…</translation>
+    </message>
+    <message>
+        <source>Save the numbers received so far as a CSV file, for a spreadsheet</source>
+        <translation>Enregistrer les nombres reçus jusqu’ici dans un fichier CSV, pour un tableur</translation>
+    </message>
+    <message>
+        <source>Save the plot</source>
+        <translation>Enregistrer le graphique</translation>
+    </message>
+    <message>
+        <source>CSV files (*.csv)</source>
+        <translation>Fichiers CSV (*.csv)</translation>
+    </message>
+    <message>
+        <source>Saved %1 rows to %2.</source>
+        <translation>%1 lignes enregistrées dans %2.</translation>
+    </message>
+    <message>
         <source>Numbers from the simulator or the serial monitor, whichever is running.</source>
         <translation>Nombres du simulateur ou du moniteur série, celui qui tourne.</translation>
+    </message>
+    <message>
+        <source>Plot of the numbers received</source>
+        <translation>Graphique des nombres reçus</translation>
     </message>
     <message>
         <source>Stop adding new values, to look at what is shown</source>
@@ -1439,8 +1549,32 @@ SHA-256 du code : %2</translation>
         <translation>Câblage</translation>
     </message>
     <message>
+        <source>Board</source>
+        <translation>Carte</translation>
+    </message>
+    <message>
         <source>Code</source>
         <translation>Code</translation>
+    </message>
+    <message>
+        <source>Copy code</source>
+        <translation>Copier le code</translation>
+    </message>
+    <message>
+        <source>Copy the sketch, to paste it into the Arduino IDE</source>
+        <translation>Copier le croquis, pour le coller dans l’IDE Arduino</translation>
+    </message>
+    <message>
+        <source>Save code…</source>
+        <translation>Enregistrer le code…</translation>
+    </message>
+    <message>
+        <source>Save the sketch as a folder the Arduino IDE opens</source>
+        <translation>Enregistrer le croquis dans un dossier que l’IDE Arduino ouvre</translation>
+    </message>
+    <message>
+        <source>Save the sketch in which folder?</source>
+        <translation>Dans quel dossier enregistrer le croquis ?</translation>
     </message>
     <message>
         <source>Expected output</source>
@@ -1563,6 +1697,30 @@ SHA-256 du code : %2</translation>
         <translation>Ce projet est fourni en firmware précompilé : il n’y a pas de sketch à afficher.</translation>
     </message>
     <message>
+        <source>Not downloaded for this board yet.</source>
+        <translation>Pas encore téléchargé pour cette carte.</translation>
+    </message>
+    <message>
+        <source>Not built for this board yet.</source>
+        <translation>Pas encore compilé pour cette carte.</translation>
+    </message>
+    <message>
+        <source>Last built %1.</source>
+        <translation>Dernière compilation : %1.</translation>
+    </message>
+    <message>
+        <source>Downloaded %1; ready to run or flash.</source>
+        <translation>Téléchargé %1 ; prêt à exécuter ou à flasher.</translation>
+    </message>
+    <message>
+        <source>Built %1; ready to run or flash.</source>
+        <translation>Compilé %1 ; prêt à exécuter ou à flasher.</translation>
+    </message>
+    <message>
+        <source>Built %1, but the library has changed since; it will be built again.</source>
+        <translation>Compilé %1, mais la bibliothèque a changé depuis ; il sera recompilé.</translation>
+    </message>
+    <message>
         <source>Download</source>
         <translation>Télécharger</translation>
     </message>
@@ -1621,6 +1779,34 @@ SHA-256 du code : %2</translation>
         <translation>Texte à envoyer à la carte</translation>
     </message>
     <message>
+        <source>Hex</source>
+        <translation>Hex</translation>
+    </message>
+    <message>
+        <source>Show what the board sends as hex bytes, and send what you type as hex (&quot;01 a0 ff&quot;)</source>
+        <translation>Afficher ce qu’envoie la carte en octets hexadécimaux, et envoyer ce que vous tapez en hexadécimal (&quot;01 a0 ff&quot;)</translation>
+    </message>
+    <message>
+        <source>Hex bytes to send, such as 01 a0 ff</source>
+        <translation>Octets hexadécimaux à envoyer, par exemple 01 a0 ff</translation>
+    </message>
+    <message>
+        <source>Baud rate</source>
+        <translation>Débit en bauds</translation>
+    </message>
+    <message>
+        <source>What the board sent</source>
+        <translation>Ce que la carte a envoyé</translation>
+    </message>
+    <message>
+        <source>Text to send</source>
+        <translation>Texte à envoyer</translation>
+    </message>
+    <message>
+        <source>Line ending</source>
+        <translation>Fin de ligne</translation>
+    </message>
+    <message>
         <source>LF</source>
         <translation>LF</translation>
     </message>
@@ -1645,6 +1831,14 @@ SHA-256 du code : %2</translation>
         <translation>Les cartes avec USB intégré redémarrent quand leur port est ouvert.</translation>
     </message>
     <message>
+        <source>The board went away; waiting for it to come back…</source>
+        <translation>La carte est partie ; en attente de son retour…</translation>
+    </message>
+    <message>
+        <source>Reconnected.</source>
+        <translation>Reconnectée.</translation>
+    </message>
+    <message>
         <source>Disconnected: %1</source>
         <translation>Déconnecté : %1</translation>
     </message>
@@ -1657,6 +1851,10 @@ SHA-256 du code : %2</translation>
         <translation>Erreur série : %1</translation>
     </message>
     <message>
+        <source>Not hex bytes: type pairs of digits 0-9 and a-f, such as 01 a0 ff.</source>
+        <translation>Pas des octets hexadécimaux : tapez des paires de chiffres 0-9 et a-f, par exemple 01 a0 ff.</translation>
+    </message>
+    <message>
         <source>Close</source>
         <translation>Fermer</translation>
     </message>
@@ -1667,6 +1865,14 @@ SHA-256 du code : %2</translation>
 </context>
 <context>
     <name>SetupDialog</name>
+    <message>
+        <source>Build and simulator tools</source>
+        <translation>Outils de compilation et du simulateur</translation>
+    </message>
+    <message>
+        <source>Install log</source>
+        <translation>Journal d’installation</translation>
+    </message>
     <message>
         <source>Toolchain setup</source>
         <translation>Configuration des outils</translation>
@@ -1807,6 +2013,18 @@ SHA-256 du code : %2</translation>
         <translation>Envoyer</translation>
     </message>
     <message>
+        <source>Simulator output</source>
+        <translation>Sortie du simulateur</translation>
+    </message>
+    <message>
+        <source>Text to send</source>
+        <translation>Texte à envoyer</translation>
+    </message>
+    <message>
+        <source>Line ending</source>
+        <translation>Fin de ligne</translation>
+    </message>
+    <message>
         <source>The simulator runs the firmware. Parts placed in the Circuit dock run with it; there is no Bluetooth.</source>
         <translation>Le simulateur exécute le firmware. Les composants placés dans le panneau Circuit fonctionnent avec lui ; il n’y a pas de Bluetooth.</translation>
     </message>
@@ -1900,6 +2118,10 @@ SHA-256 du code : %2</translation>
     <message>
         <source>Save VCD…</source>
         <translation>Enregistrer en VCD…</translation>
+    </message>
+    <message>
+        <source>Time shown</source>
+        <translation>Durée affichée</translation>
     </message>
     <message>
         <source>100 µs</source>

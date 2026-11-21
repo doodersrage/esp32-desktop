@@ -23,6 +23,8 @@ SetupDialog::SetupDialog(CoreConnection *core, QWidget *parent)
     , m_tree(new QTreeWidget(this))
     , m_log(new QPlainTextEdit(this))
 {
+    m_tree->setAccessibleName(tr("Build and simulator tools"));
+    m_log->setAccessibleName(tr("Install log"));
     setWindowTitle(tr("Toolchain setup"));
     resize(860, 460);
 

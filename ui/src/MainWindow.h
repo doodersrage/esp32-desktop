@@ -97,6 +97,7 @@ private:
     QStringList m_pendingLinks;
     QString m_noticeShown;   // the release notice shown this session
     QJsonArray m_toolchain;  // the last toolchain.status, for problem reports
+    QJsonObject m_firstError; // the failing build's first compiler error
     void showConnectionState();
     void startCore();
     void restoreLayout();

@@ -106,9 +106,30 @@ bool ConsoleView::findText(const QString &text, bool backward)
     return find(text, flags);
 }
 
+void ConsoleView::setHex(bool on)
+{
+    if (on == m_hex)
+        return;
+    m_hex = on;
+    m_decoder.resetState();
+}
+
+QString ConsoleView::hexText(const QByteArray &bytes)
+{
+    // Each byte as two digits, a line break after each newline byte (0a), so text
+    // still reads line by line.
+    QString out;
+    out.reserve(bytes.size() * 3);
+    for (const char b : bytes) {
+        out += u"%1"_s.arg(uchar(b), 2, 16, QLatin1Char('0'));
+        out += b == '\n' ? u'\n' : u' ';
+    }
+    return out;
+}
+
 void ConsoleView::appendBytes(const QByteArray &bytes)
 {
-    QString text = m_decoder.decode(bytes);
+    QString text = m_hex ? hexText(bytes) : m_decoder.decode(bytes);
     text.remove(u'\r');
     if (text.isEmpty())
         return;
@@ -159,6 +180,7 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
 {
     m_find->setPlaceholderText(tr("Find in the output"));
     m_find->setClearButtonEnabled(true);
+    m_find->setAccessibleName(tr("Find in the output"));
     m_prev->setText(tr("Previous"));
     m_prev->setToolTip(tr("Find the previous match"));
     m_next->setText(tr("Next"));

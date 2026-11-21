@@ -15,7 +15,8 @@ class MessageBar : public QFrame {
 public:
     explicit MessageBar(QWidget *parent = nullptr);
 
-    void showError(const QString &text);
+    // A problem; with `url`, a link to it (such as the file a build failed in).
+    void showError(const QString &text, const QString &url = {}, const QString &linkText = {});
     // An explanation of something the board or a tool printed, with a link to the
     // site's page about it when there is one.
     void showExplanation(const QString &text, const QString &url);

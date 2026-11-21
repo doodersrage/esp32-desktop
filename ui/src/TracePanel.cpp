@@ -179,6 +179,7 @@ TracePanel::TracePanel(CoreConnection *core, QWidget *parent)
     , m_save(new QPushButton(QIcon::fromTheme(u"document-save"_s), tr("Save VCD…"), this))
     , m_view(new TraceView(this))
 {
+    m_span->setAccessibleName(tr("Time shown"));
     m_status->setWordWrap(true);
     m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_span->addItem(tr("100 µs"), 100'000LL);

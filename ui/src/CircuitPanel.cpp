@@ -1,5 +1,7 @@
 #include "CircuitPanel.h"
 
+#include <QKeyEvent>
+
 #include "CoreConnection.h"
 
 #include <QCheckBox>
@@ -71,6 +73,8 @@ public:
         setFlag(ItemIsSelectable);
         // Dragged to where the user likes it; the wires follow and the place is saved.
         setFlag(ItemIsMovable);
+        // Reached with Tab too: the arrow keys move it, Space presses or toggles it.
+        setFlag(ItemIsFocusable);
         setFlag(ItemSendsGeometryChanges);
         setAcceptedMouseButtons(Qt::LeftButton);
     }
@@ -261,6 +265,55 @@ public:
     }
 
 protected:
+    void focusInEvent(QFocusEvent *event) override
+    {
+        QGraphicsItem::focusInEvent(event);
+        // The focused part is the selected one, drawn with its dashed frame.
+        if (scene())
+            scene()->clearSelection();
+        setSelected(true);
+    }
+    void keyPressEvent(QKeyEvent *event) override
+    {
+        const qreal step = event->modifiers() & Qt::ShiftModifier ? 1 : 10;
+        QPointF by;
+        switch (event->key()) {
+        case Qt::Key_Left: by = {-step, 0}; break;
+        case Qt::Key_Right: by = {step, 0}; break;
+        case Qt::Key_Up: by = {0, -step}; break;
+        case Qt::Key_Down: by = {0, step}; break;
+        case Qt::Key_Space:
+            if (!event->isAutoRepeat()) {
+                if (!m_momentary.isEmpty())
+                    m_control(m_momentary, true);
+                else if (!m_toggle.isEmpty())
+                    m_control(m_toggle, !isOn());
+            }
+            return;
+        default:
+            QGraphicsItem::keyPressEvent(event);
+            return;
+        }
+        if (!m_keyMoving) {
+            m_keyMoving = true;
+            m_pressedAt = pos();
+        }
+        setPos(pos() + by);
+    }
+    void keyReleaseEvent(QKeyEvent *event) override
+    {
+        if (event->isAutoRepeat())
+            return;
+        if (event->key() == Qt::Key_Space && !m_momentary.isEmpty()) {
+            m_control(m_momentary, false);
+            return;
+        }
+        // Saved once the key is let go, not on every step.
+        if (m_keyMoving && moved && pos() != m_pressedAt)
+            moved(pos());
+        m_keyMoving = false;
+        QGraphicsItem::keyReleaseEvent(event);
+    }
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override
     {
         if (change == ItemPositionHasChanged && moving)
@@ -287,6 +340,7 @@ protected:
 
 private:
     QPointF m_pressedAt;
+    bool m_keyMoving = false;
     QString m_id;
     QString m_look;
     QString m_label;
@@ -313,7 +367,13 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     , m_view(new QGraphicsView(m_scene, this))
     , m_controls(new QGroupBox(this))
 {
+    m_view->setAccessibleName(tr("Circuit: the board and its parts"));
+    m_view->setAccessibleDescription(tr("Tab moves between parts; the arrow keys move the selected one (with Shift, in small steps), and Space presses or switches it."));
     m_status->setWordWrap(true);
+    m_view->setFocusPolicy(Qt::StrongFocus);
+    // Tab and Shift+Tab step through the parts, in the circuit's order, then on out of
+    // the canvas (a scene's own Tab order covers only QGraphicsWidgets).
+    m_view->installEventFilter(this);
     m_view->setRenderHint(QPainter::Antialiasing);
     m_view->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     m_add->setText(tr("Add part"));
@@ -944,4 +1004,29 @@ void CircuitPanel::selectPart(const QString &id, bool selected)
 {
     if (PartItem *i = m_items.value(id))
         i->setSelected(selected);
+}
+
+bool CircuitPanel::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched != m_view || event->type() != QEvent::KeyPress)
+        return QWidget::eventFilter(watched, event);
+    const auto *key = static_cast<QKeyEvent *>(event);
+    const bool forward = key->key() == Qt::Key_Tab && !(key->modifiers() & Qt::ShiftModifier);
+    const bool back = key->key() == Qt::Key_Backtab || (key->key() == Qt::Key_Tab && key->modifiers() & Qt::ShiftModifier);
+    if (!forward && !back)
+        return QWidget::eventFilter(watched, event);
+    QList<QGraphicsItem *> order;
+    for (const QJsonValue &v : parts()) {
+        if (PartItem *i = m_items.value(v.toObject().value(u"id"_s).toString()))
+            order << i;
+    }
+    const int at = order.indexOf(m_scene->focusItem());
+    const int next = at < 0 ? (forward ? 0 : int(order.size()) - 1) : at + (forward ? 1 : -1);
+    if (next < 0 || next >= order.size()) {
+        m_scene->clearFocus();
+        return false; // on to the next control
+    }
+    order.at(next)->setFocus(forward ? Qt::TabFocusReason : Qt::BacktabFocusReason);
+    m_view->ensureVisible(order.at(next));
+    return true;
 }

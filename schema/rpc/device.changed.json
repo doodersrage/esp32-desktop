@@ -98,6 +98,10 @@
                 "ok",
                 "denied"
               ]
+            },
+            "identified": {
+              "type": "boolean",
+              "description": "Since protocol 0.26: true when chips is the chip a board check (board.inspect) found behind this adapter before, remembered by its USB IDs and serial number. Absent otherwise."
             }
           },
           "additionalProperties": false

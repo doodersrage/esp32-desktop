@@ -65,6 +65,8 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     m_filter->setPlaceholderText(tr("Search projects"));
     m_filter->setMinimumWidth(m_filter->fontMetrics().averageCharWidth() * 16);
     m_filter->setClearButtonEnabled(true);
+    m_filter->setAccessibleName(tr("Search projects"));
+    m_tree->setAccessibleName(tr("Projects"));
     connect(m_filter, &QLineEdit::textChanged, this, &LibraryPanel::applyFilter);
 
     m_refresh->setIcon(QIcon::fromTheme(u"view-refresh"_s));

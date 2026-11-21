@@ -49,6 +49,7 @@ fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
     s.circuits_root = dir.join("circuits");
     s.local = esp32bench_build::idf::Registry::new(dir.join("local-projects.json"));
     s.starred = esp32bench_library::starred::Starred::new(dir.join("starred.json"));
+    s.known_boards = esp32bench_device::Known::new(dir.join("boards.json"));
     Arc::new(s)
 }
 
@@ -63,6 +64,11 @@ fn fake_arduino_cli(dir: &Path) -> PathBuf {
 case "$1" in
   lib) echo "Installed $3" ;;
   compile)
+    if [ -e "$0.fail" ]; then
+      echo "/tmp/x/blink/blink.ino: In function 'void loop()':" >&2
+      echo "/tmp/x/blink/blink.ino:12:3: error: 'ledd' was not declared in this scope" >&2
+      exit 1
+    fi
     out=""; prev=""
     for a in "$@"; do [ "$prev" = "--output-dir" ] && out="$a"; prev="$a"; last="$a"; done
     name=$(basename "$last")
@@ -606,6 +612,19 @@ async fn build_runs_after_consent_and_reports() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
     with_library(&mut c).await;
+    let status = json!({ "project": "blink", "board": "esp32" });
+    assert_valid(
+        &method_def("build.status")["params"],
+        &status,
+        "build.status params",
+    );
+    let before = c.call("build.status", status.clone()).await.unwrap();
+    assert_valid(
+        &method_def("build.status")["result"],
+        &before,
+        "build.status result",
+    );
+    assert_eq!(before, json!({ "built": false }));
 
     let token = match c
         .call(
@@ -650,6 +669,129 @@ async fn build_runs_after_consent_and_reports() {
         break;
     }
     assert!(saw_log);
+
+    // Built, and what the library asks for; another board is not.
+    let after = c.call("build.status", status).await.unwrap();
+    assert_valid(
+        &method_def("build.status")["result"],
+        &after,
+        "build.status result",
+    );
+    assert_eq!(after["built"], true);
+    assert_eq!(after["current"], true);
+    assert!(after["builtAt"].as_u64().unwrap() > 0);
+    let other = c
+        .call(
+            "build.status",
+            json!({ "project": "blink", "board": "esp32s3" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(other["built"], false);
+    match c
+        .call(
+            "build.status",
+            json!({ "project": "../x", "board": "esp32" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("expected invalid params, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn plot_save_writes_csv() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let path = out.path().join("plot.csv");
+    let def = method_def("plot.save");
+    let params = json!({ "path": path, "rows": [
+        [{ "name": "temp", "value": 21.5 }, { "name": "hum", "value": 45 }],
+        [{ "name": "temp", "value": 22 }],
+    ] });
+    assert_valid(&def["params"], &params, "plot.save params");
+    let r = c.call("plot.save", params).await.unwrap();
+    assert_valid(&def["result"], &r, "plot.save result");
+    assert_eq!(r["rows"], 2);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "row,temp,hum\n1,21.5,45\n2,22,\n"
+    );
+    match c
+        .call("plot.save", json!({ "path": "rel.csv", "rows": [] }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("expected invalid params, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn library_export_saves_a_sketch_for_the_arduino_ide() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = tempfile::tempdir().unwrap();
+    let def = method_def("library.export");
+    let params = json!({ "id": "blink", "board": "esp32", "dir": out.path() });
+    assert_valid(&def["params"], &params, "library.export params");
+    let r = c.call("library.export", params.clone()).await.unwrap();
+    assert_valid(&def["result"], &r, "library.export result");
+    let ino = out.path().join("blink/blink.ino");
+    assert_eq!(Path::new(r["path"].as_str().unwrap()), ino);
+    assert!(!std::fs::read_to_string(&ino).unwrap().is_empty());
+    assert_eq!(r["libraries"], json!(["Adafruit NeoPixel"]));
+    // Not again over it, not prebuilt firmware, not a relative folder.
+    for (bad, want) in [
+        (params, code::FAILED),
+        (
+            json!({ "id": "probeharbor-probe", "board": "esp32", "dir": out.path() }),
+            code::FAILED,
+        ),
+        (
+            json!({ "id": "blink", "board": "esp32", "dir": "rel" }),
+            code::INVALID_PARAMS,
+        ),
+    ] {
+        match c.call("library.export", bad.clone()).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, want, "{bad}: {}", e.message),
+            other => panic!("{bad}: expected an error, got {other:?}"),
+        }
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_failed_build_names_its_first_error() {
+    let (d, sock, _lock) = daemon().await;
+    std::fs::write(d.path().join("fake-arduino-cli.fail"), "").unwrap();
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let token = match c
+        .call(
+            "build.start",
+            json!({ "project": "blink", "board": "esp32" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => e.data.unwrap()["token"].as_str().unwrap().to_owned(),
+        other => panic!("expected consent required, got {other:?}"),
+    };
+    let r = c
+        .call(
+            "build.start",
+            json!({ "project": "blink", "board": "esp32", "consent": token }),
+        )
+        .await
+        .unwrap();
+    let done = build_finished(&mut c, &r["job"]).await;
+    assert_eq!(done["ok"], false, "{done}");
+    assert_eq!(
+        done["firstError"],
+        json!({ "file": "blink.ino", "line": 12, "column": 3, "message": "'ledd' was not declared in this scope" })
+    );
 }
 
 #[tokio::test]
@@ -865,6 +1007,14 @@ fn pty_slave_name(master: libc::c_int) -> String {
 async fn serial_daemon(
     allowed: &Path,
 ) -> (tempfile::TempDir, PathBuf, esp32bench_daemon::InstanceLock) {
+    serial_daemon_waiting(allowed, std::time::Duration::from_secs(30)).await
+}
+
+/// The same, waiting `reconnect_for` for a port opened with reconnect to come back.
+async fn serial_daemon_waiting(
+    allowed: &Path,
+    reconnect_for: std::time::Duration,
+) -> (tempfile::TempDir, PathBuf, esp32bench_daemon::InstanceLock) {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("rt/core.sock");
     let (listener, lock) = esp32bench_daemon::bind(&sock).unwrap();
@@ -875,6 +1025,8 @@ async fn serial_daemon(
         dir.path().join("sketchbook"),
     );
     st.serial_allow = Some(vec![allowed.to_owned()]);
+    st.serial_reconnect_for = reconnect_for;
+    st.known_boards = esp32bench_device::Known::new(dir.path().join("boards.json"));
     let router = esp32bench_daemon::router(Arc::new(st));
     tokio::spawn(esp32bench_rpc::serve(listener, Arc::new(router)));
     (dir, sock, lock)
@@ -1151,6 +1303,119 @@ async fn serial_reports_when_the_board_goes_away() {
             break;
         }
     }
+}
+
+/// The next event other than serial.data, within `secs`.
+#[cfg(unix)]
+async fn next_serial_event(c: &mut Client, secs: u64) -> Value {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(secs);
+    loop {
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
+            .await
+            .expect("no serial event in time")
+            .unwrap();
+        if n["method"] != "serial.data" {
+            return n;
+        }
+    }
+}
+
+// The port is a symlink to a pty, so the "board" can come back at the same path.
+#[cfg(unix)]
+#[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
+async fn serial_reconnects_when_the_board_comes_back() {
+    use std::os::fd::AsRawFd;
+    let links = tempfile::tempdir().unwrap();
+    let port = links.path().join("ttyACM0");
+    let (master, first) = pty();
+    std::os::unix::fs::symlink(&first, &port).unwrap();
+    let (_d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let params = json!({ "path": port, "baud": 115200, "reconnect": true });
+    assert_valid(
+        &method_def("serial.open")["params"],
+        &params,
+        "serial.open params",
+    );
+    let sub = c.call("serial.open", params).await.unwrap()["subscription"].clone();
+
+    // Reset over USB: the port goes, and comes back as a new device.
+    std::fs::remove_file(&port).unwrap();
+    drop(master);
+    let n = next_serial_event(&mut c, 15).await;
+    assert_eq!(n["method"], "serial.lost", "{n}");
+    assert_valid(
+        &method_def("serial.lost")["params"],
+        &n["params"],
+        "serial.lost",
+    );
+    let (master, second) = pty();
+    std::os::unix::fs::symlink(&second, &port).unwrap();
+    let n = next_serial_event(&mut c, 15).await;
+    assert_eq!(n["method"], "serial.reconnected", "{n}");
+    assert_valid(
+        &method_def("serial.reconnected")["params"],
+        &n["params"],
+        "serial.reconnected",
+    );
+    assert_eq!(n["params"]["subscription"], sub);
+
+    // The same subscription reads and writes the new port.
+    let out = b"back\n";
+    // SAFETY: write a valid buffer to the pty master.
+    unsafe { libc::write(master.as_raw_fd(), out.as_ptr().cast(), out.len()) };
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(6);
+    let mut got = Vec::new();
+    while got.len() < out.len() {
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        if n["method"] == "serial.data" {
+            got.extend(un_b64(n["params"]["data"].as_str().unwrap()));
+        }
+    }
+    assert_eq!(got, out);
+    c.call(
+        "serial.write",
+        json!({ "subscription": sub, "data": b64(b"hi\n") }),
+    )
+    .await
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
+async fn serial_gives_up_when_the_board_stays_away() {
+    // Through a symlink that goes too, so another test's new pty cannot take its place.
+    let links = tempfile::tempdir().unwrap();
+    let port = links.path().join("ttyACM0");
+    let (master, pts) = pty();
+    std::os::unix::fs::symlink(&pts, &port).unwrap();
+    let (_d, sock, _lock) =
+        serial_daemon_waiting(&port, std::time::Duration::from_millis(600)).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    c.call(
+        "serial.open",
+        json!({ "path": port, "baud": 115200, "reconnect": true }),
+    )
+    .await
+    .unwrap();
+    std::fs::remove_file(&port).unwrap();
+    drop(master);
+    assert_eq!(next_serial_event(&mut c, 15).await["method"], "serial.lost");
+    assert_eq!(
+        next_serial_event(&mut c, 15).await["method"],
+        "serial.closed"
+    );
 }
 
 #[tokio::test]

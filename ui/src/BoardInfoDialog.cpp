@@ -17,6 +17,7 @@ BoardInfoDialog::BoardInfoDialog(QWidget *parent)
     , m_summary(new QLabel(this))
     , m_partitions(new QTreeWidget(this))
 {
+    m_partitions->setAccessibleName(tr("Partitions"));
     setWindowTitle(tr("Board"));
     resize(620, 440);
     m_summary->setTextFormat(Qt::RichText);

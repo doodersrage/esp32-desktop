@@ -287,7 +287,8 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleInstallEvent(method, params);
         else if (m_installJob == -1)
             m_earlyInstallEvents.append({method, params}); // our job id is not known yet
-    } else if (method == u"serial.data" || method == u"serial.closed") {
+    } else if (method == u"serial.data" || method == u"serial.closed" || method == u"serial.lost"
+               || method == u"serial.reconnected") {
         if (sub == m_serialSub)
             handleSerialEvent(method, params);
         else if (m_serialSub == -1)
@@ -466,6 +467,8 @@ void CoreConnection::handleBuildEvent(const QString &method, const QJsonObject &
         return;
     }
     m_buildJob = 0;
+    if (params.contains(u"firstError"_s))
+        emit buildFirstError(params.value(u"firstError"_s).toObject());
     emit buildFinished(params.value(u"ok"_s).toBool(), params.value(u"error"_s).toString(),
                        params.value(u"image"_s).toString());
 }
@@ -489,7 +492,9 @@ void CoreConnection::openSerial(const QString &path, int baud)
     if (m_serialSub != 0)
         return; // one port at a time
     m_serialSub = -1;
-    m_client->call(u"serial.open"_s, {{u"path"_s, path}, {u"baud"_s, baud}}, this,
+    // reconnect: a board that resets over its own USB, or is plugged back in, is
+    // opened again by the core (serial.lost, then serial.reconnected).
+    m_client->call(u"serial.open"_s, {{u"path"_s, path}, {u"baud"_s, baud}, {u"reconnect"_s, true}}, this,
                    [this, path, baud](const RpcReply &r) {
                        if (!r.ok) {
                            m_serialSub = 0;
@@ -515,6 +520,14 @@ void CoreConnection::handleSerialEvent(const QString &method, const QJsonObject 
             emit outputExplained(u"serial"_s, params.value(u"explain"_s).toArray());
         if (params.contains(u"plot"_s))
             emit plotRows(params.value(u"plot"_s).toArray());
+        return;
+    }
+    if (method == u"serial.lost") {
+        emit serialLost(params.value(u"reason"_s).toString());
+        return;
+    }
+    if (method == u"serial.reconnected") {
+        emit serialReconnected();
         return;
     }
     m_serialSub = 0;
@@ -936,6 +949,42 @@ void CoreConnection::saveConsole(const QString &path, const QString &text)
         }
         emit consoleSaved(path);
     });
+}
+
+void CoreConnection::savePlot(const QString &path, const QJsonArray &rows)
+{
+    m_client->call(u"plot.save"_s, {{u"path"_s, path}, {u"rows"_s, rows}}, this, [this, path](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"plot.save"_s, r.errorMessage);
+            return;
+        }
+        emit plotSaved(path, r.result.toObject().value(u"rows"_s).toInteger());
+    });
+}
+
+void CoreConnection::exportSketch(const QString &project, const QString &board, const QString &dir)
+{
+    m_client->call(u"library.export"_s, {{u"id"_s, project}, {u"board"_s, board}, {u"dir"_s, dir}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"library.export"_s, r.errorMessage);
+                           return;
+                       }
+                       const QJsonObject o = r.result.toObject();
+                       QStringList libs;
+                       for (const QJsonValue &v : o.value(u"libraries"_s).toArray())
+                           libs << v.toString();
+                       emit sketchExported(o.value(u"path"_s).toString(), libs);
+                   });
+}
+
+void CoreConnection::requestBuildStatus(const QString &project, const QString &board)
+{
+    m_client->call(u"build.status"_s, {{u"project"_s, project}, {u"board"_s, board}}, this,
+                   [this, project, board](const RpcReply &r) {
+                       if (r.ok)
+                           emit buildStatusReady(project, board, r.result.toObject());
+                   });
 }
 
 void CoreConnection::suggestCircuit(const QString &project, const QString &board)

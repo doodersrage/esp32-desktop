@@ -1,4 +1,8 @@
 #include "PlotPanel.h"
+#include <QStandardPaths>
+#include <QFileDialog>
+#include <QDir>
+#include <QDateTime>
 
 #include "CoreConnection.h"
 
@@ -138,11 +142,26 @@ PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
     , m_status(new QLabel(this))
     , m_pause(new QCheckBox(tr("Pause"), this))
     , m_clear(new QPushButton(QIcon::fromTheme(u"edit-clear"_s), tr("Clear"), this))
+    , m_save(new QPushButton(QIcon::fromTheme(u"document-save"_s), tr("Save CSV…"), this))
 {
+    m_save->setToolTip(tr("Save the numbers received so far as a CSV file, for a spreadsheet"));
+    m_save->setEnabled(false);
+    connect(m_save, &QPushButton::clicked, this, [this] {
+        const QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+        const QString name = u"esp32bench-plot-%1.csv"_s.arg(QDateTime::currentDateTime().toString(u"yyyyMMdd-HHmm"_s));
+        const QString path = QFileDialog::getSaveFileName(this, tr("Save the plot"), QDir(dir).filePath(name),
+                                                          tr("CSV files (*.csv)"));
+        if (!path.isEmpty())
+            saveTo(path);
+    });
+    connect(m_core, &CoreConnection::plotSaved, this, [this](const QString &path, qint64 rows) {
+        m_status->setText(tr("Saved %1 rows to %2.").arg(rows).arg(path));
+    });
     m_status->setText(tr("Numbers from the simulator or the serial monitor, whichever is running."));
     m_status->setWordWrap(true);
+    m_canvas->setAccessibleName(tr("Plot of the numbers received"));
     m_pause->setToolTip(tr("Stop adding new values, to look at what is shown"));
-    connect(m_clear, &QPushButton::clicked, m_canvas, &PlotCanvas::clear);
+    connect(m_clear, &QPushButton::clicked, this, &PlotPanel::clearRows);
     const auto add = [this](const QJsonArray &rows) {
         if (rows.isEmpty() || m_pause->isChecked())
             return;
@@ -151,15 +170,20 @@ PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
             emit firstRows();
         }
         m_canvas->addRows(rows);
+        for (const QJsonValue &r : rows)
+            m_rows.append(r);
+        while (m_rows.size() > KeptRows)
+            m_rows.removeFirst();
+        m_save->setEnabled(true);
     };
     connect(m_core, &CoreConnection::plotRows, this, add);
     // A new run starts a new plot.
     connect(m_core, &CoreConnection::simStarted, this, [this] {
-        m_canvas->clear();
+        clearRows();
         m_seen = false;
     });
     connect(m_core, &CoreConnection::serialOpened, this, [this] {
-        m_canvas->clear();
+        clearRows();
         m_seen = false;
     });
 
@@ -167,7 +191,28 @@ PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
     top->addWidget(m_status, 1);
     top->addWidget(m_pause);
     top->addWidget(m_clear);
+    top->addWidget(m_save);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     layout->addWidget(m_canvas, 1);
+}
+
+void PlotPanel::clearRows()
+{
+    m_canvas->clear();
+    m_rows = {};
+    m_save->setEnabled(false);
+}
+
+QJsonArray PlotPanel::rows() const
+{
+    QJsonArray out;
+    for (const QJsonValue &r : m_rows)
+        out.append(r);
+    return out;
+}
+
+void PlotPanel::saveTo(const QString &path)
+{
+    m_core->savePlot(path, rows());
 }

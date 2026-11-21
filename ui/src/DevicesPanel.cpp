@@ -115,8 +115,14 @@ DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
         QMenu menu(this);
         menu.addAction(QIcon::fromTheme(u"utilities-terminal"_s), tr("Open in serial monitor"), this,
                        [this, path] { emit portActivated(path); });
-        menu.addAction(QIcon::fromTheme(u"document-properties"_s), tr("Inspect board…"), this,
-                       [this, path] { emit inspectRequested(path); });
+        // A USB serial chip does not say which ESP32 is behind it; a board check does,
+        // and the core remembers it for this adapter.
+        if (item->data(ChipsColumn, UnknownChipRole).toBool())
+            menu.addAction(QIcon::fromTheme(u"document-properties"_s), tr("Identify the chip (resets the board)"), this,
+                           [this, path] { emit inspectRequested(path); });
+        else
+            menu.addAction(QIcon::fromTheme(u"document-properties"_s), tr("Inspect board…"), this,
+                           [this, path] { emit inspectRequested(path); });
         menu.addSeparator();
         menu.addAction(QIcon::fromTheme(u"edit-delete"_s), tr("Erase flash…"), this,
                        [this, path] { emit eraseRequested(path); });
@@ -130,6 +136,7 @@ DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
     top->addWidget(m_status, 1);
     top->addWidget(m_refresh);
     m_advice->setWordWrap(true);
+    m_tree->setAccessibleName(tr("Serial ports"));
     m_advice->setTextFormat(Qt::RichText);
     m_advice->setOpenExternalLinks(true);
     m_advice->hide();
@@ -195,8 +202,12 @@ void DevicesPanel::showPorts(const QJsonArray &ports)
         for (const QJsonValue &c : p.value(u"chips"_s).toArray())
             chips << Labels::chipName(c.toString());
         item->setText(ChipsColumn, chips.isEmpty() ? tr("Any") : chips.join(u", "_s));
+        item->setData(ChipsColumn, UnknownChipRole, chips.size() != 1);
         if (chips.isEmpty())
-            item->setToolTip(ChipsColumn, tr("A USB to UART bridge does not tell which chip is behind it."));
+            item->setToolTip(ChipsColumn, tr("A USB to UART bridge does not tell which chip is behind it. "
+                                             "Right-click → Identify the chip to find out."));
+        else if (p.value(u"identified"_s).toBool())
+            item->setToolTip(ChipsColumn, tr("Found by a board check on this adapter."));
 
         item->setText(BridgeColumn, bridgeName(p.value(u"bridge"_s)));
         const QJsonObject usb = p.value(u"usb"_s).toObject();

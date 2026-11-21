@@ -5,6 +5,12 @@
 
 #include <QAction>
 #include <QComboBox>
+#include <QStandardPaths>
+#include <QLocale>
+#include <QGuiApplication>
+#include <QFileDialog>
+#include <QDateTime>
+#include <QClipboard>
 #include <QDesktopServices>
 #include <QToolButton>
 #include <QMenu>
@@ -120,6 +126,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     connect(m_core, &CoreConnection::buildConsentRequired, this, &ProjectView::updateBuildButton);
 
     m_board = new QComboBox(page);
+    m_board->setAccessibleName(tr("Board"));
     connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::showBuild);
     connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::updateBuildButton);
     connect(m_board, &QComboBox::activated, this, [this] { m_boardChosen = true; });
@@ -137,6 +144,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
 
     auto *partsPage = new QWidget(m_tabs);
     m_parts = new QTreeWidget(partsPage);
+    m_parts->setAccessibleName(tr("Parts"));
     m_parts->setHeaderLabels({tr("Quantity"), tr("Part")});
     m_parts->setRootIsDecorated(false);
     m_parts->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
@@ -149,6 +157,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
 
     auto *wiringPage = new QWidget(m_tabs);
     m_wiring = new QTreeWidget(wiringPage);
+    m_wiring->setAccessibleName(tr("Wiring"));
     m_wiring->setHeaderLabels({tr("From"), tr("To"), tr("Note")});
     m_wiring->setRootIsDecorated(false);
     m_wiring->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -159,9 +168,31 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     wiringLayout->addWidget(m_pins);
     m_tabs->addTab(wiringPage, tr("Wiring"));
 
-    m_code = readOnlyText(m_tabs, true);
-    m_tabs->addTab(m_code, tr("Code"));
+    auto *codePage = new QWidget(m_tabs);
+    m_code = readOnlyText(codePage, true);
+    m_code->setAccessibleName(tr("Code"));
+    m_copyCode = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), tr("Copy code"), codePage);
+    m_copyCode->setToolTip(tr("Copy the sketch, to paste it into the Arduino IDE"));
+    connect(m_copyCode, &QPushButton::clicked, this, [this] { QGuiApplication::clipboard()->setText(m_code->toPlainText()); });
+    m_saveCode = new QPushButton(QIcon::fromTheme(u"document-save"_s), tr("Save code…"), codePage);
+    m_saveCode->setToolTip(tr("Save the sketch as a folder the Arduino IDE opens"));
+    connect(m_saveCode, &QPushButton::clicked, this, [this] {
+        const QString dir = QFileDialog::getExistingDirectory(this, tr("Save the sketch in which folder?"),
+                                                              QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
+        if (!dir.isEmpty())
+            m_core->exportSketch(m_project.value(u"id"_s).toString(), m_board->currentData().toString(), dir);
+    });
+    auto *codeButtons = new QHBoxLayout;
+    codeButtons->addStretch(1);
+    codeButtons->addWidget(m_copyCode);
+    codeButtons->addWidget(m_saveCode);
+    auto *codeLayout = new QVBoxLayout(codePage);
+    codeLayout->setContentsMargins(0, 0, 0, 0);
+    codeLayout->addWidget(m_code, 1);
+    codeLayout->addLayout(codeButtons);
+    m_tabs->addTab(codePage, tr("Code"));
     m_output = readOnlyText(m_tabs, true);
+    m_output->setAccessibleName(tr("Expected output"));
     m_tabs->addTab(m_output, tr("Expected output"));
 
     auto *notesScroll = new QScrollArea(m_tabs);
@@ -185,6 +216,18 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     auto *boardRow = new QFormLayout;
     m_boardLabel = new QLabel(tr("Board:"), page);
     boardRow->addRow(m_boardLabel, m_board);
+    m_buildState = new QLabel(page);
+    m_buildState->setWordWrap(true);
+    boardRow->addRow(QString(), m_buildState);
+    // Whether the project shown is built for the board shown (build.status), so Run
+    // knows whether it builds first.
+    connect(m_core, &CoreConnection::buildStatusReady, this,
+            [this](const QString &project, const QString &board, const QJsonObject &status) {
+                if (project == m_project.value(u"id"_s).toString() && board == m_board->currentData().toString())
+                    showBuildState(status);
+            });
+    connect(m_core, &CoreConnection::buildFinished, this, &ProjectView::requestBuildState);
+    connect(m_board, &QComboBox::currentIndexChanged, this, &ProjectView::requestBuildState);
     auto *pageLayout = new QVBoxLayout(page);
     pageLayout->addLayout(head);
     pageLayout->addWidget(m_summary);
@@ -519,6 +562,8 @@ void ProjectView::showBuild(int index)
         m_pins->setText(tr("Pins used: %1").arg(pins.join(u", "_s)));
 
     const QJsonValue code = b.value(u"code"_s);
+    m_copyCode->setVisible(code.isString());
+    m_saveCode->setVisible(code.isString());
     m_code->setPlainText(code.isString()
                              ? code.toString()
                              : tr("This project ships as prebuilt firmware, so there is no sketch to show."));
@@ -528,6 +573,41 @@ void ProjectView::showBuild(int index)
     m_output->setPlainText(sample.join(u'\n'));
     emit boardSelected(m_project.value(u"id"_s).toString(), b.value(u"board"_s).toString(),
                        b.value(u"pins"_s).toArray());
+}
+
+void ProjectView::requestBuildState()
+{
+    m_buildState->clear();
+    const QString id = m_project.value(u"id"_s).toString();
+    const QString board = m_board->currentData().toString();
+    if (!id.isEmpty() && !board.isEmpty() && m_core->state() == CoreConnection::State::Connected)
+        m_core->requestBuildStatus(id, board);
+}
+
+void ProjectView::showBuildState(const QJsonObject &status)
+{
+    const QString id = m_project.value(u"id"_s).toString();
+    const QString board = m_board->currentData().toString();
+    const bool prebuilt = !m_local && m_project.value(u"firmware"_s).toString() != u"sketch";
+    if (!status.value(u"built"_s).toBool()) {
+        m_buildState->setText(prebuilt ? tr("Not downloaded for this board yet.") : tr("Not built for this board yet."));
+        emit buildCurrent(id, board, false);
+        return;
+    }
+    const QString when = QLocale().toString(QDateTime::fromSecsSinceEpoch(status.value(u"builtAt"_s).toInteger()),
+                                            QLocale::ShortFormat);
+    if (m_local) {
+        // Its files may have changed since, so it is built again before running.
+        m_buildState->setText(tr("Last built %1.").arg(when));
+        emit buildCurrent(id, board, false);
+    } else if (status.value(u"current"_s).toBool()) {
+        m_buildState->setText(prebuilt ? tr("Downloaded %1; ready to run or flash.").arg(when)
+                                       : tr("Built %1; ready to run or flash.").arg(when));
+        emit buildCurrent(id, board, true);
+    } else {
+        m_buildState->setText(tr("Built %1, but the library has changed since; it will be built again.").arg(when));
+        emit buildCurrent(id, board, false);
+    }
 }
 
 void ProjectView::updateBuildButton()
@@ -550,4 +630,9 @@ void ProjectView::updateBuildButton()
                         && !m_core->isBuilding());
     m_buildAction->setEnabled(m_stack->currentIndex() == 1 && m_build->isVisibleTo(this) && m_build->isEnabled());
     emit currentChanged();
+}
+
+QString ProjectView::buildStateText() const
+{
+    return m_buildState->text();
 }

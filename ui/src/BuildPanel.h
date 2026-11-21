@@ -30,6 +30,8 @@ public:
     QAction *debugAction() const { return m_debug; }
     // The last build that succeeded.
     QString builtProject() const { return m_builtProject; }
+    // From build.status: this project's build for this board is ready to use.
+    void setBuildCurrent(const QString &project, const QString &board, bool current);
     QString builtBoard() const { return m_builtBoard; }
     // What Run, Debug and Flash act on: the project and board shown (the board id the
     // build uses), and whether it can be built now. When its last build is not this
@@ -71,6 +73,8 @@ private:
     QProgressBar *m_progress;
     // The last build that succeeded, which Flash writes.
     QString m_builtProject;
+    QString m_currentProject; // built before, and current (build.status)
+    QString m_currentBoard;
     QString m_builtBoard;
     QString m_pendingProject;
     QString m_pendingBoard;

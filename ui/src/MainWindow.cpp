@@ -23,6 +23,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
+#include <QFileInfo>
 #include <QDesktopServices>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -77,6 +78,14 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_split->setStretchFactor(0, 1);
     m_split->setStretchFactor(1, 1);
     connect(m_library, &LibraryPanel::projectSelected, m_project, &ProjectView::showProject);
+    connect(core, &CoreConnection::sketchExported, this, [this](const QString &path, const QStringList &libraries) {
+        const QString folder = QFileInfo(path).absolutePath();
+        const QString text = libraries.isEmpty()
+            ? tr("Saved the sketch to %1.").arg(path)
+            : tr("Saved the sketch to %1. In the Arduino IDE, install these libraries too: %2.")
+                  .arg(path, libraries.join(u", "_s));
+        m_messages->showNotice(text, QUrl::fromLocalFile(folder).toString(), tr("Open the folder"), {});
+    });
     // Try Blink: select it, then Run in simulator, which builds it first (asking).
     connect(core, &CoreConnection::libraryListed, this, [this](const QJsonObject &library) {
         bool has = false;
@@ -138,9 +147,24 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
         if (op == u"flash" && !isActiveWindow())
             QApplication::alert(this);
     });
+    // The first compiler error, when the core found one, says more than the exit status.
+    connect(core, &CoreConnection::buildFirstError, this, [this](const QJsonObject &e) { m_firstError = e; });
+    connect(core, &CoreConnection::buildStarted, this, [this] { m_firstError = {}; });
     connect(core, &CoreConnection::buildFinished, this, [this](bool ok, const QString &error) {
-        if (!ok)
+        if (ok)
+            return;
+        const QJsonObject e = std::exchange(m_firstError, {});
+        if (e.isEmpty()) {
             m_messages->showError(tr("The build failed: %1\nThe Build panel below has the whole log.").arg(error));
+            return;
+        }
+        const QString where = tr("%1, line %2").arg(e.value(u"file"_s).toString()).arg(e.value(u"line"_s).toInt());
+        const QString text = tr("The build failed at %1: %2").arg(where, e.value(u"message"_s).toString());
+        const QString path = e.value(u"path"_s).toString();
+        if (path.isEmpty())
+            m_messages->showError(tr("%1\nThe Build panel below has the whole log.").arg(text));
+        else
+            m_messages->showError(text, QUrl::fromLocalFile(path).toString(), tr("Open the file"));
     });
 
     m_devicesDock->setObjectName(u"devicesDock"_s); // needed for saveState()
@@ -246,6 +270,7 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     tabifyDockWidget(m_circuitDock, m_displayDock);
     m_circuitDock->raise();
     connect(m_project, &ProjectView::boardSelected, m_circuit, &CircuitPanel::showBoard);
+    connect(m_project, &ProjectView::buildCurrent, m_buildPanel, &BuildPanel::setBuildCurrent);
 
     m_debugDock = new QDockWidget(tr("Debugger"), this);
     m_debugDock->setObjectName(u"debugDock"_s);
@@ -300,6 +325,8 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
             [this](const QString &op, bool ok, const QString &error, const QJsonObject &result) {
                 if (op == u"inspect" && ok) {
                     statusBar()->clearMessage();
+                    // The core remembered the chip for this adapter: list the ports again.
+                    m_core->listDevices();
                     m_boardInfo->showResult(m_lastBoardPort, result);
                     m_boardInfo->show();
                     m_boardInfo->raise();
@@ -335,6 +362,10 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
             tr("Opened %1 from a link. Building or flashing it will ask first.").arg(project), 15000);
     });
     connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
+        if (method == u"library.export")
+            m_messages->showError(tr("Could not save the sketch: %1").arg(message));
+        if (method == u"plot.save")
+            m_messages->showError(tr("Could not save the plot: %1").arg(message));
         if (method == u"link.open")
             m_messages->showError(tr("Could not open the link: %1").arg(message));
     });

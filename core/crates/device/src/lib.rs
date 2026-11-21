@@ -27,6 +27,10 @@ pub struct Port {
     /// esp32bench.dev chip ids this port could belong to.
     pub chips: Vec<&'static str>,
     pub access: Access,
+    /// `chips` is the chip a board check found on this adapter before (`Known`),
+    /// not a guess from USB IDs.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub identified: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -254,6 +258,82 @@ fn from_info(path: String, ty: serialport::SerialPortType) -> Port {
         bridge,
         chips,
         access,
+        identified: false,
+    }
+}
+
+/// The chips board checks found behind USB serial adapters, by the adapter's USB
+/// IDs and serial number, in a JSON file in the data directory (`boards.json`).
+/// Adapters with no serial number (many CH340s) cannot be told apart, so none is
+/// remembered for them.
+#[derive(Debug, Clone)]
+pub struct Known {
+    file: std::path::PathBuf,
+}
+
+/// Chip ids a port may name (as in `schema/rpc/device.list.json`).
+const CHIP_IDS: &[&str] = &["esp32", "esp32s2", "esp32s3", "esp32c3", "esp32c6"];
+
+impl Known {
+    pub fn new(file: std::path::PathBuf) -> Self {
+        Known { file }
+    }
+
+    fn all(&self) -> std::collections::BTreeMap<String, String> {
+        std::fs::read(&self.file)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default()
+    }
+
+    /// The key an adapter is remembered by, if it has a serial number.
+    pub fn key(usb: &Usb) -> Option<String> {
+        let serial = usb.serial.as_deref().filter(|s| !s.trim().is_empty())?;
+        Some(format!("{:04x}:{:04x}:{serial}", usb.vid, usb.pid))
+    }
+
+    /// Remember that `chip` is behind the adapter at `port`. False if it cannot be
+    /// remembered (no serial number, or a chip ports do not name).
+    pub fn remember(&self, port: &Port, chip: &str) -> std::io::Result<bool> {
+        let Some(key) = port.usb.as_ref().and_then(Known::key) else {
+            return Ok(false);
+        };
+        if !CHIP_IDS.contains(&chip) {
+            return Ok(false);
+        }
+        let mut all = self.all();
+        all.insert(key, chip.to_owned());
+        if let Some(dir) = self.file.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let tmp = self.file.with_extension("tmp");
+        std::fs::write(
+            &tmp,
+            serde_json::to_vec_pretty(&all).map_err(std::io::Error::other)?,
+        )?;
+        std::fs::rename(tmp, &self.file)?;
+        Ok(true)
+    }
+
+    /// Fill in the chips found before, for ports whose USB IDs do not say.
+    pub fn apply(&self, ports: &mut [Port]) {
+        let all = self.all();
+        for p in ports {
+            if p.chips.len() == 1 {
+                continue;
+            }
+            let Some(chip) = p
+                .usb
+                .as_ref()
+                .and_then(Known::key)
+                .and_then(|k| all.get(&k))
+                .and_then(|c| CHIP_IDS.iter().find(|x| **x == c.as_str()))
+            else {
+                continue;
+            };
+            p.chips = vec![*chip];
+            p.identified = true;
+        }
     }
 }
 
@@ -453,6 +533,39 @@ mod tests {
         );
         p.access = access;
         p
+    }
+
+    #[test]
+    fn remembers_the_chip_behind_an_adapter() {
+        let t = tempfile::tempdir().unwrap();
+        let known = Known::new(t.path().join("data/boards.json"));
+        let mut with_serial = usb_port("/dev/ttyUSB0", 0x10c4, 0xea60, Access::Ok);
+        with_serial.usb.as_mut().unwrap().serial = Some("0001".into());
+        let without = usb_port("/dev/ttyUSB1", 0x1a86, 0x7523, Access::Ok);
+        assert!(known.remember(&with_serial, "esp32").unwrap());
+        assert!(!known.remember(&without, "esp32").unwrap());
+        assert!(!known.remember(&with_serial, "esp32p4").unwrap());
+
+        let mut ports = vec![with_serial.clone(), without];
+        known.apply(&mut ports);
+        assert_eq!(ports[0].chips, ["esp32"]);
+        assert!(ports[0].identified);
+        assert!(ports[1].chips.is_empty());
+        assert!(!ports[1].identified);
+        let v = serde_json::to_value(&ports[0]).unwrap();
+        assert_eq!(v["identified"], true);
+        assert!(
+            serde_json::to_value(&ports[1])
+                .unwrap()
+                .get("identified")
+                .is_none()
+        );
+
+        // An adapter nothing was found behind keeps the guess from its USB IDs.
+        let mut jtag = vec![usb_port("/dev/ttyACM0", 0x303a, 0x1001, Access::Ok)];
+        jtag[0].usb.as_mut().unwrap().serial = Some("0001".into());
+        known.apply(&mut jtag);
+        assert!(!jtag[0].identified);
     }
 
     #[test]

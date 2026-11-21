@@ -78,7 +78,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.25.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.26.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -256,6 +256,18 @@ private slots:
         panel.undoButton()->click();
         QTRY_VERIFY(!partsOf(fake.saved, 0).contains(u"at"_s));
         QVERIFY(!panel.undoButton()->isEnabled());
+
+        // From the keyboard: Tab reaches the LED, the arrows move it, and the place is
+        // saved when the key is let go.
+        panel.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&panel));
+        view->setFocus();
+        QTest::keyClick(view, Qt::Key_Tab);
+        QVERIFY(view->scene()->focusItem());
+        QTest::keyClick(view, Qt::Key_Right);
+        QTRY_VERIFY(partsOf(fake.saved, 0).contains(u"at"_s));
+        panel.undoButton()->click();
+        QTRY_VERIFY(!partsOf(fake.saved, 0).contains(u"at"_s));
 
         // An added part can be undone too.
         panel.addPart(u"button"_s, 4, true, u"Go"_s);

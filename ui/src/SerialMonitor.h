@@ -10,6 +10,7 @@ class ConsoleView;
 class ConsoleBar;
 class CoreConnection;
 class QJsonArray;
+class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QPlainTextEdit;
@@ -36,6 +37,9 @@ public:
     QComboBox *baudPicker() const { return m_baud; }
     QLineEdit *input() const { return m_input; }
     QPushButton *openButton() const { return m_open; }
+    QCheckBox *hexBox() const { return m_hex; }
+    // Typed hex ("01 a0 ff", "0x01a0ff") as bytes; empty if it is not hex.
+    static QByteArray hexBytes(const QString &text);
 
 private:
     // Item data role holding a port's USB bridge type from device.list.
@@ -55,6 +59,7 @@ private:
     QLineEdit *m_input;
     QComboBox *m_ending;
     QPushButton *m_send;
+    QCheckBox *m_hex;
     bool m_open_ = false;
     ConsoleBar *m_tools = nullptr;
     QHash<QString, int> m_projectBauds;

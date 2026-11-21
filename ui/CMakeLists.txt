@@ -91,6 +91,7 @@ qt_add_resources(esp32bench_ui "fallback_icons"
         icons/esp32bench-fallback/scalable/document-send.svg
         icons/esp32bench-fallback/scalable/download.svg
         icons/esp32bench-fallback/scalable/edit-clear.svg
+        icons/esp32bench-fallback/scalable/edit-copy.svg
         icons/esp32bench-fallback/scalable/edit-delete.svg
         icons/esp32bench-fallback/scalable/edit-undo.svg
         icons/esp32bench-fallback/scalable/folder-open.svg
@@ -132,7 +133,7 @@ if(NOT BUILD_TESTING)
     return()
 endif()
 enable_testing()
-foreach(t tst_rpcclient tst_devicespanel tst_librarypanel tst_projectview tst_build tst_serialmonitor tst_setup tst_board tst_simulator tst_debugger tst_display tst_pins tst_circuit tst_trace tst_translations tst_icons tst_integration)
+foreach(t tst_rpcclient tst_devicespanel tst_librarypanel tst_projectview tst_build tst_serialmonitor tst_setup tst_board tst_simulator tst_debugger tst_display tst_pins tst_circuit tst_trace tst_translations tst_icons tst_accessibility tst_integration)
     qt_add_executable(${t} tests/${t}.cpp)
     target_link_libraries(${t} PRIVATE esp32bench_ui Qt6::Test)
     target_compile_definitions(${t} PRIVATE ESP32BENCH_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

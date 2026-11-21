@@ -1,0 +1,58 @@
+{
+  "method": "build.status",
+  "description": "Since protocol 0.26: whether a project is built for a board (a library or local project id, as build.start takes), when, and for a library project whether that build is what the library asks for now (current: false after the library's code or libraries changed). A local project's build is never called current, since its files can change.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "board"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string"
+      },
+      "board": {
+        "type": "string"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "built"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "built": {
+        "type": "boolean"
+      },
+      "builtAt": {
+        "type": "integer",
+        "description": "When, in seconds since the Unix epoch."
+      },
+      "current": {
+        "type": "boolean",
+        "description": "Library projects only."
+      }
+    }
+  },
+  "errors": [
+    -32602
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink",
+        "board": "esp32"
+      },
+      "result": {
+        "built": true,
+        "builtAt": 1795000000,
+        "current": true
+      }
+    }
+  ]
+}

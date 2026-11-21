@@ -58,7 +58,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.25.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.26.0"_s}});
             return;
         }
         calls << m;
@@ -273,6 +273,10 @@ private slots:
         }
         panel.canvas()->clear();
         QVERIFY(panel.canvas()->seriesNames().isEmpty());
+        // Every row received is kept for Save CSV…, as the core sent it.
+        QCOMPARE(panel.rows().size(), 2 + PlotCanvas::Kept + 20 + 200 * !qEnvironmentVariableIsEmpty("ESP32BENCH_SCREENSHOT"));
+        QCOMPARE(panel.rows().at(0).toArray(), row(21.5, 45));
+        QVERIFY(panel.saveButton()->isEnabled());
     }
 
     void sendsChipLikeTimingWhenChosen()

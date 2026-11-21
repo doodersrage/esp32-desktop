@@ -7,6 +7,7 @@
 #include "MessageBar.h"
 #include "SerialMonitor.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
 #include <QKeySequence>
@@ -37,6 +38,7 @@ class FakeCore : public QObject {
 public:
     QList<QByteArray> written;
     QStringList opened;
+    bool reconnect = false;
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -58,6 +60,8 @@ public:
                                       {u"text"_s, QString::fromUtf8(bytes)}}));
     }
     void pushClosed() { send(event(u"serial.closed"_s, {{u"reason"_s, u"the port was closed"_s}})); }
+    void pushLost() { send(event(u"serial.lost"_s, {{u"reason"_s, u"the port was closed"_s}})); }
+    void pushReconnected() { send(event(u"serial.reconnected"_s, {})); }
 
 private:
     void send(const QJsonObject &o) { m_sock->write(QJsonDocument(o).toJson(QJsonDocument::Compact) + '\n'); }
@@ -77,13 +81,14 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.25.0"_s}});
+                                  {u"protocol"_s, u"0.26.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
                                                                       {u"bridge"_s, u"usb-serial-jtag"_s}}}}});
         } else if (m == u"serial.open") {
             opened << p.value(u"path"_s).toString() + u"@"_s + QString::number(p.value(u"baud"_s).toInt());
+            reconnect = p.value(u"reconnect"_s).toBool();
             // Output that beats the reply; the UI must still show it, in order.
             // "é" is split across two chunks to check decoding keeps state.
             pushData("ets Jul 29 2019\r\ncaf\xc3");
@@ -189,6 +194,55 @@ private slots:
         bar.saveTo(u"/tmp/out.txt"_s);
         QTRY_COMPARE(fake.saved.value(u"/tmp/out.txt"_s), text);
         QTRY_VERIFY(view.toPlainText().contains(u"Saved the output to /tmp/out.txt."_s));
+    }
+
+    void waitsForABoardThatComesBack()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        SerialMonitor mon(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        mon.openPort(u"/dev/ttyUSB0"_s);
+        QTRY_VERIFY(core.isSerialOpen());
+        QVERIFY(fake.reconnect); // the core is asked to reopen it
+        fake.pushLost();
+        QTRY_VERIFY(mon.outputText().contains(u"waiting for it to come back"_s));
+        QVERIFY(!mon.input()->isEnabled());
+        fake.pushReconnected();
+        QTRY_VERIFY(mon.outputText().contains(u"Reconnected."_s));
+        QVERIFY(mon.input()->isEnabled());
+        QVERIFY(core.isSerialOpen());
+    }
+
+    void showsAndSendsHex()
+    {
+        QCOMPARE(ConsoleView::hexText("Hi\n\x01"), u"48 69 0a\n01 "_s);
+        QCOMPARE(SerialMonitor::hexBytes(u"01 a0 FF"_s), QByteArray("\x01\xa0\xff", 3));
+        QCOMPARE(SerialMonitor::hexBytes(u"0x01a0"_s), QByteArray("\x01\xa0", 2));
+        QVERIFY(SerialMonitor::hexBytes(u"1"_s).isEmpty());
+        QVERIFY(SerialMonitor::hexBytes(u"zz"_s).isEmpty());
+
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        SerialMonitor mon(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        mon.openPort(u"/dev/ttyUSB0"_s);
+        QTRY_VERIFY(core.isSerialOpen());
+        mon.hexBox()->setChecked(true);
+        mon.input()->setText(u"de ad"_s);
+        QTest::keyClick(mon.input(), Qt::Key_Return);
+        QTRY_COMPARE(fake.written.size(), 1);
+        QCOMPARE(fake.written.at(0), QByteArray("\xde\xad", 2)); // no line ending in hex
+        mon.input()->setText(u"nope"_s);
+        QTest::keyClick(mon.input(), Qt::Key_Return);
+        QTRY_VERIFY(mon.outputText().contains(u"Not hex bytes"_s));
+        QCOMPARE(fake.written.size(), 1);
+        fake.pushData("A\n");
+        QTRY_VERIFY(mon.outputText().contains(u"41 0a"_s));
     }
 
     void consoleZoomsAndInputRemembers()

@@ -1,0 +1,25 @@
+{
+  "event": "serial.reconnected",
+  "description": "Since protocol 0.26: a port opened with reconnect is open again after serial.lost, on the same subscription.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3
+      }
+    }
+  ]
+}

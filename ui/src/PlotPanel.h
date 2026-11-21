@@ -43,6 +43,12 @@ class PlotPanel : public QWidget {
 public:
     explicit PlotPanel(CoreConnection *core, QWidget *parent = nullptr);
     PlotCanvas *canvas() const { return m_canvas; }
+    // The rows received since the run started (at most KeptRows), as the core sent them.
+    QJsonArray rows() const;
+    // Have the core write them to `path` as CSV (plot.save); Save CSV… asks for it.
+    void saveTo(const QString &path);
+    QPushButton *saveButton() const { return m_save; }
+    static constexpr int KeptRows = 100000;
 
 signals:
     // The first rows of a run arrived: worth showing the dock.
@@ -54,5 +60,9 @@ private:
     QLabel *m_status;
     QCheckBox *m_pause;
     QPushButton *m_clear;
+    QPushButton *m_save;
+    QList<QJsonValue> m_rows; // QList drops its first item cheaply
     bool m_seen = false;
+
+    void clearRows();
 };

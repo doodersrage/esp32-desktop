@@ -18,6 +18,8 @@ class DevicesPanel : public QWidget {
 
 public:
     enum Column { PortColumn, ChipsColumn, BridgeColumn, UsbIdColumn, ColumnCount };
+    // True on the chips column when the port does not say which one chip it is.
+    static constexpr int UnknownChipRole = Qt::UserRole + 1;
 
     explicit DevicesPanel(CoreConnection *core, QWidget *parent = nullptr);
 
