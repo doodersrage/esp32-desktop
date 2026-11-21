@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.29.0";
+pub const PROTOCOL: &str = "0.30.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -552,7 +552,26 @@ async fn library_get(params: Value, state: Arc<State>) -> Result<Value, RpcError
         .iter()
         .filter(|b| project.builds.iter().any(|x| x.board == b.id))
         .collect();
-    Ok(json!({ "project": project, "boards": boards }))
+    // What each pin is wired to, per board, for naming pins in the Pins and Trace docks.
+    let labels: serde_json::Map<String, Value> = project
+        .builds
+        .iter()
+        .map(|b| {
+            let wiring: Vec<esp32bench_circuit::suggest::Wire> = b
+                .wiring
+                .iter()
+                .map(|w| esp32bench_circuit::suggest::Wire {
+                    from: &w.from,
+                    to: &w.to,
+                })
+                .collect();
+            (
+                b.board.clone(),
+                json!(esp32bench_circuit::suggest::pin_labels(&wiring)),
+            )
+        })
+        .collect();
+    Ok(json!({ "project": project, "boards": boards, "pinLabels": labels }))
 }
 
 #[derive(Deserialize)]
@@ -686,8 +705,10 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         let _one_at_a_time = state.build_lock.lock().await;
         let dirs = esp32bench_build::Dirs::new(&state.builds_root, &plan);
         let mut first = esp32bench_build::diagnostics::Finder::new(None);
+        let mut size = esp32bench_build::diagnostics::SizeReader::default();
         let r = esp32bench_build::run(&plan, &code, &tools, &dirs, |stream, line| {
             first.line(&line);
+            size.line(&line);
             let mut params = json!({ "stream": stream, "line": line });
             if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
                 params["level"] = json!(level);
@@ -702,7 +723,12 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         if r.is_ok() {
             esp32bench_build::write_stamp(&dirs.out, &plan);
         }
-        let event = finished_event(r, first.first());
+        let mut event = finished_event(r, first.first());
+        if event["ok"] == true
+            && let Some(sz) = size.size()
+        {
+            event["size"] = json!(sz);
+        }
         sub.send("build.finished", event);
     });
     Ok(json!({ "job": job, "plan": result_plan }))
@@ -2470,6 +2496,7 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
             // Lines of numbers, for the app's plotter.
             let mut plot = esp32bench_serial::plot::Lines::new();
             let mut style = esp32bench_serial::style::Styler::new();
+            let mut garble = esp32bench_serial::style::Garble::default();
             let mut checker = new_checker();
             let mut expect_deadline = None;
             if let (Some(c), Some(wait)) = (&checker, expect_wait) {
@@ -2503,6 +2530,8 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                         });
                         styled(&mut params, style.feed(&bytes));
                         let progress = checker.as_mut().and_then(|c| c.feed(&bytes));
+                        // Unreadable output: most likely the wrong speed.
+                        let garbled = garble.feed(&bytes);
                         let rows = plot.feed(&bytes);
                         if !rows.is_empty() {
                             params["plot"] = json!(rows);
@@ -2514,6 +2543,13 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                         let sent = sub.send("serial.data", params);
                         if !sent {
                             break;
+                        }
+                        if garbled {
+                            let mut hint = json!({ "baud": baud });
+                            if baud != 115_200 {
+                                hint["suggest"] = json!(115_200);
+                            }
+                            sub.send("serial.garbled", hint);
                         }
                         if let Some(progress) = progress {
                             if progress.complete() {
@@ -2537,6 +2573,7 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                                 rx = again_rx;
                                 plot = esp32bench_serial::plot::Lines::new();
                                 style = esp32bench_serial::style::Styler::new();
+                                garble.reset();
                                 if !sub.send("serial.reconnected", json!({})) {
                                     break;
                                 }

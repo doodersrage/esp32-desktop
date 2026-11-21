@@ -57,6 +57,7 @@ int main(int argc, char *argv[])
     if (language != u"en")
         Translations::install(app, language.isEmpty() ? QLocale() : QLocale(language));
     Icons::install();
+    Preferences::applyTheme();
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QApplication::translate("main", "ESP32 workbench and simulator"));

@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 29;
+    static constexpr int ProtocolMinor = 30;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -267,6 +267,11 @@ signals:
     // A failed build's first compiler error (build.finished's firstError); sent just
     // before buildFinished.
     void buildFirstError(const QJsonObject &error);
+    // A successful Arduino build's size (build.finished's size); sent just before
+    // buildFinished.
+    void buildSize(const QJsonObject &size);
+    // serial.garbled: the output looks like the wrong baud rate; `suggest` 0 if none.
+    void serialGarbled(int baud, int suggest);
     // A port opened with reconnect went away; the core waits for it to come back.
     void serialLost(const QString &reason);
     void serialReconnected();

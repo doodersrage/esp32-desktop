@@ -1,0 +1,36 @@
+{
+  "event": "serial.garbled",
+  "description": "Since protocol 0.30: most of what the port sent since it opened (or reconnected) is unreadable, which usually means the baud rate is wrong. Sent at most once each time.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "baud"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "baud": {
+        "type": "integer",
+        "description": "The baud rate the port is open at."
+      },
+      "suggest": {
+        "type": "integer",
+        "description": "A rate to try (115200, what ESP32 boards use by default), when the port is not at it."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "baud": 9600,
+        "suggest": 115200
+      }
+    }
+  ]
+}

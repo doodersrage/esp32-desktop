@@ -38,6 +38,7 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
     connect(m_clear, &QPushButton::clicked, this, [this] {
         m_tree->clear();
         m_hasProblem = false;
+        emit countChanged(0);
     });
     connect(core, &CoreConnection::outputExplained, this, &ProblemsPanel::add);
     connect(core, &CoreConnection::buildFirstError, this, [this](const QJsonObject &e) {
@@ -76,4 +77,6 @@ void ProblemsPanel::add(const QString &source, const QJsonArray &findings)
             emit firstProblem();
         }
     }
+    if (!findings.isEmpty())
+        emit countChanged(m_tree->topLevelItemCount());
 }

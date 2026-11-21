@@ -12,6 +12,12 @@ class QSpinBox;
 namespace Preferences {
 // The language chosen ("" for the desktop's, "en", or one of Translations::languages()).
 QString language();
+// The colours chosen: "" for the system's, "light" or "dark".
+QString theme();
+// Apply theme() to the app (Qt 6.8 and later; earlier, the system's stays).
+void applyTheme();
+// Whether this Qt can choose the colours at all.
+bool canChooseTheme();
 // Whether to say when a newer release is out (library.list's update).
 bool releaseNotices();
 // Whether to reopen the last project and board at start.
@@ -33,6 +39,7 @@ public:
     // Save the controls' values (OK).
     void save();
     QComboBox *languagePicker() const { return m_language; }
+    QComboBox *themePicker() const { return m_theme; }
     QSpinBox *textSize() const { return m_textSize; }
     QCheckBox *releaseNoticesBox() const { return m_notices; }
 
@@ -42,6 +49,7 @@ signals:
 
 private:
     QComboBox *m_language;
+    QComboBox *m_theme;
     QSpinBox *m_textSize;
     QCheckBox *m_notices;
     QCheckBox *m_reopenProject;

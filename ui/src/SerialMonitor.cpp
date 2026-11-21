@@ -124,6 +124,33 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     top->addWidget(m_open);
     top->addWidget(m_reset);
     top->addWidget(m_clear);
+    // Unreadable output: most likely the wrong speed; one click tries the usual one.
+    m_garbled = new QLabel(this);
+    m_garbled->setWordWrap(true);
+    m_garbledSwitch = new QPushButton(tr("Switch speed"), this);
+    m_garbledSwitch->hide();
+    m_garbled->hide();
+    connect(m_core, &CoreConnection::serialGarbled, this, [this](int baud, int suggest) {
+        m_garbled->setText(suggest > 0 ? tr("This looks like the wrong speed (%1 baud).").arg(baud)
+                                       : tr("This looks unreadable at %1 baud. Try the speed the firmware uses "
+                                            "(Serial.begin in its code).")
+                                             .arg(baud));
+        m_garbled->show();
+        m_garbledSwitch->setVisible(suggest > 0);
+        m_garbledSwitch->setText(tr("Switch to %1").arg(suggest));
+        m_garbledSwitch->setProperty("baud", suggest);
+    });
+    connect(m_garbledSwitch, &QPushButton::clicked, this, [this] {
+        const int i = m_baud->findData(m_garbledSwitch->property("baud").toInt());
+        const QString path = m_port->currentData().toString();
+        if (i < 0 || path.isEmpty())
+            return;
+        m_garbled->hide();
+        m_garbledSwitch->hide();
+        m_core->closeSerial();
+        m_baud->setCurrentIndex(i);
+        openPort(path);
+    });
     // Quick-send: lines kept for the project shown (in the core), one button each.
     m_quick = new QHBoxLayout;
     m_keep = new QPushButton(QIcon::fromTheme(u"list-add"_s), tr("Keep"), this);
@@ -147,6 +174,10 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     bottom->addWidget(m_send);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
+    auto *garbled = new QHBoxLayout;
+    garbled->addWidget(m_garbled, 1);
+    garbled->addWidget(m_garbledSwitch);
+    layout->addLayout(garbled);
     layout->addWidget(m_expect);
     layout->addWidget(m_output, 1);
     m_tools = new ConsoleBar(m_output, m_core, u"serial/timestamps"_s, this);
@@ -218,6 +249,8 @@ QString SerialMonitor::expectText() const
 void SerialMonitor::openPort(const QString &path, const QString &expect)
 {
     m_expect->hide();
+    m_garbled->hide();
+    m_garbledSwitch->hide();
     if (m_open_) {
         if (m_port->currentData().toString() == path)
             return;

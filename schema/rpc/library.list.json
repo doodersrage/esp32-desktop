@@ -114,6 +114,20 @@
                 "type": "string"
               },
               "description": "Since protocol 0.29: the boards it has a build for on this computer (build.status says whether each is current)."
+            },
+            "parts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Since protocol 0.30: the parts' names, for searching."
+            },
+            "libraries": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Since protocol 0.30: the Arduino libraries' names, for searching."
             }
           }
         }

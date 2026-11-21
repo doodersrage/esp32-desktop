@@ -73,7 +73,7 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     m_tag->setToolTip(tr("Only projects about one topic, such as a display or Wi-Fi"));
     m_tag->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     connect(m_tag, &QComboBox::currentIndexChanged, this, &LibraryPanel::applyFilter);
-    m_filter->setPlaceholderText(tr("Search projects"));
+    m_filter->setPlaceholderText(tr("Search projects, parts and libraries"));
     m_filter->setMinimumWidth(m_filter->fontMetrics().averageCharWidth() * 16);
     m_filter->setClearButtonEnabled(true);
     m_filter->setAccessibleName(tr("Search projects"));
@@ -359,6 +359,11 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
                           p.value(u"id"_s).toString()};
         for (const QJsonValue &t : p.value(u"tags"_s).toArray())
             words << t.toString();
+        // Parts and libraries too: "BME280", "NeoPixel".
+        for (const char *key : {"parts", "libraries"}) {
+            for (const QJsonValue &t : p.value(QLatin1StringView(key)).toArray())
+                words << t.toString();
+        }
         words << chips;
         item->setData(NameColumn, Qt::UserRole, words.join(u' ').toLower());
     }

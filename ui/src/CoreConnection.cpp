@@ -290,7 +290,7 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
         else if (m_installJob == -1)
             m_earlyInstallEvents.append({method, params}); // our job id is not known yet
     } else if (method == u"serial.data" || method == u"serial.closed" || method == u"serial.lost"
-               || method == u"serial.reconnected" || method == u"serial.expect") {
+               || method == u"serial.reconnected" || method == u"serial.expect" || method == u"serial.garbled") {
         if (sub == m_serialSub)
             handleSerialEvent(method, params);
         else if (m_serialSub == -1)
@@ -472,6 +472,8 @@ void CoreConnection::handleBuildEvent(const QString &method, const QJsonObject &
     m_buildJob = 0;
     if (params.contains(u"firstError"_s))
         emit buildFirstError(params.value(u"firstError"_s).toObject());
+    if (params.contains(u"size"_s))
+        emit buildSize(params.value(u"size"_s).toObject());
     emit buildFinished(params.value(u"ok"_s).toBool(), params.value(u"error"_s).toString(),
                        params.value(u"image"_s).toString());
 }
@@ -527,6 +529,10 @@ void CoreConnection::handleSerialEvent(const QString &method, const QJsonObject 
             emit outputExplained(u"serial"_s, params.value(u"explain"_s).toArray());
         if (params.contains(u"plot"_s))
             emit plotRows(params.value(u"plot"_s).toArray());
+        return;
+    }
+    if (method == u"serial.garbled") {
+        emit serialGarbled(params.value(u"baud"_s).toInt(), params.value(u"suggest"_s).toInt());
         return;
     }
     if (method == u"serial.expect") {

@@ -212,6 +212,49 @@ impl Styler {
     }
 }
 
+/// Notices output that looks like the wrong baud rate: most characters unreadable
+/// (control characters and invalid UTF-8) in the first stretch after the port opens.
+/// It says so once; `reset` starts over (a reconnection).
+#[derive(Default)]
+pub struct Garble {
+    seen: usize,
+    bad: usize,
+    done: bool,
+}
+
+/// Characters looked at before deciding, and the most it looks at.
+const GARBLE_MIN: usize = 128;
+const GARBLE_MAX: usize = 2048;
+
+impl Garble {
+    /// True once, when the output so far looks garbled.
+    pub fn feed(&mut self, bytes: &[u8]) -> bool {
+        if self.done {
+            return false;
+        }
+        for ch in String::from_utf8_lossy(bytes).chars() {
+            self.seen += 1;
+            if ch == '\u{fffd}' || (ch.is_control() && !matches!(ch, '\n' | '\r' | '\t' | '\u{1b}'))
+            {
+                self.bad += 1;
+            }
+        }
+        if self.seen < GARBLE_MIN {
+            return false;
+        }
+        // Mostly unreadable: the speed is wrong. Readable enough: stop looking.
+        let garbled = self.bad * 10 > self.seen * 4;
+        if garbled || self.seen >= GARBLE_MAX {
+            self.done = true;
+        }
+        garbled
+    }
+
+    pub fn reset(&mut self) {
+        *self = Garble::default();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,6 +294,21 @@ mod tests {
         assert_eq!(out.lines[1].level, Some(Level::Error));
         assert_eq!(out.lines[2].level, Some(Level::Warning));
         assert_eq!(out.lines[2].tag, None);
+    }
+
+    #[test]
+    fn notices_the_wrong_speed_once() {
+        let mut g = Garble::default();
+        // A boot log read at the wrong speed: mostly junk bytes.
+        let junk: Vec<u8> = (0..200u32)
+            .map(|i| [0x80u8, 0xfe, 0x00, 0x13, b'a'][i as usize % 5])
+            .collect();
+        assert!(g.feed(&junk));
+        assert!(!g.feed(&junk)); // said once
+        g.reset();
+        let text = b"ets Jul 29 2019 12:21:46\r\nrst:0x1 (POWERON_RESET),boot:0x13\r\n".repeat(4);
+        assert!(!g.feed(&text));
+        assert!(!g.feed(&junk[..50]));
     }
 
     #[test]

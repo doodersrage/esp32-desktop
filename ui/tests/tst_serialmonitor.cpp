@@ -13,6 +13,7 @@
 #include <QCheckBox>
 #include <QAction>
 #include <QComboBox>
+#include <QDockWidget>
 #include <QTreeWidget>
 #include <QSignalSpy>
 #include <QSpinBox>
@@ -91,7 +92,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.29.0"_s}});
+                                  {u"protocol"_s, u"0.30.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
@@ -337,11 +338,22 @@ private slots:
         QVERIFY(window.messageBar()->detailsText().contains(u"- App: "_s));
         window.messageBar()->dismiss();
 
+        // Preferences: the colours, where this Qt can choose them.
+        if (Preferences::canChooseTheme()) {
+            window.showPreferences();
+            QVERIFY(window.preferences()->themePicker()->count() == 3);
+            window.preferences()->reject();
+        }
+
         // The Problems dock keeps every explanation.
         emit core.outputExplained(u"serial"_s, QJsonArray{QJsonObject{{u"level"_s, u"problem"_s},
                                                                      {u"text"_s, u"The board browned out."_s},
                                                                      {u"url"_s, u"https://esp32bench.dev/errors/brownout/"_s}}});
         QCOMPARE(window.problems()->tree()->topLevelItemCount(), 1);
+        bool titled = false;
+        for (QDockWidget *d : window.findChildren<QDockWidget *>())
+            titled |= d->windowTitle() == u"Problems (1)"_s;
+        QVERIFY(titled);
         QCOMPARE(window.problems()->tree()->topLevelItem(0)->text(ProblemsPanel::TextColumn), u"The board browned out."_s);
 
         // Undo in the message bar.
@@ -410,6 +422,24 @@ private slots:
         QCOMPARE(mon.quickCommands().size(), 2);
         mon.setProject(u"blink"_s);
         QVERIFY(mon.quickCommands().isEmpty());
+    }
+
+    void offersTheUsualSpeedWhenGarbled()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        SerialMonitor mon(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        mon.baudPicker()->setCurrentIndex(mon.baudPicker()->findData(9600));
+        mon.openPort(u"/dev/ttyUSB0"_s);
+        QTRY_VERIFY(core.isSerialOpen());
+        emit core.serialGarbled(9600, 115200);
+        QVERIFY(!mon.garbledSwitch()->isHidden());
+        mon.garbledSwitch()->click();
+        QTRY_COMPARE(fake.opened.last(), u"/dev/ttyUSB0@115200"_s);
+        QVERIFY(mon.garbledSwitch()->isHidden());
     }
 
     void consoleZoomsAndInputRemembers()

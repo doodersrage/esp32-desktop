@@ -59,6 +59,33 @@
             "type": "string"
           }
         }
+      },
+      "size": {
+        "type": "object",
+        "description": "Since protocol 0.30: how much of the board an Arduino build takes, from arduino-cli's size lines (bytes).",
+        "required": [
+          "flash",
+          "flashMax"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "flash": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "flashMax": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "ram": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ramMax": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
       }
     }
   },

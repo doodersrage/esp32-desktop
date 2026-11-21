@@ -73,7 +73,8 @@ case "$1" in
     out=""; prev=""
     for a in "$@"; do [ "$prev" = "--output-dir" ] && out="$a"; prev="$a"; last="$a"; done
     name=$(basename "$last")
-    echo "Sketch uses 1234 bytes"
+    echo "Sketch uses 1234 bytes (1%) of program storage space. Maximum is 1310720 bytes."
+    echo "Global variables use 2048 bytes (0%) of dynamic memory, leaving 325632 bytes for local variables. Maximum is 327680 bytes."
     : > "$out/$name.ino.merged.bin"; : > "$out/$name.ino.elf" ;;
 esac
 "#,
@@ -499,6 +500,8 @@ async fn library_get_round_trip() {
         "library.get result",
     );
     assert_eq!(r["project"]["id"], "blink");
+    // What each pin is wired to, per board.
+    assert_eq!(r["pinLabels"]["esp32"]["2"], "LED anode");
     // Exactly the boards the project's builds use.
     let mut used: Vec<&str> = r["project"]["builds"]
         .as_array()
@@ -667,6 +670,10 @@ async fn build_runs_after_consent_and_reports() {
         assert_eq!(event, "build.finished");
         assert_eq!(n["params"]["ok"], true, "{n}");
         assert!(Path::new(n["params"]["image"].as_str().unwrap()).is_file());
+        assert_eq!(
+            n["params"]["size"],
+            json!({ "flash": 1234, "flashMax": 1310720, "ram": 2048, "ramMax": 327680 })
+        );
         break;
     }
     assert!(saw_log);
@@ -1490,6 +1497,36 @@ async fn serial_checks_a_boards_output_against_its_project() {
     assert_eq!(done["method"], "serial.expect", "{done}");
     assert_eq!(done["params"]["missing"], json!([]));
     assert_eq!(done["params"]["timedOut"], false);
+}
+
+// Output at the wrong speed: the core says so, once, with a speed to try.
+#[cfg(unix)]
+#[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
+async fn serial_says_when_the_speed_looks_wrong() {
+    use std::os::fd::AsRawFd;
+    let (master, port) = pty();
+    let (_d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    c.call("serial.open", json!({ "path": port, "baud": 9600 }))
+        .await
+        .unwrap();
+    let junk: Vec<u8> = (0..300u32)
+        .map(|i| [0x80u8, 0xfe, 0x13, 0x02][i as usize % 4])
+        .collect();
+    // SAFETY: write a valid buffer to the pty master.
+    unsafe { libc::write(master.as_raw_fd(), junk.as_ptr().cast(), junk.len()) };
+    let n = next_serial_event(&mut c, 10).await;
+    assert_eq!(n["method"], "serial.garbled", "{n}");
+    assert_valid(
+        &method_def("serial.garbled")["params"],
+        &n["params"],
+        "serial.garbled",
+    );
+    assert_eq!(n["params"]["suggest"], 115200);
 }
 
 // The port is a symlink to a pty, so the "board" can come back at the same path.

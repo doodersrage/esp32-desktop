@@ -409,6 +409,16 @@
             }
           }
         }
+      },
+      "pinLabels": {
+        "type": "object",
+        "description": "Since protocol 0.30: per board id, what each GPIO is wired to as the wiring says it (\"2\": \"LED anode\"), for naming pins. Pins the wiring does not name are absent.",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
       }
     }
   },

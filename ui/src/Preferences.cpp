@@ -4,6 +4,8 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QGuiApplication>
+#include <QStyleHints>
 #include <QLabel>
 #include <QSettings>
 #include <QSpinBox>
@@ -16,6 +18,30 @@ QString language()
 {
     return QSettings().value(u"ui/language"_s).toString();
 }
+QString theme()
+{
+    return QSettings().value(u"ui/theme"_s).toString();
+}
+
+bool canChooseTheme()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    return true;
+#else
+    return false;
+#endif
+}
+
+void applyTheme()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    const QString t = theme();
+    QGuiApplication::styleHints()->setColorScheme(t == u"light"   ? Qt::ColorScheme::Light
+                                                  : t == u"dark" ? Qt::ColorScheme::Dark
+                                                                 : Qt::ColorScheme::Unknown);
+#endif
+}
+
 bool releaseNotices()
 {
     return QSettings().value(u"update/notices"_s, true).toBool();
@@ -37,6 +63,7 @@ bool reopenSerial()
 PreferencesDialog::PreferencesDialog(QWidget *parent)
     : QDialog(parent)
     , m_language(new QComboBox(this))
+    , m_theme(new QComboBox(this))
     , m_textSize(new QSpinBox(this))
     , m_notices(new QCheckBox(tr("Say when a newer release is out"), this))
     , m_reopenProject(new QCheckBox(tr("Reopen the last project at start"), this))
@@ -51,6 +78,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_language->addItem(u"Deutsch"_s, u"de"_s);
     m_language->addItem(u"Français"_s, u"fr"_s);
     m_language->addItem(u"Português (Brasil)"_s, u"pt_BR"_s);
+    m_theme->addItem(tr("The system's"), QString());
+    m_theme->addItem(tr("Light"), u"light"_s);
+    m_theme->addItem(tr("Dark"), u"dark"_s);
+    m_theme->setToolTip(tr("Light or dark colours, or the system's"));
     m_textSize->setRange(-4, 24);
     m_textSize->setToolTip(tr("Steps bigger or smaller than the system's fixed-width font, as Ctrl+= and Ctrl+- set"));
     connect(m_textSize, &QSpinBox::valueChanged, this, &PreferencesDialog::textSizeChanged);
@@ -66,6 +97,13 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     auto *form = new QFormLayout;
     form->addRow(language, m_language);
     form->addRow(QString(), note);
+    if (Preferences::canChooseTheme()) {
+        auto *theme = new QLabel(tr("&Colours:"), this);
+        theme->setBuddy(m_theme);
+        form->addRow(theme, m_theme);
+    } else {
+        m_theme->hide();
+    }
     form->addRow(size, m_textSize);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, [this] {
@@ -89,6 +127,8 @@ void PreferencesDialog::load()
     QSettings s;
     const int i = m_language->findData(Preferences::language());
     m_language->setCurrentIndex(i < 0 ? 0 : i);
+    const int t = m_theme->findData(Preferences::theme());
+    m_theme->setCurrentIndex(t < 0 ? 0 : t);
     {
         const QSignalBlocker block(m_textSize);
         m_textSize->setValue(s.value(u"console/zoom"_s, 0).toInt());
@@ -103,6 +143,8 @@ void PreferencesDialog::save()
 {
     QSettings s;
     s.setValue(u"ui/language"_s, m_language->currentData().toString());
+    s.setValue(u"ui/theme"_s, m_theme->currentData().toString());
+    Preferences::applyTheme(); // at once
     s.setValue(u"console/zoom"_s, m_textSize->value());
     s.setValue(u"update/notices"_s, m_notices->isChecked());
     s.setValue(u"project/reopen"_s, m_reopenProject->isChecked());

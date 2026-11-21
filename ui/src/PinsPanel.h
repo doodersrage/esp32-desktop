@@ -5,6 +5,7 @@
 #pragma once
 
 #include <QJsonArray>
+#include <QHash>
 #include <QWidget>
 
 class CoreConnection;
@@ -25,6 +26,9 @@ public:
     // The row for `gpio`, or null.
     QTreeWidgetItem *row(int gpio) const;
 
+    // What each pin is wired to (library.get's pinLabels), shown beside its number.
+    void setLabels(const QHash<int, QString> &labels);
+
 private:
     void started();
     void update(const QJsonArray &pins);
@@ -33,4 +37,5 @@ private:
     CoreConnection *m_core;
     QLabel *m_status;
     QTreeWidget *m_tree;
+    QHash<int, QString> m_labels;
 };

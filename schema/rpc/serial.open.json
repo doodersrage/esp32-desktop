@@ -59,6 +59,7 @@
   ],
   "events": [
     "serial.data",
+    "serial.garbled",
     "serial.expect",
     "serial.lost",
     "serial.reconnected",

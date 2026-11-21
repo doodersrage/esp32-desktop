@@ -65,7 +65,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.29.0"_s}}}});
+                                               {u"protocol"_s, u"0.30.0"_s}}}});
         } else if (method == u"build.start") {
             const QString consent = params.value(u"consent"_s).toString();
             buildRequests << (consent.isEmpty() ? u"-"_s : consent);
@@ -214,6 +214,24 @@ private slots:
         QCOMPARE(panel.visibleLogLines(), (QStringList{u"a.ino:1:1: warning: unused"_s, u"a.ino:2:1: error: oops"_s}));
         panel.problemsOnlyBox()->setChecked(false);
         QCOMPARE(panel.visibleLogLines().size(), 3);
+    }
+
+    void saysTheSizeAndFlashSpeed()
+    {
+        CoreConnection core;
+        BuildPanel panel(&core);
+        emit core.buildStarted(QJsonObject{{u"project"_s, u"blink"_s}, {u"board"_s, u"esp32"_s}});
+        emit core.buildSize(QJsonObject{{u"flash"_s, 1'200'000}, {u"flashMax"_s, 1'310'720},
+                                        {u"ram"_s, 20'000}, {u"ramMax"_s, 327'680}});
+        emit core.buildFinished(true, {}, u"/tmp/x/blink.ino.merged.bin"_s);
+        QVERIFY(panel.statusText().contains(u"92%"_s));
+        QVERIFY(panel.statusText().contains(u"6%"_s));
+        QVERIFY(panel.statusText().contains(u"nearly full"_s));
+        // Flash progress: the percent, then the speed and time left.
+        QVERIFY(panel.flashProgressText(0, 1000).startsWith(u"Writing 0%"_s));
+        QTest::qWait(600);
+        const QString text = panel.flashProgressText(500, 1000);
+        QVERIFY2(text.contains(u"/s"_s) && text.contains(u"left"_s), qPrintable(text));
     }
 
     void windowAsksAndBuildsOnlyIfTheUserAgrees()

@@ -260,6 +260,9 @@ pub struct Summary {
     /// ESP32-C3 board of a sketch that does not use Bluetooth, which the simulator
     /// has no radio for. The library sweep (docs/library-sweep.md) is what says so.
     pub simulator: bool,
+    /// The parts' and Arduino libraries' names, for searching ("BME280", "NeoPixel").
+    pub parts: Vec<String>,
+    pub libraries: Vec<String>,
 }
 
 /// Chips the simulator runs.
@@ -339,6 +342,8 @@ impl Manifest {
                         && !uses_bluetooth(p),
                     chips,
                     url: p.url.clone(),
+                    parts: p.parts.iter().map(|x| x.name.clone()).collect(),
+                    libraries: p.libraries.clone(),
                 }
             })
             .collect()

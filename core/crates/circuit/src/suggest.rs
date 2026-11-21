@@ -170,6 +170,34 @@ pub fn from_wiring(wiring: &[Wire], hints: &[&str]) -> Suggestion {
 }
 
 /// "GPIO 16" (or "GPIO16", "IO16") to 16; anything else (3V3, GND, 5V) to None.
+/// What each GPIO is wired to, as the wiring says it ("Green LED anode",
+/// "HC-SR04 TRIG"), for naming pins in the app; rows that name no GPIO are left out,
+/// and a pin with more than one row lists them joined by " / ".
+pub fn pin_labels(wiring: &[Wire]) -> BTreeMap<u8, String> {
+    let mut out: BTreeMap<u8, String> = BTreeMap::new();
+    for w in wiring {
+        let Some(g) = gpio(w.to) else { continue };
+        let head = strip_prefix(w.from.trim())
+            .split([',', '('])
+            .next()
+            .unwrap_or_default()
+            .trim();
+        let label: String = head.chars().take(32).collect();
+        if label.is_empty() {
+            continue;
+        }
+        out.entry(g)
+            .and_modify(|l| {
+                if !l.split(" / ").any(|x| x == label) {
+                    l.push_str(" / ");
+                    l.push_str(&label);
+                }
+            })
+            .or_insert(label);
+    }
+    out
+}
+
 fn gpio(to: &str) -> Option<u8> {
     let t = to.trim().to_lowercase();
     let n = t
@@ -635,5 +663,24 @@ mod tests {
         assert_eq!(gpio("3V3"), None);
         assert_eq!(gpio("GPIO 99"), None);
         assert_eq!(gpio("GPIO 21 (SDA)"), None);
+    }
+
+    #[test]
+    fn names_pins_from_the_wiring() {
+        let w = |from, to| Wire { from, to };
+        let labels = pin_labels(&[
+            w("Green LED anode, through 220 Ω", "GPIO 16"),
+            w("Optional: Button", "GPIO 4"),
+            w("OLED SDA", "GPIO 21"),
+            w("Buzzer +", "GPIO 21"),
+            w("OLED VCC", "3V3"),
+        ]);
+        assert_eq!(labels.get(&16).map(String::as_str), Some("Green LED anode"));
+        assert_eq!(labels.get(&4).map(String::as_str), Some("Button"));
+        assert_eq!(
+            labels.get(&21).map(String::as_str),
+            Some("OLED SDA / Buzzer +")
+        );
+        assert_eq!(labels.len(), 3);
     }
 }

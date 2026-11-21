@@ -31,6 +31,7 @@ public:
     // (after flashing it).
     void openPort(const QString &path, const QString &expect = {});
     QString expectText() const;
+    QPushButton *garbledSwitch() const { return m_garbledSwitch; }
     // At start: choose the port used last time when it shows up, and open it again
     // if it was open when the app quit (Preferences::reopenSerial).
     void restoreLastPort() { m_restore = true; }
@@ -76,6 +77,8 @@ private:
     QPushButton *m_send;
     QCheckBox *m_hex;
     QLabel *m_expect;
+    QLabel *m_garbled = nullptr;
+    QPushButton *m_garbledSwitch = nullptr;
     QString m_project;
     QStringList m_commands;
     QHBoxLayout *m_quick = nullptr;

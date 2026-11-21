@@ -5,6 +5,7 @@
 #pragma once
 
 #include <QJsonObject>
+#include <QElapsedTimer>
 #include <QWidget>
 
 class CoreConnection;
@@ -78,6 +79,13 @@ private:
     int m_errors = 0;
     int m_warnings = 0;
     void showProblemCount();
+    QElapsedTimer m_flashClock;
+    QJsonObject m_size; // the build's size, until it has finished
+    qint64 m_flashFrom = 0;
+public:
+    // The flash progress bar's words: percent, then speed and time left once known.
+    QString flashProgressText(qint64 written, qint64 total);
+private:
     QComboBox *m_port;
     QAction *m_flash;
     QAction *m_simulate;

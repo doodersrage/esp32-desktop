@@ -163,10 +163,6 @@
         <translation>Flash de %1 sur %2…</translation>
     </message>
     <message>
-        <source>Writing %p%</source>
-        <translation>Écriture %p%</translation>
-    </message>
-    <message>
         <source>Verifying</source>
         <translation>Vérification</translation>
     </message>
@@ -203,8 +199,36 @@
         <translation>Échec de la compilation : %1</translation>
     </message>
     <message>
+        <source>It uses %1% of the flash for programs and %2% of the RAM.</source>
+        <translation>Il occupe %1 % de la flash pour les programmes et %2 % de la RAM.</translation>
+    </message>
+    <message>
+        <source>It uses %1% of the flash for programs.</source>
+        <translation>Il occupe %1 % de la flash pour les programmes.</translation>
+    </message>
+    <message>
+        <source>That is nearly full.</source>
+        <translation>C’est presque plein.</translation>
+    </message>
+    <message>
+        <source>%1
+Program: %2 of %3
+Global variables: %4 of %5</source>
+        <translation>%1
+Programme : %2 sur %3
+Variables globales : %4 sur %5</translation>
+    </message>
+    <message>
         <source>%1 – %2</source>
         <translation>%1 – %2</translation>
+    </message>
+    <message>
+        <source>Writing %1%</source>
+        <translation>Écriture %1 %</translation>
+    </message>
+    <message>
+        <source>Writing %1% · %2/s · about %3 s left</source>
+        <translation>Écriture %1 % · %2/s · environ %3 s restantes</translation>
     </message>
 </context>
 <context>
@@ -875,6 +899,10 @@
         <translation>Seulement les projets sur un sujet, comme un écran ou le Wi-Fi</translation>
     </message>
     <message>
+        <source>Search projects, parts and libraries</source>
+        <translation>Rechercher des projets, composants et bibliothèques</translation>
+    </message>
+    <message>
         <source>Search projects</source>
         <translation>Rechercher des projets</translation>
     </message>
@@ -1164,6 +1192,10 @@ Le panneau Compilation ci-dessous contient tout le journal.</translation>
     <message>
         <source>Problems</source>
         <translation>Problèmes</translation>
+    </message>
+    <message>
+        <source>Problems (%1)</source>
+        <translation>Problèmes (%1)</translation>
     </message>
     <message>
         <source>Plot</source>
@@ -1615,6 +1647,10 @@ SHA-256 du code : %2</translation>
         <translation>GPIO %1</translation>
     </message>
     <message>
+        <source>GPIO %1 · %2</source>
+        <translation>GPIO %1 · %2</translation>
+    </message>
+    <message>
         <source>not set</source>
         <translation>non défini</translation>
     </message>
@@ -1732,8 +1768,28 @@ SHA-256 du code : %2</translation>
         <translation>La langue du bureau</translation>
     </message>
     <message>
+        <source>The system&apos;s</source>
+        <translation>Celles du système</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Claires</translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation>Sombres</translation>
+    </message>
+    <message>
+        <source>Light or dark colours, or the system&apos;s</source>
+        <translation>Couleurs claires ou sombres, ou celles du système</translation>
+    </message>
+    <message>
         <source>Console &amp;text size (0 is the usual size):</source>
         <translation>&amp;Taille du texte de la console (0 est la taille habituelle) :</translation>
+    </message>
+    <message>
+        <source>&amp;Colours:</source>
+        <translation>&amp;Couleurs :</translation>
     </message>
     <message>
         <source>Steps bigger or smaller than the system&apos;s fixed-width font, as Ctrl+= and Ctrl+- set</source>
@@ -2158,6 +2214,22 @@ SHA-256 du code : %2</translation>
     <message>
         <source>What to add after each line sent</source>
         <translation>Ce qui est ajouté après chaque ligne envoyée</translation>
+    </message>
+    <message>
+        <source>Switch speed</source>
+        <translation>Changer de vitesse</translation>
+    </message>
+    <message>
+        <source>This looks like the wrong speed (%1 baud).</source>
+        <translation>Cela ressemble à une mauvaise vitesse (%1 bauds).</translation>
+    </message>
+    <message>
+        <source>This looks unreadable at %1 baud. Try the speed the firmware uses (Serial.begin in its code).</source>
+        <translation>C’est illisible à %1 bauds. Essayez la vitesse du micrologiciel (Serial.begin dans son code).</translation>
+    </message>
+    <message>
+        <source>Switch to %1</source>
+        <translation>Passer à %1</translation>
     </message>
     <message>
         <source>Keep</source>
@@ -2618,6 +2690,10 @@ SHA-256 du code : %2</translation>
     <message>
         <source>GPIO %1</source>
         <translation>GPIO %1</translation>
+    </message>
+    <message>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
     </message>
 </context>
 <context>

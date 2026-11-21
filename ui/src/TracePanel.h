@@ -31,6 +31,9 @@ public:
     };
 
     void setPins(const QList<int> &gpios);
+    // What each pin is wired to (library.get's pinLabels), shown beside its number.
+    void setLabels(const QHash<int, QString> &labels);
+    QString pinName(int gpio) const;
     void addEdges(const QJsonArray &edges);
     void clear();
     // How much simulated time the width shows, in ns.
@@ -75,6 +78,8 @@ private:
     QString timeLabel(qint64 ns) const;
     static QString duration(qint64 ns);
 
+    QHash<int, QString> m_labels;
+    int m_labelWidth = 64;
     qint64 m_markA = -1;
     qint64 m_markB = -1;
 

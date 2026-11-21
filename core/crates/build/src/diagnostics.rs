@@ -22,6 +22,56 @@ pub struct FirstError {
     pub message: String,
 }
 
+/// How much of the board the firmware takes, from arduino-cli's two size lines:
+/// `Sketch uses N bytes (P%) of program storage space. Maximum is M bytes.` and
+/// `Global variables use N bytes (P%) of dynamic memory, ... Maximum is M bytes.`
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Size {
+    pub flash: u64,
+    pub flash_max: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ram: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ram_max: Option<u64>,
+}
+
+/// Reads log lines for the size lines.
+#[derive(Default)]
+pub struct SizeReader {
+    size: Option<Size>,
+}
+
+impl SizeReader {
+    pub fn line(&mut self, line: &str) {
+        // The first number and the one after "Maximum is".
+        let numbers = |l: &str| -> Option<(u64, u64)> {
+            let used = l.split_whitespace().find_map(|w| w.parse::<u64>().ok())?;
+            let (_, rest) = l.split_once("Maximum is ")?;
+            let max = rest.split_whitespace().next()?.parse().ok()?;
+            Some((used, max))
+        };
+        if line.starts_with("Sketch uses ") {
+            if let Some((used, max)) = numbers(line) {
+                self.size = Some(Size {
+                    flash: used,
+                    flash_max: max,
+                    ..Size::default()
+                });
+            }
+        } else if line.starts_with("Global variables use ")
+            && let (Some(size), Some((used, max))) = (self.size.as_mut(), numbers(line))
+        {
+            size.ram = Some(used);
+            size.ram_max = Some(max);
+        }
+    }
+
+    pub fn size(&self) -> Option<&Size> {
+        self.size.as_ref()
+    }
+}
+
 /// Whether a build log line is a compiler or tool error or warning, for the app to
 /// count, colour and filter.
 pub fn line_level(line: &str) -> Option<&'static str> {
@@ -128,6 +178,27 @@ mod tests {
         assert_eq!(e.path, None);
         assert_eq!((e.line, e.column), (12, Some(3)));
         assert!(e.message.starts_with("'ledd' was not declared"));
+    }
+
+    #[test]
+    fn reads_the_firmware_size() {
+        let mut r = SizeReader::default();
+        r.line(
+            "Sketch uses 289925 bytes (22%) of program storage space. Maximum is 1310720 bytes.",
+        );
+        r.line("Global variables use 21056 bytes (6%) of dynamic memory, leaving 306624 bytes for local variables. Maximum is 327680 bytes.");
+        assert_eq!(
+            r.size(),
+            Some(&Size {
+                flash: 289925,
+                flash_max: 1310720,
+                ram: Some(21056),
+                ram_max: Some(327680)
+            })
+        );
+        let mut none = SizeReader::default();
+        none.line("Sketch uses 1234 bytes");
+        assert_eq!(none.size(), None);
     }
 
     #[test]

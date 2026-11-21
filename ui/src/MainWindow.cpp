@@ -229,6 +229,10 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     addDockWidget(Qt::BottomDockWidgetArea, m_problemsDock);
     tabifyDockWidget(m_buildDock, m_problemsDock);
     m_problemsDock->hide();
+    // Its tab says how many there are, so new ones show while it is behind another.
+    connect(m_problems, &ProblemsPanel::countChanged, this, [this](int n) {
+        m_problemsDock->setWindowTitle(n > 0 ? tr("Problems (%1)").arg(n) : tr("Problems"));
+    });
 
     m_serialDock = new QDockWidget(tr("Serial monitor"), this);
     m_serialDock->setObjectName(u"serialDock"_s);
@@ -321,6 +325,12 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_circuitDock->raise();
     connect(m_project, &ProjectView::boardSelected, m_circuit, &CircuitPanel::showBoard);
     connect(m_project, &ProjectView::buildCurrent, m_buildPanel, &BuildPanel::setBuildCurrent);
+    // A simulation's pins named by the project's wiring ("GPIO 2 · LED anode").
+    connect(core, &CoreConnection::simStarted, this, [this](const QString &project, const QString &board) {
+        const QHash<int, QString> labels = m_project->pinLabels(project, board);
+        m_pins->setLabels(labels);
+        m_trace->view()->setLabels(labels);
+    });
     connect(m_project, &ProjectView::buildCurrent, this, &MainWindow::updateToolBar);
     connect(m_library, &LibraryPanel::projectForgotten, this, [this](const QString &name, const QString &path) {
         m_messages->showUndo(tr("Forgot %1. Its folder is untouched.").arg(name), tr("Undo"),

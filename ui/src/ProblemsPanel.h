@@ -26,6 +26,8 @@ public:
 signals:
     // The first problem (not a note) since the list was cleared.
     void firstProblem();
+    // How many entries the list has now.
+    void countChanged(int count);
 
 private:
     QTreeWidget *m_tree;

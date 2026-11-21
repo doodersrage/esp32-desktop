@@ -5,6 +5,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QHash>
 #include <QWidget>
 
 #include <utility>
@@ -96,9 +97,12 @@ public:
     // The last projects shown (title, id), newest first, listed on the guide.
     void setRecent(const QList<std::pair<QString, QString>> &recent);
     QString recentHtml() const;
+    // What each pin of `board` is wired to, if `project` is the one shown.
+    QHash<int, QString> pinLabels(const QString &project, const QString &board) const;
 
 private:
     QList<std::pair<QString, QString>> m_recent;
+    QJsonObject m_pinLabels;
     void showBuild(int index);
     void requestBuildState();
     // The chip id of `board` in a library.get result.

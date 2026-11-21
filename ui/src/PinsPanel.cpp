@@ -80,7 +80,8 @@ void PinsPanel::started()
     clearRows(tr("GPIOs this project uses. Outputs are reported for GPIO 0 to 31."));
     for (int gpio : pins) {
         auto *item = new QTreeWidgetItem(m_tree);
-        item->setText(GpioColumn, tr("GPIO %1").arg(gpio));
+        const QString label = m_labels.value(gpio);
+        item->setText(GpioColumn, label.isEmpty() ? tr("GPIO %1").arg(gpio) : tr("GPIO %1 · %2").arg(gpio).arg(label));
         item->setData(GpioColumn, GpioRole, gpio);
         item->setText(DirectionColumn, tr("not set"));
         item->setText(LevelColumn, tr("unknown"));
@@ -112,5 +113,16 @@ void PinsPanel::update(const QJsonArray &pins)
             // Theme icons, so the indicator follows the Plasma colour scheme.
             item->setIcon(LevelColumn, QIcon::fromTheme(high ? u"state-ok"_s : u"state-offline"_s));
         }
+    }
+}
+
+void PinsPanel::setLabels(const QHash<int, QString> &labels)
+{
+    m_labels = labels;
+    for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *item = m_tree->topLevelItem(i);
+        const int gpio = item->data(GpioColumn, GpioRole).toInt();
+        const QString label = m_labels.value(gpio);
+        item->setText(GpioColumn, label.isEmpty() ? tr("GPIO %1").arg(gpio) : tr("GPIO %1 · %2").arg(gpio).arg(label));
     }
 }

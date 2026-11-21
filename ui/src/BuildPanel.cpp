@@ -18,6 +18,7 @@
 #include <QJsonObject>
 #include <QKeySequence>
 #include <QLabel>
+#include <QLocale>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -95,6 +96,7 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     layout->addWidget(m_log, 1);
 
     connect(m_core, &CoreConnection::buildStarted, this, &BuildPanel::started);
+    connect(m_core, &CoreConnection::buildSize, this, [this](const QJsonObject &size) { m_size = size; });
     connect(m_core, &CoreConnection::buildLog, this, &BuildPanel::appendLine);
     connect(m_core, &CoreConnection::buildFinished, this, &BuildPanel::finished);
     connect(m_core, &CoreConnection::devicesListed, this, &BuildPanel::setPorts);
@@ -105,6 +107,7 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
         m_progress->setRange(0, 0); // busy until the first byte count
         m_progress->setVisible(true);
         m_status->setText(tr("Flashing %1 to %2…").arg(m_builtProject, port));
+        m_flashClock.invalidate();
         updateFlashButton();
     });
     connect(m_core, &CoreConnection::boardProgress, this, [this](const QString &stage, qint64 written, qint64 total) {
@@ -113,7 +116,7 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
         if (stage == u"writing" && total > 0) {
             m_progress->setRange(0, 1000);
             m_progress->setValue(int(written * 1000 / total));
-            m_progress->setFormat(tr("Writing %p%"));
+            m_progress->setFormat(flashProgressText(written, total));
         } else if (stage == u"verifying") {
             m_progress->setFormat(tr("Verifying"));
         } else if (stage == u"connecting") {
@@ -190,6 +193,24 @@ void BuildPanel::finished(bool ok, const QString &error, const QString &image)
     m_status->setText(ok ? tr("Build succeeded: %1.").arg(QFileInfo(image).fileName())
                          : tr("Build failed: %1").arg(error));
     m_status->setToolTip(ok ? image : QString());
+    if (ok && !m_size.isEmpty()) {
+        // How much of the board it takes; nearly full is worth a warning.
+        const double flash = m_size.value(u"flash"_s).toDouble() / std::max(1.0, m_size.value(u"flashMax"_s).toDouble());
+        const double ram = m_size.value(u"ram"_s).toDouble() / std::max(1.0, m_size.value(u"ramMax"_s).toDouble());
+        QString size = m_size.contains(u"ram"_s)
+            ? tr("It uses %1% of the flash for programs and %2% of the RAM.").arg(qRound(flash * 100)).arg(qRound(ram * 100))
+            : tr("It uses %1% of the flash for programs.").arg(qRound(flash * 100));
+        if (flash >= 0.9 || ram >= 0.9)
+            size += u" "_s + tr("That is nearly full.");
+        m_status->setText(m_status->text() + u" "_s + size);
+        const QLocale loc;
+        m_status->setToolTip(tr("%1\nProgram: %2 of %3\nGlobal variables: %4 of %5")
+                                 .arg(image, loc.formattedDataSize(m_size.value(u"flash"_s).toInteger()),
+                                      loc.formattedDataSize(m_size.value(u"flashMax"_s).toInteger()),
+                                      loc.formattedDataSize(m_size.value(u"ram"_s).toInteger()),
+                                      loc.formattedDataSize(m_size.value(u"ramMax"_s).toInteger())));
+    }
+    m_size = {};
     if (ok) {
         m_builtProject = m_pendingProject;
         m_builtBoard = m_pendingBoard;
@@ -343,4 +364,23 @@ QStringList BuildPanel::visibleLogLines() const
             out << b.text();
     }
     return out;
+}
+
+QString BuildPanel::flashProgressText(qint64 written, qint64 total)
+{
+    // The speed since writing started, and the time left at it.
+    if (written <= 0 || !m_flashClock.isValid()) {
+        m_flashClock.start();
+        m_flashFrom = written;
+    }
+    const int percent = int(written * 100 / std::max<qint64>(total, 1));
+    const double seconds = double(m_flashClock.elapsed()) / 1000.0;
+    if (seconds < 0.5 || written <= m_flashFrom)
+        return tr("Writing %1%").arg(percent);
+    const double rate = double(written - m_flashFrom) / seconds;
+    const qint64 left = qint64(double(total - written) / rate);
+    return tr("Writing %1% · %2/s · about %3 s left")
+        .arg(percent)
+        .arg(QLocale().formattedDataSize(qint64(rate)))
+        .arg(std::max<qint64>(left, 0));
 }

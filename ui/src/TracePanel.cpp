@@ -25,7 +25,7 @@ namespace {
 // Edges kept per pin for drawing; the core keeps the full trace for saving.
 constexpr qsizetype MaxEdgesPerPin = 50'000;
 constexpr int RowHeight = 28;
-constexpr int LabelWidth = 64;
+constexpr int MinLabelWidth = 64;
 constexpr int AxisHeight = 22;
 } // namespace
 
@@ -40,6 +40,7 @@ void TraceView::setPins(const QList<int> &gpios)
 {
     m_pins = gpios;
     std::sort(m_pins.begin(), m_pins.end());
+    setLabels(m_labels);
     updateGeometry();
     update();
 }
@@ -87,8 +88,8 @@ void TraceView::setHold(bool hold)
 
 qint64 TraceView::timeAt(int x) const
 {
-    const int plotWidth = std::max(1, width() - LabelWidth - 8);
-    const double frac = std::clamp(double(x - LabelWidth) / plotWidth, 0.0, 1.0);
+    const int plotWidth = std::max(1, width() - m_labelWidth - 8);
+    const double frac = std::clamp(double(x - m_labelWidth) / plotWidth, 0.0, 1.0);
     return m_end - m_span + qint64(frac * double(m_span));
 }
 
@@ -133,7 +134,7 @@ void TraceView::mousePressEvent(QMouseEvent *event)
         setMarkers(-1, -1);
         return;
     }
-    if (event->button() != Qt::LeftButton || event->position().x() < LabelWidth)
+    if (event->button() != Qt::LeftButton || event->position().x() < m_labelWidth)
         return;
     const qint64 t = timeAt(int(event->position().x()));
     // A, then B, then a new A.
@@ -178,6 +179,24 @@ void TraceView::wheelEvent(QWheelEvent *event)
     event->accept();
 }
 
+QString TraceView::pinName(int gpio) const
+{
+    const QString label = m_labels.value(gpio);
+    return label.isEmpty() ? tr("GPIO %1").arg(gpio) : tr("%1 · %2").arg(gpio).arg(label);
+}
+
+void TraceView::setLabels(const QHash<int, QString> &labels)
+{
+    m_labels = labels;
+    // Room for the longest name, within reason.
+    int w = MinLabelWidth;
+    for (int g : std::as_const(m_pins))
+        w = std::max(w, fontMetrics().horizontalAdvance(pinName(g)) + 12);
+    m_labelWidth = std::min(w, 220);
+    updateGeometry();
+    update();
+}
+
 QSize TraceView::sizeHint() const
 {
     return {600, AxisHeight + RowHeight * int(std::max<qsizetype>(m_pins.size(), 2)) + 4};
@@ -185,7 +204,7 @@ QSize TraceView::sizeHint() const
 
 QSize TraceView::minimumSizeHint() const
 {
-    return {LabelWidth + 100, AxisHeight + RowHeight + 4};
+    return {m_labelWidth + 100, AxisHeight + RowHeight + 4};
 }
 
 QString TraceView::timeLabel(qint64 ns) const
@@ -203,7 +222,7 @@ void TraceView::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     const QPalette &pal = palette();
-    const int plotLeft = LabelWidth;
+    const int plotLeft = m_labelWidth;
     const int plotWidth = std::max(1, width() - plotLeft - 8);
     const qint64 start = m_end - m_span;
     auto xFor = [&](qint64 t) {
@@ -231,8 +250,8 @@ void TraceView::paintEvent(QPaintEvent *)
         const int top = AxisHeight + row * RowHeight + 5;
         const int high = top, low = top + RowHeight - 10;
         p.setPen(pal.color(QPalette::Text));
-        p.drawText(QRect(4, top, LabelWidth - 8, low - top), Qt::AlignLeft | Qt::AlignVCenter,
-                   tr("GPIO %1").arg(gpio));
+        p.drawText(QRect(4, top, m_labelWidth - 8, low - top), Qt::AlignLeft | Qt::AlignVCenter,
+                   pinName(gpio));
 
         const QList<Edge> list = m_edges.value(gpio);
         // The level at the left edge: the last edge before it, if there is one.

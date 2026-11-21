@@ -181,6 +181,7 @@ private slots:
         QJsonArray projects = lib.value(u"projects"_s).toArray();
         QJsonObject blink = projects.at(0).toObject();
         blink.insert(u"built"_s, QJsonArray{u"esp32"_s});
+        blink.insert(u"libraries"_s, QJsonArray{u"Adafruit NeoPixel"_s});
         projects.replace(0, blink);
         lib.insert(u"projects"_s, projects);
         panel.showLibrary(lib);
@@ -200,6 +201,12 @@ private slots:
             QTreeWidgetItem *item = t->topLevelItem(i);
             QCOMPARE(item->isHidden(), !item->data(LibraryPanel::NameColumn, LibraryPanel::TagsRole).toStringList().contains(tag));
         }
+        // Parts and libraries are searched too.
+        panel.tagFilter()->setCurrentIndex(0);
+        panel.filter()->setText(u"neopixel"_s);
+        QVERIFY(!first->isHidden());
+        QVERIFY(t->topLevelItem(1)->isHidden());
+        panel.filter()->clear();
         // Double-click or Enter asks for the project to run.
         QSignalSpy activated(&panel, &LibraryPanel::projectActivated);
         emit t->itemActivated(first, 0);

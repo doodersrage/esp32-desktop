@@ -438,6 +438,7 @@ void ProjectView::showResult(const QJsonObject &result)
     // Replies can arrive after the user has moved on; show only the latest pick.
     if (!m_requestedId.isEmpty() && p.value(u"id"_s).toString() != m_requestedId)
         return;
+    m_pinLabels = result.value(u"pinLabels"_s).toObject();
     // Showing the same project again keeps its board, unless a link asked for one.
     const QString keepBoard = m_wantBoard.isEmpty() && m_project.value(u"id"_s) == p.value(u"id"_s)
         ? m_board->currentData().toString()
@@ -686,4 +687,15 @@ QString ProjectView::recentHtml() const
     for (const auto &[title, id] : m_recent)
         links << u"<a href=\"project:%1\">%2</a>"_s.arg(id.toHtmlEscaped(), title.toHtmlEscaped());
     return tr("<p><b>Recent projects:</b> %1</p>").arg(links.join(u" · "_s));
+}
+
+QHash<int, QString> ProjectView::pinLabels(const QString &project, const QString &board) const
+{
+    QHash<int, QString> out;
+    if (project != m_project.value(u"id"_s).toString())
+        return out;
+    const QJsonObject labels = m_pinLabels.value(board).toObject();
+    for (auto it = labels.begin(); it != labels.end(); ++it)
+        out.insert(it.key().toInt(), it.value().toString());
+    return out;
 }

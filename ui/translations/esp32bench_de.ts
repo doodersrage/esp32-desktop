@@ -163,10 +163,6 @@
         <translation>Flashe %1 auf %2…</translation>
     </message>
     <message>
-        <source>Writing %p%</source>
-        <translation>Schreibe %p%</translation>
-    </message>
-    <message>
         <source>Verifying</source>
         <translation>Prüfe</translation>
     </message>
@@ -203,8 +199,36 @@
         <translation>Build fehlgeschlagen: %1</translation>
     </message>
     <message>
+        <source>It uses %1% of the flash for programs and %2% of the RAM.</source>
+        <translation>Es belegt %1% des Flash für Programme und %2% des RAM.</translation>
+    </message>
+    <message>
+        <source>It uses %1% of the flash for programs.</source>
+        <translation>Es belegt %1% des Flash für Programme.</translation>
+    </message>
+    <message>
+        <source>That is nearly full.</source>
+        <translation>Das ist fast voll.</translation>
+    </message>
+    <message>
+        <source>%1
+Program: %2 of %3
+Global variables: %4 of %5</source>
+        <translation>%1
+Programm: %2 von %3
+Globale Variablen: %4 von %5</translation>
+    </message>
+    <message>
         <source>%1 – %2</source>
         <translation>%1 – %2</translation>
+    </message>
+    <message>
+        <source>Writing %1%</source>
+        <translation>Schreibe %1%</translation>
+    </message>
+    <message>
+        <source>Writing %1% · %2/s · about %3 s left</source>
+        <translation>Schreibe %1% · %2/s · noch etwa %3 s</translation>
     </message>
 </context>
 <context>
@@ -875,6 +899,10 @@
         <translation>Nur Projekte zu einem Thema, etwa ein Display oder WLAN</translation>
     </message>
     <message>
+        <source>Search projects, parts and libraries</source>
+        <translation>Projekte, Bauteile und Bibliotheken suchen</translation>
+    </message>
+    <message>
         <source>Search projects</source>
         <translation>Projekte suchen</translation>
     </message>
@@ -1164,6 +1192,10 @@ Das Build-Fenster unten hat das ganze Protokoll.</translation>
     <message>
         <source>Problems</source>
         <translation>Probleme</translation>
+    </message>
+    <message>
+        <source>Problems (%1)</source>
+        <translation>Probleme (%1)</translation>
     </message>
     <message>
         <source>Plot</source>
@@ -1615,6 +1647,10 @@ Code-SHA-256: %2</translation>
         <translation>GPIO %1</translation>
     </message>
     <message>
+        <source>GPIO %1 · %2</source>
+        <translation>GPIO %1 · %2</translation>
+    </message>
+    <message>
         <source>not set</source>
         <translation>nicht gesetzt</translation>
     </message>
@@ -1732,8 +1768,28 @@ Code-SHA-256: %2</translation>
         <translation>Die Sprache des Desktops</translation>
     </message>
     <message>
+        <source>The system&apos;s</source>
+        <translation>Die des Systems</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Hell</translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation>Dunkel</translation>
+    </message>
+    <message>
+        <source>Light or dark colours, or the system&apos;s</source>
+        <translation>Helle oder dunkle Farben, oder die des Systems</translation>
+    </message>
+    <message>
         <source>Console &amp;text size (0 is the usual size):</source>
         <translation>&amp;Textgröße der Konsole (0 ist die übliche Größe):</translation>
+    </message>
+    <message>
+        <source>&amp;Colours:</source>
+        <translation>&amp;Farben:</translation>
     </message>
     <message>
         <source>Steps bigger or smaller than the system&apos;s fixed-width font, as Ctrl+= and Ctrl+- set</source>
@@ -2158,6 +2214,22 @@ Code-SHA-256: %2</translation>
     <message>
         <source>What to add after each line sent</source>
         <translation>Was nach jeder gesendeten Zeile angehängt wird</translation>
+    </message>
+    <message>
+        <source>Switch speed</source>
+        <translation>Geschwindigkeit wechseln</translation>
+    </message>
+    <message>
+        <source>This looks like the wrong speed (%1 baud).</source>
+        <translation>Das sieht nach der falschen Geschwindigkeit aus (%1 Baud).</translation>
+    </message>
+    <message>
+        <source>This looks unreadable at %1 baud. Try the speed the firmware uses (Serial.begin in its code).</source>
+        <translation>Bei %1 Baud ist das nicht lesbar. Versuche die Geschwindigkeit der Firmware (Serial.begin in ihrem Code).</translation>
+    </message>
+    <message>
+        <source>Switch to %1</source>
+        <translation>Auf %1 wechseln</translation>
     </message>
     <message>
         <source>Keep</source>
@@ -2618,6 +2690,10 @@ Code-SHA-256: %2</translation>
     <message>
         <source>GPIO %1</source>
         <translation>GPIO %1</translation>
+    </message>
+    <message>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
     </message>
 </context>
 <context>
