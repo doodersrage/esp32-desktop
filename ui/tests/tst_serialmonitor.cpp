@@ -116,7 +116,13 @@ private:
 
 private slots:
     // Keep QSettings away from the real configuration.
-    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+    void initTestCase()
+    {
+        QStandardPaths::setTestModeEnabled(true);
+        // A name for QSettings, which on Windows keeps nothing without one.
+        QCoreApplication::setOrganizationName(u"esp32bench-tests"_s);
+        QCoreApplication::setApplicationName(u"tst_serialmonitor"_s);
+    }
 
     void opensShowsOutputAndSends()
     {

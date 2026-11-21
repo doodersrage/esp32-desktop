@@ -41,8 +41,14 @@ private slots:
         QCOMPARE(cp->text(DevicesPanel::ChipsColumn), u"Any"_s);
         QCOMPARE(cp->text(DevicesPanel::UsbIdColumn), u"10c4:ea60"_s);
         QCOMPARE(cp->toolTip(DevicesPanel::BridgeColumn), u"USB ID 10c4:ea60"_s);
+        QCOMPARE(cp->toolTip(DevicesPanel::PortColumn), DevicesPanel::accessHint());
+#ifdef Q_OS_LINUX
         QVERIFY(cp->toolTip(DevicesPanel::PortColumn).contains(u"uucp"_s));
         QVERIFY(cp->toolTip(DevicesPanel::PortColumn).contains(u"dialout"_s));
+#else
+        // No udev or serial groups here: another program is the likely cause.
+        QVERIFY(!cp->toolTip(DevicesPanel::PortColumn).contains(u"udev"_s));
+#endif
         QVERIFY(panel.statusText().contains(u"cannot open: 1"_s));
     }
 
