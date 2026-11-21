@@ -26,6 +26,9 @@ public:
 
     // Open `path` (e.g. from a double-click in the Devices panel).
     void openPort(const QString &path);
+    // At start: choose the port used last time when it shows up, and open it again
+    // if it was open when the app quit (Preferences::reopenSerial).
+    void restoreLastPort() { m_restore = true; }
     // Choose this baud rate if the port is closed (a project's, say).
     void suggestBaud(int baud);
     // The baud rate a library project's firmware uses (from library.get), or 0.
@@ -60,6 +63,8 @@ private:
     QComboBox *m_ending;
     QPushButton *m_send;
     QCheckBox *m_hex;
+    bool m_restore = false;  // restoreLastPort() was called
+    bool m_restored = false; // the last session's port chosen (or not there)
     bool m_open_ = false;
     ConsoleBar *m_tools = nullptr;
     QHash<QString, int> m_projectBauds;

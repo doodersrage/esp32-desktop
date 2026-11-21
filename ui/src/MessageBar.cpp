@@ -3,6 +3,7 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QPushButton>
 #include <QStyle>
 #include <QToolButton>
 
@@ -15,7 +16,15 @@ MessageBar::MessageBar(QWidget *parent)
     , m_icon(new QLabel(this))
     , m_text(new QLabel(this))
     , m_close(new QToolButton(this))
+    , m_action(new QPushButton(this))
 {
+    m_action->setText(tr("Undo")); // until a message names its own
+    m_action->hide();
+    connect(m_action, &QPushButton::clicked, this, [this] {
+        hide();
+        if (auto undo = std::exchange(m_undo, {}))
+            undo();
+    });
     setFrameShape(QFrame::StyledPanel);
     setAutoFillBackground(true);
     setBackgroundRole(QPalette::AlternateBase);
@@ -27,15 +36,12 @@ MessageBar::MessageBar(QWidget *parent)
     m_close->setAutoRaise(true);
     m_close->setAccessibleName(tr("Close this message"));
     m_close->setToolTip(tr("Close this message"));
-    connect(m_close, &QToolButton::clicked, this, [this] {
-        hide();
-        if (!m_key.isEmpty())
-            emit dismissed(std::exchange(m_key, {}));
-    });
+    connect(m_close, &QToolButton::clicked, this, &MessageBar::dismiss);
 
     auto *layout = new QHBoxLayout(this);
     layout->addWidget(m_icon, 0, Qt::AlignTop);
     layout->addWidget(m_text, 1);
+    layout->addWidget(m_action, 0, Qt::AlignTop);
     layout->addWidget(m_close, 0, Qt::AlignTop);
     hide();
 }
@@ -50,6 +56,8 @@ void MessageBar::setIcon(bool notice)
 
 void MessageBar::showNotice(const QString &text, const QString &url, const QString &linkText, const QString &key)
 {
+    m_action->hide();
+    m_undo = {};
     setIcon(true);
     m_key = key;
     QString html = text.toHtmlEscaped();
@@ -63,6 +71,8 @@ void MessageBar::showNotice(const QString &text, const QString &url, const QStri
 
 void MessageBar::showError(const QString &text, const QString &url, const QString &linkText)
 {
+    m_action->hide();
+    m_undo = {};
     setIcon(false);
     m_key.clear();
     if (url.isEmpty()) {
@@ -79,6 +89,8 @@ void MessageBar::showError(const QString &text, const QString &url, const QStrin
 
 void MessageBar::showExplanation(const QString &text, const QString &url)
 {
+    m_action->hide();
+    m_undo = {};
     setIcon(false);
     m_key.clear();
     QString html = text.toHtmlEscaped();
@@ -95,4 +107,24 @@ QString MessageBar::text() const
     if (isHidden())
         return {};
     return m_text->textFormat() == Qt::RichText ? m_plain : m_text->text();
+}
+
+void MessageBar::showUndo(const QString &text, const QString &button, std::function<void()> undo)
+{
+    setIcon(true);
+    m_key.clear();
+    m_text->setTextFormat(Qt::PlainText);
+    m_text->setText(text);
+    m_action->setText(button);
+    m_action->show();
+    m_undo = std::move(undo);
+    show();
+}
+
+void MessageBar::dismiss()
+{
+    hide();
+    m_undo = {};
+    if (!m_key.isEmpty())
+        emit dismissed(std::exchange(m_key, {}));
 }

@@ -1,0 +1,50 @@
+// The app's preferences, kept with QSettings, and the dialog that changes them
+// (Tools → Preferences…). They are the app's own; the core keeps nothing of them.
+
+#pragma once
+
+#include <QDialog>
+
+class QCheckBox;
+class QComboBox;
+class QSpinBox;
+
+namespace Preferences {
+// The language chosen ("" for the desktop's, "en", or one of Translations::languages()).
+QString language();
+// Whether to say when a newer release is out (library.list's update).
+bool releaseNotices();
+// Whether to reopen the last project and board at start.
+bool reopenProject();
+// Whether the serial monitor waits for a board that goes away (serial.open's reconnect).
+bool serialReconnect();
+// Whether to reopen the serial monitor's port at start when it was open at quit.
+bool reopenSerial();
+}
+
+class PreferencesDialog : public QDialog {
+    Q_OBJECT
+
+public:
+    explicit PreferencesDialog(QWidget *parent = nullptr);
+
+    // Load the saved values into the controls (when the dialog opens).
+    void load();
+    // Save the controls' values (OK).
+    void save();
+    QComboBox *languagePicker() const { return m_language; }
+    QSpinBox *textSize() const { return m_textSize; }
+    QCheckBox *releaseNoticesBox() const { return m_notices; }
+
+signals:
+    // The consoles' text size changed: they apply it.
+    void textSizeChanged(int steps);
+
+private:
+    QComboBox *m_language;
+    QSpinBox *m_textSize;
+    QCheckBox *m_notices;
+    QCheckBox *m_reopenProject;
+    QCheckBox *m_reconnect;
+    QCheckBox *m_reopenSerial;
+};

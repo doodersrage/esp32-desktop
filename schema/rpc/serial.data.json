@@ -81,6 +81,32 @@
             }
           }
         }
+      },
+      "shown": {
+        "type": "string",
+        "description": "Since protocol 0.27: the text to show, decoded across chunks, with terminal colour codes removed."
+      },
+      "lines": {
+        "type": "array",
+        "description": "Since protocol 0.27: one entry per line this chunk finished, in order: its level and tag when it has them (ESP-IDF's `E (312) wifi:`, Arduino-ESP32's `[312][W][file.cpp:10]`, crash lines, or the line's colour). Absent when the chunk finished no line.",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "level": {
+              "enum": [
+                "error",
+                "warning",
+                "info",
+                "debug",
+                "verbose"
+              ]
+            },
+            "tag": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   },

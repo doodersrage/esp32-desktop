@@ -22,6 +22,24 @@ pub struct FirstError {
     pub message: String,
 }
 
+/// Whether a build log line is a compiler or tool error or warning, for the app to
+/// count, colour and filter.
+pub fn line_level(line: &str) -> Option<&'static str> {
+    if line.contains(": error:")
+        || line.contains(": fatal error:")
+        || line.contains(": undefined reference to ")
+        || line.starts_with("Error ")
+        || line.starts_with("Error:")
+        || line.contains("collect2: error:")
+    {
+        Some("error")
+    } else if line.contains(": warning:") || line.starts_with("WARNING:") {
+        Some("warning")
+    } else {
+        None
+    }
+}
+
 /// Reads log lines until it has seen the first error.
 pub struct Finder {
     compile: Regex,
@@ -110,6 +128,20 @@ mod tests {
         assert_eq!(e.path, None);
         assert_eq!((e.line, e.column), (12, Some(3)));
         assert!(e.message.starts_with("'ledd' was not declared"));
+    }
+
+    #[test]
+    fn tells_errors_and_warnings() {
+        assert_eq!(line_level("a.ino:3:1: error: x"), Some("error"));
+        assert_eq!(
+            line_level("Error during build: exit status 1"),
+            Some("error")
+        );
+        assert_eq!(
+            line_level("a.ino:3:1: warning: unused variable 'x'"),
+            Some("warning")
+        );
+        assert_eq!(line_level("Sketch uses 1234 bytes"), None);
     }
 
     #[test]

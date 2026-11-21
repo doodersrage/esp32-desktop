@@ -15,6 +15,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QStandardPaths>
+#include <QCheckBox>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -64,7 +65,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.26.0"_s}}}});
+                                               {u"protocol"_s, u"0.27.0"_s}}}});
         } else if (method == u"build.start") {
             const QString consent = params.value(u"consent"_s).toString();
             buildRequests << (consent.isEmpty() ? u"-"_s : consent);
@@ -200,6 +201,21 @@ private slots:
         QVERIFY(window.messageBar()->text().contains(u"'ledd' was not declared"_s));
     }
 
+    void countsAndFiltersProblems()
+    {
+        CoreConnection core;
+        BuildPanel panel(&core);
+        emit core.buildLog(u"stderr"_s, u"a.ino:1:1: warning: unused"_s, u"warning"_s);
+        emit core.buildLog(u"stdout"_s, u"Compiling…"_s);
+        emit core.buildLog(u"stderr"_s, u"a.ino:2:1: error: oops"_s, u"error"_s);
+        QVERIFY(panel.problemText().contains(u"Errors: 1"_s));
+        QVERIFY(panel.problemText().contains(u"Warnings: 1"_s));
+        panel.problemsOnlyBox()->setChecked(true);
+        QCOMPARE(panel.visibleLogLines(), (QStringList{u"a.ino:1:1: warning: unused"_s, u"a.ino:2:1: error: oops"_s}));
+        panel.problemsOnlyBox()->setChecked(false);
+        QCOMPARE(panel.visibleLogLines().size(), 3);
+    }
+
     void windowAsksAndBuildsOnlyIfTheUserAgrees()
     {
         for (const bool agree : {false, true}) {
@@ -218,7 +234,7 @@ private slots:
             if (agree) {
                 QTRY_COMPARE(finished.size(), 1);
                 QCOMPARE(fake.buildRequests, (QStringList{u"-"_s, u"tok123"_s}));
-                QVERIFY(window.buildPanel()->statusText().contains(u"/tmp/blink.bin"_s));
+                QVERIFY(window.buildPanel()->statusText().contains(u"blink.bin"_s));
                 QVERIFY(window.buildPanel()->logText().contains(u"Sketch uses 1234 bytes"_s));
             } else {
                 QTest::qWait(200);

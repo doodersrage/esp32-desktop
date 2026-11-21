@@ -76,8 +76,9 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     for (QPushButton *b : {m_continue, m_pause, m_next, m_step, m_finish})
         controls->addWidget(b);
     controls->addStretch(1);
+    // The location gets a row of its own, so its hint is not cut short.
     auto *add = new QHBoxLayout;
-    add->addWidget(m_location, 1);
+    add->addStretch(1);
     add->addWidget(m_add);
     add->addWidget(m_remove);
 
@@ -85,6 +86,7 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     auto *bpLayout = new QVBoxLayout(bpBox);
     bpLayout->setContentsMargins(0, 0, 0, 0);
     bpLayout->addWidget(new QLabel(tr("Breakpoints"), bpBox));
+    bpLayout->addWidget(m_location);
     bpLayout->addLayout(add);
     bpLayout->addWidget(m_breakpoints, 1);
     auto *stackBox = new QWidget(this);
@@ -97,7 +99,14 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     splitter->addWidget(bpBox);
     splitter->addWidget(stackBox);
     splitter->addWidget(m_registers);
+    splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 1);
+    splitter->setStretchFactor(2, 1);
+    // Wide enough for a register's name and a 32-bit value, and a function and its file.
+    m_registers->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    m_registers->setMinimumWidth(m_registers->fontMetrics().averageCharWidth() * 26);
+    m_stack->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    m_stack->setMinimumWidth(m_stack->fontMetrics().averageCharWidth() * 24);
 
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(m_status);

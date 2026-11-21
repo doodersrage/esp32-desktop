@@ -786,7 +786,24 @@ async fn a_failed_build_names_its_first_error() {
         )
         .await
         .unwrap();
-    let done = build_finished(&mut c, &r["job"]).await;
+    // The error lines are marked as errors on the way.
+    let mut errors = 0;
+    let done = loop {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        let event = n["method"].as_str().unwrap().to_owned();
+        assert_valid(&method_def(&event)["params"], &n["params"], &event);
+        assert_eq!(n["params"]["subscription"], r["job"]);
+        if event == "build.finished" {
+            break n["params"].clone();
+        }
+        if n["params"]["level"] == "error" {
+            errors += 1;
+        }
+    };
+    assert_eq!(errors, 1);
     assert_eq!(done["ok"], false, "{done}");
     assert_eq!(
         done["firstError"],
@@ -1121,6 +1138,31 @@ async fn serial_streams_bytes_both_ways() {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
         other => panic!("unexpected {other:?}"),
     }
+
+    // An ESP-IDF log line: shown without its colour codes, with its level and tag.
+    let out = b"\x1b[0;31mE (40) app: no sensor\x1b[0m\n";
+    // SAFETY: write a valid buffer to the pty master.
+    unsafe { libc::write(master.as_raw_fd(), out.as_ptr().cast(), out.len()) };
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(6);
+    let mut shown = String::new();
+    let lines = loop {
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_valid(
+            &method_def("serial.data")["params"],
+            &n["params"],
+            "serial.data",
+        );
+        shown.push_str(n["params"]["shown"].as_str().unwrap());
+        if let Some(l) = n["params"].get("lines") {
+            break l.clone();
+        }
+    };
+    shown.retain(|c| c != '\r');
+    assert!(shown.ends_with("E (40) app: no sensor\n"), "{shown:?}");
+    assert_eq!(lines, json!([{ "level": "error", "tag": "app" }]));
 
     // A line of numbers comes with its plot row, in pieces or not.
     for piece in [&b"temp:21."[..], b"5 hum:45\n"] {

@@ -8,6 +8,7 @@
 #include <QWidget>
 
 class CoreConnection;
+class QCheckBox;
 class QLabel;
 class QPlainTextEdit;
 class QComboBox;
@@ -32,6 +33,12 @@ public:
     QString builtProject() const { return m_builtProject; }
     // From build.status: this project's build for this board is ready to use.
     void setBuildCurrent(const QString &project, const QString &board, bool current);
+    // For tests: the error and warning counts, the filter, and the lines it shows.
+    QString problemText() const;
+    QCheckBox *problemsOnlyBox() const { return m_problemsOnly; }
+    QStringList visibleLogLines() const;
+    // Whether that project is built for that board, this session or before (current).
+    bool isBuilt(const QString &project, const QString &board) const;
     QString builtBoard() const { return m_builtBoard; }
     // What Run, Debug and Flash act on: the project and board shown (the board id the
     // build uses), and whether it can be built now. When its last build is not this
@@ -57,7 +64,7 @@ private:
     void act(Then what);
     bool targetBuilt() const;
     void started(const QJsonObject &plan);
-    void appendLine(const QString &stream, const QString &line);
+    void appendLine(const QString &stream, const QString &line, const QString &level = {});
     void finished(bool ok, const QString &error, const QString &image);
     void setPorts(const QJsonArray &ports);
     void updateFlashButton();
@@ -66,6 +73,11 @@ private:
     QLabel *m_status;
     QPushButton *m_cancel;
     QPlainTextEdit *m_log;
+    QLabel *m_problems;
+    QCheckBox *m_problemsOnly;
+    int m_errors = 0;
+    int m_warnings = 0;
+    void showProblemCount();
     QComboBox *m_port;
     QAction *m_flash;
     QAction *m_simulate;

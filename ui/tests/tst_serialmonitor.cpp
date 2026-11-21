@@ -5,10 +5,17 @@
 #include "DevicesPanel.h"
 #include "MainWindow.h"
 #include "MessageBar.h"
+#include "Preferences.h"
 #include "SerialMonitor.h"
 
 #include <QCheckBox>
+#include <QAction>
 #include <QComboBox>
+#include <QSignalSpy>
+#include <QSpinBox>
+#include <QTextBlock>
+#include <QTextCursor>
+#include <QToolBar>
 #include <QDir>
 #include <QKeySequence>
 #include <QMimeData>
@@ -81,7 +88,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.26.0"_s}});
+                                  {u"protocol"_s, u"0.27.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
@@ -127,6 +134,7 @@ private slots:
         // A name for QSettings, which on Windows keeps nothing without one.
         QCoreApplication::setOrganizationName(u"esp32bench-tests"_s);
         QCoreApplication::setApplicationName(u"tst_serialmonitor"_s);
+        QSettings().remove(u"serial"_s);
     }
 
     void opensShowsOutputAndSends()
@@ -243,6 +251,114 @@ private slots:
         QCOMPARE(fake.written.size(), 1);
         fake.pushData("A\n");
         QTRY_VERIFY(mon.outputText().contains(u"41 0a"_s));
+    }
+
+    void coloursAndFiltersLogLines()
+    {
+        ConsoleView view;
+        QSignalSpy tags(&view, &ConsoleView::tagsChanged);
+        // As the core sends ESP-IDF's log: the text without colour codes, and the
+        // finished lines' levels and tags; a line may finish in a later chunk.
+        view.appendOutput("raw", u"I (1) wifi: up\nE (2) app: no sensor\nhello\nW (3) wi"_s,
+                          QJsonArray{QJsonObject{{u"level"_s, u"info"_s}, {u"tag"_s, u"wifi"_s}},
+                                     QJsonObject{{u"level"_s, u"error"_s}, {u"tag"_s, u"app"_s}}, QJsonObject{}});
+        view.appendOutput("raw", u"fi: slow\n"_s, QJsonArray{QJsonObject{{u"level"_s, u"warning"_s}, {u"tag"_s, u"wifi"_s}}});
+        view.appendNotice(u"Saved."_s);
+        QCOMPARE(view.tags(), (QStringList{u"wifi"_s, u"app"_s}));
+        QVERIFY(tags.size() >= 1);
+        const QTextBlock error = view.document()->findBlockByNumber(1);
+        QCOMPARE(error.userState(), int(OutputLines::Error));
+        QCOMPARE(QTextCursor(error).charFormat().foreground().color(), OutputLines::colour(OutputLines::Error, view.palette()));
+
+        view.setLevelFilter(ConsoleView::Problems);
+        QCOMPARE(view.visibleLines(), (QStringList{u"E (2) app: no sensor"_s, u"W (3) wifi: slow"_s, u"-- Saved."_s}));
+        view.setLevelFilter(ConsoleView::ErrorsOnly);
+        QCOMPARE(view.visibleLines(), (QStringList{u"E (2) app: no sensor"_s, u"-- Saved."_s}));
+        view.setLevelFilter(ConsoleView::AllLines);
+        view.setTagFilter(u"wifi"_s);
+        QCOMPARE(view.visibleLines(), (QStringList{u"I (1) wifi: up"_s, u"W (3) wifi: slow"_s, u"-- Saved."_s}));
+        view.setTagFilter({});
+        QCOMPARE(view.visibleLines().size(), 5);
+
+        // In hex, or from a core that sends no `shown`, the raw bytes are shown.
+        ConsoleView raw;
+        raw.appendOutput("ab\n", QJsonValue(), {});
+        QCOMPARE(raw.toPlainText(), u"ab\n"_s);
+    }
+
+    void reopensTheLastPortAtStart()
+    {
+        QSettings settings;
+        settings.setValue(u"serial/lastPort"_s, u"/dev/ttyUSB0"_s);
+        settings.setValue(u"serial/lastBaud"_s, 9600);
+        settings.setValue(u"serial/open"_s, true);
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        SerialMonitor mon(&core);
+        QCOMPARE(mon.baudPicker()->currentData().toInt(), 9600);
+        mon.restoreLastPort();
+        core.watchDevices(); // no-op until connected; MainWindow subscribes on connect
+        connect(&core, &CoreConnection::stateChanged, &core, [&core](CoreConnection::State s) {
+            if (s == CoreConnection::State::Connected)
+                core.watchDevices();
+        });
+        core.start();
+        QTRY_COMPARE(fake.opened, QStringList{u"/dev/ttyUSB0@9600"_s});
+        // Closed on purpose: not reopened next time.
+        mon.openButton()->click();
+        QTRY_VERIFY(!core.isSerialOpen());
+        QCOMPARE(settings.value(u"serial/open"_s).toBool(), false);
+        settings.remove(u"serial"_s);
+    }
+
+    void windowExtras()
+    {
+        QSettings().remove(u"app/lastVersion"_s);
+        CoreConnection core;
+        MainWindow window(&core);
+        // A first start says nothing; after an upgrade, once.
+        window.sayWhatsNew();
+        QVERIFY(window.messageBar()->text().isEmpty());
+        QSettings().setValue(u"app/lastVersion"_s, u"0.0.1"_s);
+        window.sayWhatsNew();
+        QVERIFY(window.messageBar()->text().contains(u"(it was 0.0.1)"_s));
+        window.messageBar()->hide();
+        window.sayWhatsNew();
+        QVERIFY(window.messageBar()->text().isEmpty());
+
+        // Undo in the message bar.
+        bool undone = false;
+        window.messageBar()->showUndo(u"Forgot x."_s, u"Undo"_s, [&undone] { undone = true; });
+        window.messageBar()->actionButton()->click();
+        QVERIFY(undone);
+        QVERIFY(window.messageBar()->text().isEmpty());
+
+        // Toolbar buttons say their shortcuts; the title says nothing is open.
+        bool found = false;
+        for (QAction *a : window.toolBar()->actions())
+            found |= a->toolTip().contains(QKeySequence(Qt::CTRL | Qt::Key_B).toString(QKeySequence::NativeText));
+        QVERIFY(found);
+        QCOMPARE(window.windowTitle(), u"ESP32 Bench"_s);
+
+        // Preferences: the consoles follow the text size, and Cancel puts it back.
+        QSettings().setValue(u"console/zoom"_s, 0);
+        window.showPreferences();
+        window.preferences()->textSize()->setValue(3);
+        QCOMPARE(window.serialMonitor()->console()->zoomSteps(), 3);
+        window.preferences()->reject();
+        QCOMPARE(window.serialMonitor()->console()->zoomSteps(), 0);
+        window.showPreferences();
+        window.preferences()->textSize()->setValue(2);
+        window.preferences()->languagePicker()->setCurrentIndex(window.preferences()->languagePicker()->findData(u"de"_s));
+        window.preferences()->releaseNoticesBox()->setChecked(false);
+        window.preferences()->save();
+        QCOMPARE(Preferences::language(), u"de"_s);
+        QCOMPARE(QSettings().value(u"console/zoom"_s).toInt(), 2);
+        QVERIFY(!Preferences::releaseNotices());
+        QSettings().remove(u"ui"_s);
+        QSettings().remove(u"update"_s);
+        QSettings().setValue(u"console/zoom"_s, 0);
     }
 
     void consoleZoomsAndInputRemembers()

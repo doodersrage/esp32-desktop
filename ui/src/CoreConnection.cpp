@@ -1,4 +1,5 @@
 #include "CoreConnection.h"
+#include "Preferences.h"
 
 #include "RpcClient.h"
 
@@ -461,7 +462,8 @@ void CoreConnection::startBuild(const QString &project, const QString &board, co
 void CoreConnection::handleBuildEvent(const QString &method, const QJsonObject &params)
 {
     if (method == u"build.log") {
-        emit buildLog(params.value(u"stream"_s).toString(), params.value(u"line"_s).toString());
+        emit buildLog(params.value(u"stream"_s).toString(), params.value(u"line"_s).toString(),
+                      params.value(u"level"_s).toString());
         if (params.contains(u"explain"_s))
             emit outputExplained(u"build"_s, params.value(u"explain"_s).toArray());
         return;
@@ -494,7 +496,8 @@ void CoreConnection::openSerial(const QString &path, int baud)
     m_serialSub = -1;
     // reconnect: a board that resets over its own USB, or is plugged back in, is
     // opened again by the core (serial.lost, then serial.reconnected).
-    m_client->call(u"serial.open"_s, {{u"path"_s, path}, {u"baud"_s, baud}, {u"reconnect"_s, true}}, this,
+    m_client->call(u"serial.open"_s,
+                   {{u"path"_s, path}, {u"baud"_s, baud}, {u"reconnect"_s, Preferences::serialReconnect()}}, this,
                    [this, path, baud](const RpcReply &r) {
                        if (!r.ok) {
                            m_serialSub = 0;
@@ -515,7 +518,8 @@ void CoreConnection::openSerial(const QString &path, int baud)
 void CoreConnection::handleSerialEvent(const QString &method, const QJsonObject &params)
 {
     if (method == u"serial.data") {
-        emit serialData(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        emit serialData(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()), params.value(u"shown"_s),
+                        params.value(u"lines"_s).toArray());
         if (params.contains(u"explain"_s))
             emit outputExplained(u"serial"_s, params.value(u"explain"_s).toArray());
         if (params.contains(u"plot"_s))
@@ -710,7 +714,8 @@ void CoreConnection::startSim(const QString &project, const QString &board, bool
 void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &params)
 {
     if (method == u"sim.output") {
-        emit simOutput(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()));
+        emit simOutput(QByteArray::fromBase64(params.value(u"data"_s).toString().toLatin1()), params.value(u"shown"_s),
+                       params.value(u"lines"_s).toArray());
         if (params.contains(u"explain"_s))
             emit outputExplained(u"sim"_s, params.value(u"explain"_s).toArray());
         if (params.contains(u"plot"_s))

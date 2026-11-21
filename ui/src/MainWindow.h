@@ -30,6 +30,7 @@ class QToolButton;
 class QProgressBar;
 class MessageBar;
 class QMimeData;
+class PreferencesDialog;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -69,6 +70,12 @@ public:
     virtual bool confirmErase(const QString &port);
     BoardInfoDialog *boardInfo() const { return m_boardInfo; }
 
+    // After an upgrade, once: a line in the message bar with a link to the release
+    // notes. Remembers the version, so a first start says nothing.
+    void sayWhatsNew();
+    // Tools → Preferences….
+    void showPreferences();
+    PreferencesDialog *preferences() const { return m_preferences; }
     // Ctrl+F: find in the console that has the focus, else in the library.
     void find();
     // Help → Keyboard shortcuts' text (rich text), and its dialog.
@@ -90,6 +97,7 @@ private:
     void buildToolBar();
     // The toolbar's project, Stop and next-step hint, from what the window shows now.
     void updateToolBar();
+    void showShortcutsInToolTips();
     // The first-start layout: library, project, simulator and circuit; the rest open
     // when they have something to show. View → Reset layout returns to it.
     void resetLayout();
@@ -98,6 +106,7 @@ private:
     QString m_noticeShown;   // the release notice shown this session
     QJsonArray m_toolchain;  // the last toolchain.status, for problem reports
     QJsonObject m_firstError; // the failing build's first compiler error
+    PreferencesDialog *m_preferences = nullptr;
     void showConnectionState();
     void startCore();
     void restoreLayout();

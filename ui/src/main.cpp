@@ -1,6 +1,8 @@
 #include "CoreConnection.h"
 #include "MainWindow.h"
+#include "SerialMonitor.h"
 #include "Icons.h"
+#include "Preferences.h"
 #include "Translations.h"
 
 #include <QApplication>
@@ -50,7 +52,10 @@ int main(int argc, char *argv[])
     QApplication::setApplicationVersion(QStringLiteral(ESP32BENCH_UI_VERSION));
     QApplication::setDesktopFileName(u"esp32bench"_s);
     QApplication::setWindowIcon(QIcon::fromTheme(u"esp32bench"_s, QIcon(u":/esp32bench.svg"_s)));
-    Translations::install(app);
+    // The language chosen in Preferences, else the desktop's.
+    const QString language = Preferences::language();
+    if (language != u"en")
+        Translations::install(app, language.isEmpty() ? QLocale() : QLocale(language));
     Icons::install();
 
     QCommandLineParser parser;
@@ -69,6 +74,8 @@ int main(int argc, char *argv[])
 
     CoreConnection core;
     MainWindow window(&core);
+    window.serialMonitor()->restoreLastPort();
+    window.sayWhatsNew();
 
     QLocalServer server;
     QLocalServer::removeServer(instanceSocket()); // left behind by a crash

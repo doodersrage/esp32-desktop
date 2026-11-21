@@ -1,11 +1,15 @@
 #include "BuildPanel.h"
 
+#include "ConsoleView.h"
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
 #include "Labels.h"
 
 #include <QAction>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QTextBlock>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QJsonArray>
 #include <QProgressBar>
@@ -31,6 +35,8 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     , m_status(new QLabel(tr("No build yet."), this))
     , m_cancel(new QPushButton(QIcon::fromTheme(u"process-stop"_s), tr("Cancel"), this))
     , m_log(new QPlainTextEdit(this))
+    , m_problems(new QLabel(this))
+    , m_problemsOnly(new QCheckBox(tr("Problems only"), this))
     , m_port(new QComboBox(this))
     , m_flash(new QAction(QIcon::fromTheme(u"media-flash"_s, QIcon::fromTheme(u"document-send"_s)),
                           tr("Flash"), this))
@@ -65,6 +71,14 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     m_cancel->setEnabled(false);
     connect(m_cancel, &QPushButton::clicked, m_core, &CoreConnection::cancelBuild);
 
+    m_problemsOnly->setToolTip(tr("Show only the build's errors and warnings"));
+    m_problems->hide();
+    connect(m_problemsOnly, &QCheckBox::toggled, this, [this](bool on) {
+        for (QTextBlock b = m_log->document()->begin(); b.isValid(); b = b.next())
+            b.setVisible(!on || b.userState() == OutputLines::Error || b.userState() == OutputLines::Warning);
+        m_log->document()->markContentsDirty(0, m_log->document()->characterCount());
+        m_log->viewport()->update();
+    });
     m_log->setReadOnly(true);
     m_log->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_log->setMaximumBlockCount(MaxLogLines);
@@ -72,6 +86,8 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
 
     auto *top = new QHBoxLayout;
     top->addWidget(m_status, 1);
+    top->addWidget(m_problems);
+    top->addWidget(m_problemsOnly);
     top->addWidget(m_cancel);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
@@ -130,6 +146,8 @@ QString BuildPanel::logText() const
 void BuildPanel::started(const QJsonObject &plan)
 {
     m_log->clear();
+    m_errors = m_warnings = 0;
+    showProblemCount();
     m_pendingProject = plan.value(u"project"_s).toString();
     m_pendingBoard = plan.value(u"board"_s).toString();
     m_status->setText(tr("Building %1 for %2…")
@@ -137,16 +155,41 @@ void BuildPanel::started(const QJsonObject &plan)
     m_cancel->setEnabled(true);
 }
 
-void BuildPanel::appendLine(const QString &, const QString &line)
+void BuildPanel::appendLine(const QString &, const QString &line, const QString &level)
 {
     m_log->appendPlainText(line);
+    const int state = OutputLines::state(level);
+    QTextBlock b = m_log->document()->lastBlock();
+    OutputLines::mark(b, state, {}, m_log->palette());
+    if (state == OutputLines::Error)
+        ++m_errors;
+    else if (state == OutputLines::Warning)
+        ++m_warnings;
+    if (m_problemsOnly->isChecked() && state != OutputLines::Error && state != OutputLines::Warning) {
+        b.setVisible(false);
+        m_log->document()->markContentsDirty(b.position(), b.length());
+    }
+    showProblemCount();
+}
+
+void BuildPanel::showProblemCount()
+{
+    QStringList parts;
+    if (m_errors > 0)
+        parts << tr("Errors: %1").arg(m_errors);
+    if (m_warnings > 0)
+        parts << tr("Warnings: %1").arg(m_warnings);
+    m_problems->setText(parts.join(u"  "_s));
+    m_problems->setVisible(!parts.isEmpty());
 }
 
 void BuildPanel::finished(bool ok, const QString &error, const QString &image)
 {
     m_cancel->setEnabled(false);
-    m_status->setText(ok ? tr("Build succeeded. Image: %1").arg(image)
+    // The image's name; where it is, in the tooltip.
+    m_status->setText(ok ? tr("Build succeeded: %1.").arg(QFileInfo(image).fileName())
                          : tr("Build failed: %1").arg(error));
+    m_status->setToolTip(ok ? image : QString());
     if (ok) {
         m_builtProject = m_pendingProject;
         m_builtBoard = m_pendingBoard;
@@ -186,10 +229,17 @@ QString BuildPanel::targetBoard() const
 
 bool BuildPanel::targetBuilt() const
 {
-    if (!m_builtProject.isEmpty() && targetProject() == m_builtProject && targetBoard() == m_builtBoard)
+    return isBuilt(targetProject(), targetBoard());
+}
+
+bool BuildPanel::isBuilt(const QString &project, const QString &board) const
+{
+    if (project.isEmpty())
+        return false;
+    if (project == m_builtProject && board == m_builtBoard)
         return true;
     // Built before this session, and still what the library asks for (build.status).
-    return !m_currentProject.isEmpty() && targetProject() == m_currentProject && targetBoard() == m_currentBoard;
+    return project == m_currentProject && board == m_currentBoard;
 }
 
 void BuildPanel::setBuildCurrent(const QString &project, const QString &board, bool current)
@@ -278,4 +328,19 @@ void BuildPanel::updateFlashButton()
     m_debug->setEnabled(ready);
     m_flash->setEnabled(ready && m_port->currentIndex() >= 0 && !m_core->isBoardBusy());
     emit actionsChanged();
+}
+
+QString BuildPanel::problemText() const
+{
+    return m_problems->text();
+}
+
+QStringList BuildPanel::visibleLogLines() const
+{
+    QStringList out;
+    for (QTextBlock b = m_log->document()->begin(); b.isValid(); b = b.next()) {
+        if (b.isVisible())
+            out << b.text();
+    }
+    return out;
 }

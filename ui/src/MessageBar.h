@@ -6,7 +6,10 @@
 
 #include <QFrame>
 
+#include <functional>
+
 class QLabel;
+class QPushButton;
 class QToolButton;
 
 class MessageBar : public QFrame {
@@ -23,7 +26,12 @@ public:
     // News rather than a problem (a newer release), with a link. Closing it emits
     // dismissed(key), so the window can stop showing it.
     void showNotice(const QString &text, const QString &url, const QString &linkText, const QString &key);
+    // Something just done, with a button that takes it back (Undo).
+    void showUndo(const QString &text, const QString &button, std::function<void()> undo);
     QString text() const;
+    // Close it as its close button does (Esc in the main window).
+    void dismiss();
+    QPushButton *actionButton() const { return m_action; }
 
 signals:
     void dismissed(const QString &key);
@@ -32,6 +40,8 @@ private:
     QLabel *m_icon;
     QLabel *m_text;
     QToolButton *m_close;
+    QPushButton *m_action;
+    std::function<void()> m_undo;
     void setIcon(bool notice);
 
     QString m_plain; // an explanation's text without its link

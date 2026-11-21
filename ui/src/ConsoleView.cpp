@@ -3,6 +3,11 @@
 #include "CoreConnection.h"
 
 #include <QCheckBox>
+#include <QPalette>
+#include <QTextCharFormat>
+#include <QTextBlock>
+#include <QJsonObject>
+#include <QComboBox>
 #include <QDateTime>
 #include <QDir>
 #include <QFileDialog>
@@ -54,6 +59,12 @@ void ConsoleView::zoom(int steps)
 {
     m_zoom = std::clamp(m_zoom + steps, MinZoom, MaxZoom);
     QSettings().setValue(ZoomSetting, m_zoom);
+    applyZoom();
+}
+
+void ConsoleView::setZoomSteps(int steps)
+{
+    m_zoom = std::clamp(steps, MinZoom, MaxZoom);
     applyZoom();
 }
 
@@ -127,9 +138,192 @@ QString ConsoleView::hexText(const QByteArray &bytes)
     return out;
 }
 
+namespace OutputLines {
+
+namespace {
+// The tag of a line, kept with its block.
+class TagData : public QTextBlockUserData {
+public:
+    explicit TagData(QString t)
+        : tag(std::move(t))
+    {
+    }
+    QString tag;
+};
+} // namespace
+
+int state(const QString &level)
+{
+    if (level == u"error")
+        return Error;
+    if (level == u"warning")
+        return Warning;
+    if (level == u"info")
+        return Info;
+    if (level == u"debug")
+        return Debug;
+    if (level == u"verbose")
+        return Verbose;
+    return Plain;
+}
+
+QColor colour(int state, const QPalette &palette)
+{
+    const QColor text = palette.color(QPalette::Text);
+    const bool dark = palette.color(QPalette::Base).lightness() < 128;
+    switch (state) {
+    case Error:
+        return dark ? QColor(0xff, 0x7b, 0x72) : QColor(0xc0, 0x1c, 0x28);
+    case Warning:
+        return dark ? QColor(0xe3, 0xb3, 0x41) : QColor(0x9a, 0x67, 0x00);
+    case Debug:
+    case Verbose:
+    case Notice:
+        return palette.color(QPalette::PlaceholderText);
+    default:
+        return text;
+    }
+}
+
+void mark(QTextBlock block, int state, const QString &tag, const QPalette &palette)
+{
+    if (!block.isValid())
+        return;
+    block.setUserState(state);
+    if (!tag.isEmpty())
+        block.setUserData(new TagData(tag)); // the block owns it
+    if (state == Plain || state == Info)
+        return;
+    QTextCursor c(block);
+    c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    QTextCharFormat f;
+    f.setForeground(colour(state, palette));
+    if (state == Error)
+        f.setFontWeight(QFont::DemiBold);
+    c.mergeCharFormat(f);
+}
+
+QString tag(const QTextBlock &block)
+{
+    const auto *d = static_cast<const TagData *>(block.userData());
+    return d ? d->tag : QString();
+}
+
+} // namespace OutputLines
+
+void ConsoleView::appendOutput(const QByteArray &bytes, const QJsonValue &shown, const QJsonArray &lines)
+{
+    if (m_hex || !shown.isString()) {
+        appendBytes(bytes);
+        return;
+    }
+    appendText(shown.toString());
+    markLines(lines);
+}
+
+void ConsoleView::markLines(const QJsonArray &lines)
+{
+    if (lines.isEmpty())
+        return;
+    // The chunk's finished lines are the blocks before the last one, which holds the
+    // line still coming (empty when the chunk ended with a newline).
+    QTextBlock b = document()->lastBlock().previous();
+    QStringList seen; // last first
+    for (qsizetype i = lines.size() - 1; i >= 0 && b.isValid(); --i, b = b.previous()) {
+        const QJsonObject o = lines.at(i).toObject();
+        const QString tag = o.value(u"tag"_s).toString();
+        OutputLines::mark(b, OutputLines::state(o.value(u"level"_s).toString()), tag, palette());
+        if (!tag.isEmpty())
+            seen << tag;
+        if (!shows(b)) {
+            b.setVisible(false);
+            document()->markContentsDirty(b.position(), b.length());
+        }
+    }
+    // New tags in the order their lines came.
+    bool newTag = false;
+    for (auto it = seen.crbegin(); it != seen.crend(); ++it) {
+        if (!m_tags.contains(*it) && m_tags.size() < 200) {
+            m_tags << *it;
+            newTag = true;
+        }
+    }
+    if (newTag)
+        emit tagsChanged();
+}
+
+bool ConsoleView::shows(const QTextBlock &block) const
+{
+    const int s = block.userState();
+    if (s == OutputLines::Notice || block == document()->lastBlock())
+        return true;
+    if (m_levelFilter == Problems && s != OutputLines::Error && s != OutputLines::Warning)
+        return false;
+    if (m_levelFilter == ErrorsOnly && s != OutputLines::Error)
+        return false;
+    return m_tagFilter.isEmpty() || OutputLines::tag(block) == m_tagFilter;
+}
+
+void ConsoleView::setLevelFilter(LevelFilter filter)
+{
+    m_levelFilter = filter;
+    refilter();
+}
+
+void ConsoleView::setTagFilter(const QString &tag)
+{
+    m_tagFilter = tag;
+    refilter();
+}
+
+void ConsoleView::refilter()
+{
+    for (QTextBlock b = document()->begin(); b.isValid(); b = b.next())
+        b.setVisible(shows(b));
+    document()->markContentsDirty(0, document()->characterCount());
+    viewport()->update();
+    verticalScrollBar()->setValue(verticalScrollBar()->maximum());
+}
+
+void ConsoleView::recolour()
+{
+    // The palette changed (light to dark): colour the marked lines for the new one.
+    for (QTextBlock b = document()->begin(); b.isValid(); b = b.next()) {
+        const int s = b.userState();
+        if (s > OutputLines::Plain && s != OutputLines::Info) {
+            QTextCursor c(b);
+            c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+            QTextCharFormat f;
+            f.setForeground(OutputLines::colour(s, palette()));
+            c.mergeCharFormat(f);
+        }
+    }
+}
+
+void ConsoleView::changeEvent(QEvent *event)
+{
+    QPlainTextEdit::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange)
+        recolour();
+}
+
+QStringList ConsoleView::visibleLines() const
+{
+    QStringList out;
+    for (QTextBlock b = document()->begin(); b.isValid(); b = b.next()) {
+        if (b.isVisible() && !(b == document()->lastBlock() && b.text().isEmpty()))
+            out << b.text();
+    }
+    return out;
+}
+
 void ConsoleView::appendBytes(const QByteArray &bytes)
 {
-    QString text = m_hex ? hexText(bytes) : m_decoder.decode(bytes);
+    appendText(m_hex ? hexText(bytes) : m_decoder.decode(bytes));
+}
+
+void ConsoleView::appendText(QString text)
+{
     text.remove(u'\r');
     if (text.isEmpty())
         return;
@@ -164,6 +358,7 @@ void ConsoleView::appendNotice(const QString &text)
     if (!current.isEmpty() && !current.endsWith(u'\n'))
         c.insertText(u"\n"_s);
     c.insertText(u"-- %1\n"_s.arg(text));
+    OutputLines::mark(document()->lastBlock().previous(), OutputLines::Notice, {}, palette());
     m_atLineStart = true;
     verticalScrollBar()->setValue(verticalScrollBar()->maximum());
 }
@@ -173,6 +368,8 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     , m_view(view)
     , m_core(core)
     , m_find(new QLineEdit(this))
+    , m_levels(new QComboBox(this))
+    , m_tags(new QComboBox(this))
     , m_prev(new QToolButton(this))
     , m_next(new QToolButton(this))
     , m_stamps(new QCheckBox(tr("Time stamps"), this))
@@ -185,6 +382,28 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     m_prev->setToolTip(tr("Find the previous match"));
     m_next->setText(tr("Next"));
     m_next->setToolTip(tr("Find the next match (Enter)"));
+    m_levels->addItem(tr("All lines"), ConsoleView::AllLines);
+    m_levels->addItem(tr("Warnings and errors"), ConsoleView::Problems);
+    m_levels->addItem(tr("Errors only"), ConsoleView::ErrorsOnly);
+    m_levels->setAccessibleName(tr("Lines to show"));
+    m_levels->setToolTip(tr("Show only the lines the firmware logged as warnings or errors"));
+    connect(m_levels, &QComboBox::currentIndexChanged, this, [this] {
+        m_view->setLevelFilter(ConsoleView::LevelFilter(m_levels->currentData().toInt()));
+    });
+    m_tags->addItem(tr("All tags"), QString());
+    m_tags->setAccessibleName(tr("Tag to show"));
+    m_tags->setToolTip(tr("Show only one component's log lines, by its tag (such as wifi)"));
+    m_tags->setEnabled(false);
+    m_tags->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    connect(m_tags, &QComboBox::currentIndexChanged, this,
+            [this] { m_view->setTagFilter(m_tags->currentData().toString()); });
+    connect(m_view, &ConsoleView::tagsChanged, this, [this] {
+        for (const QString &t : m_view->tags()) {
+            if (m_tags->findData(t) < 0)
+                m_tags->addItem(t, t);
+        }
+        m_tags->setEnabled(m_tags->count() > 1);
+    });
     const auto findNext = [this](bool backward) {
         const bool found = m_view->findText(m_find->text(), backward);
         m_find->setToolTip(found || m_find->text().isEmpty() ? QString() : tr("Not found"));
@@ -221,6 +440,8 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     layout->addWidget(m_find, 1);
     layout->addWidget(m_prev);
     layout->addWidget(m_next);
+    layout->addWidget(m_levels);
+    layout->addWidget(m_tags);
     layout->addWidget(m_stamps);
     layout->addWidget(m_save);
 }

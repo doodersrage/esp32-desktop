@@ -170,7 +170,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
             tr("Gave the sketch the simulated Wi-Fi settings (network %1, no password); it restarts to join.")
                 .arg(ssid));
     });
-    connect(m_core, &CoreConnection::simOutput, m_output, &ConsoleView::appendBytes);
+    connect(m_core, &CoreConnection::simOutput, m_output, &ConsoleView::appendOutput);
     connect(m_core, &CoreConnection::simStopped, this, [this](const QString &reason) {
         m_output->appendNotice(tr("Simulator stopped: %1").arg(reason));
         m_status->setText(tr("Not running."));

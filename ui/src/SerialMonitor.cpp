@@ -2,6 +2,7 @@
 
 #include "ConsoleView.h"
 #include "CoreConnection.h"
+#include "Preferences.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -10,6 +11,7 @@
 #include <QIcon>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSettings>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -54,7 +56,9 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     m_port->setToolTip(tr("Serial port"));
     for (int b : BaudRates)
         m_baud->addItem(tr("%1 baud").arg(b), b);
-    m_baud->setCurrentIndex(m_baud->findData(DefaultBaud));
+    // The speed used last, else the usual one.
+    const int lastBaud = m_baud->findData(QSettings().value(u"serial/lastBaud"_s, DefaultBaud).toInt());
+    m_baud->setCurrentIndex(lastBaud >= 0 ? lastBaud : m_baud->findData(DefaultBaud));
 
     m_reset->setToolTip(tr("Pulse the reset line, as esptool does. Boards without auto-reset ignore it."));
     m_clear->setToolTip(tr("Clear the output"));
@@ -68,6 +72,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
 
     connect(m_open, &QPushButton::clicked, this, [this] {
         if (m_open_) {
+            QSettings().setValue(u"serial/open"_s, false); // closed on purpose: not reopened at start
             m_core->closeSerial();
             return;
         }
@@ -104,6 +109,10 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     connect(m_core, &CoreConnection::serialOpened, this, [this](const QString &path, int baud) {
         m_output->resetDecoder();
         m_output->appendNotice(tr("Connected to %1 at %2 baud.").arg(path).arg(baud));
+        QSettings settings;
+        settings.setValue(u"serial/lastPort"_s, path);
+        settings.setValue(u"serial/lastBaud"_s, baud);
+        settings.setValue(u"serial/open"_s, true);
         // Linux raises DTR and RTS while opening a port, and the built-in USB of the
         // S3, C3 and C6 resets the chip on that; say so, or the boot log looks like a crash.
         const int i = m_port->findData(path);
@@ -111,7 +120,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
             m_output->appendNotice(tr("Boards with built-in USB restart when their port is opened."));
         setOpen(true);
     });
-    connect(m_core, &CoreConnection::serialData, m_output, &ConsoleView::appendBytes);
+    connect(m_core, &CoreConnection::serialData, m_output, &ConsoleView::appendOutput);
     // The core reopens a port that comes back (a reset over the board's own USB, or
     // plugging it in again).
     connect(m_core, &CoreConnection::serialLost, this, [this] {
@@ -179,6 +188,23 @@ void SerialMonitor::setPorts(const QJsonArray &ports)
         const QString path = p.value(u"path"_s).toString();
         m_port->addItem(path, path);
         m_port->setItemData(m_port->count() - 1, p.value(u"bridge"_s).toString(), BridgeRole);
+    }
+    // At first, the port used last time; reopened if it was open when the app quit.
+    if (m_restore && !m_restored && !ports.isEmpty()) {
+        m_restored = true;
+        QSettings settings;
+        const QString last = settings.value(u"serial/lastPort"_s).toString();
+        const int i = m_port->findData(last);
+        if (i >= 0 && current.isEmpty()) {
+            m_port->setCurrentIndex(i);
+            if (settings.value(u"serial/open"_s).toBool() && Preferences::reopenSerial() && !m_open_
+                && m_core->state() == CoreConnection::State::Connected) {
+                setOpen(false);
+                QMetaObject::invokeMethod(this, [this, last] { openPort(last); }, Qt::QueuedConnection);
+            }
+            setOpen(m_open_);
+            return;
+        }
     }
     // Keep the open (or last chosen) port selected even if it just went away.
     if (!current.isEmpty()) {

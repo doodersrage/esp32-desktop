@@ -15,6 +15,7 @@
 #include "DisplayPanel.h"
 #include "PinsPanel.h"
 #include "PlotPanel.h"
+#include "Preferences.h"
 #include "TracePanel.h"
 #include "CircuitPanel.h"
 
@@ -46,6 +47,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSettings>
+#include <QShortcut>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QVBoxLayout>
@@ -123,7 +125,7 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     connect(core, &CoreConnection::libraryListed, this, [this](const QJsonObject &library) {
         const QJsonObject update = library.value(u"update"_s).toObject();
         const QString version = update.value(u"version"_s).toString();
-        if (version.isEmpty() || version == m_noticeShown
+        if (version.isEmpty() || version == m_noticeShown || !Preferences::releaseNotices()
             || QSettings().value(u"update/dismissed"_s).toString() == version || !m_messages->isHidden())
             return;
         m_noticeShown = version;
@@ -135,6 +137,12 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     connect(core, &CoreConnection::toolchainStatus, this,
             [this](const QJsonArray &components) { m_toolchain = components; });
     setAcceptDrops(true);
+    // Esc closes the message above the library (dialogs keep their own Esc).
+    auto *escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    connect(escape, &QShortcut::activated, this, [this] {
+        if (!m_messages->isHidden())
+            m_messages->dismiss();
+    });
     connect(core, &CoreConnection::buildStarted, m_messages, &QWidget::hide);
     connect(core, &CoreConnection::boardStarted, m_messages, &QWidget::hide);
     // A build or flash can take minutes: when it ends with the window behind others, ask
@@ -271,6 +279,13 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_circuitDock->raise();
     connect(m_project, &ProjectView::boardSelected, m_circuit, &CircuitPanel::showBoard);
     connect(m_project, &ProjectView::buildCurrent, m_buildPanel, &BuildPanel::setBuildCurrent);
+    connect(m_project, &ProjectView::buildCurrent, this, &MainWindow::updateToolBar);
+    connect(m_library, &LibraryPanel::projectForgotten, this, [this](const QString &name, const QString &path) {
+        m_messages->showUndo(tr("Forgot %1. Its folder is untouched.").arg(name), tr("Undo"),
+                             [this, path] { m_core->openLocal(path); });
+    });
+    // A port opened by itself (reopened at start, or after a flash) shows its output.
+    connect(core, &CoreConnection::serialOpened, m_serialDock, &QDockWidget::show);
 
     m_debugDock = new QDockWidget(tr("Debugger"), this);
     m_debugDock->setObjectName(u"debugDock"_s);
@@ -372,7 +387,7 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     connect(core, &CoreConnection::stateChanged, this, [this](CoreConnection::State s) {
         if (s == CoreConnection::State::Connected) {
             // A link names what to show; otherwise reopen what was shown last time.
-            if (m_pendingLinks.isEmpty() && !m_reopened) {
+            if (m_pendingLinks.isEmpty() && !m_reopened && Preferences::reopenProject()) {
                 QSettings settings;
                 const QString last = settings.value(u"project/last"_s).toString();
                 if (!last.isEmpty() && m_project->currentProjectId().isEmpty()) {
@@ -424,6 +439,7 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
 
     buildToolBar();
     buildMenus();
+    showShortcutsInToolTips();
     connect(m_core, &CoreConnection::stateChanged, this, &MainWindow::showConnectionState);
     showConnectionState();
     m_defaultState = saveState(LayoutVersion);
@@ -569,6 +585,23 @@ void MainWindow::buildToolBar()
     updateToolBar();
 }
 
+void MainWindow::showShortcutsInToolTips()
+{
+    // A toolbar button's tooltip says its shortcut ("Build (Ctrl+B)"), and follows the
+    // action's text (Build or Download).
+    for (QAction *a : m_toolBar->actions()) {
+        const auto update = [a] {
+            if (a->shortcut().isEmpty())
+                return;
+            const QString tip = tr("%1 (%2)").arg(a->text().remove(u'&'), a->shortcut().toString(QKeySequence::NativeText));
+            if (a->toolTip() != tip)
+                a->setToolTip(tip);
+        };
+        update();
+        connect(a, &QAction::changed, this, update);
+    }
+}
+
 void MainWindow::updateToolBar()
 {
     const QString title = m_project->currentProjectTitle();
@@ -583,9 +616,9 @@ void MainWindow::updateToolBar()
                             && m_core->state() == CoreConnection::State::Connected && !m_core->isBoardBusy());
     m_busyAction->setVisible(m_core->isBuilding() || m_core->isBoardBusy() || m_core->isInstalling());
 
+    setWindowTitle(title.isEmpty() ? tr("ESP32 Bench") : tr("%1 — ESP32 Bench").arg(title));
     const QString id = m_project->currentProjectId();
-    const bool built = !id.isEmpty() && m_buildPanel->builtProject() == id
-                       && m_buildPanel->builtBoard() == m_project->currentBuildBoard();
+    const bool built = !id.isEmpty() && m_buildPanel->isBuilt(id, m_project->currentBuildBoard());
     QString next;
     if (m_core->state() != CoreConnection::State::Connected)
         next.clear();
@@ -693,6 +726,10 @@ void MainWindow::buildMenus()
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
     QAction *setup = tools->addAction(QIcon::fromTheme(u"configure"_s), tr("&Toolchain setup…"));
     connect(setup, &QAction::triggered, this, &MainWindow::showSetup);
+    QAction *prefs = tools->addAction(QIcon::fromTheme(u"preferences-system"_s), tr("&Preferences…"));
+    prefs->setShortcut(QKeySequence::Preferences);
+    prefs->setMenuRole(QAction::PreferencesRole); // in the app menu on macOS
+    connect(prefs, &QAction::triggered, this, &MainWindow::showPreferences);
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
     help->addAction(QIcon::fromTheme(u"internet-web-browser"_s), tr("esp32bench.dev &guide"), this, [] {
@@ -833,6 +870,37 @@ void MainWindow::openLink(const QString &url)
         m_pendingLinks << url;
 }
 
+void MainWindow::sayWhatsNew()
+{
+    QSettings settings;
+    const QString last = settings.value(u"app/lastVersion"_s).toString();
+    const QString now = QApplication::applicationVersion();
+    settings.setValue(u"app/lastVersion"_s, now);
+    if (last.isEmpty() || last == now || !m_messages->isHidden())
+        return;
+    m_messages->showNotice(tr("ESP32 Bench is now %1 (it was %2).").arg(now, last),
+                           u"https://github.com/doodersrage/esp32-desktop/releases/tag/v%1"_s.arg(now),
+                           tr("See what's new"), {});
+}
+
+void MainWindow::showPreferences()
+{
+    if (!m_preferences) {
+        m_preferences = new PreferencesDialog(this);
+        // The consoles follow the text size as it changes, and go back on Cancel.
+        const auto apply = [this](int steps) {
+            m_serial->console()->setZoomSteps(steps);
+            m_sim->console()->setZoomSteps(steps);
+        };
+        connect(m_preferences, &PreferencesDialog::textSizeChanged, this, apply);
+        connect(m_preferences, &QDialog::rejected, this,
+                [apply] { apply(QSettings().value(u"console/zoom"_s, 0).toInt()); });
+    }
+    m_preferences->load();
+    m_preferences->show();
+    m_preferences->raise();
+}
+
 void MainWindow::find()
 {
     // The console the focus is in, if it is in one.
@@ -869,6 +937,8 @@ QString MainWindow::shortcutsText() const
     add(QKeySequence(Qt::CTRL | Qt::Key_0).toString(QKeySequence::NativeText), tr("The console's text at its usual size"));
     add(tr("Up / Down"), tr("In the text to send: the lines sent before"));
     add(QKeySequence(QKeySequence::Undo).toString(QKeySequence::NativeText), tr("Undo a change to the circuit"));
+    add(QKeySequence(Qt::Key_Escape).toString(QKeySequence::NativeText), tr("Close the message above the library"));
+    add(tr("Tab, arrows, Space"), tr("In the circuit: go to a part, move it, press or switch it"));
     return u"<table>%1</table>"_s.arg(rows.join(QString()));
 }
 

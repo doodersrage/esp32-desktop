@@ -31,6 +31,8 @@ public:
     static constexpr int ChipsRole = Qt::UserRole + 5;
     // True when the user starred it (library.list's `starred`).
     static constexpr int StarredRole = Qt::UserRole + 6;
+    // A local project's folder.
+    static constexpr int PathRole = Qt::UserRole + 7;
 
     explicit LibraryPanel(CoreConnection *core, QWidget *parent = nullptr);
 
@@ -59,6 +61,8 @@ public:
 signals:
     // The user picked a project in the list.
     void projectSelected(const QString &id);
+    // A local project was forgotten (its folder is untouched; opening it again undoes it).
+    void projectForgotten(const QString &name, const QString &path);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

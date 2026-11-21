@@ -708,6 +708,7 @@ name = "esp32bench-serial"
 version = "0.1.8"
 dependencies = [
  "libc",
+ "regex",
  "serde",
  "serialport",
  "thiserror",

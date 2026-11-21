@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.26.0";
+pub const PROTOCOL: &str = "0.27.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -666,6 +666,9 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         let r = esp32bench_build::run(&plan, &code, &tools, &dirs, |stream, line| {
             first.line(&line);
             let mut params = json!({ "stream": stream, "line": line });
+            if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
+                params["level"] = json!(level);
+            }
             let found = explain.line_findings(&line);
             if !found.is_empty() {
                 params["explain"] = json!(found);
@@ -831,7 +834,11 @@ fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Valu
         let mut first = esp32bench_build::diagnostics::Finder::new(Some(&plan.path));
         let r = idf::run(&plan, &dirs, |stream, line| {
             first.line(&line);
-            sub.send("build.log", json!({ "stream": stream, "line": line }));
+            let mut params = json!({ "stream": stream, "line": line });
+            if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
+                params["level"] = json!(level);
+            }
+            sub.send("build.log", params);
         })
         .await;
         if r.is_ok() {
@@ -1296,6 +1303,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             let mut pin_flush = tokio::time::Instant::now();
             // Lines of numbers, for the app's plotter.
             let mut plot = esp32bench_serial::plot::Lines::new();
+            let mut style = esp32bench_serial::style::Styler::new();
             // The expectation, said once at the start; its deadline, until it is met
             // or has passed.
             let mut expect_deadline = None;
@@ -1450,6 +1458,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                                 "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
                                 "text": String::from_utf8_lossy(&bytes),
                             });
+                            styled(&mut params, style.feed(&bytes));
                             let rows = plot.feed(&bytes);
                             if !rows.is_empty() {
                                 params["plot"] = json!(rows);
@@ -2317,6 +2326,7 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
             use base64::Engine;
             // Lines of numbers, for the app's plotter.
             let mut plot = esp32bench_serial::plot::Lines::new();
+            let mut style = esp32bench_serial::style::Styler::new();
             while let Some(event) = rx.recv().await {
                 match event {
                     esp32bench_serial::Event::Data(bytes) => {
@@ -2324,6 +2334,7 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                             "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
                             "text": String::from_utf8_lossy(&bytes),
                         });
+                        styled(&mut params, style.feed(&bytes));
                         let rows = plot.feed(&bytes);
                         if !rows.is_empty() {
                             params["plot"] = json!(rows);
@@ -2349,6 +2360,7 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                                 *port.lock().unwrap_or_else(|p| p.into_inner()) = again;
                                 rx = again_rx;
                                 plot = esp32bench_serial::plot::Lines::new();
+                                style = esp32bench_serial::style::Styler::new();
                                 if !sub.send("serial.reconnected", json!({})) {
                                     break;
                                 }
@@ -2363,6 +2375,15 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         }
     });
     Ok(json!({ "subscription": id }))
+}
+
+/// Add a chunk's text without colour codes (`shown`) and its finished lines' levels
+/// and tags (`lines`) to serial.data's or sim.output's params.
+fn styled(params: &mut Value, s: esp32bench_serial::style::Styled) {
+    params["shown"] = json!(s.text);
+    if !s.lines.is_empty() {
+        params["lines"] = json!(s.lines);
+    }
 }
 
 /// Open `path` again once it is back, trying every quarter second for

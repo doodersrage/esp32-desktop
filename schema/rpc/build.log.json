@@ -56,6 +56,13 @@
             }
           }
         }
+      },
+      "level": {
+        "enum": [
+          "error",
+          "warning"
+        ],
+        "description": "Since protocol 0.27: the line is a compiler or tool error or warning."
       }
     }
   },

@@ -123,6 +123,10 @@
         <translation>Grabar</translation>
     </message>
     <message>
+        <source>Problems only</source>
+        <translation>Solo problemas</translation>
+    </message>
+    <message>
         <source>Debug</source>
         <translation>Depurar</translation>
     </message>
@@ -149,6 +153,10 @@
     <message>
         <source>No board</source>
         <translation>Sin placa</translation>
+    </message>
+    <message>
+        <source>Show only the build&apos;s errors and warnings</source>
+        <translation>Mostrar solo los errores y avisos de la compilación</translation>
     </message>
     <message>
         <source>Flashing %1 to %2…</source>
@@ -179,8 +187,16 @@
         <translation>Compilando %1 para %2…</translation>
     </message>
     <message>
-        <source>Build succeeded. Image: %1</source>
-        <translation>Compilación correcta. Imagen: %1</translation>
+        <source>Errors: %1</source>
+        <translation>Errores: %1</translation>
+    </message>
+    <message>
+        <source>Warnings: %1</source>
+        <translation>Avisos: %1</translation>
+    </message>
+    <message>
+        <source>Build succeeded: %1.</source>
+        <translation>Compilación correcta: %1.</translation>
     </message>
     <message>
         <source>Build failed: %1</source>
@@ -363,6 +379,38 @@
     <message>
         <source>Find the next match (Enter)</source>
         <translation>Buscar la siguiente coincidencia (Intro)</translation>
+    </message>
+    <message>
+        <source>All lines</source>
+        <translation>Todas las líneas</translation>
+    </message>
+    <message>
+        <source>Warnings and errors</source>
+        <translation>Avisos y errores</translation>
+    </message>
+    <message>
+        <source>Errors only</source>
+        <translation>Solo errores</translation>
+    </message>
+    <message>
+        <source>Lines to show</source>
+        <translation>Líneas que mostrar</translation>
+    </message>
+    <message>
+        <source>Show only the lines the firmware logged as warnings or errors</source>
+        <translation>Mostrar solo las líneas que el firmware registró como avisos o errores</translation>
+    </message>
+    <message>
+        <source>All tags</source>
+        <translation>Todas las etiquetas</translation>
+    </message>
+    <message>
+        <source>Tag to show</source>
+        <translation>Etiqueta que mostrar</translation>
+    </message>
+    <message>
+        <source>Show only one component&apos;s log lines, by its tag (such as wifi)</source>
+        <translation>Mostrar solo las líneas de registro de un componente, por su etiqueta (como wifi)</translation>
     </message>
     <message>
         <source>Not found</source>
@@ -1015,6 +1063,14 @@ El panel Compilación de abajo tiene el registro completo.</translation>
         <translation>Gráfica</translation>
     </message>
     <message>
+        <source>Forgot %1. Its folder is untouched.</source>
+        <translation>Se olvidó %1. Su carpeta no se ha tocado.</translation>
+    </message>
+    <message>
+        <source>Undo</source>
+        <translation>Deshacer</translation>
+    </message>
+    <message>
         <source>Board operation failed: %1</source>
         <translation>Falló la operación con la placa: %1</translation>
     </message>
@@ -1079,12 +1135,20 @@ El panel Compilación de abajo tiene el registro completo.</translation>
         <translation>Borrar flash…</translation>
     </message>
     <message>
+        <source>%1 (%2)</source>
+        <translation>%1 (%2)</translation>
+    </message>
+    <message>
         <source>No project selected</source>
         <translation>Ningún proyecto elegido</translation>
     </message>
     <message>
         <source>%1 · %2</source>
         <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <source>%1 — ESP32 Bench</source>
+        <translation>%1 — ESP32 Bench</translation>
     </message>
     <message>
         <source>Building…</source>
@@ -1165,6 +1229,10 @@ El panel Compilación de abajo tiene el registro completo.</translation>
     <message>
         <source>&amp;Toolchain setup…</source>
         <translation>&amp;Configurar herramientas…</translation>
+    </message>
+    <message>
+        <source>&amp;Preferences…</source>
+        <translation>&amp;Preferencias…</translation>
     </message>
     <message>
         <source>&amp;Help</source>
@@ -1275,6 +1343,14 @@ Code SHA-256: %2</source>
 SHA-256 del código: %2</translation>
     </message>
     <message>
+        <source>ESP32 Bench is now %1 (it was %2).</source>
+        <translation>ESP32 Bench ahora es la %1 (era la %2).</translation>
+    </message>
+    <message>
+        <source>See what&apos;s new</source>
+        <translation>Ver las novedades</translation>
+    </message>
+    <message>
         <source>Bigger or smaller text in the console (also Ctrl and the mouse wheel)</source>
         <translation>Texto más grande o más pequeño en la consola (también con Ctrl y la rueda del ratón)</translation>
     </message>
@@ -1293,6 +1369,18 @@ SHA-256 del código: %2</translation>
     <message>
         <source>Undo a change to the circuit</source>
         <translation>Deshacer un cambio en el circuito</translation>
+    </message>
+    <message>
+        <source>Close the message above the library</source>
+        <translation>Cerrar el mensaje sobre la biblioteca</translation>
+    </message>
+    <message>
+        <source>Tab, arrows, Space</source>
+        <translation>Tab, flechas, Espacio</translation>
+    </message>
+    <message>
+        <source>In the circuit: go to a part, move it, press or switch it</source>
+        <translation>En el circuito: ir a una pieza, moverla, pulsarla o cambiarla</translation>
     </message>
     <message>
         <source>Keyboard shortcuts</source>
@@ -1337,6 +1425,10 @@ SHA-256 del código: %2</translation>
 </context>
 <context>
     <name>MessageBar</name>
+    <message>
+        <source>Undo</source>
+        <translation>Deshacer</translation>
+    </message>
     <message>
         <source>Close this message</source>
         <translation>Cerrar este mensaje</translation>
@@ -1488,6 +1580,49 @@ SHA-256 del código: %2</translation>
     <message>
         <source>Stop adding new values, to look at what is shown</source>
         <translation>Dejar de añadir valores nuevos, para mirar lo que se ve</translation>
+    </message>
+</context>
+<context>
+    <name>PreferencesDialog</name>
+    <message>
+        <source>Say when a newer release is out</source>
+        <translation>Avisar cuando salga una versión nueva</translation>
+    </message>
+    <message>
+        <source>Reopen the last project at start</source>
+        <translation>Reabrir el último proyecto al iniciar</translation>
+    </message>
+    <message>
+        <source>Wait for a board that goes away, such as one that resets over its own USB</source>
+        <translation>Esperar a una placa que se va, como una que se reinicia por su propio USB</translation>
+    </message>
+    <message>
+        <source>Reopen the serial monitor at start if it was open</source>
+        <translation>Reabrir el monitor serie al iniciar si estaba abierto</translation>
+    </message>
+    <message>
+        <source>Preferences</source>
+        <translation>Preferencias</translation>
+    </message>
+    <message>
+        <source>The desktop&apos;s language</source>
+        <translation>El idioma del escritorio</translation>
+    </message>
+    <message>
+        <source>Console &amp;text size (0 is the usual size):</source>
+        <translation>&amp;Tamaño del texto de la consola (0 es el tamaño normal):</translation>
+    </message>
+    <message>
+        <source>Steps bigger or smaller than the system&apos;s fixed-width font, as Ctrl+= and Ctrl+- set</source>
+        <translation>Pasos más grande o más pequeño que la fuente de ancho fijo del sistema, como con Ctrl+= y Ctrl+-</translation>
+    </message>
+    <message>
+        <source>&amp;Language:</source>
+        <translation>&amp;Idioma:</translation>
+    </message>
+    <message>
+        <source>A new language is used from the next start.</source>
+        <translation>El nuevo idioma se usa desde el próximo inicio.</translation>
     </message>
 </context>
 <context>

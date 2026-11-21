@@ -134,8 +134,12 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
         const QString id = item->data(NameColumn, IdRole).toString();
         QMenu menu(this);
         if (item->data(NameColumn, LocalRole).toBool()) {
-            menu.addAction(QIcon::fromTheme(u"list-remove"_s), tr("Forget this project"), this,
-                           [this, id] { m_core->removeLocal(id); });
+            const QString name = item->text(NameColumn);
+            const QString path = item->data(NameColumn, PathRole).toString();
+            menu.addAction(QIcon::fromTheme(u"list-remove"_s), tr("Forget this project"), this, [this, id, name, path] {
+                m_core->removeLocal(id);
+                emit projectForgotten(name, path);
+            });
         } else {
             const bool starred = item->data(NameColumn, StarredRole).toBool();
             menu.addAction(QIcon::fromTheme(u"starred"_s),
@@ -369,6 +373,7 @@ void LibraryPanel::addLocalItems()
         auto *item = new ProjectItem;
         item->setText(NameColumn, p.value(u"name"_s).toString());
         item->setToolTip(NameColumn, p.value(u"path"_s).toString());
+        item->setData(NameColumn, PathRole, p.value(u"path"_s).toString());
         item->setData(NameColumn, IdRole, p.value(u"id"_s).toString());
         item->setData(NameColumn, LocalRole, true);
         // Built for the chip chosen, so any of the three the simulator runs.

@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 26;
+    static constexpr int ProtocolMinor = 27;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -198,12 +198,15 @@ signals:
     void buildConsentRequired(const QString &project, const QString &board, const QString &token,
                               const QJsonObject &plan);
     void buildStarted(const QJsonObject &plan);
-    void buildLog(const QString &stream, const QString &line);
+    // `level`: "error" or "warning" for compiler and tool problems, else empty.
+    void buildLog(const QString &stream, const QString &line, const QString &level = {});
     // `image` is the merged flash image when ok.
     void buildFinished(bool ok, const QString &error, const QString &image);
     // Serial monitor.
     void serialOpened(const QString &path, int baud);
-    void serialData(const QByteArray &bytes);
+    // `shown`: the text without colour codes (protocol 0.27; undefined from older
+    // cores); `lines`: the levels and tags of the lines it finished.
+    void serialData(const QByteArray &bytes, const QJsonValue &shown = {}, const QJsonArray &lines = {});
     void serialClosed(const QString &reason);
     // Toolchain.
     void toolchainStatus(const QJsonArray &components);
@@ -218,7 +221,7 @@ signals:
     void boardFinished(const QString &operation, bool ok, const QString &error, const QJsonObject &result);
     // Simulator.
     void simStarted(const QString &project, const QString &board, const QString &chip);
-    void simOutput(const QByteArray &bytes);
+    void simOutput(const QByteArray &bytes, const QJsonValue &shown = {}, const QJsonArray &lines = {});
     // sim.wifiJoined: the core gave a library sketch the simulated network's settings.
     void simWifiJoined(const QString &ssid);
     // Rows of numbers from the simulator's or the serial port's output (the events'

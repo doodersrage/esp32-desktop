@@ -5,6 +5,7 @@
 //! read timeout. Output is bytes; callers decode at the edge.
 
 pub mod plot;
+pub mod style;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
