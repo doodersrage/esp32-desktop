@@ -163,6 +163,24 @@ private slots:
         QCOMPARE(current.last().at(2).toBool(), false);
     }
 
+    void marksConnectedBoardsAndOpensInTheIde()
+    {
+        CoreConnection core;
+        ProjectView view(&core);
+        view.showResult(example());
+        const QString first = view.boardPicker()->itemText(0);
+        const QString chip = view.boardPicker()->itemData(0, Qt::UserRole + 1).toString();
+        view.setConnectedChips({chip});
+        QVERIFY(view.boardPicker()->itemText(0).endsWith(u" · connected"_s));
+        QCOMPARE(view.currentBoardName(), first); // without the mark
+        view.setConnectedChips({});
+        QCOMPARE(view.boardPicker()->itemText(0), first);
+        QVERIFY(!view.openIdeButton()->isHidden());
+        QSignalSpy open(&view, &ProjectView::openInIdeRequested);
+        view.openIdeButton()->click();
+        QCOMPARE(open.size(), 1);
+    }
+
     void listsRecentProjectsOnTheGuide()
     {
         CoreConnection core;

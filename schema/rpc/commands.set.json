@@ -1,0 +1,63 @@
+{
+  "method": "commands.set",
+  "description": "Since protocol 0.29: keep these lines for a project's board, in the data directory's commands.json; blank lines and repeats are dropped, at most 20 of at most 200 characters. An empty list forgets them.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "commands"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "commands": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "commands"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "commands": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "simon",
+        "commands": [
+          "help",
+          "status"
+        ]
+      },
+      "result": {
+        "commands": [
+          "help",
+          "status"
+        ]
+      }
+    }
+  ]
+}

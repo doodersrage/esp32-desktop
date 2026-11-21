@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.28.0";
+pub const PROTOCOL: &str = "0.29.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -60,6 +60,8 @@ pub struct State {
     pub starred: esp32bench_library::starred::Starred,
     /// Chips found behind USB serial adapters by board.inspect.
     pub known_boards: esp32bench_device::Known,
+    /// Lines sent often, per project (commands.get/commands.set).
+    pub commands: esp32bench_library::commands::Commands,
     /// ESP-IDF to use instead of detecting one (tests).
     pub idf_path: Option<PathBuf>,
 }
@@ -144,6 +146,11 @@ impl State {
                 esp32bench_sim::install::data_dir()
                     .map(|d| d.join("boards.json"))
                     .unwrap_or_else(|_| PathBuf::from("esp32bench-boards.json")),
+            ),
+            commands: esp32bench_library::commands::Commands::new(
+                esp32bench_sim::install::data_dir()
+                    .map(|d| d.join("commands.json"))
+                    .unwrap_or_else(|_| PathBuf::from("esp32bench-commands.json")),
             ),
             idf_path: None,
         }
@@ -314,6 +321,20 @@ pub fn router(state: Arc<State>) -> Router {
                 async move { build_status(p, s).await }
             }
         })
+        .method("commands.get", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { commands(p, s, false).await }
+            }
+        })
+        .method("commands.set", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { commands(p, s, true).await }
+            }
+        })
         .method("library.export", {
             let s = stars.clone();
             move |p, _| {
@@ -462,6 +483,7 @@ async fn library_list(params: Value, state: Arc<State>) -> Result<Value, RpcErro
         .map(|p| {
             let mut v = json!(p);
             v["starred"] = json!(starred.contains(&p.id));
+            v["built"] = json!(esp32bench_build::built_boards(&state.builds_root, &p.id));
             v
         })
         .collect();
@@ -692,6 +714,8 @@ struct ExportParams {
     id: String,
     board: String,
     dir: PathBuf,
+    #[serde(default)]
+    reuse: bool,
 }
 
 /// Save a library project's sketch for one board into a folder the user chose, for
@@ -713,8 +737,41 @@ async fn library_export(params: Value, state: Arc<State>) -> Result<Value, RpcEr
             )
         })?;
     let (plan, code) = esp32bench_build::plan(&manifest, &p.id, &p.board).map_err(build_error)?;
-    let ino = esp32bench_build::export_sketch(&plan, &code, &p.dir).map_err(build_error)?;
-    Ok(json!({ "path": ino, "libraries": plan.install }))
+    let (ino, existing) = esp32bench_build::export_sketch_or_reuse(&plan, &code, &p.dir, p.reuse)
+        .map_err(build_error)?;
+    Ok(json!({ "path": ino, "libraries": plan.install, "existing": existing }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CommandsParams {
+    #[serde(default)]
+    project: String,
+    #[serde(default)]
+    commands: Option<Vec<String>>,
+}
+
+/// commands.get and commands.set: the lines a project's board is often sent.
+async fn commands(params: Value, state: Arc<State>, set: bool) -> Result<Value, RpcError> {
+    let p: CommandsParams = parse_params(params)?;
+    if p.project.len() > 200 {
+        return Err(RpcError::invalid_params("bad project id"));
+    }
+    let lines = if set {
+        let lines = p
+            .commands
+            .ok_or_else(|| RpcError::invalid_params("commands.set needs commands"))?;
+        state
+            .commands
+            .set(&p.project, lines)
+            .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+    } else {
+        if p.commands.is_some() {
+            return Err(RpcError::invalid_params("commands.get takes no commands"));
+        }
+        state.commands.get(&p.project)
+    };
+    Ok(json!({ "commands": lines }))
 }
 
 #[derive(Deserialize)]

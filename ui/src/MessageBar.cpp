@@ -2,6 +2,8 @@
 
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QLabel>
 #include <QPushButton>
 #include <QStyle>
@@ -17,7 +19,12 @@ MessageBar::MessageBar(QWidget *parent)
     , m_text(new QLabel(this))
     , m_close(new QToolButton(this))
     , m_action(new QPushButton(this))
+    , m_copy(new QPushButton(QIcon::fromTheme(u"edit-copy"_s), tr("Copy details"), this))
 {
+    m_copy->setToolTip(tr("Copy the message and the app's versions, to paste into a question or a problem report"));
+    m_copy->hide();
+    connect(m_copy, &QPushButton::clicked, this,
+            [this] { QGuiApplication::clipboard()->setText(detailsText()); });
     m_action->setText(tr("Undo")); // until a message names its own
     m_action->hide();
     connect(m_action, &QPushButton::clicked, this, [this] {
@@ -42,6 +49,7 @@ MessageBar::MessageBar(QWidget *parent)
     layout->addWidget(m_icon, 0, Qt::AlignTop);
     layout->addWidget(m_text, 1);
     layout->addWidget(m_action, 0, Qt::AlignTop);
+    layout->addWidget(m_copy, 0, Qt::AlignTop);
     layout->addWidget(m_close, 0, Qt::AlignTop);
     hide();
 }
@@ -57,6 +65,7 @@ void MessageBar::setIcon(bool notice)
 void MessageBar::showNotice(const QString &text, const QString &url, const QString &linkText, const QString &key)
 {
     m_action->hide();
+    m_copy->hide();
     m_undo = {};
     setIcon(true);
     m_key = key;
@@ -72,6 +81,7 @@ void MessageBar::showNotice(const QString &text, const QString &url, const QStri
 void MessageBar::showError(const QString &text, const QString &url, const QString &linkText)
 {
     m_action->hide();
+    m_copy->show();
     m_undo = {};
     setIcon(false);
     m_key.clear();
@@ -90,6 +100,7 @@ void MessageBar::showError(const QString &text, const QString &url, const QStrin
 void MessageBar::showExplanation(const QString &text, const QString &url)
 {
     m_action->hide();
+    m_copy->show();
     m_undo = {};
     setIcon(false);
     m_key.clear();
@@ -117,6 +128,7 @@ void MessageBar::showUndo(const QString &text, const QString &button, std::funct
     m_text->setText(text);
     m_action->setText(button);
     m_action->show();
+    m_copy->hide();
     m_undo = std::move(undo);
     show();
 }
@@ -127,4 +139,10 @@ void MessageBar::dismiss()
     m_undo = {};
     if (!m_key.isEmpty())
         emit dismissed(std::exchange(m_key, {}));
+}
+
+QString MessageBar::detailsText() const
+{
+    const QString details = m_details ? m_details() : QString();
+    return details.isEmpty() ? text() : u"%1\n\n%2"_s.arg(text(), details);
 }

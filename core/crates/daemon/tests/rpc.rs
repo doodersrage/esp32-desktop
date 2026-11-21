@@ -50,6 +50,7 @@ fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
     s.local = esp32bench_build::idf::Registry::new(dir.join("local-projects.json"));
     s.starred = esp32bench_library::starred::Starred::new(dir.join("starred.json"));
     s.known_boards = esp32bench_device::Known::new(dir.join("boards.json"));
+    s.commands = esp32bench_library::commands::Commands::new(dir.join("commands.json"));
     Arc::new(s)
 }
 
@@ -670,6 +671,16 @@ async fn build_runs_after_consent_and_reports() {
     }
     assert!(saw_log);
 
+    // The library says which boards it is built for.
+    let list = c.call("library.list", json!({})).await.unwrap();
+    let blink = list["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == "blink")
+        .unwrap()
+        .clone();
+    assert_eq!(blink["built"], json!(["esp32"]));
     // Built, and what the library asks for; another board is not.
     let after = c.call("build.status", status).await.unwrap();
     assert_valid(
@@ -756,6 +767,50 @@ async fn plot_save_writes_csv() {
 }
 
 #[tokio::test]
+async fn commands_are_kept_per_project() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let get = json!({ "project": "simon" });
+    assert_valid(
+        &method_def("commands.get")["params"],
+        &get,
+        "commands.get params",
+    );
+    let r = c.call("commands.get", get.clone()).await.unwrap();
+    assert_valid(
+        &method_def("commands.get")["result"],
+        &r,
+        "commands.get result",
+    );
+    assert_eq!(r["commands"], json!([]));
+    let set = json!({ "project": "simon", "commands": ["help", "", "status"] });
+    assert_valid(
+        &method_def("commands.set")["params"],
+        &set,
+        "commands.set params",
+    );
+    let r = c.call("commands.set", set).await.unwrap();
+    assert_valid(
+        &method_def("commands.set")["result"],
+        &r,
+        "commands.set result",
+    );
+    assert_eq!(r["commands"], json!(["help", "status"]));
+    assert_eq!(
+        c.call("commands.get", get).await.unwrap()["commands"],
+        json!(["help", "status"])
+    );
+    assert_eq!(
+        c.call("commands.get", json!({})).await.unwrap()["commands"],
+        json!([])
+    );
+    match c.call("commands.set", json!({ "project": "simon" })).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("expected invalid params, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn library_export_saves_a_sketch_for_the_arduino_ide() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
@@ -770,6 +825,18 @@ async fn library_export_saves_a_sketch_for_the_arduino_ide() {
     assert_eq!(Path::new(r["path"].as_str().unwrap()), ino);
     assert!(!std::fs::read_to_string(&ino).unwrap().is_empty());
     assert_eq!(r["libraries"], json!(["Adafruit NeoPixel"]));
+    // With reuse, the saved sketch is kept as it is.
+    std::fs::write(&ino, "// mine").unwrap();
+    let again = c
+        .call(
+            "library.export",
+            json!({ "id": "blink", "board": "esp32", "dir": out.path(), "reuse": true }),
+        )
+        .await
+        .unwrap();
+    assert_valid(&def["result"], &again, "library.export result");
+    assert_eq!(again["existing"], true);
+    assert_eq!(std::fs::read_to_string(&ino).unwrap(), "// mine");
     // Not again over it, not prebuilt firmware, not a relative folder.
     for (bad, want) in [
         (params, code::FAILED),

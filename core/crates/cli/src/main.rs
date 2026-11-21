@@ -215,6 +215,18 @@ enum ToolchainCmd {
 
 #[derive(Subcommand)]
 enum SerialCmd {
+    /// Show the lines kept for a project's quick-send buttons, or keep these instead
+    /// (as `commands.get` / `commands.set`).
+    Commands {
+        /// Project id; none for lines not tied to one.
+        #[arg(long, default_value = "")]
+        project: String,
+        /// The lines to keep. With none, show the kept ones.
+        lines: Vec<String>,
+        /// Forget the kept lines.
+        #[arg(long)]
+        clear: bool,
+    },
     /// Print what the board sends (raw bytes) and send it each line typed, until
     /// Ctrl-C or the board goes away.
     Monitor {
@@ -1000,6 +1012,23 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 out.image.display(),
                 out.elf.display()
             );
+        }
+        Cmd::Serial(SerialCmd::Commands {
+            project,
+            lines,
+            clear,
+        }) => {
+            let store = esp32bench_library::commands::Commands::new(
+                esp32bench_sim::install::data_dir()?.join("commands.json"),
+            );
+            let kept = if clear || !lines.is_empty() {
+                store.set(&project, lines)?
+            } else {
+                store.get(&project)
+            };
+            for l in kept {
+                println!("{l}");
+            }
         }
         Cmd::Serial(SerialCmd::Monitor {
             port,

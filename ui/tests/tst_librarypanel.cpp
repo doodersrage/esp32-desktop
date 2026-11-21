@@ -9,6 +9,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLineEdit>
+#include <QComboBox>
+#include <QSignalSpy>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -169,6 +171,39 @@ private slots:
         QVERIFY(t->topLevelItem(1)->isHidden());
         panel.starredFilter()->setChecked(false);
         QVERIFY(!t->topLevelItem(1)->isHidden());
+    }
+
+    void filtersByTopicAndBuilt()
+    {
+        CoreConnection core;
+        LibraryPanel panel(&core);
+        QJsonObject lib = library();
+        QJsonArray projects = lib.value(u"projects"_s).toArray();
+        QJsonObject blink = projects.at(0).toObject();
+        blink.insert(u"built"_s, QJsonArray{u"esp32"_s});
+        projects.replace(0, blink);
+        lib.insert(u"projects"_s, projects);
+        panel.showLibrary(lib);
+        QTreeWidget *t = panel.tree();
+        QTreeWidgetItem *first = t->topLevelItem(0);
+        QVERIFY(first->font(LibraryPanel::NameColumn).bold());
+        QVERIFY(first->toolTip(LibraryPanel::NameColumn).contains(u"Built on this computer for: esp32"_s));
+        panel.builtFilter()->setChecked(true);
+        QVERIFY(!first->isHidden());
+        QVERIFY(t->topLevelItem(1)->isHidden());
+        panel.builtFilter()->setChecked(false);
+        // Topics: each tag, most used first, with how many projects have it.
+        QVERIFY(panel.tagFilter()->count() > 1);
+        const QString tag = panel.tagFilter()->itemData(1).toString();
+        panel.tagFilter()->setCurrentIndex(1);
+        for (int i = 0; i < t->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *item = t->topLevelItem(i);
+            QCOMPARE(item->isHidden(), !item->data(LibraryPanel::NameColumn, LibraryPanel::TagsRole).toStringList().contains(tag));
+        }
+        // Double-click or Enter asks for the project to run.
+        QSignalSpy activated(&panel, &LibraryPanel::projectActivated);
+        emit t->itemActivated(first, 0);
+        QCOMPARE(activated.size(), 1);
     }
 
     void sortsTimeByMinutes()

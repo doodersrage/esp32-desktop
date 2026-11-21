@@ -6,6 +6,8 @@
 #include <algorithm>
 
 #include <QCheckBox>
+#include <QComboBox>
+#include <QHash>
 #include <QDateTime>
 #include <QFileDialog>
 #include <QMenu>
@@ -61,7 +63,16 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     , m_simOnly(new QCheckBox(tr("Runs in the simulator"), this))
     , m_fitsBoard(new QCheckBox(tr("Fits my board"), this))
     , m_starredOnly(new QCheckBox(tr("Starred"), this))
+    , m_builtOnly(new QCheckBox(tr("Built"), this))
+    , m_tag(new QComboBox(this))
 {
+    m_builtOnly->setToolTip(tr("Only projects built on this computer, ready to run or flash"));
+    connect(m_builtOnly, &QCheckBox::toggled, this, &LibraryPanel::applyFilter);
+    m_tag->addItem(tr("All topics"), QString());
+    m_tag->setAccessibleName(tr("Topic"));
+    m_tag->setToolTip(tr("Only projects about one topic, such as a display or Wi-Fi"));
+    m_tag->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    connect(m_tag, &QComboBox::currentIndexChanged, this, &LibraryPanel::applyFilter);
     m_filter->setPlaceholderText(tr("Search projects"));
     m_filter->setMinimumWidth(m_filter->fontMetrics().averageCharWidth() * 16);
     m_filter->setClearButtonEnabled(true);
@@ -122,6 +133,11 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     });
     m_defaultColumns = m_tree->header()->saveState();
     m_userSized = false; // hiding columns above resized them; that was not the user
+    // Double-click or Enter runs the project (MainWindow builds it first if needed).
+    connect(m_tree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item) {
+        if (item)
+            emit projectActivated(item->data(NameColumn, IdRole).toString());
+    });
     connect(m_tree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
         if (item)
             emit projectSelected(item->data(NameColumn, IdRole).toString());
@@ -183,6 +199,8 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     filters->addWidget(m_simOnly);
     filters->addWidget(m_fitsBoard);
     filters->addWidget(m_starredOnly);
+    filters->addWidget(m_builtOnly);
+    filters->addWidget(m_tag);
     filters->addStretch(1);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
@@ -191,6 +209,11 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     layout->addWidget(m_tree, 1);
 
     connect(m_core, &CoreConnection::libraryListed, this, &LibraryPanel::showLibrary);
+    // A build changes what is built: list again, for the bold names and the filter.
+    connect(m_core, &CoreConnection::buildFinished, this, [this](bool ok) {
+        if (ok)
+            m_core->listLibrary();
+    });
     connect(m_core, &CoreConnection::localListed, this,
             [this](const QJsonArray &projects, const QJsonObject &) { showLocal(projects); });
     connect(m_core, &CoreConnection::localOpened, this, [this](const QJsonObject &project) {
@@ -255,6 +278,11 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
         return;
     }
 
+    // The project picked stays picked when the list is redrawn (after a build, say),
+    // without loading it again.
+    const QString picked = m_tree->currentItem() ? m_tree->currentItem()->data(NameColumn, IdRole).toString()
+                                                  : QString();
+    const bool wasBlocked = m_tree->blockSignals(true);
     m_tree->setSortingEnabled(false); // insert in the site's order
     m_tree->clear();
     const QJsonArray projects = library.value(u"projects"_s).toArray();
@@ -270,6 +298,20 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
     }
     for (const QJsonObject &p : std::as_const(ordered)) {
         auto *item = new ProjectItem(m_tree);
+        QStringList tags;
+        for (const QJsonValue &t : p.value(u"tags"_s).toArray())
+            tags << t.toString();
+        item->setData(NameColumn, TagsRole, tags);
+        QStringList built;
+        for (const QJsonValue &b : p.value(u"built"_s).toArray())
+            built << b.toString();
+        item->setData(NameColumn, BuiltRole, built);
+        if (!built.isEmpty()) {
+            // Built ones stand out: ready to run or flash.
+            QFont f = item->font(NameColumn);
+            f.setBold(true);
+            item->setFont(NameColumn, f);
+        }
         const bool starred = p.value(u"starred"_s).toBool();
         item->setData(NameColumn, StarredRole, starred);
         // A star before a starred project's name: a symbol, not words to translate.
@@ -303,6 +345,9 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
             item->setToolTip(NameColumn,
                              tr("%1\n\nRuns in the simulator.").arg(p.value(u"summary"_s).toString()));
         }
+        if (!built.isEmpty())
+            item->setToolTip(NameColumn, tr("%1\n\nBuilt on this computer for: %2.")
+                                             .arg(item->toolTip(NameColumn), built.join(u", "_s)));
 
         const bool prebuilt = p.value(u"firmware"_s).toString() == u"prebuilt";
         item->setText(FirmwareColumn, prebuilt ? tr("Prebuilt") : tr("Arduino sketch"));
@@ -320,6 +365,7 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
     addLocalItems();
     m_tree->setSortingEnabled(true);
     fitColumns();
+    fillTopics();
 
     const qint64 fetched = library.value(u"fetchedAt"_s).toInteger();
     const QString when = fetched > 0
@@ -327,6 +373,11 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
         : tr("unknown");
     setStatus(tr("Projects: %1. Downloaded %2.").arg(projects.size()).arg(when));
     applyFilter();
+    for (int i = 0; !picked.isEmpty() && i < m_tree->topLevelItemCount(); ++i) {
+        if (m_tree->topLevelItem(i)->data(NameColumn, IdRole).toString() == picked)
+            m_tree->setCurrentItem(m_tree->topLevelItem(i));
+    }
+    m_tree->blockSignals(wasBlocked); // a project asked for meanwhile (a link) is loaded
     if (!m_pendingSelect.isEmpty())
         selectProject(std::exchange(m_pendingSelect, {}));
 }
@@ -473,6 +524,11 @@ void LibraryPanel::applyFilter()
             match = false;
         if (m_starredOnly->isChecked() && !item->data(NameColumn, StarredRole).toBool())
             match = false;
+        if (m_builtOnly->isChecked() && item->data(NameColumn, BuiltRole).toStringList().isEmpty())
+            match = false;
+        if (const QString topic = m_tag->currentData().toString();
+            !topic.isEmpty() && !item->data(NameColumn, TagsRole).toStringList().contains(topic))
+            match = false;
         if (m_fitsBoard->isChecked() && m_fitsBoard->isEnabled()) {
             const QStringList chips = item->data(NameColumn, ChipsRole).toStringList();
             match = match && std::any_of(chips.begin(), chips.end(),
@@ -493,4 +549,27 @@ QList<std::pair<QString, QString>> LibraryPanel::projects() const
         out.append({name, item->data(NameColumn, IdRole).toString()});
     }
     return out;
+}
+
+void LibraryPanel::fillTopics()
+{
+    // The tags, most used first (with how many projects have each); the choice stays.
+    QHash<QString, int> count;
+    for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+        for (const QString &t : m_tree->topLevelItem(i)->data(NameColumn, TagsRole).toStringList())
+            ++count[t];
+    }
+    QStringList tags = count.keys();
+    std::sort(tags.begin(), tags.end(), [&](const QString &a, const QString &b) {
+        return count.value(a) != count.value(b) ? count.value(a) > count.value(b) : a < b;
+    });
+    const QString current = m_tag->currentData().toString();
+    const QSignalBlocker block(m_tag);
+    while (m_tag->count() > 1)
+        m_tag->removeItem(1);
+    for (const QString &t : std::as_const(tags))
+        m_tag->addItem(tr("%1 (%2)").arg(t).arg(count.value(t)), t);
+    const int i = m_tag->findData(current);
+    m_tag->setCurrentIndex(i < 0 ? 0 : i);
+    m_tag->setEnabled(m_tag->count() > 1);
 }

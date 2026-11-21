@@ -11,6 +11,7 @@ class ConsoleBar;
 class CoreConnection;
 class QJsonArray;
 class QCheckBox;
+class QHBoxLayout;
 class QLabel;
 class QComboBox;
 class QLineEdit;
@@ -33,6 +34,13 @@ public:
     // At start: choose the port used last time when it shows up, and open it again
     // if it was open when the app quit (Preferences::reopenSerial).
     void restoreLastPort() { m_restore = true; }
+    // The project shown, whose quick-send lines the monitor offers (commands.get).
+    void setProject(const QString &project);
+    QStringList quickCommands() const { return m_commands; }
+    // Keep the line typed as a quick-send button; send a kept line; forget one.
+    void keepInput();
+    void sendCommand(const QString &line);
+    void forgetCommand(const QString &line);
     // Choose this baud rate if the port is closed (a project's, say).
     void suggestBaud(int baud);
     // The baud rate a library project's firmware uses (from library.get), or 0.
@@ -68,6 +76,11 @@ private:
     QPushButton *m_send;
     QCheckBox *m_hex;
     QLabel *m_expect;
+    QString m_project;
+    QStringList m_commands;
+    QHBoxLayout *m_quick = nullptr;
+    QPushButton *m_keep = nullptr;
+    void showCommands();
     bool m_restore = false;  // restoreLastPort() was called
     bool m_restored = false; // the last session's port chosen (or not there)
     bool m_open_ = false;

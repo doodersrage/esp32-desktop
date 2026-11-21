@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 28;
+    static constexpr int ProtocolMinor = 29;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -162,9 +162,13 @@ public:
     // frame.save: the core writes `image` to `path` as PNG; frameSaved after.
     void saveFrame(const QString &path, const QImage &image);
     // library.export: the core saves the sketch for `board` under `dir`; sketchExported after.
-    void exportSketch(const QString &project, const QString &board, const QString &dir);
+    // `reuse`: keep and return a sketch saved there before (library.export's reuse).
+    void exportSketch(const QString &project, const QString &board, const QString &dir, bool reuse = false);
     // build.status: whether the project is built for the board; buildStatusReady after.
     void requestBuildStatus(const QString &project, const QString &board);
+    // commands.get / commands.set: a project's quick-send lines; commandsListed after.
+    void getCommands(const QString &project);
+    void setCommands(const QString &project, const QStringList &commands);
 
     // debug.*: on the simulator started with debug. Results come as signals.
     void debugBreak(const QString &location);
@@ -256,8 +260,9 @@ signals:
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
     void consoleSaved(const QString &path);
     void plotSaved(const QString &path, qint64 rows);
+    void commandsListed(const QString &project, const QStringList &commands);
     void frameSaved(const QString &path);
-    void sketchExported(const QString &path, const QStringList &libraries);
+    void sketchExported(const QString &path, const QStringList &libraries, bool existing);
     void buildStatusReady(const QString &project, const QString &board, const QJsonObject &status);
     // A failed build's first compiler error (build.finished's firstError); sent just
     // before buildFinished.

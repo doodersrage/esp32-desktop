@@ -145,18 +145,52 @@ pub enum Error {
 /// folder `<dir>/<project>/` holding `<project>.ino`. Nothing is overwritten.
 /// Returns the sketch file.
 pub fn export_sketch(plan: &Plan, code: &str, dir: &Path) -> Result<PathBuf, Error> {
+    export_sketch_or_reuse(plan, code, dir, false).map(|(ino, _)| ino)
+}
+
+/// As `export_sketch`; with `reuse`, a sketch already saved there is kept as it is
+/// (the user may have changed it) and its file returned, with `true`.
+pub fn export_sketch_or_reuse(
+    plan: &Plan,
+    code: &str,
+    dir: &Path,
+    reuse: bool,
+) -> Result<(PathBuf, bool), Error> {
     safe_id(&plan.project)?;
     if plan.image.is_some() || code.is_empty() {
         return Err(Error::NoCode(plan.project.clone()));
     }
     let folder = dir.join(&plan.project);
+    let existing = folder.join(format!("{}.ino", plan.project));
+    if reuse && existing.is_file() {
+        return Ok((existing, true));
+    }
     if folder.exists() {
         return Err(Error::Exists(folder));
     }
     std::fs::create_dir_all(&folder)?;
-    let ino = folder.join(format!("{}.ino", plan.project));
-    std::fs::write(&ino, code)?;
-    Ok(ino)
+    std::fs::write(&existing, code)?;
+    Ok((existing, false))
+}
+
+/// The boards `project` has a stamped build for under `builds_root` (any plan).
+pub fn built_boards(builds_root: &Path, project: &str) -> Vec<String> {
+    if safe_id(project).is_err() {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(builds_root.join(project)) else {
+        return Vec::new();
+    };
+    let mut boards: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| {
+            let board = e.file_name().to_string_lossy().into_owned();
+            let out = e.path().join("out");
+            read_stamp(&out, &out.join(format!("{project}.ino.merged.bin"))).map(|_| board)
+        })
+        .collect();
+    boards.sort();
+    boards
 }
 
 /// Arduino-ESP32 board ids for each build target, and the partition scheme that gives

@@ -13,6 +13,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMenu>
 #include <QSettings>
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -123,10 +124,26 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     top->addWidget(m_open);
     top->addWidget(m_reset);
     top->addWidget(m_clear);
+    // Quick-send: lines kept for the project shown (in the core), one button each.
+    m_quick = new QHBoxLayout;
+    m_keep = new QPushButton(QIcon::fromTheme(u"list-add"_s), tr("Keep"), this);
+    m_keep->setToolTip(tr("Keep the line typed as a button that sends it (for this project)"));
+    connect(m_keep, &QPushButton::clicked, this, &SerialMonitor::keepInput);
+    connect(m_core, &CoreConnection::commandsListed, this, [this](const QString &project, const QStringList &lines) {
+        if (project == m_project) {
+            m_commands = lines;
+            showCommands();
+        }
+    });
+    connect(m_core, &CoreConnection::stateChanged, this, [this](CoreConnection::State st) {
+        if (st == CoreConnection::State::Connected)
+            m_core->getCommands(m_project);
+    });
     auto *bottom = new QHBoxLayout;
     bottom->addWidget(m_input, 1);
     bottom->addWidget(m_ending);
     bottom->addWidget(m_hex);
+    bottom->addWidget(m_keep);
     bottom->addWidget(m_send);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
@@ -134,6 +151,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     layout->addWidget(m_output, 1);
     m_tools = new ConsoleBar(m_output, m_core, u"serial/timestamps"_s, this);
     layout->addWidget(m_tools);
+    layout->addLayout(m_quick);
     layout->addLayout(bottom);
 
     connect(m_core, &CoreConnection::devicesListed, this, &SerialMonitor::setPorts);
@@ -312,6 +330,73 @@ void SerialMonitor::setOpen(bool open)
     m_baud->setEnabled(!open);
     m_reset->setEnabled(open);
     m_input->setEnabled(open);
+    for (int i = 0; m_quick && i < m_quick->count(); ++i) {
+        if (QWidget *w = m_quick->itemAt(i)->widget())
+            w->setEnabled(open);
+    }
     m_send->setEnabled(open);
     m_ending->setEnabled(open);
+}
+
+void SerialMonitor::setProject(const QString &project)
+{
+    if (project == m_project)
+        return;
+    m_project = project;
+    m_commands.clear();
+    showCommands();
+    if (m_core->state() == CoreConnection::State::Connected)
+        m_core->getCommands(project);
+}
+
+void SerialMonitor::keepInput()
+{
+    const QString line = m_input->text();
+    if (line.trimmed().isEmpty() || m_commands.contains(line))
+        return;
+    m_core->setCommands(m_project, m_commands + QStringList{line});
+}
+
+void SerialMonitor::forgetCommand(const QString &line)
+{
+    QStringList kept = m_commands;
+    kept.removeAll(line);
+    m_core->setCommands(m_project, kept);
+}
+
+void SerialMonitor::sendCommand(const QString &line)
+{
+    if (!m_open_)
+        return;
+    if (m_hex->isChecked()) {
+        const QByteArray bytes = hexBytes(line);
+        if (!bytes.isEmpty())
+            m_core->writeSerial(bytes);
+        return;
+    }
+    m_core->writeSerial((line + m_ending->currentData().toString()).toUtf8());
+}
+
+void SerialMonitor::showCommands()
+{
+    while (QLayoutItem *item = m_quick->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
+    for (const QString &line : std::as_const(m_commands)) {
+        auto *b = new QPushButton(line, this);
+        b->setToolTip(tr("Send “%1”; right-click to forget it").arg(line));
+        b->setEnabled(m_open_);
+        b->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(b, &QPushButton::clicked, this, [this, line] { sendCommand(line); });
+        connect(b, &QPushButton::customContextMenuRequested, this, [this, b, line](const QPoint &pos) {
+            QMenu menu(this);
+            menu.addAction(QIcon::fromTheme(u"list-remove"_s), tr("Forget this button"), this,
+                           [this, line] { forgetCommand(line); });
+            menu.exec(b->mapToGlobal(pos));
+        });
+        m_quick->addWidget(b);
+    }
+    if (!m_commands.isEmpty())
+        m_quick->addStretch(1);
 }

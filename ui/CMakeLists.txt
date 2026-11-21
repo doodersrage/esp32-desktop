@@ -38,6 +38,7 @@ add_library(esp32bench_ui STATIC
     src/MessageBar.cpp src/MessageBar.h
     src/Preferences.cpp src/Preferences.h
     src/CommandPalette.cpp src/CommandPalette.h
+    src/ProblemsPanel.cpp src/ProblemsPanel.h
     src/Translations.cpp src/Translations.h
     src/Icons.cpp src/Icons.h
     src/TracePanel.cpp src/TracePanel.h

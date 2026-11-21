@@ -6,12 +6,14 @@
 #include "MainWindow.h"
 #include "MessageBar.h"
 #include "Preferences.h"
+#include "ProblemsPanel.h"
 #include "CommandPalette.h"
 #include "SerialMonitor.h"
 
 #include <QCheckBox>
 #include <QAction>
 #include <QComboBox>
+#include <QTreeWidget>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QTextBlock>
@@ -89,7 +91,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.28.0"_s}});
+                                  {u"protocol"_s, u"0.29.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
@@ -328,6 +330,20 @@ private slots:
         window.sayWhatsNew();
         QVERIFY(window.messageBar()->text().isEmpty());
 
+        // Copy details: the error and the versions.
+        window.messageBar()->showError(u"Flashing failed: no reply"_s);
+        QVERIFY(!window.messageBar()->copyButton()->isHidden());
+        QVERIFY(window.messageBar()->detailsText().startsWith(u"Flashing failed: no reply\n\n"_s));
+        QVERIFY(window.messageBar()->detailsText().contains(u"- App: "_s));
+        window.messageBar()->dismiss();
+
+        // The Problems dock keeps every explanation.
+        emit core.outputExplained(u"serial"_s, QJsonArray{QJsonObject{{u"level"_s, u"problem"_s},
+                                                                     {u"text"_s, u"The board browned out."_s},
+                                                                     {u"url"_s, u"https://esp32bench.dev/errors/brownout/"_s}}});
+        QCOMPARE(window.problems()->tree()->topLevelItemCount(), 1);
+        QCOMPARE(window.problems()->tree()->topLevelItem(0)->text(ProblemsPanel::TextColumn), u"The board browned out."_s);
+
         // Undo in the message bar.
         bool undone = false;
         window.messageBar()->showUndo(u"Forgot x."_s, u"Undo"_s, [&undone] { undone = true; });
@@ -374,6 +390,26 @@ private slots:
         QSettings().remove(u"ui"_s);
         QSettings().remove(u"update"_s);
         QSettings().setValue(u"console/zoom"_s, 0);
+    }
+
+    void quickSendButtons()
+    {
+        CoreConnection core;
+        SerialMonitor mon(&core);
+        mon.setProject(u"simon"_s);
+        emit core.commandsListed(u"simon"_s, {u"help"_s, u"status"_s});
+        QCOMPARE(mon.quickCommands(), (QStringList{u"help"_s, u"status"_s}));
+        QPushButton *help = nullptr;
+        for (QPushButton *b : mon.findChildren<QPushButton *>())
+            if (b->text() == u"help"_s)
+                help = b;
+        QVERIFY(help);
+        QVERIFY(!help->isEnabled()); // the port is closed
+        // Another project's lines are not this one's.
+        emit core.commandsListed(u"blink"_s, {u"x"_s});
+        QCOMPARE(mon.quickCommands().size(), 2);
+        mon.setProject(u"blink"_s);
+        QVERIFY(mon.quickCommands().isEmpty());
     }
 
     void consoleZoomsAndInputRemembers()

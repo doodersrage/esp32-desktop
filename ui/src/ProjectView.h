@@ -55,6 +55,7 @@ public:
     QPushButton *buildButton() const { return m_build; }
     QPushButton *copyCodeButton() const { return m_copyCode; }
     QPushButton *saveCodeButton() const { return m_saveCode; }
+    QPushButton *openIdeButton() const { return m_openIde; }
     QString buildStateText() const;
     // Render a build.status result for the project and board shown. Public for tests.
     void showBuildState(const QJsonObject &status);
@@ -81,6 +82,8 @@ signals:
     void currentChanged();
     // The guide's Try Blink button.
     void tryRequested();
+    // Open in Arduino IDE was pressed for this project and board.
+    void openInIdeRequested(const QString &project, const QString &board);
     // A recent project on the guide was clicked.
     void recentRequested(const QString &id);
     // build.status said whether this project's build for this board can be used as it
@@ -121,6 +124,9 @@ private:
     QPushButton *m_try = nullptr;
     bool m_tryAvailable = false;
     static constexpr int ChipRole = Qt::UserRole + 1;
+    // A board item's name without "· connected".
+    static constexpr int NameRole = Qt::UserRole + 2;
+    void markConnectedBoards();
 
     QStackedWidget *m_stack;
     QLabel *m_placeholder;
@@ -141,6 +147,7 @@ private:
     QPlainTextEdit *m_code;
     QPushButton *m_copyCode;
     QPushButton *m_saveCode;
+    QPushButton *m_openIde;
     QLabel *m_buildState;
     QPlainTextEdit *m_output;
     QLabel *m_notes;

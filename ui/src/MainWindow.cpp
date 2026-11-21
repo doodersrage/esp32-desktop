@@ -15,6 +15,7 @@
 #include "DisplayPanel.h"
 #include "PinsPanel.h"
 #include "PlotPanel.h"
+#include "ProblemsPanel.h"
 #include "Preferences.h"
 #include "TracePanel.h"
 #include "CircuitPanel.h"
@@ -27,6 +28,8 @@
 #include <QComboBox>
 #include <QFileInfo>
 #include <QDesktopServices>
+#include <QStandardPaths>
+#include <QDir>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QLineEdit>
@@ -81,8 +84,27 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_split->setStretchFactor(0, 1);
     m_split->setStretchFactor(1, 1);
     connect(m_library, &LibraryPanel::projectSelected, m_project, &ProjectView::showProject);
-    connect(core, &CoreConnection::sketchExported, this, [this](const QString &path, const QStringList &libraries) {
+    // Open in Arduino IDE: saved once in the sketchbook (later changes kept), then
+    // opened with whatever opens .ino files here.
+    connect(m_project, &ProjectView::openInIdeRequested, this, [this](const QString &project, const QString &board) {
+        m_openSketch = true;
+        m_core->exportSketch(project, board, sketchbookDir(), true);
+    });
+    connect(core, &CoreConnection::sketchExported, this, [this](const QString &path, const QStringList &libraries, bool) {
         const QString folder = QFileInfo(path).absolutePath();
+        if (std::exchange(m_openSketch, false)) {
+            const QString libs = libraries.isEmpty()
+                ? QString()
+                : u" "_s + tr("Install these libraries in it too: %1.").arg(libraries.join(u", "_s));
+            if (QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
+                m_messages->showNotice(tr("Opened %1.").arg(path) + libs, QUrl::fromLocalFile(folder).toString(),
+                                       tr("Open the folder"), {});
+            else
+                m_messages->showError(tr("Nothing on this computer opens .ino files; install the Arduino IDE. "
+                                         "The sketch is in %1.")
+                                          .arg(folder));
+            return;
+        }
         const QString text = libraries.isEmpty()
             ? tr("Saved the sketch to %1.").arg(path)
             : tr("Saved the sketch to %1. In the Arduino IDE, install these libraries too: %2.")
@@ -138,6 +160,15 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     connect(core, &CoreConnection::toolchainStatus, this,
             [this](const QJsonArray &components) { m_toolchain = components; });
     setAcceptDrops(true);
+    // An error's Copy details: the message, the library project and board shown (they
+    // are the site's, not the user's), and the versions.
+    m_messages->setDetails([this] {
+        QStringList lines;
+        const QString id = m_project->currentProjectId();
+        if (!id.isEmpty() && !id.startsWith(u"local-"_s))
+            lines << u"- Project: %1 (%2)"_s.arg(id, m_project->currentBuildBoard());
+        return (lines + versionLines()).join(u'\n');
+    });
     // Esc closes the message above the library (dialogs keep their own Esc).
     auto *escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
     connect(escape, &QShortcut::activated, this, [this] {
@@ -188,6 +219,16 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     addDockWidget(Qt::BottomDockWidgetArea, m_buildDock);
     connect(core, &CoreConnection::buildStarted, m_buildDock, &QDockWidget::show);
     connect(core, &CoreConnection::buildStarted, m_buildDock, &QDockWidget::raise);
+
+    // Every explanation of the session, beside the build log; hidden until opened
+    // from the View menu or the message bar.
+    m_problemsDock = new QDockWidget(tr("Problems"), this);
+    m_problemsDock->setObjectName(u"problemsDock"_s);
+    m_problems = new ProblemsPanel(core, m_problemsDock);
+    m_problemsDock->setWidget(m_problems);
+    addDockWidget(Qt::BottomDockWidgetArea, m_problemsDock);
+    tabifyDockWidget(m_buildDock, m_problemsDock);
+    m_problemsDock->hide();
 
     m_serialDock = new QDockWidget(tr("Serial monitor"), this);
     m_serialDock->setObjectName(u"serialDock"_s);
@@ -379,8 +420,10 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
             tr("Opened %1 from a link. Building or flashing it will ask first.").arg(project), 15000);
     });
     connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
-        if (method == u"library.export")
+        if (method == u"library.export") {
+            m_openSketch = false;
             m_messages->showError(tr("Could not save the sketch: %1").arg(message));
+        }
         if (method == u"plot.save")
             m_messages->showError(tr("Could not save the plot: %1").arg(message));
         if (method == u"link.open")
@@ -513,6 +556,21 @@ void MainWindow::buildToolBar()
     m_toolBar->addWidget(m_nextStep);
 
     connect(m_project, &ProjectView::recentRequested, m_library, &LibraryPanel::selectProject);
+    // Double-click or Enter in the library: run it, once it is shown (Run builds first,
+    // asking; a project the simulator cannot run is built).
+    connect(m_library, &LibraryPanel::projectActivated, this, [this](const QString &id) {
+        m_activatePending = id;
+        runActivated();
+    });
+    connect(m_project, &ProjectView::currentChanged, this, &MainWindow::runActivated);
+    // The serial monitor's quick-send lines follow the project shown.
+    connect(m_project, &ProjectView::currentChanged, this,
+            [this] { m_serial->setProject(m_project->currentProjectId()); });
+    // Another project picked meanwhile: that run is off.
+    connect(m_library, &LibraryPanel::projectSelected, this, [this](const QString &id) {
+        if (id != m_activatePending)
+            m_activatePending.clear();
+    });
     {
         QSettings settings;
         showRecentOnGuide(settings.value(u"project/recent"_s).toStringList(),
@@ -714,6 +772,7 @@ void MainWindow::buildMenus()
     QMenu *view = menuBar()->addMenu(tr("&View"));
     view->addAction(m_devicesDock->toggleViewAction());
     view->addAction(m_buildDock->toggleViewAction());
+    view->addAction(m_problemsDock->toggleViewAction());
     view->addAction(m_serialDock->toggleViewAction());
     view->addAction(m_simDock->toggleViewAction());
     view->addAction(m_traceDock->toggleViewAction());
@@ -883,6 +942,31 @@ void MainWindow::openLink(const QString &url)
         m_pendingLinks << url;
 }
 
+QString MainWindow::sketchbookDir()
+{
+    // Where the Arduino IDE keeps sketches unless told otherwise.
+#ifdef Q_OS_LINUX
+    return QDir::home().filePath(u"Arduino"_s);
+#else
+    return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath(u"Arduino"_s);
+#endif
+}
+
+void MainWindow::runActivated()
+{
+    if (m_activatePending.isEmpty() || m_project->currentProjectId() != m_activatePending)
+        return;
+    QAction *run = m_buildPanel->simulateAction();
+    QAction *build = m_project->buildAction();
+    if (run->isEnabled()) {
+        m_activatePending.clear();
+        run->trigger();
+    } else if (build->isEnabled()) {
+        m_activatePending.clear();
+        build->trigger();
+    }
+}
+
 void MainWindow::showRecentOnGuide(const QStringList &ids, const QStringList &titles)
 {
     QList<std::pair<QString, QString>> recent;
@@ -1005,11 +1089,10 @@ void MainWindow::showShortcuts()
     box.exec();
 }
 
-QUrl MainWindow::problemReportUrl() const
+QStringList MainWindow::versionLines() const
 {
     // Versions only: no paths, ports or project names, which can say who someone is.
-    QStringList lines{tr("What happened, and what you expected:"), QString(), QString(), u"---"_s,
-                      u"- App: %1"_s.arg(QApplication::applicationVersion()),
+    QStringList lines{u"- App: %1"_s.arg(QApplication::applicationVersion()),
                       u"- Core: %1"_s.arg(m_core->coreVersion().isEmpty() ? u"not connected"_s : m_core->coreVersion()),
                       u"- System: %1 (%2)"_s.arg(QSysInfo::prettyProductName(), QSysInfo::currentCpuArchitecture()),
                       u"- Qt: %1"_s.arg(QString::fromLatin1(qVersion()))};
@@ -1020,6 +1103,13 @@ QUrl MainWindow::problemReportUrl() const
             state += u" "_s + c.value(u"version"_s).toString();
         lines << u"- %1: %2"_s.arg(c.value(u"id"_s).toString(), state);
     }
+    return lines;
+}
+
+QUrl MainWindow::problemReportUrl() const
+{
+    QStringList lines{tr("What happened, and what you expected:"), QString(), QString(), u"---"_s};
+    lines << versionLines();
     QUrlQuery q;
     q.addQueryItem(u"body"_s, lines.join(u'\n'));
     QUrl url(u"https://github.com/doodersrage/esp32-desktop/issues/new"_s);

@@ -1005,9 +1005,10 @@ void CoreConnection::saveFrame(const QString &path, const QImage &image)
                    });
 }
 
-void CoreConnection::exportSketch(const QString &project, const QString &board, const QString &dir)
+void CoreConnection::exportSketch(const QString &project, const QString &board, const QString &dir, bool reuse)
 {
-    m_client->call(u"library.export"_s, {{u"id"_s, project}, {u"board"_s, board}, {u"dir"_s, dir}}, this,
+    m_client->call(u"library.export"_s,
+                   {{u"id"_s, project}, {u"board"_s, board}, {u"dir"_s, dir}, {u"reuse"_s, reuse}}, this,
                    [this](const RpcReply &r) {
                        if (!r.ok) {
                            emit requestFailed(u"library.export"_s, r.errorMessage);
@@ -1017,7 +1018,34 @@ void CoreConnection::exportSketch(const QString &project, const QString &board, 
                        QStringList libs;
                        for (const QJsonValue &v : o.value(u"libraries"_s).toArray())
                            libs << v.toString();
-                       emit sketchExported(o.value(u"path"_s).toString(), libs);
+                       emit sketchExported(o.value(u"path"_s).toString(), libs, o.value(u"existing"_s).toBool());
+                   });
+}
+
+void CoreConnection::getCommands(const QString &project)
+{
+    m_client->call(u"commands.get"_s, {{u"project"_s, project}}, this, [this, project](const RpcReply &r) {
+        if (!r.ok)
+            return;
+        QStringList out;
+        for (const QJsonValue &v : r.result.toObject().value(u"commands"_s).toArray())
+            out << v.toString();
+        emit commandsListed(project, out);
+    });
+}
+
+void CoreConnection::setCommands(const QString &project, const QStringList &commands)
+{
+    m_client->call(u"commands.set"_s, {{u"project"_s, project}, {u"commands"_s, QJsonArray::fromStringList(commands)}},
+                   this, [this, project](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"commands.set"_s, r.errorMessage);
+                           return;
+                       }
+                       QStringList out;
+                       for (const QJsonValue &v : r.result.toObject().value(u"commands"_s).toArray())
+                           out << v.toString();
+                       emit commandsListed(project, out);
                    });
 }
 

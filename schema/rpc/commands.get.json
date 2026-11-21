@@ -1,0 +1,51 @@
+{
+  "method": "commands.get",
+  "description": "Since protocol 0.29: the lines kept for a project's board, for the serial monitor's quick-send buttons (commands.set keeps them).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "A project id; empty or absent for lines not tied to one."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "commands"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "commands": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "simon"
+      },
+      "result": {
+        "commands": [
+          "help",
+          "status"
+        ]
+      }
+    }
+  ]
+}

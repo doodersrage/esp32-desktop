@@ -20,6 +20,10 @@
       "dir": {
         "type": "string",
         "description": "An absolute folder path."
+      },
+      "reuse": {
+        "type": "boolean",
+        "description": "Since protocol 0.29: if the sketch was saved there before, keep it as it is (it may have been changed) and return it, with existing: true. Default false: an existing folder fails."
       }
     }
   },
@@ -42,6 +46,10 @@
           "type": "string"
         },
         "description": "Arduino libraries the sketch needs, to install in the Arduino IDE."
+      },
+      "existing": {
+        "type": "boolean",
+        "description": "Since protocol 0.29: the sketch was there already (reuse)."
       }
     }
   },

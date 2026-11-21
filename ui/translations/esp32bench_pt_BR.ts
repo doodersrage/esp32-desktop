@@ -855,6 +855,26 @@
         <translation>Com estrela</translation>
     </message>
     <message>
+        <source>Built</source>
+        <translation>Compilados</translation>
+    </message>
+    <message>
+        <source>Only projects built on this computer, ready to run or flash</source>
+        <translation>Só projetos compilados neste computador, prontos para executar ou gravar</translation>
+    </message>
+    <message>
+        <source>All topics</source>
+        <translation>Todos os temas</translation>
+    </message>
+    <message>
+        <source>Topic</source>
+        <translation>Tema</translation>
+    </message>
+    <message>
+        <source>Only projects about one topic, such as a display or Wi-Fi</source>
+        <translation>Só projetos sobre um tema, como uma tela ou Wi-Fi</translation>
+    </message>
+    <message>
         <source>Search projects</source>
         <translation>Buscar projetos</translation>
     </message>
@@ -975,6 +995,14 @@ Runs in the simulator.</source>
 Roda no simulador.</translation>
     </message>
     <message>
+        <source>%1
+
+Built on this computer for: %2.</source>
+        <translation>%1
+
+Compilado neste computador para: %2.</translation>
+    </message>
+    <message>
         <source>Prebuilt</source>
         <translation>Pré-compilado</translation>
     </message>
@@ -1009,6 +1037,10 @@ Roda no simulador.</translation>
     <message>
         <source>Your own ESP-IDF project, built with idf.py. Right-click to forget it.</source>
         <translation>Seu próprio projeto ESP-IDF, compilado com idf.py. Clique com o botão direito para esquecê-lo.</translation>
+    </message>
+    <message>
+        <source>%1 (%2)</source>
+        <translation>%1 (%2)</translation>
     </message>
 </context>
 <context>
@@ -1088,6 +1120,18 @@ O painel Compilação abaixo tem o registro completo.</translation>
         <translation>Abrir a pasta</translation>
     </message>
     <message>
+        <source>Install these libraries in it too: %1.</source>
+        <translation>Instale também estas bibliotecas nela: %1.</translation>
+    </message>
+    <message>
+        <source>Opened %1.</source>
+        <translation>%1 aberto.</translation>
+    </message>
+    <message>
+        <source>Nothing on this computer opens .ino files; install the Arduino IDE. The sketch is in %1.</source>
+        <translation>Nada neste computador abre arquivos .ino; instale a IDE do Arduino. O sketch está em %1.</translation>
+    </message>
+    <message>
         <source>Note: %1</source>
         <translation>Nota: %1</translation>
     </message>
@@ -1116,6 +1160,10 @@ O painel Compilação abaixo tem o log completo.</translation>
     <message>
         <source>Open the file</source>
         <translation>Abrir o arquivo</translation>
+    </message>
+    <message>
+        <source>Problems</source>
+        <translation>Problemas</translation>
     </message>
     <message>
         <source>Plot</source>
@@ -1493,6 +1541,14 @@ SHA-256 do código: %2</translation>
 <context>
     <name>MessageBar</name>
     <message>
+        <source>Copy details</source>
+        <translation>Copiar detalhes</translation>
+    </message>
+    <message>
+        <source>Copy the message and the app&apos;s versions, to paste into a question or a problem report</source>
+        <translation>Copiar a mensagem e as versões do app, para colar em uma pergunta ou relato de problema</translation>
+    </message>
+    <message>
         <source>Undo</source>
         <translation>Desfazer</translation>
     </message>
@@ -1693,6 +1749,53 @@ SHA-256 do código: %2</translation>
     </message>
 </context>
 <context>
+    <name>ProblemsPanel</name>
+    <message>
+        <source>Clear</source>
+        <translation>Limpar</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>Hora</translation>
+    </message>
+    <message>
+        <source>From</source>
+        <translation>Origem</translation>
+    </message>
+    <message>
+        <source>What it means</source>
+        <translation>O que significa</translation>
+    </message>
+    <message>
+        <source>Problems</source>
+        <translation>Problemas</translation>
+    </message>
+    <message>
+        <source>Double-click one to read about it on esp32bench.dev</source>
+        <translation>Clique duas vezes em um para ler sobre ele no esp32bench.dev</translation>
+    </message>
+    <message>
+        <source>Clear the list</source>
+        <translation>Limpar a lista</translation>
+    </message>
+    <message>
+        <source>The build failed at %1, line %2: %3</source>
+        <translation>A compilação falhou em %1, linha %2: %3</translation>
+    </message>
+    <message>
+        <source>Simulator</source>
+        <translation>Simulador</translation>
+    </message>
+    <message>
+        <source>Board</source>
+        <translation>Placa</translation>
+    </message>
+    <message>
+        <source>Build</source>
+        <translation>Compilação</translation>
+    </message>
+</context>
+<context>
     <name>ProjectView</name>
     <message>
         <source>Try Blink in the simulator</source>
@@ -1777,6 +1880,14 @@ SHA-256 do código: %2</translation>
     <message>
         <source>Save the sketch in which folder?</source>
         <translation>Em qual pasta salvar o sketch?</translation>
+    </message>
+    <message>
+        <source>Open in Arduino IDE</source>
+        <translation>Abrir na IDE do Arduino</translation>
+    </message>
+    <message>
+        <source>Save the sketch in your Arduino sketchbook (once; your changes are kept) and open it</source>
+        <translation>Salvar o sketch na sua pasta de sketches do Arduino (uma vez; suas alterações são mantidas) e abri-lo</translation>
     </message>
     <message>
         <source>Expected output</source>
@@ -1889,6 +2000,10 @@ SHA-256 do código: %2</translation>
     <message>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
+    </message>
+    <message>
+        <source>%1 · connected</source>
+        <translation>%1 · conectada</translation>
     </message>
     <message>
         <source>Pins used: %1</source>
@@ -2045,6 +2160,14 @@ SHA-256 do código: %2</translation>
         <translation>O que adicionar depois de cada linha enviada</translation>
     </message>
     <message>
+        <source>Keep</source>
+        <translation>Guardar</translation>
+    </message>
+    <message>
+        <source>Keep the line typed as a button that sends it (for this project)</source>
+        <translation>Guardar a linha digitada como um botão que a envia (para este projeto)</translation>
+    </message>
+    <message>
         <source>Connected to %1 at %2 baud.</source>
         <translation>Conectado a %1 a %2 baud.</translation>
     </message>
@@ -2083,6 +2206,14 @@ SHA-256 do código: %2</translation>
     <message>
         <source>Open</source>
         <translation>Abrir</translation>
+    </message>
+    <message>
+        <source>Send “%1”; right-click to forget it</source>
+        <translation>Enviar “%1”; clique direito para esquecer</translation>
+    </message>
+    <message>
+        <source>Forget this button</source>
+        <translation>Esquecer este botão</translation>
     </message>
 </context>
 <context>

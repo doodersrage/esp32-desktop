@@ -23,6 +23,7 @@ class PinsPanel;
 class TracePanel;
 class CircuitPanel;
 class PlotPanel;
+class ProblemsPanel;
 class QDockWidget;
 class QLabel;
 class QPushButton;
@@ -59,6 +60,7 @@ public:
     QToolButton *boardMenuButton() const { return m_boardMenu; }
     CircuitPanel *circuit() const { return m_circuit; }
     PlotPanel *plot() const { return m_plot; }
+    ProblemsPanel *problems() const { return m_problems; }
     void showSetup();
     // Open an esp32bench:// link: select the project (and board) it names. It is
     // not built or flashed; that still asks first. Waits for the core if needed.
@@ -88,6 +90,8 @@ public:
     void showShortcuts();
     // Help → Report a problem: a new GitHub issue with the versions filled in.
     QUrl problemReportUrl() const;
+    // The app, core, system, Qt and tool versions, as "- name: version" lines.
+    QStringList versionLines() const;
     // What a drop would open: local paths (ESP-IDF project folders) and esp32bench://
     // links. Empty when it has neither.
     static QStringList dropTargets(const QMimeData *mime);
@@ -104,6 +108,16 @@ private:
     void updateToolBar();
     void showShortcutsInToolTips();
     void showRecentOnGuide(const QStringList &ids, const QStringList &titles);
+    // Run (or build) the project activated in the library, once it is shown.
+    void runActivated();
+    QString m_activatePending;
+    QDockWidget *m_problemsDock = nullptr;
+    ProblemsPanel *m_problems = nullptr;
+    bool m_openSketch = false; // the next exported sketch is opened
+public:
+    // The Arduino IDE's sketchbook: ~/Arduino on Linux, Documents/Arduino elsewhere.
+    static QString sketchbookDir();
+private:
     // The first-start layout: library, project, simulator and circuit; the rest open
     // when they have something to show. View → Reset layout returns to it.
     void resetLayout();

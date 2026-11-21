@@ -187,10 +187,16 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
         if (!dir.isEmpty())
             m_core->exportSketch(m_project.value(u"id"_s).toString(), m_board->currentData().toString(), dir);
     });
+    m_openIde = new QPushButton(QIcon::fromTheme(u"document-edit"_s), tr("Open in Arduino IDE"), codePage);
+    m_openIde->setToolTip(tr("Save the sketch in your Arduino sketchbook (once; your changes are kept) and open it"));
+    connect(m_openIde, &QPushButton::clicked, this, [this] {
+        emit openInIdeRequested(m_project.value(u"id"_s).toString(), m_board->currentData().toString());
+    });
     auto *codeButtons = new QHBoxLayout;
     codeButtons->addStretch(1);
     codeButtons->addWidget(m_copyCode);
     codeButtons->addWidget(m_saveCode);
+    codeButtons->addWidget(m_openIde);
     auto *codeLayout = new QVBoxLayout(codePage);
     codeLayout->setContentsMargins(0, 0, 0, 0);
     codeLayout->addWidget(m_code, 1);
@@ -305,7 +311,10 @@ QString ProjectView::currentBuildBoard() const
 
 QString ProjectView::currentBoardName() const
 {
-    return m_stack->currentIndex() == 1 ? m_board->currentText() : QString();
+    if (m_stack->currentIndex() != 1)
+        return {};
+    const QString name = m_board->currentData(NameRole).toString();
+    return name.isEmpty() ? m_board->currentText() : name;
 }
 
 QString ProjectView::title() const
@@ -411,7 +420,9 @@ void ProjectView::showLocal(const QJsonObject &result)
         const QJsonObject b = v.toObject();
         // An ESP-IDF build is for a chip, and runs on any board with it.
         m_board->addItem(Labels::chipName(b.value(u"chip"_s).toString()), b.value(u"id"_s).toString());
+        m_board->setItemData(m_board->count() - 1, b.value(u"chip"_s).toString(), ChipRole);
     }
+    markConnectedBoards();
     m_boardLabel->setText(tr("Chip:"));
     m_board->setEnabled(m_builds.size() > 1);
     const int start = qMax(0, m_board->findData(keepBoard));
@@ -500,6 +511,7 @@ void ProjectView::showResult(const QJsonObject &result)
         m_board->addItem(names.value(id, id), id);
         m_board->setItemData(m_board->count() - 1, chipOf(result, id), ChipRole);
     }
+    markConnectedBoards();
     m_board->setEnabled(m_builds.size() > 1);
     m_boardChosen = !keepBoard.isEmpty();
     int start = qMax(0, m_board->findData(keepBoard));
@@ -531,9 +543,24 @@ int ProjectView::buildForConnectedChip() const
     return -1;
 }
 
+void ProjectView::markConnectedBoards()
+{
+    // "… · connected" on the builds for a plugged-in board's chip.
+    for (int i = 0; i < m_board->count(); ++i) {
+        QString name = m_board->itemData(i, NameRole).toString();
+        if (name.isEmpty()) {
+            name = m_board->itemText(i);
+            m_board->setItemData(i, name, NameRole);
+        }
+        const bool connected = m_connectedChips.contains(m_board->itemData(i, ChipRole).toString());
+        m_board->setItemText(i, connected ? tr("%1 · connected").arg(name) : name);
+    }
+}
+
 void ProjectView::setConnectedChips(const QStringList &chips)
 {
     m_connectedChips = chips;
+    markConnectedBoards();
     // A board plugged in while a library project is shown: switch to a build for its
     // chip, unless the board was chosen (by hand or by a link) or already fits.
     if (m_local || m_boardChosen || m_stack->currentIndex() != 1 || chips.isEmpty())
@@ -570,6 +597,7 @@ void ProjectView::showBuild(int index)
     const QJsonValue code = b.value(u"code"_s);
     m_copyCode->setVisible(code.isString());
     m_saveCode->setVisible(code.isString());
+    m_openIde->setVisible(code.isString());
     m_code->setPlainText(code.isString()
                              ? code.toString()
                              : tr("This project ships as prebuilt firmware, so there is no sketch to show."));

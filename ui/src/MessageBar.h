@@ -29,6 +29,11 @@ public:
     // Something just done, with a button that takes it back (Undo).
     void showUndo(const QString &text, const QString &button, std::function<void()> undo);
     QString text() const;
+    // What Copy details adds after an error's text (versions and the like).
+    void setDetails(std::function<QString()> details) { m_details = std::move(details); }
+    // An error's text and the details, as Copy details puts them on the clipboard.
+    QString detailsText() const;
+    QPushButton *copyButton() const { return m_copy; }
     // Close it as its close button does (Esc in the main window).
     void dismiss();
     QPushButton *actionButton() const { return m_action; }
@@ -41,6 +46,8 @@ private:
     QLabel *m_text;
     QToolButton *m_close;
     QPushButton *m_action;
+    QPushButton *m_copy;
+    std::function<QString()> m_details;
     std::function<void()> m_undo;
     void setIcon(bool notice);
 

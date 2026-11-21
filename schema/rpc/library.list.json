@@ -107,6 +107,13 @@
             "starred": {
               "type": "boolean",
               "description": "Since protocol 0.25: whether the user starred it (library.star)."
+            },
+            "built": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Since protocol 0.29: the boards it has a build for on this computer (build.status says whether each is current)."
             }
           }
         }
