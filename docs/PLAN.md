@@ -1,6 +1,6 @@
 # Plan: native Linux ESP32 workbench and simulator
 
-Last updated: 2026-11-20 (0.1.7 released, the first with macOS and Windows packages; phase 6: macOS and Windows packages build and pass their smoke tests in CI, the simulator shipped prebuilt there; the owner made Windows and macOS target platforms on 2026-11-19; 0.1.6 released: the UI in five languages, a signal trace, and the S3 with pins, parts and analog inputs on fork recipe 14; 0.1.5 released, the first with `.deb` and `.rpm` packages: the owner made Debian, Ubuntu and Fedora supported platforms beside Arch, with packages built and install-tested in CI; 0.1.4 released: the user's own ESP-IDF projects build with idf.py; the simulator section reflects fork recipe 13)
+Last updated: 2026-11-20 (0.1.8 released: a toolbar and many usability changes, prebuilt firmware, output checks and explanations, a plotter; 0.1.7 released, the first with macOS and Windows packages; phase 6: macOS and Windows packages build and pass their smoke tests in CI, the simulator shipped prebuilt there; the owner made Windows and macOS target platforms on 2026-11-19; 0.1.6 released: the UI in five languages, a signal trace, and the S3 with pins, parts and analog inputs on fork recipe 14; 0.1.5 released, the first with `.deb` and `.rpm` packages: the owner made Debian, Ubuntu and Fedora supported platforms beside Arch, with packages built and install-tested in CI; 0.1.4 released: the user's own ESP-IDF projects build with idf.py; the simulator section reflects fork recipe 13)
 
 ## Summary
 
