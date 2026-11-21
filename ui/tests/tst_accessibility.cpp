@@ -60,7 +60,7 @@ private slots:
             }
             if (auto *b = qobject_cast<QAbstractButton *>(w)) {
                 if (b->text().remove(u'&').trimmed().isEmpty())
-                    unnamed << u"button "_s + where + u" (" + b->toolTip() + u")";
+                    unnamed << u"button %1 (%2)"_s.arg(where, b->toolTip());
             } else if (qobject_cast<QLineEdit *>(w) || qobject_cast<QComboBox *>(w)
                        || qobject_cast<QAbstractItemView *>(w) || w->inherits("QPlainTextEdit")
                        || w->inherits("QGraphicsView") || w->inherits("PlotCanvas") || w->inherits("TraceCanvas")) {
