@@ -249,10 +249,14 @@ private slots:
         QCOMPARE(first.size(), 1); // shows the dock once
         QCOMPARE(panel.canvas()->seriesNames(), (QStringList{u"temp"_s, u"hum"_s}));
         QCOMPARE(panel.canvas()->values(u"temp"_s), (QList<double>{21.5, 21.6}));
+        // Every row received is kept for Save CSV…, as the core sent it; counted step by step.
+        qsizetype kept = 2;
+        QCOMPARE(panel.rows().size(), kept);
         // Paused: nothing added; then cleared.
         panel.findChild<QCheckBox *>()->setChecked(true);
         emit core.plotRows(QJsonArray{row(30, 30)});
         QCOMPARE(panel.canvas()->values(u"temp"_s).size(), 2);
+        QCOMPARE(panel.rows().size(), kept);
         panel.findChild<QCheckBox *>()->setChecked(false);
         // Only the latest rows are kept.
         QJsonArray many;
@@ -261,6 +265,8 @@ private slots:
         emit core.plotRows(many);
         QCOMPARE(panel.canvas()->values(u"hum"_s).size(), PlotCanvas::Kept);
         QCOMPARE(panel.canvas()->values(u"hum"_s).last(), double(PlotCanvas::Kept + 19));
+        kept += PlotCanvas::Kept + 20;
+        QCOMPARE(panel.rows().size(), kept);
         panel.resize(600, 300);
         QVERIFY(!panel.grab().isNull()); // draws
         if (const QString shot = qEnvironmentVariable("ESP32BENCH_SCREENSHOT"); !shot.isEmpty()) {
@@ -269,12 +275,15 @@ private slots:
             for (int i = 0; i < 200; ++i)
                 wave.append(row(21 + std::sin(i / 15.0), 45 + 3 * std::cos(i / 25.0)));
             emit core.plotRows(wave);
+            kept += 200;
             QVERIFY(panel.grab().save(shot));
         }
         panel.canvas()->clear();
         QVERIFY(panel.canvas()->seriesNames().isEmpty());
         // A click on a legend entry hides that line, and again shows it.
         emit core.plotRows(QJsonArray{row(1, 2)});
+        kept += 1;
+        QCOMPARE(panel.rows().size(), kept);
         panel.resize(600, 300);
         panel.grab(); // paints, which places the legend
         QVERIFY(!panel.canvas()->legend().isEmpty());
@@ -283,8 +292,7 @@ private slots:
         QVERIFY(panel.canvas()->isHidden(name));
         QTest::mouseClick(panel.canvas(), Qt::LeftButton, {}, rect.center().toPoint());
         QVERIFY(!panel.canvas()->isHidden(name));
-        // Every row received is kept for Save CSV…, as the core sent it.
-        QCOMPARE(panel.rows().size(), 3 + PlotCanvas::Kept + 20 + 200 * !qEnvironmentVariableIsEmpty("ESP32BENCH_SCREENSHOT"));
+        QCOMPARE(panel.rows().size(), kept);
         QCOMPARE(panel.rows().at(0).toArray(), row(21.5, 45));
         QVERIFY(panel.saveButton()->isEnabled());
     }
