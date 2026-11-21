@@ -1055,7 +1055,7 @@ void MainWindow::find()
 {
     // The console the focus is in, if it is in one.
     for (QWidget *w = QApplication::focusWidget(); w; w = w->parentWidget()) {
-        if (auto *bar = w->findChild<ConsoleBar *>(Qt::FindDirectChildrenOnly)) {
+        if (auto *bar = w->findChild<ConsoleBar *>(QString(), Qt::FindDirectChildrenOnly)) {
             bar->focusFind();
             return;
         }

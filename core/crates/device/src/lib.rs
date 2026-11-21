@@ -384,23 +384,32 @@ fn monitor_thread(
     tx: tokio::sync::mpsc::UnboundedSender<()>,
     ready: std::sync::mpsc::Sender<Result<(), String>>,
 ) {
-    let names = || -> Option<Vec<String>> {
-        let mut v: Vec<String> = serialport::available_ports()
-            .ok()?
-            .into_iter()
-            .map(|p| p.port_name)
-            .collect();
-        v.sort();
-        Some(v)
-    };
-    let Some(mut last) = names() else {
+    let Some(last) = port_names() else {
         let _ = ready.send(Err("cannot list serial ports".into()));
         return;
     };
     let _ = ready.send(Ok(()));
+    poll_ports(tx, last);
+}
+
+/// The serial ports' names, sorted; None if they cannot be listed.
+fn port_names() -> Option<Vec<String>> {
+    let mut v: Vec<String> = serialport::available_ports()
+        .ok()?
+        .into_iter()
+        .map(|p| p.port_name)
+        .collect();
+    v.sort();
+    Some(v)
+}
+
+/// List the ports every second and signal when the set changes, until nobody
+/// listens. Elsewhere than Linux this is the monitor; on Linux, what it falls back
+/// to if udev's socket fails.
+fn poll_ports(tx: tokio::sync::mpsc::UnboundedSender<()>, mut last: Vec<String>) {
     while !tx.is_closed() {
         std::thread::sleep(std::time::Duration::from_secs(1));
-        if let Some(now) = names()
+        if let Some(now) = port_names()
             && now != last
         {
             last = now;
@@ -445,6 +454,9 @@ fn monitor_thread(
             if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
                 continue;
             }
+            // udev's socket failed: keep watching by listing the ports, rather than
+            // stop telling anyone about boards.
+            poll_ports(tx, port_names().unwrap_or_default());
             return;
         }
         if n == 0 {
