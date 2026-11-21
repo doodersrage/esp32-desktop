@@ -102,6 +102,38 @@
           },
           "additionalProperties": false
         }
+      },
+      "advice": {
+        "description": "Why a board may be missing or unusable, for the app to explain in its own words. Empty when there is nothing to say. Kinds: data-cable (no port at all; a charge-only cable shows none), install-driver (macOS and Windows: a CH340 or CP210x board may need its maker's driver), bridge-without-port (a USB serial chip is plugged in but no driver gave it a port; on Linux often brltty), serial-access (a port this user may not open). Since protocol 0.25.",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "data-cable",
+                "install-driver",
+                "bridge-without-port",
+                "serial-access"
+              ]
+            },
+            "bridge": {
+              "description": "bridge-without-port: which chip.",
+              "enum": [
+                "cp210x",
+                "ch340",
+                "ch9102",
+                "ftdi",
+                "pl2303",
+                "usb-serial-jtag"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
       }
     },
     "additionalProperties": false
@@ -110,7 +142,12 @@
     {
       "params": {
         "subscription": 1,
-        "ports": []
+        "ports": [],
+        "advice": [
+          {
+            "kind": "data-cable"
+          }
+        ]
       }
     },
     {

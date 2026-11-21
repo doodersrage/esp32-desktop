@@ -5,6 +5,7 @@
 
 #include <QJsonValue>
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QWidget>
 
 class CoreConnection;
@@ -24,11 +25,17 @@ public:
     static QString bridgeName(const QJsonValue &bridge);
     // What to do about a port the user may not open (device.list's access "denied").
     static QString accessHint();
+    // One of device.list's advice entries in words (rich text), or empty if unknown.
+    static QString adviceText(const QJsonObject &advice);
 
     // Render a device.list result. Public so tests can feed fixed data.
     void showPorts(const QJsonArray &ports);
     QTreeWidget *tree() const { return m_tree; }
     QString statusText() const;
+    // Render device.list's advice under the status. Public for tests.
+    void setAdvice(const QJsonArray &advice);
+    // The advice shown, empty if none.
+    QString adviceShown() const;
 
 public slots:
     void refresh();
@@ -47,5 +54,6 @@ private:
     CoreConnection *m_core;
     QTreeWidget *m_tree;
     QLabel *m_status;
+    QLabel *m_advice;
     QToolButton *m_refresh;
 };

@@ -4,9 +4,17 @@
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
 #include "MainWindow.h"
+#include "MessageBar.h"
 #include "SerialMonitor.h"
 
 #include <QComboBox>
+#include <QDir>
+#include <QKeySequence>
+#include <QMimeData>
+#include <QSettings>
+#include <QToolButton>
+#include <QUrl>
+#include <QUrlQuery>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLineEdit>
@@ -69,7 +77,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.24.0"_s}});
+                                  {u"protocol"_s, u"0.25.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
@@ -175,6 +183,85 @@ private slots:
         bar.saveTo(u"/tmp/out.txt"_s);
         QTRY_COMPARE(fake.saved.value(u"/tmp/out.txt"_s), text);
         QTRY_VERIFY(view.toPlainText().contains(u"Saved the output to /tmp/out.txt."_s));
+    }
+
+    void consoleZoomsAndInputRemembers()
+    {
+        ConsoleView view;
+        view.resetZoom();
+        const qreal base = view.font().pointSizeF();
+        view.zoom(2);
+        QCOMPARE(view.font().pointSizeF(), base + 2);
+        // Kept for the next console.
+        ConsoleView other;
+        QCOMPARE(other.zoomSteps(), 2);
+        view.resetZoom();
+        QCOMPARE(view.font().pointSizeF(), base);
+
+        QLineEdit input;
+        auto *history = new InputHistory(&input);
+        for (const QString &line : {u"help"_s, u"status"_s}) {
+            input.setText(line);
+            QTest::keyClick(&input, Qt::Key_Return);
+            input.clear(); // as the panel does after sending
+        }
+        QCOMPARE(history->lines(), (QStringList{u"help"_s, u"status"_s}));
+        input.setText(u"draft"_s);
+        QTest::keyClick(&input, Qt::Key_Up);
+        QCOMPARE(input.text(), u"status"_s);
+        QTest::keyClick(&input, Qt::Key_Up);
+        QCOMPARE(input.text(), u"help"_s);
+        QTest::keyClick(&input, Qt::Key_Up);
+        QCOMPARE(input.text(), u"help"_s);
+        QTest::keyClick(&input, Qt::Key_Down);
+        QCOMPARE(input.text(), u"status"_s);
+        QTest::keyClick(&input, Qt::Key_Down);
+        QCOMPARE(input.text(), u"draft"_s);
+    }
+
+    void windowHelpsDropsAndNotices()
+    {
+        CoreConnection core;
+        MainWindow window(&core);
+        // Drops: project folders and esp32bench:// links; web links are not ours.
+        QMimeData mime;
+        mime.setUrls({QUrl::fromLocalFile(u"/home/someone/blinky"_s), QUrl(u"esp32bench://project/blink"_s),
+                      QUrl(u"https://example.com/"_s)});
+        QCOMPARE(MainWindow::dropTargets(&mime),
+                 (QStringList{u"/home/someone/blinky"_s, u"esp32bench://project/blink"_s}));
+        QMimeData text;
+        text.setText(u"esp32bench://project/simon?board=esp32"_s);
+        QCOMPARE(MainWindow::dropTargets(&text), QStringList{u"esp32bench://project/simon?board=esp32"_s});
+        QMimeData other;
+        other.setText(u"hello"_s);
+        QVERIFY(MainWindow::dropTargets(&other).isEmpty());
+
+        // A problem report says the versions and nothing about the user's files.
+        const QUrl report = window.problemReportUrl();
+        QCOMPARE(report.host(), u"github.com"_s);
+        const QString body = QUrlQuery(report).queryItemValue(u"body"_s, QUrl::FullyDecoded);
+        QVERIFY(body.contains(u"- App: "_s));
+        QVERIFY(body.contains(u"- System: "_s));
+        QVERIFY(!body.contains(QDir::homePath()));
+
+        // The shortcuts list has the toolbar's steps and the console's keys.
+        const QString keys = window.shortcutsText();
+        QVERIFY(keys.contains(QKeySequence(Qt::CTRL | Qt::Key_B).toString(QKeySequence::NativeText)));
+        QVERIFY(keys.contains(u"lines sent before"_s));
+
+        // A newer release is said once, and not again once closed.
+        QSettings().remove(u"update/dismissed"_s);
+        const QJsonObject library{{u"available"_s, true}, {u"projects"_s, QJsonArray{}},
+                                  {u"update"_s, QJsonObject{{u"version"_s, u"9.0.0"_s},
+                                                            {u"url"_s, u"https://esp32bench.dev/desktop/"_s}}}};
+        emit core.libraryListed(library);
+        QVERIFY(window.messageBar()->text().contains(u"9.0.0"_s));
+        window.messageBar()->findChild<QToolButton *>()->click();
+        QCOMPARE(QSettings().value(u"update/dismissed"_s).toString(), u"9.0.0"_s);
+        MainWindow again(&core);
+        emit core.libraryListed(library);
+        QVERIFY(again.messageBar()->text().isEmpty());
+        QSettings().remove(u"update/dismissed"_s);
     }
 
     void doubleClickingAPortOpensIt()

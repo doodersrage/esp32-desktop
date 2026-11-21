@@ -1,6 +1,6 @@
 {
  "format": "esp32bench-project-manifest",
- "version": "1.1.0",
+ "version": "1.2.0",
  "generated": "2026-11-16T12:00:00.000Z",
  "site": "https://esp32bench.dev",
  "licence": {
@@ -82,6 +82,10 @@
    "arduinoBoard": "AI Thinker ESP32-CAM"
   }
  ],
+ "desktop": {
+  "version": "0.1.8",
+  "url": "https://esp32bench.dev/desktop/"
+ },
  "explain": [
   {
    "key": "panic-load",

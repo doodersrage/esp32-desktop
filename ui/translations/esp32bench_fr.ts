@@ -570,6 +570,22 @@
         <translation>Inconnu</translation>
     </message>
     <message>
+        <source>You cannot open this port. Another program may have it open, such as the Arduino IDE&apos;s serial monitor: close it and try again.</source>
+        <translation>Vous ne pouvez pas ouvrir ce port. Un autre programme l’a peut-être ouvert, comme le moniteur série de l’IDE Arduino : fermez-le et réessayez.</translation>
+    </message>
+    <message>
+        <source>No board showing? Use a USB cable that carries data: charge-only cables show no port.</source>
+        <translation>Aucune carte ? Utilisez un câble USB qui transmet les données : les câbles de charge seule n’affichent aucun port.</translation>
+    </message>
+    <message>
+        <source>A board with a CH340 or CP210x USB chip may need its driver first: &lt;a href=&quot;%1&quot;&gt;CH340 (WCH)&lt;/a&gt; or &lt;a href=&quot;%2&quot;&gt;CP210x (Silicon Labs)&lt;/a&gt;.</source>
+        <translation>Une carte avec une puce USB CH340 ou CP210x peut d’abord avoir besoin de son pilote : &lt;a href=&quot;%1&quot;&gt;CH340 (WCH)&lt;/a&gt; ou &lt;a href=&quot;%2&quot;&gt;CP210x (Silicon Labs)&lt;/a&gt;.</translation>
+    </message>
+    <message>
+        <source>A %1 is plugged in but has no serial port. If brltty (a braille display service) is installed, it may have taken it: remove brltty and plug the board in again.</source>
+        <translation>Un %1 est branché mais n’a pas de port série. Si brltty (un service pour afficheurs braille) est installé, il l’a peut-être pris : désinstallez brltty et rebranchez la carte.</translation>
+    </message>
+    <message>
         <source>Refresh</source>
         <translation>Actualiser</translation>
     </message>
@@ -688,6 +704,10 @@
         <translation>Pour ma carte</translation>
     </message>
     <message>
+        <source>Starred</source>
+        <translation>Favoris</translation>
+    </message>
+    <message>
         <source>Search projects</source>
         <translation>Rechercher des projets</translation>
     </message>
@@ -736,12 +756,24 @@
         <translation>Oublier ce projet</translation>
     </message>
     <message>
+        <source>Remove the star</source>
+        <translation>Retirer l’étoile</translation>
+    </message>
+    <message>
+        <source>Star this project</source>
+        <translation>Ajouter une étoile</translation>
+    </message>
+    <message>
         <source>Only projects that run in the simulator, with no board needed</source>
         <translation>Seulement les projets qui fonctionnent dans le simulateur, sans carte</translation>
     </message>
     <message>
         <source>Connect a board to show only the projects for its chip</source>
         <translation>Branchez une carte pour ne voir que les projets pour sa puce</translation>
+    </message>
+    <message>
+        <source>Only the projects you starred (right-click a project to star it)</source>
+        <translation>Seulement les projets avec une étoile (clic droit sur un projet pour en ajouter une)</translation>
     </message>
     <message>
         <source>Only projects with a build for the connected %1</source>
@@ -897,6 +929,14 @@ Le panneau Compilation en dessous contient tout le journal.</translation>
         <translation>Remarque : %1</translation>
     </message>
     <message>
+        <source>ESP32 Bench %1 is out; you have %2.</source>
+        <translation>ESP32 Bench %1 est disponible ; vous avez la %2.</translation>
+    </message>
+    <message>
+        <source>Get it from esp32bench.dev</source>
+        <translation>Le télécharger sur esp32bench.dev</translation>
+    </message>
+    <message>
         <source>Plot</source>
         <translation>Graphique</translation>
     </message>
@@ -1025,6 +1065,10 @@ Le panneau Compilation en dessous contient tout le journal.</translation>
         <translation>&amp;Affichage</translation>
     </message>
     <message>
+        <source>&amp;Find…</source>
+        <translation>&amp;Rechercher…</translation>
+    </message>
+    <message>
         <source>&amp;Reset layout</source>
         <translation>&amp;Réinitialiser la disposition</translation>
     </message>
@@ -1043,6 +1087,18 @@ Le panneau Compilation en dessous contient tout le journal.</translation>
     <message>
         <source>&amp;Help</source>
         <translation>A&amp;ide</translation>
+    </message>
+    <message>
+        <source>esp32bench.dev &amp;guide</source>
+        <translation>&amp;Guide sur esp32bench.dev</translation>
+    </message>
+    <message>
+        <source>&amp;Keyboard shortcuts</source>
+        <translation>&amp;Raccourcis clavier</translation>
+    </message>
+    <message>
+        <source>&amp;Report a problem…</source>
+        <translation>&amp;Signaler un problème…</translation>
     </message>
     <message>
         <source>&amp;About ESP32 Bench</source>
@@ -1135,6 +1191,34 @@ SHA-256 : %2</translation>
 Code SHA-256: %2</source>
         <translation>Carte : %1
 SHA-256 du code : %2</translation>
+    </message>
+    <message>
+        <source>Bigger or smaller text in the console (also Ctrl and the mouse wheel)</source>
+        <translation>Texte plus grand ou plus petit dans la console (aussi avec Ctrl et la molette)</translation>
+    </message>
+    <message>
+        <source>The console&apos;s text at its usual size</source>
+        <translation>Le texte de la console à sa taille normale</translation>
+    </message>
+    <message>
+        <source>Up / Down</source>
+        <translation>Haut / Bas</translation>
+    </message>
+    <message>
+        <source>In the text to send: the lines sent before</source>
+        <translation>Dans le texte à envoyer : les lignes déjà envoyées</translation>
+    </message>
+    <message>
+        <source>Undo a change to the circuit</source>
+        <translation>Annuler une modification du circuit</translation>
+    </message>
+    <message>
+        <source>Keyboard shortcuts</source>
+        <translation>Raccourcis clavier</translation>
+    </message>
+    <message>
+        <source>What happened, and what you expected:</source>
+        <translation>Ce qui s’est passé, et ce que vous attendiez :</translation>
     </message>
     <message>
         <source>Flash a downloaded project?</source>

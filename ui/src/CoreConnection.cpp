@@ -232,10 +232,13 @@ void CoreConnection::listDevices(bool includeNonUsb)
 {
     const QString method = u"device.list"_s;
     m_client->call(method, {{u"all"_s, includeNonUsb}}, this, [this, method](const RpcReply &r) {
-        if (r.ok)
-            emit devicesListed(r.result.toObject().value(u"ports"_s).toArray());
-        else
+        if (r.ok) {
+            const QJsonObject o = r.result.toObject();
+            emit deviceAdvice(o.value(u"advice"_s).toArray());
+            emit devicesListed(o.value(u"ports"_s).toArray());
+        } else {
             emit requestFailed(method, r.errorMessage);
+        }
     });
 }
 
@@ -249,6 +252,7 @@ void CoreConnection::watchDevices()
         }
         const QJsonObject o = r.result.toObject();
         m_devicesSubscription = o.value(u"subscription"_s).toInteger();
+        emit deviceAdvice(o.value(u"advice"_s).toArray());
         emit devicesListed(o.value(u"ports"_s).toArray());
     });
 }
@@ -259,6 +263,7 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
     if (sub == 0)
         return;
     if (method == u"device.changed" && sub == m_devicesSubscription) {
+        emit deviceAdvice(params.value(u"advice"_s).toArray());
         emit devicesListed(params.value(u"ports"_s).toArray());
     } else if (method == u"build.log" || method == u"build.finished") {
         if (sub == m_buildJob)
@@ -304,6 +309,18 @@ void CoreConnection::listLibrary()
         else
             emit requestFailed(method, r.errorMessage);
     });
+}
+
+void CoreConnection::starProject(const QString &id, bool starred)
+{
+    const QString method = u"library.star"_s;
+    m_client->call(method, {{u"id"_s, id}, {u"starred"_s, starred}}, this,
+                   [this, method](const RpcReply &r) {
+                       if (r.ok)
+                           listLibrary();
+                       else
+                           emit requestFailed(method, r.errorMessage);
+                   });
 }
 
 void CoreConnection::refreshLibrary()

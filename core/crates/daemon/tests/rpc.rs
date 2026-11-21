@@ -48,6 +48,7 @@ fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
     s.arduino_cli = Some(fake_arduino_cli(dir));
     s.circuits_root = dir.join("circuits");
     s.local = esp32bench_build::idf::Registry::new(dir.join("local-projects.json"));
+    s.starred = esp32bench_library::starred::Starred::new(dir.join("starred.json"));
     Arc::new(s)
 }
 
@@ -182,6 +183,28 @@ fn port_schemas_are_identical_everywhere() {
         &method_def("device.changed")["params"]["properties"]["ports"],
         list
     );
+    let advice = &method_def("device.list")["result"]["properties"]["advice"];
+    assert_eq!(
+        &method_def("device.watch")["result"]["properties"]["advice"],
+        advice
+    );
+    assert_eq!(
+        &method_def("device.changed")["params"]["properties"]["advice"],
+        advice
+    );
+    // Every kind of advice the core gives fits it.
+    use esp32bench_device::{Advice, Bridge};
+    for a in [
+        Advice::DataCable,
+        Advice::InstallDriver,
+        Advice::BridgeWithoutPort {
+            bridge: Bridge::Ch340,
+        },
+        Advice::SerialAccess,
+    ] {
+        let v = json!([a]);
+        assert_valid(advice, &v, "advice");
+    }
 }
 
 #[tokio::test]
@@ -243,6 +266,7 @@ async fn device_list_round_trip() {
     for params in [json!({}), json!({ "all": true })] {
         let r = c.call("device.list", params.clone()).await.unwrap();
         assert_valid(&def["result"], &r, &format!("device.list {params} result"));
+        assert!(r["advice"].is_array(), "{r}");
     }
     match c.call("device.list", json!({ "all": "yes" })).await {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
@@ -334,6 +358,54 @@ async fn library_refresh_then_list() {
     assert_eq!(full["available"], true);
     assert_eq!(full["projects"].as_array().unwrap().len(), 2);
     assert!(full["fetchedAt"].as_u64().unwrap() > 0);
+}
+
+#[tokio::test]
+async fn library_says_a_newer_app_is_out_and_keeps_stars() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("site.json");
+    let mut m: Value = serde_json::from_slice(&std::fs::read(example_manifest()).unwrap()).unwrap();
+    m["desktop"]["version"] = json!("99.0.0");
+    std::fs::write(&src, serde_json::to_vec(&m).unwrap()).unwrap();
+    let (_d, sock, _lock) = daemon_with_source(&src).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    c.call("library.refresh", json!({})).await.unwrap();
+    c.next_notification().await.unwrap();
+
+    let def = method_def("library.star");
+    let params = json!({ "id": "blink", "starred": true });
+    assert_valid(&def["params"], &params, "library.star params");
+    let r = c.call("library.star", params).await.unwrap();
+    assert_valid(&def["result"], &r, "library.star result");
+    assert_eq!(r["starred"], json!(["blink"]));
+
+    let list = c.call("library.list", json!({})).await.unwrap();
+    assert_valid(&method_def("library.list")["result"], &list, "library.list");
+    assert_eq!(list["update"]["version"], "99.0.0");
+    assert_eq!(list["update"]["url"], "https://esp32bench.dev/desktop/");
+    for p in list["projects"].as_array().unwrap() {
+        assert_eq!(p["starred"], p["id"] == "blink", "{p}");
+    }
+
+    let r = c
+        .call("library.star", json!({ "id": "blink", "starred": false }))
+        .await
+        .unwrap();
+    assert_eq!(r["starred"], json!([]));
+    match c
+        .call("library.star", json!({ "id": "", "starred": true }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("expected invalid params, got {other:?}"),
+    }
+
+    // The example's own release is this core's or older: no notice.
+    std::fs::copy(example_manifest(), &src).unwrap();
+    c.call("library.refresh", json!({})).await.unwrap();
+    c.next_notification().await.unwrap();
+    let list = c.call("library.list", json!({})).await.unwrap();
+    assert!(list.get("update").is_none(), "{}", list["update"]);
 }
 
 #[tokio::test]

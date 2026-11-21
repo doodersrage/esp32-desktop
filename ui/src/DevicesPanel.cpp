@@ -30,9 +30,52 @@ QString DevicesPanel::bridgeName(const QJsonValue &bridge)
 
 QString DevicesPanel::accessHint()
 {
+#ifdef Q_OS_LINUX
     return tr("You cannot open this port. Install the esp32bench package, which adds "
               "a udev rule, or add yourself to the group that owns serial ports: uucp on "
               "Arch, dialout on Debian, Ubuntu and Fedora.");
+#else
+    return tr("You cannot open this port. Another program may have it open, such as "
+              "the Arduino IDE's serial monitor: close it and try again.");
+#endif
+}
+
+QString DevicesPanel::adviceText(const QJsonObject &advice)
+{
+    const QString kind = advice.value(u"kind"_s).toString();
+    if (kind == u"data-cable")
+        return tr("No board showing? Use a USB cable that carries data: charge-only cables "
+                  "show no port.");
+    if (kind == u"install-driver")
+        return tr("A board with a CH340 or CP210x USB chip may need its driver first: "
+                  "<a href=\"%1\">CH340 (WCH)</a> or <a href=\"%2\">CP210x (Silicon Labs)</a>.")
+            .arg(u"https://www.wch-ic.com/products/CH340.html"_s,
+                 u"https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers"_s);
+    if (kind == u"bridge-without-port")
+        return tr("A %1 is plugged in but has no serial port. If brltty (a braille display "
+                  "service) is installed, it may have taken it: remove brltty and plug the "
+                  "board in again.")
+            .arg(bridgeName(advice.value(u"bridge"_s)));
+    if (kind == u"serial-access")
+        return accessHint();
+    return {};
+}
+
+void DevicesPanel::setAdvice(const QJsonArray &advice)
+{
+    QStringList lines;
+    for (const QJsonValue &v : advice) {
+        const QString text = adviceText(v.toObject());
+        if (!text.isEmpty())
+            lines << text;
+    }
+    m_advice->setText(lines.join(u"<br>"_s));
+    m_advice->setVisible(!lines.isEmpty());
+}
+
+QString DevicesPanel::adviceShown() const
+{
+    return m_advice->isHidden() ? QString() : m_advice->text();
 }
 
 DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
@@ -40,6 +83,7 @@ DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
     , m_core(core)
     , m_tree(new QTreeWidget(this))
     , m_status(new QLabel(this))
+    , m_advice(new QLabel(this))
     , m_refresh(new QToolButton(this))
 {
     m_refresh->setIcon(QIcon::fromTheme(u"view-refresh"_s));
@@ -85,10 +129,16 @@ DevicesPanel::DevicesPanel(CoreConnection *core, QWidget *parent)
     auto *top = new QHBoxLayout;
     top->addWidget(m_status, 1);
     top->addWidget(m_refresh);
+    m_advice->setWordWrap(true);
+    m_advice->setTextFormat(Qt::RichText);
+    m_advice->setOpenExternalLinks(true);
+    m_advice->hide();
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
+    layout->addWidget(m_advice);
     layout->addWidget(m_tree, 1);
 
+    connect(m_core, &CoreConnection::deviceAdvice, this, &DevicesPanel::setAdvice);
     connect(m_core, &CoreConnection::devicesListed, this, &DevicesPanel::showPorts);
     connect(m_core, &CoreConnection::requestFailed, this,
             [this](const QString &method, const QString &message) {
@@ -122,6 +172,7 @@ void DevicesPanel::updateEnabled()
     m_refresh->setEnabled(up);
     if (!up) {
         m_tree->clear();
+        setAdvice({});
         showMessage(tr("Not connected to the core."));
     }
 }

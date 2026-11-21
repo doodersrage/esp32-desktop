@@ -1,0 +1,59 @@
+{
+  "method": "library.star",
+  "description": "Star or unstar a library project. Stars are kept on this computer (in the data directory's starred.json) and come back in library.list's starred.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "id",
+      "starred"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "The project's id, as in library.list."
+      },
+      "starred": {
+        "type": "boolean"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "starred"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "starred": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Every starred id, sorted."
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "id": "simon",
+        "starred": true
+      },
+      "result": {
+        "starred": [
+          "blink",
+          "simon"
+        ]
+      }
+    }
+  ]
+}

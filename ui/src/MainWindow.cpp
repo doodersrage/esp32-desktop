@@ -23,6 +23,14 @@
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
+#include <QDesktopServices>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QLineEdit>
+#include <QMimeData>
+#include <QSysInfo>
+#include <QUrl>
+#include <QUrlQuery>
 #include <QCloseEvent>
 #include <QDockWidget>
 #include <QIcon>
@@ -101,6 +109,23 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
                 m_serial->console()->appendNotice(tr("Note: %1").arg(text));
         }
     });
+    // A newer release on the site (library.list's update): said once per version, until
+    // closed.
+    connect(core, &CoreConnection::libraryListed, this, [this](const QJsonObject &library) {
+        const QJsonObject update = library.value(u"update"_s).toObject();
+        const QString version = update.value(u"version"_s).toString();
+        if (version.isEmpty() || version == m_noticeShown
+            || QSettings().value(u"update/dismissed"_s).toString() == version || !m_messages->isHidden())
+            return;
+        m_noticeShown = version;
+        m_messages->showNotice(tr("ESP32 Bench %1 is out; you have %2.").arg(version, QApplication::applicationVersion()),
+                               update.value(u"url"_s).toString(), tr("Get it from esp32bench.dev"), version);
+    });
+    connect(m_messages, &MessageBar::dismissed, this,
+            [](const QString &version) { QSettings().setValue(u"update/dismissed"_s, version); });
+    connect(core, &CoreConnection::toolchainStatus, this,
+            [this](const QJsonArray &components) { m_toolchain = components; });
+    setAcceptDrops(true);
     connect(core, &CoreConnection::buildStarted, m_messages, &QWidget::hide);
     connect(core, &CoreConnection::boardStarted, m_messages, &QWidget::hide);
     // A build or flash can take minutes: when it ends with the window behind others, ask
@@ -625,6 +650,11 @@ void MainWindow::buildMenus()
     view->addAction(m_pinsDock->toggleViewAction());
     view->addAction(m_circuitDock->toggleViewAction());
     view->addSeparator();
+    // Ctrl+F finds in the console being used, else in the library.
+    QAction *find = view->addAction(tr("&Find…"));
+    find->setShortcut(QKeySequence::Find);
+    connect(find, &QAction::triggered, this, &MainWindow::find);
+    view->addSeparator();
     QAction *reset = view->addAction(QIcon::fromTheme(u"view-restore"_s), tr("&Reset layout"));
     reset->setToolTip(tr("Put the panels back where they were at first"));
     connect(reset, &QAction::triggered, this, &MainWindow::resetLayout);
@@ -634,6 +664,15 @@ void MainWindow::buildMenus()
     connect(setup, &QAction::triggered, this, &MainWindow::showSetup);
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
+    help->addAction(QIcon::fromTheme(u"internet-web-browser"_s), tr("esp32bench.dev &guide"), this, [] {
+        QDesktopServices::openUrl(QUrl(u"https://esp32bench.dev/desktop/"_s));
+    });
+    QAction *keys = help->addAction(tr("&Keyboard shortcuts"), this, &MainWindow::showShortcuts);
+    keys->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Slash));
+    help->addAction(QIcon::fromTheme(u"tools-report-bug"_s), tr("&Report a problem…"), this, [this] {
+        QDesktopServices::openUrl(problemReportUrl());
+    });
+    help->addSeparator();
     QAction *about = help->addAction(QIcon::fromTheme(u"help-about"_s), tr("&About ESP32 Bench"));
     connect(about, &QAction::triggered, this, [this] {
         QMessageBox::about(this, tr("About ESP32 Bench"),
@@ -761,6 +800,113 @@ void MainWindow::openLink(const QString &url)
         m_core->openLink(url);
     else
         m_pendingLinks << url;
+}
+
+void MainWindow::find()
+{
+    // The console the focus is in, if it is in one.
+    for (QWidget *w = QApplication::focusWidget(); w; w = w->parentWidget()) {
+        if (auto *bar = w->findChild<ConsoleBar *>(Qt::FindDirectChildrenOnly)) {
+            bar->focusFind();
+            return;
+        }
+    }
+    m_library->filter()->setFocus(Qt::ShortcutFocusReason);
+    m_library->filter()->selectAll();
+}
+
+QString MainWindow::shortcutsText() const
+{
+    // Every menu and toolbar action with a shortcut, then the consoles' own keys.
+    QStringList rows;
+    QStringList seen;
+    const auto add = [&](const QString &keys, const QString &what) {
+        if (seen.contains(keys))
+            return;
+        seen << keys;
+        rows << u"<tr><td><b>%1</b>&nbsp;&nbsp;</td><td>%2</td></tr>"_s.arg(keys.toHtmlEscaped(), what.toHtmlEscaped());
+    };
+    for (QMenu *menu : menuBar()->findChildren<QMenu *>()) {
+        for (QAction *a : menu->actions()) {
+            if (!a->shortcut().isEmpty())
+                add(a->shortcut().toString(QKeySequence::NativeText), a->text().remove(u'&'));
+        }
+    }
+    add(QKeySequence(QKeySequence::ZoomIn).toString(QKeySequence::NativeText) + u" / "_s
+            + QKeySequence(QKeySequence::ZoomOut).toString(QKeySequence::NativeText),
+        tr("Bigger or smaller text in the console (also Ctrl and the mouse wheel)"));
+    add(QKeySequence(Qt::CTRL | Qt::Key_0).toString(QKeySequence::NativeText), tr("The console's text at its usual size"));
+    add(tr("Up / Down"), tr("In the text to send: the lines sent before"));
+    add(QKeySequence(QKeySequence::Undo).toString(QKeySequence::NativeText), tr("Undo a change to the circuit"));
+    return u"<table>%1</table>"_s.arg(rows.join(QString()));
+}
+
+void MainWindow::showShortcuts()
+{
+    QMessageBox box(QMessageBox::NoIcon, tr("Keyboard shortcuts"), shortcutsText(), QMessageBox::Close, this);
+    box.setTextFormat(Qt::RichText);
+    box.exec();
+}
+
+QUrl MainWindow::problemReportUrl() const
+{
+    // Versions only: no paths, ports or project names, which can say who someone is.
+    QStringList lines{tr("What happened, and what you expected:"), QString(), QString(), u"---"_s,
+                      u"- App: %1"_s.arg(QApplication::applicationVersion()),
+                      u"- Core: %1"_s.arg(m_core->coreVersion().isEmpty() ? u"not connected"_s : m_core->coreVersion()),
+                      u"- System: %1 (%2)"_s.arg(QSysInfo::prettyProductName(), QSysInfo::currentCpuArchitecture()),
+                      u"- Qt: %1"_s.arg(QString::fromLatin1(qVersion()))};
+    for (const QJsonValue &v : m_toolchain) {
+        const QJsonObject c = v.toObject();
+        QString state = c.value(u"state"_s).toString();
+        if (c.contains(u"version"_s))
+            state += u" "_s + c.value(u"version"_s).toString();
+        lines << u"- %1: %2"_s.arg(c.value(u"id"_s).toString(), state);
+    }
+    QUrlQuery q;
+    q.addQueryItem(u"body"_s, lines.join(u'\n'));
+    QUrl url(u"https://github.com/doodersrage/esp32-desktop/issues/new"_s);
+    url.setQuery(q);
+    return url;
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (!dropTargets(event->mimeData()).isEmpty())
+        event->acceptProposedAction();
+}
+
+void MainWindow::dropEvent(QDropEvent *event)
+{
+    const QStringList targets = dropTargets(event->mimeData());
+    if (targets.isEmpty())
+        return;
+    event->acceptProposedAction();
+    for (const QString &t : targets) {
+        if (t.startsWith(u"esp32bench://"_s))
+            openLink(t);
+        else
+            m_core->openLocal(t); // the core checks it is an ESP-IDF project folder
+    }
+}
+
+QStringList MainWindow::dropTargets(const QMimeData *mime)
+{
+    QStringList out;
+    if (!mime)
+        return out;
+    for (const QUrl &url : mime->urls()) {
+        if (url.isLocalFile())
+            out << url.toLocalFile();
+        else if (url.scheme() == u"esp32bench")
+            out << url.toString();
+    }
+    if (out.isEmpty() && mime->hasText()) {
+        const QString text = mime->text().trimmed();
+        if (text.startsWith(u"esp32bench://"_s) && !text.contains(u'\n'))
+            out << text;
+    }
+    return out;
 }
 
 void MainWindow::showSetup()

@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 24;
+    static constexpr int ProtocolMinor = 25;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -69,6 +69,8 @@ public:
     // library.refresh: fetch the library; libraryRefreshed reports the outcome, and a
     // successful refresh is followed by libraryListed.
     void refreshLibrary();
+    // library.star, then the library is listed again.
+    void starProject(const QString &id, bool starred);
     // library.get: one project with its boards, through projectLoaded.
     void getProject(const QString &id);
     // What an esp32bench:// link opens (link.open): answers with linkOpened.
@@ -171,6 +173,8 @@ signals:
     void autoStartFailed(const QString &message);
     void stateChanged(CoreConnection::State state);
     void devicesListed(const QJsonArray &ports);
+    // device.list's advice on missing or unusable boards; sent just before devicesListed.
+    void deviceAdvice(const QJsonArray &advice);
     // The library.list result: available, source, version, generated, fetchedAt, projects.
     void libraryListed(const QJsonObject &library);
     void libraryRefreshed(bool ok, const QString &error);

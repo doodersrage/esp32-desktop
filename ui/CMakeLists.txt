@@ -107,6 +107,7 @@ qt_add_resources(esp32bench_ui "fallback_icons"
         icons/esp32bench-fallback/scalable/preferences-system.svg
         icons/esp32bench-fallback/scalable/process-stop.svg
         icons/esp32bench-fallback/scalable/run-build.svg
+        icons/esp32bench-fallback/scalable/starred.svg
         icons/esp32bench-fallback/scalable/tools-report-bug.svg
         icons/esp32bench-fallback/scalable/utilities-terminal.svg
         icons/esp32bench-fallback/scalable/view-refresh.svg

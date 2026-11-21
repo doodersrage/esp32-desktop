@@ -29,6 +29,8 @@ public:
     static constexpr int SimulatorRole = Qt::UserRole + 4;
     // The chip ids it has builds for.
     static constexpr int ChipsRole = Qt::UserRole + 5;
+    // True when the user starred it (library.list's `starred`).
+    static constexpr int StarredRole = Qt::UserRole + 6;
 
     explicit LibraryPanel(CoreConnection *core, QWidget *parent = nullptr);
 
@@ -43,6 +45,7 @@ public:
     QLineEdit *filter() const { return m_filter; }
     QCheckBox *simulatorFilter() const { return m_simOnly; }
     QCheckBox *boardFilter() const { return m_fitsBoard; }
+    QCheckBox *starredFilter() const { return m_starredOnly; }
     // Select a project by id (for links), now or once the list has arrived.
     void selectProject(const QString &id);
     QString statusText() const;
@@ -78,6 +81,7 @@ private:
     QTreeWidget *m_tree;
     QCheckBox *m_simOnly;
     QCheckBox *m_fitsBoard;
+    QCheckBox *m_starredOnly;
     // Chips on the connected boards that say which they are (device.list).
     QStringList m_connectedChips;
     QByteArray m_defaultColumns;

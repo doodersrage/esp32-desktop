@@ -10,6 +10,7 @@ pub mod link;
 
 pub mod expect;
 pub mod explain;
+pub mod starred;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -53,6 +54,40 @@ pub struct Manifest {
     /// reset and upload explanations, applied by [`explain::Explainer`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub explain: Vec<explain::Rule>,
+    /// The desktop app's latest release (manifest 1.2), so older apps can say a newer
+    /// one is out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desktop: Option<Desktop>,
+}
+
+/// The desktop app's latest release, as the site lists it.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Desktop {
+    /// Its version, `X.Y.Z`.
+    pub version: String,
+    /// The page to get it from (https).
+    pub url: String,
+}
+
+impl Manifest {
+    /// The site's latest desktop release, if it is newer than `current` (the running
+    /// core's version) and its page is https.
+    pub fn newer_desktop(&self, current: &str) -> Option<&Desktop> {
+        let d = self.desktop.as_ref()?;
+        (d.url.starts_with("https://") && is_newer(&d.version, current)).then_some(d)
+    }
+}
+
+/// Whether version `a` (`X.Y.Z`) is newer than `b`; false if either does not parse.
+/// A pre-release suffix (`-rc1`) is ignored.
+pub fn is_newer(a: &str, b: &str) -> bool {
+    fn parts(v: &str) -> Option<[u64; 3]> {
+        let v = v.trim().split(['-', '+']).next()?;
+        let mut it = v.split('.').map(|n| n.parse::<u64>().ok());
+        let r = [it.next()??, it.next()??, it.next()??];
+        it.next().is_none().then_some(r)
+    }
+    matches!((parts(a), parts(b)), (Some(a), Some(b)) if a > b)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

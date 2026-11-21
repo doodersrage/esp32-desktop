@@ -134,6 +134,85 @@ pub fn access(path: &Path) -> Access {
     }
 }
 
+/// Why a board may be missing or unusable, for the app to put in its own words.
+/// See `advice` in `schema/rpc/device.list.json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum Advice {
+    /// No port at all: a charge-only USB cable shows nothing, so try a data cable.
+    DataCable,
+    /// macOS and Windows: boards with a CH340 or CP210x USB chip may need its maker's
+    /// driver before a port appears.
+    InstallDriver,
+    /// A USB serial chip is plugged in but has no serial port, so no driver took it
+    /// (on Linux, often brltty claiming a CH340).
+    BridgeWithoutPort { bridge: Bridge },
+    /// A port this user may not open (the udev rule or the serial group is missing).
+    SerialAccess,
+}
+
+/// The advice for these ports, from what else is plugged in on this computer.
+pub fn advice(ports: &[Port]) -> Vec<Advice> {
+    advice_from(ports, &usb_devices(), std::env::consts::OS)
+}
+
+/// The advice for `ports`, given the USB devices plugged in (VID, PID) and the
+/// operating system (`std::env::consts::OS`).
+pub fn advice_from(ports: &[Port], usb: &[(u16, u16)], os: &str) -> Vec<Advice> {
+    let mut advice = Vec::new();
+    for &(vid, pid) in usb {
+        let (Some(bridge), _) = classify(vid, pid) else {
+            continue;
+        };
+        // A firmware's own USB device need not be a serial port.
+        if bridge == Bridge::UsbCdc {
+            continue;
+        }
+        let has_port = ports
+            .iter()
+            .any(|p| p.usb.as_ref().is_some_and(|u| u.vid == vid && u.pid == pid));
+        let a = Advice::BridgeWithoutPort { bridge };
+        if !has_port && !advice.contains(&a) {
+            advice.push(a);
+        }
+    }
+    if ports.iter().any(|p| p.access == Access::Denied) {
+        advice.push(Advice::SerialAccess);
+    }
+    if ports.is_empty() && advice.is_empty() {
+        advice.push(Advice::DataCable);
+        if matches!(os, "macos" | "windows") {
+            advice.push(Advice::InstallDriver);
+        }
+    }
+    advice
+}
+
+/// The USB devices plugged in, as (VID, PID). Only Linux lists them (from sysfs);
+/// elsewhere this is empty.
+fn usb_devices() -> Vec<(u16, u16)> {
+    #[cfg(target_os = "linux")]
+    {
+        let hex = |dir: &Path, name: &str| -> Option<u16> {
+            let s = std::fs::read_to_string(dir.join(name)).ok()?;
+            u16::from_str_radix(s.trim(), 16).ok()
+        };
+        let Ok(entries) = std::fs::read_dir("/sys/bus/usb/devices") else {
+            return Vec::new();
+        };
+        entries
+            .filter_map(|e| {
+                let dir = e.ok()?.path();
+                Some((hex(&dir, "idVendor")?, hex(&dir, "idProduct")?))
+            })
+            .collect()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Vec::new()
+    }
+}
+
 /// List serial ports. Without `all`, only USB ports are returned, since ESP32 boards
 /// always connect over USB.
 pub fn list(all: bool) -> Result<Vec<Port>, Error> {
@@ -179,7 +258,7 @@ fn from_info(path: String, ty: serialport::SerialPortType) -> Port {
 }
 
 /// Waits for serial ports to appear or disappear: on Linux with a udev monitor on the
-/// `tty` subsystem, elsewhere by listing the ports every second. Either way the watch
+/// `tty` subsystem and USB devices, elsewhere by listing the ports every second. Either way the watch
 /// lives on its own thread (libudev handles are not thread-safe) and signals changes
 /// over a channel; that thread ends within a second of the `Monitor` being dropped.
 pub struct Monitor {
@@ -261,6 +340,8 @@ fn monitor_thread(
 
     let socket = match udev::MonitorBuilder::new()
         .and_then(|b| b.match_subsystem("tty"))
+        // USB devices too, so a serial chip that gets no port is noticed (`advice`).
+        .and_then(|b| b.match_subsystem_devtype("usb", "usb_device"))
         .and_then(|b| b.listen())
     {
         Ok(s) => s,
@@ -357,6 +438,58 @@ mod tests {
         let (b, chips) = classify(0x303a, 0x0002);
         assert_eq!(b, Some(Bridge::UsbCdc));
         assert_eq!(chips, ["esp32s2", "esp32s3"]);
+    }
+
+    fn usb_port(path: &str, vid: u16, pid: u16, access: Access) -> Port {
+        let mut p = from_info(
+            path.into(),
+            serialport::SerialPortType::UsbPort(serialport::UsbPortInfo {
+                vid,
+                pid,
+                serial_number: None,
+                manufacturer: None,
+                product: None,
+            }),
+        );
+        p.access = access;
+        p
+    }
+
+    #[test]
+    fn advises_on_missing_and_unusable_boards() {
+        // Nothing plugged in: a data cable, and on macOS and Windows a driver.
+        assert_eq!(advice_from(&[], &[], "linux"), [Advice::DataCable]);
+        assert_eq!(
+            advice_from(&[], &[], "windows"),
+            [Advice::DataCable, Advice::InstallDriver]
+        );
+        // A CH340 with no port (brltty), next to a mouse and a firmware's own device.
+        assert_eq!(
+            advice_from(
+                &[],
+                &[(0x1a86, 0x7523), (0x046d, 0xc52b), (0x303a, 0x0002)],
+                "linux"
+            ),
+            [Advice::BridgeWithoutPort {
+                bridge: Bridge::Ch340
+            }]
+        );
+        // A port, usable: nothing to say; denied: access.
+        let ok = usb_port("/dev/ttyUSB0", 0x10c4, 0xea60, Access::Ok);
+        assert!(advice_from(std::slice::from_ref(&ok), &[(0x10c4, 0xea60)], "linux").is_empty());
+        let denied = usb_port("/dev/ttyUSB0", 0x10c4, 0xea60, Access::Denied);
+        assert_eq!(
+            advice_from(&[denied], &[(0x10c4, 0xea60)], "linux"),
+            [Advice::SerialAccess]
+        );
+        let v = serde_json::to_value(Advice::BridgeWithoutPort {
+            bridge: Bridge::Cp210x,
+        })
+        .unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({ "kind": "bridge-without-port", "bridge": "cp210x" })
+        );
     }
 
     #[test]

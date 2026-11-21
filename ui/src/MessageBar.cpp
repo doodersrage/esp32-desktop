@@ -6,6 +6,8 @@
 #include <QStyle>
 #include <QToolButton>
 
+#include <utility>
+
 using namespace Qt::StringLiterals;
 
 MessageBar::MessageBar(QWidget *parent)
@@ -17,16 +19,18 @@ MessageBar::MessageBar(QWidget *parent)
     setFrameShape(QFrame::StyledPanel);
     setAutoFillBackground(true);
     setBackgroundRole(QPalette::AlternateBase);
-    const int size = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
-    m_icon->setPixmap(QIcon::fromTheme(u"dialog-error"_s, style()->standardIcon(QStyle::SP_MessageBoxCritical))
-                          .pixmap(size, size));
+    setIcon(false);
     m_text->setWordWrap(true);
     m_text->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
     m_text->setOpenExternalLinks(true);
     m_close->setIcon(QIcon::fromTheme(u"window-close"_s, style()->standardIcon(QStyle::SP_TitleBarCloseButton)));
     m_close->setAutoRaise(true);
     m_close->setToolTip(tr("Close this message"));
-    connect(m_close, &QToolButton::clicked, this, &QWidget::hide);
+    connect(m_close, &QToolButton::clicked, this, [this] {
+        hide();
+        if (!m_key.isEmpty())
+            emit dismissed(std::exchange(m_key, {}));
+    });
 
     auto *layout = new QHBoxLayout(this);
     layout->addWidget(m_icon, 0, Qt::AlignTop);
@@ -35,8 +39,31 @@ MessageBar::MessageBar(QWidget *parent)
     hide();
 }
 
+void MessageBar::setIcon(bool notice)
+{
+    const int size = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
+    const QIcon icon = notice ? QIcon::fromTheme(u"help-about"_s, style()->standardIcon(QStyle::SP_MessageBoxInformation))
+                              : QIcon::fromTheme(u"dialog-error"_s, style()->standardIcon(QStyle::SP_MessageBoxCritical));
+    m_icon->setPixmap(icon.pixmap(size, size));
+}
+
+void MessageBar::showNotice(const QString &text, const QString &url, const QString &linkText, const QString &key)
+{
+    setIcon(true);
+    m_key = key;
+    QString html = text.toHtmlEscaped();
+    if (url.startsWith(u"https://"_s))
+        html += u" <a href=\"%1\">%2</a>"_s.arg(url.toHtmlEscaped(), linkText.toHtmlEscaped());
+    m_text->setTextFormat(Qt::RichText);
+    m_text->setText(html);
+    m_plain = text;
+    show();
+}
+
 void MessageBar::showError(const QString &text)
 {
+    setIcon(false);
+    m_key.clear();
     m_text->setTextFormat(Qt::PlainText);
     m_text->setText(text);
     show();
@@ -44,6 +71,8 @@ void MessageBar::showError(const QString &text)
 
 void MessageBar::showExplanation(const QString &text, const QString &url)
 {
+    setIcon(false);
+    m_key.clear();
     QString html = text.toHtmlEscaped();
     if (url.startsWith(u"https://"_s))
         html += u" <a href=\"%1\">%2</a>"_s.arg(url.toHtmlEscaped(), tr("Read more on esp32bench.dev"));

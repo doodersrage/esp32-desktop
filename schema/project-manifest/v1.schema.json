@@ -480,6 +480,26 @@
           }
         }
       }
+    },
+    "desktop": {
+      "type": "object",
+      "description": "Since 1.2. The desktop app's latest release, so an older app can say a newer one is out. The app shows it only when the version is newer than its own and the page is https.",
+      "required": [
+        "version",
+        "url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "description": "The page to download it from."
+        }
+      }
     }
   }
 }

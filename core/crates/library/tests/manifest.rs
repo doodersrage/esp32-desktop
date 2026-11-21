@@ -93,6 +93,24 @@ fn image_sources_are_https_or_inside_a_local_librarys_folder() {
 }
 
 #[test]
+fn says_when_a_newer_desktop_app_is_out() {
+    let m = parse(&read(schema_dir().join("example.json"))).unwrap();
+    let d = m.desktop.as_ref().unwrap();
+    assert_eq!(d.version, "0.1.8");
+    assert_eq!(m.newer_desktop("0.1.7"), Some(d));
+    assert_eq!(m.newer_desktop("0.1.8"), None);
+    assert_eq!(m.newer_desktop("0.2.0"), None);
+    assert!(esp32bench_library::is_newer("0.10.0", "0.9.9"));
+    assert!(esp32bench_library::is_newer("1.0.0", "0.99.0-rc1"));
+    assert!(!esp32bench_library::is_newer("0.1", "0.0.1"));
+    assert!(!esp32bench_library::is_newer("x.y.z", "0.0.1"));
+    // A page that is not https is not offered.
+    let mut m = m.clone();
+    m.desktop.as_mut().unwrap().url = "http://esp32bench.dev/desktop/".into();
+    assert_eq!(m.newer_desktop("0.1.7"), None);
+}
+
+#[test]
 fn bluetooth_projects_are_not_simulated() {
     let bytes = read(schema_dir().join("example.json"));
     let mut m = parse(&bytes).unwrap();

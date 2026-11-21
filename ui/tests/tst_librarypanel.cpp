@@ -146,6 +146,31 @@ private slots:
         QCOMPARE(t->topLevelItemCount(), 2);
     }
 
+    void starredProjectsComeFirstAndFilter()
+    {
+        CoreConnection core;
+        LibraryPanel panel(&core);
+        QJsonObject lib = library();
+        QJsonArray projects = lib.value(u"projects"_s).toArray();
+        QJsonObject weather = projects.at(1).toObject();
+        weather.insert(u"starred"_s, true);
+        projects.replace(1, weather);
+        lib.insert(u"projects"_s, projects);
+        panel.showLibrary(lib);
+        QTreeWidget *t = panel.tree();
+        QTreeWidgetItem *first = t->topLevelItem(0);
+        QCOMPARE(first->data(LibraryPanel::NameColumn, LibraryPanel::IdRole).toString(), u"weather"_s);
+        QVERIFY(first->data(LibraryPanel::NameColumn, LibraryPanel::StarredRole).toBool());
+        QVERIFY(first->text(LibraryPanel::NameColumn).startsWith(u"★ "_s));
+        QVERIFY(!t->topLevelItem(1)->data(LibraryPanel::NameColumn, LibraryPanel::StarredRole).toBool());
+
+        panel.starredFilter()->setChecked(true);
+        QVERIFY(!first->isHidden());
+        QVERIFY(t->topLevelItem(1)->isHidden());
+        panel.starredFilter()->setChecked(false);
+        QVERIFY(!t->topLevelItem(1)->isHidden());
+    }
+
     void sortsTimeByMinutes()
     {
         CoreConnection core;

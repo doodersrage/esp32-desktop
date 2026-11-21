@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.24.0";
+pub const PROTOCOL: &str = "0.25.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -54,6 +54,8 @@ pub struct State {
     traces: std::sync::Mutex<std::collections::VecDeque<((u64, u64), SharedTrace)>>,
     /// Local ESP-IDF projects the user opened (local.open).
     pub local: esp32bench_build::idf::Registry,
+    /// Library projects the user starred (library.star).
+    pub starred: esp32bench_library::starred::Starred,
     /// ESP-IDF to use instead of detecting one (tests).
     pub idf_path: Option<PathBuf>,
 }
@@ -128,6 +130,11 @@ impl State {
                     .map(|d| d.join("local-projects.json"))
                     .unwrap_or_else(|_| PathBuf::from("esp32bench-local-projects.json")),
             ),
+            starred: esp32bench_library::starred::Starred::new(
+                esp32bench_sim::install::data_dir()
+                    .map(|d| d.join("starred.json"))
+                    .unwrap_or_else(|_| PathBuf::from("esp32bench-starred.json")),
+            ),
             idf_path: None,
         }
     }
@@ -162,6 +169,7 @@ impl State {
 /// Every method the daemon serves. A test checks this against `schema/rpc/`.
 pub fn router(state: Arc<State>) -> Router {
     let local = state.clone();
+    let stars = state.clone();
     let (s1, s2, s3, s4) = (state.clone(), state.clone(), state.clone(), state.clone());
     let (s5, s6, s7) = (state.clone(), state.clone(), state.clone());
     let links = state.clone();
@@ -288,6 +296,13 @@ pub fn router(state: Arc<State>) -> Router {
             let s = s3.clone();
             async move { library_get(p, s).await }
         })
+        .method("library.star", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { library_star(p, s).await }
+            }
+        })
         .method("local.open", {
             let s = local.clone();
             move |p, _| {
@@ -403,17 +418,49 @@ async fn library_list(params: Value, state: Arc<State>) -> Result<Value, RpcErro
     let Some(m) = manifest else {
         return Ok(json!({ "available": false, "source": state.library_source, "projects": [] }));
     };
+    let starred = state.starred.list();
+    let projects: Vec<Value> = m
+        .summaries()
+        .into_iter()
+        .map(|p| {
+            let mut v = json!(p);
+            v["starred"] = json!(starred.contains(&p.id));
+            v
+        })
+        .collect();
     let mut out = json!({
         "available": true,
         "source": state.library_source,
         "version": m.version,
         "generated": m.generated,
-        "projects": m.summaries(),
+        "projects": projects,
     });
     if let Some(t) = esp32bench_library::modified_secs(&state.library.path()) {
         out["fetchedAt"] = json!(t);
     }
+    if let Some(d) = m.newer_desktop(env!("CARGO_PKG_VERSION")) {
+        out["update"] = json!(d);
+    }
     Ok(out)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StarParams {
+    id: String,
+    starred: bool,
+}
+
+async fn library_star(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: StarParams = parse_params(params)?;
+    if p.id.is_empty() || p.id.len() > 200 {
+        return Err(RpcError::new(code::INVALID_PARAMS, "bad project id"));
+    }
+    let starred = state
+        .starred
+        .set(&p.id, p.starred)
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    Ok(json!({ "starred": starred }))
 }
 
 #[derive(Deserialize)]
@@ -2184,9 +2231,22 @@ async fn list_ports(all: bool) -> Result<Vec<esp32bench_device::Port>, RpcError>
         .map_err(|e| RpcError::new(code::FAILED, e.to_string()))
 }
 
+/// The ports and the advice on them (`esp32bench_device::advice`).
+async fn list_with_advice(
+    all: bool,
+) -> Result<(Vec<esp32bench_device::Port>, Vec<esp32bench_device::Advice>), RpcError> {
+    let ports = list_ports(all).await?;
+    let for_advice = ports.clone();
+    let advice = tokio::task::spawn_blocking(move || esp32bench_device::advice(&for_advice))
+        .await
+        .map_err(|e| RpcError::internal(e.to_string()))?;
+    Ok((ports, advice))
+}
+
 async fn device_list(params: Value) -> Result<Value, RpcError> {
     let p: DeviceListParams = parse_params(params)?;
-    Ok(json!({ "ports": list_ports(p.all).await? }))
+    let (ports, advice) = list_with_advice(p.all).await?;
+    Ok(json!({ "ports": ports, "advice": advice }))
 }
 
 async fn device_watch(params: Value, ctx: Ctx) -> Result<Value, RpcError> {
@@ -2194,25 +2254,25 @@ async fn device_watch(params: Value, ctx: Ctx) -> Result<Value, RpcError> {
     // Start monitoring before listing, so a change in between is not missed.
     let mut monitor = esp32bench_device::Monitor::new()
         .map_err(|e| RpcError::new(code::UNAVAILABLE, e.to_string()))?;
-    let ports = list_ports(p.all).await?;
-    let mut last = ports.clone();
+    let (ports, advice) = list_with_advice(p.all).await?;
+    let mut last = (ports.clone(), advice.clone());
     let id = ctx.subscribe(move |sub| async move {
         // Events go out only after the monitor's settle delay (300 ms), so in
         // practice the client has the subscription id before the first one arrives.
         while monitor.changed().await.is_ok() {
-            let Ok(now) = list_ports(p.all).await else {
+            let Ok(now) = list_with_advice(p.all).await else {
                 continue;
             };
             if now == last {
                 continue;
             }
-            if !sub.send("device.changed", json!({ "ports": now })) {
+            if !sub.send("device.changed", json!({ "ports": now.0, "advice": now.1 })) {
                 break;
             }
             last = now;
         }
     });
-    Ok(json!({ "subscription": id, "ports": ports }))
+    Ok(json!({ "subscription": id, "ports": ports, "advice": advice }))
 }
 
 /// Holds the daemon's lock file; the lock is released when this is dropped.

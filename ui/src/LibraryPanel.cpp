@@ -60,6 +60,7 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     , m_tree(new QTreeWidget(this))
     , m_simOnly(new QCheckBox(tr("Runs in the simulator"), this))
     , m_fitsBoard(new QCheckBox(tr("Fits my board"), this))
+    , m_starredOnly(new QCheckBox(tr("Starred"), this))
 {
     m_filter->setPlaceholderText(tr("Search projects"));
     m_filter->setMinimumWidth(m_filter->fontMetrics().averageCharWidth() * 16);
@@ -126,12 +127,19 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
         QTreeWidgetItem *item = m_tree->itemAt(pos);
-        if (!item || !item->data(NameColumn, LocalRole).toBool())
+        if (!item)
             return;
         const QString id = item->data(NameColumn, IdRole).toString();
         QMenu menu(this);
-        menu.addAction(QIcon::fromTheme(u"list-remove"_s), tr("Forget this project"), this,
-                       [this, id] { m_core->removeLocal(id); });
+        if (item->data(NameColumn, LocalRole).toBool()) {
+            menu.addAction(QIcon::fromTheme(u"list-remove"_s), tr("Forget this project"), this,
+                           [this, id] { m_core->removeLocal(id); });
+        } else {
+            const bool starred = item->data(NameColumn, StarredRole).toBool();
+            menu.addAction(QIcon::fromTheme(u"starred"_s),
+                           starred ? tr("Remove the star") : tr("Star this project"), this,
+                           [this, id, starred] { m_core->starProject(id, !starred); });
+        }
         menu.exec(m_tree->viewport()->mapToGlobal(pos));
     });
 
@@ -140,6 +148,8 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     m_fitsBoard->setEnabled(false);
     m_fitsBoard->setToolTip(tr("Connect a board to show only the projects for its chip"));
     connect(m_fitsBoard, &QCheckBox::toggled, this, &LibraryPanel::applyFilter);
+    m_starredOnly->setToolTip(tr("Only the projects you starred (right-click a project to star it)"));
+    connect(m_starredOnly, &QCheckBox::toggled, this, &LibraryPanel::applyFilter);
     // The chips of connected boards, from ports that say which chip they have.
     connect(m_core, &CoreConnection::devicesListed, this, [this](const QJsonArray &ports) {
         QStringList chips;
@@ -166,6 +176,7 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     auto *filters = new QHBoxLayout;
     filters->addWidget(m_simOnly);
     filters->addWidget(m_fitsBoard);
+    filters->addWidget(m_starredOnly);
     filters->addStretch(1);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
@@ -241,10 +252,23 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
     m_tree->setSortingEnabled(false); // insert in the site's order
     m_tree->clear();
     const QJsonArray projects = library.value(u"projects"_s).toArray();
+    // Starred projects first, each group in the site's order.
+    QList<QJsonObject> ordered;
     for (const QJsonValue &v : projects) {
-        const QJsonObject p = v.toObject();
+        if (v.toObject().value(u"starred"_s).toBool())
+            ordered << v.toObject();
+    }
+    for (const QJsonValue &v : projects) {
+        if (!v.toObject().value(u"starred"_s).toBool())
+            ordered << v.toObject();
+    }
+    for (const QJsonObject &p : std::as_const(ordered)) {
         auto *item = new ProjectItem(m_tree);
-        item->setText(NameColumn, p.value(u"name"_s).toString());
+        const bool starred = p.value(u"starred"_s).toBool();
+        item->setData(NameColumn, StarredRole, starred);
+        // A star before a starred project's name: a symbol, not words to translate.
+        item->setText(NameColumn, starred ? u"★ %1"_s.arg(p.value(u"name"_s).toString())
+                                          : p.value(u"name"_s).toString());
         item->setToolTip(NameColumn, p.value(u"summary"_s).toString());
         item->setData(NameColumn, UrlRole, p.value(u"url"_s).toString());
         item->setData(NameColumn, IdRole, p.value(u"id"_s).toString());
@@ -439,6 +463,8 @@ void LibraryPanel::applyFilter()
         const QString text = item->data(NameColumn, Qt::UserRole).toString();
         bool match = std::all_of(terms.begin(), terms.end(), [&](const QString &t) { return text.contains(t); });
         if (m_simOnly->isChecked() && !item->data(NameColumn, SimulatorRole).toBool())
+            match = false;
+        if (m_starredOnly->isChecked() && !item->data(NameColumn, StarredRole).toBool())
             match = false;
         if (m_fitsBoard->isChecked() && m_fitsBoard->isEnabled()) {
             const QStringList chips = item->data(NameColumn, ChipsRole).toStringList();

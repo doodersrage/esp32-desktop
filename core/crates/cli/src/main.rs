@@ -113,11 +113,18 @@ enum LibraryCmd {
         #[arg(long)]
         json: bool,
     },
-    /// List the cached projects.
+    /// List the cached projects; starred ones are marked `*`.
     List {
         /// Print JSON instead of a table.
         #[arg(long)]
         json: bool,
+    },
+    /// Star a project (as `library.star`), or unstar it with --off.
+    Star {
+        /// Project id, as in `library list`.
+        id: String,
+        #[arg(long)]
+        off: bool,
     },
 }
 
@@ -794,12 +801,14 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 bail!("no project library cached yet; run `esp32bench library refresh`");
             };
             let list = m.summaries();
+            let starred = starred_store()?.list();
             if json {
                 println!("{}", serde_json::to_string_pretty(&list)?);
             } else {
                 for p in &list {
                     println!(
-                        "{:<28} {:<13} {:>3} min  {:<9} {}",
+                        "{} {:<28} {:<13} {:>3} min  {:<9} {}",
+                        if starred.contains(&p.id) { '*' } else { ' ' },
                         p.id,
                         p.level,
                         p.minutes,
@@ -817,7 +826,20 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                     m.version,
                     m.generated
                 );
+                if let Some(d) = m.newer_desktop(env!("CARGO_PKG_VERSION")) {
+                    println!("esp32bench {} is out: {}", d.version, d.url);
+                }
             }
+        }
+        Cmd::Library(LibraryCmd::Star { id, off }) => {
+            let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+            if let Some(m) = cache.load().await?
+                && m.project(&id).is_none()
+            {
+                bail!("no project `{id}` in the library");
+            }
+            let all = starred_store()?.set(&id, !off)?;
+            println!("starred: {}", all.join(", "));
         }
         Cmd::Local(cmd) => {
             let registry = esp32bench_build::idf::Registry::new(
@@ -1382,9 +1404,17 @@ fn on_off(b: bool) -> &'static str {
 }
 
 /// Print ports as a table, or as one JSON object (`{"ports": [...]}`) on one line.
+/// The starred library projects, where the daemon keeps them.
+fn starred_store() -> Result<esp32bench_library::starred::Starred> {
+    Ok(esp32bench_library::starred::Starred::new(
+        esp32bench_sim::install::data_dir()?.join("starred.json"),
+    ))
+}
+
 fn print_ports(ports: &[esp32bench_device::Port], json: bool, pretty: bool) -> Result<()> {
+    let advice = esp32bench_device::advice(ports);
     if json {
-        let v = serde_json::json!({ "ports": ports });
+        let v = serde_json::json!({ "ports": ports, "advice": advice });
         if pretty {
             println!("{}", serde_json::to_string_pretty(&v)?);
         } else {
@@ -1421,6 +1451,28 @@ fn print_ports(ports: &[esp32bench_device::Port], json: bool, pretty: bool) -> R
             "{:<16} {ids:<10} {bridge:<16} chips: {chips}{access}",
             p.path
         );
+    }
+    for a in advice {
+        use esp32bench_device::Advice as A;
+        let text = match a {
+            A::DataCable => {
+                "no board? Use a USB cable that carries data: charge-only cables show no port".to_owned()
+            }
+            A::InstallDriver => "a board with a CH340 or CP210x USB chip may need its driver, from WCH or Silicon Labs".to_owned(),
+            A::BridgeWithoutPort { bridge } => {
+                let name = serde_json::to_value(bridge)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_default();
+                format!(
+                    "a {name} USB serial chip is plugged in but has no port; if brltty is installed, it may have taken it (remove brltty, or disable its udev rule)"
+                )
+            }
+            A::SerialAccess => {
+                "a port cannot be opened: install the esp32bench udev rule or join the serial group (uucp on Arch, dialout elsewhere)".to_owned()
+            }
+        };
+        println!("note: {text}");
     }
     Ok(())
 }

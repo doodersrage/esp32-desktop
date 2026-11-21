@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QJsonArray>
 #include <QJsonObject>
+#include <QUrl>
 #include <QMainWindow>
 
 class CoreConnection;
@@ -27,6 +29,7 @@ class QToolBar;
 class QToolButton;
 class QProgressBar;
 class MessageBar;
+class QMimeData;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -66,8 +69,21 @@ public:
     virtual bool confirmErase(const QString &port);
     BoardInfoDialog *boardInfo() const { return m_boardInfo; }
 
+    // Ctrl+F: find in the console that has the focus, else in the library.
+    void find();
+    // Help → Keyboard shortcuts' text (rich text), and its dialog.
+    QString shortcutsText() const;
+    void showShortcuts();
+    // Help → Report a problem: a new GitHub issue with the versions filled in.
+    QUrl problemReportUrl() const;
+    // What a drop would open: local paths (ESP-IDF project folders) and esp32bench://
+    // links. Empty when it has neither.
+    static QStringList dropTargets(const QMimeData *mime);
+
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
     void buildMenus();
@@ -79,6 +95,8 @@ private:
     void resetLayout();
     void applyDefaultSizes();
     QStringList m_pendingLinks;
+    QString m_noticeShown;   // the release notice shown this session
+    QJsonArray m_toolchain;  // the last toolchain.status, for problem reports
     void showConnectionState();
     void startCore();
     void restoreLayout();

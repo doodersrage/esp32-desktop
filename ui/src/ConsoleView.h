@@ -29,9 +29,21 @@ public:
     // Select the next (or previous) match after the cursor, wrapping round; false if
     // there is none.
     bool findText(const QString &text, bool backward = false);
+    // Make the text bigger (steps > 0) or smaller, or back to the system's size; kept
+    // for every console (QSettings console/zoom). Ctrl+= / Ctrl+- / Ctrl+0 and
+    // Ctrl+wheel do the same.
+    void zoom(int steps);
+    void resetZoom();
+    int zoomSteps() const { return m_zoom; }
+
+protected:
+    void wheelEvent(QWheelEvent *event) override;
 
 private:
+    void applyZoom();
+
     QStringDecoder m_decoder{QStringDecoder::Utf8};
+    int m_zoom = 0;
     bool m_timestamps = false;
     bool m_atLineStart = true;
 };
@@ -46,6 +58,8 @@ public:
     ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &setting, QWidget *parent = nullptr);
 
     QLineEdit *findField() const { return m_find; }
+    // Put the cursor in the find field, its text selected (Ctrl+F).
+    void focusFind();
     QCheckBox *timestampBox() const { return m_stamps; }
     // Ask the core to write the console's text to `path` (Save… asks for it).
     void saveTo(const QString &path);
@@ -58,4 +72,24 @@ private:
     QToolButton *m_next;
     QCheckBox *m_stamps;
     QToolButton *m_save;
+};
+
+// Up and Down in a console's input line recall the lines sent before, newest first,
+// as in the Arduino IDE's serial monitor. Kept while the app runs.
+class InputHistory : public QObject {
+    Q_OBJECT
+
+public:
+    // Watches `input`; lines are remembered when Return sends them.
+    explicit InputHistory(QLineEdit *input);
+    QStringList lines() const { return m_lines; }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
+private:
+    QLineEdit *m_input;
+    QStringList m_lines; // oldest first
+    int m_at = -1;       // index being shown, -1 when editing a new line
+    QString m_draft;     // what was typed before going back
 };

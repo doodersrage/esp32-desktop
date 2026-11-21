@@ -570,6 +570,22 @@
         <translation>Desconhecido</translation>
     </message>
     <message>
+        <source>You cannot open this port. Another program may have it open, such as the Arduino IDE&apos;s serial monitor: close it and try again.</source>
+        <translation>Você não pode abrir esta porta. Outro programa pode estar com ela aberta, como o monitor serial da IDE do Arduino: feche-o e tente de novo.</translation>
+    </message>
+    <message>
+        <source>No board showing? Use a USB cable that carries data: charge-only cables show no port.</source>
+        <translation>Nenhuma placa aparece? Use um cabo USB que transmita dados: cabos só de carga não mostram nenhuma porta.</translation>
+    </message>
+    <message>
+        <source>A board with a CH340 or CP210x USB chip may need its driver first: &lt;a href=&quot;%1&quot;&gt;CH340 (WCH)&lt;/a&gt; or &lt;a href=&quot;%2&quot;&gt;CP210x (Silicon Labs)&lt;/a&gt;.</source>
+        <translation>Uma placa com chip USB CH340 ou CP210x pode precisar antes do driver dele: &lt;a href=&quot;%1&quot;&gt;CH340 (WCH)&lt;/a&gt; ou &lt;a href=&quot;%2&quot;&gt;CP210x (Silicon Labs)&lt;/a&gt;.</translation>
+    </message>
+    <message>
+        <source>A %1 is plugged in but has no serial port. If brltty (a braille display service) is installed, it may have taken it: remove brltty and plug the board in again.</source>
+        <translation>Um %1 está conectado, mas não tem porta serial. Se o brltty (um serviço para displays braille) estiver instalado, ele pode tê-la tomado: remova o brltty e conecte a placa de novo.</translation>
+    </message>
+    <message>
         <source>Refresh</source>
         <translation>Atualizar</translation>
     </message>
@@ -688,6 +704,10 @@
         <translation>Para a minha placa</translation>
     </message>
     <message>
+        <source>Starred</source>
+        <translation>Com estrela</translation>
+    </message>
+    <message>
         <source>Search projects</source>
         <translation>Buscar projetos</translation>
     </message>
@@ -736,12 +756,24 @@
         <translation>Esquecer este projeto</translation>
     </message>
     <message>
+        <source>Remove the star</source>
+        <translation>Remover a estrela</translation>
+    </message>
+    <message>
+        <source>Star this project</source>
+        <translation>Marcar com estrela</translation>
+    </message>
+    <message>
         <source>Only projects that run in the simulator, with no board needed</source>
         <translation>Só projetos que rodam no simulador, sem placa</translation>
     </message>
     <message>
         <source>Connect a board to show only the projects for its chip</source>
         <translation>Conecte uma placa para ver só os projetos do chip dela</translation>
+    </message>
+    <message>
+        <source>Only the projects you starred (right-click a project to star it)</source>
+        <translation>Só os projetos com estrela (clique com o botão direito em um projeto para marcá-lo)</translation>
     </message>
     <message>
         <source>Only projects with a build for the connected %1</source>
@@ -897,6 +929,14 @@ O painel Compilação abaixo tem o registro completo.</translation>
         <translation>Nota: %1</translation>
     </message>
     <message>
+        <source>ESP32 Bench %1 is out; you have %2.</source>
+        <translation>O ESP32 Bench %1 foi lançado; você tem a %2.</translation>
+    </message>
+    <message>
+        <source>Get it from esp32bench.dev</source>
+        <translation>Baixe em esp32bench.dev</translation>
+    </message>
+    <message>
         <source>Plot</source>
         <translation>Gráfico</translation>
     </message>
@@ -1025,6 +1065,10 @@ O painel Compilação abaixo tem o registro completo.</translation>
         <translation>&amp;Exibir</translation>
     </message>
     <message>
+        <source>&amp;Find…</source>
+        <translation>&amp;Localizar…</translation>
+    </message>
+    <message>
         <source>&amp;Reset layout</source>
         <translation>&amp;Redefinir o layout</translation>
     </message>
@@ -1043,6 +1087,18 @@ O painel Compilação abaixo tem o registro completo.</translation>
     <message>
         <source>&amp;Help</source>
         <translation>Aj&amp;uda</translation>
+    </message>
+    <message>
+        <source>esp32bench.dev &amp;guide</source>
+        <translation>&amp;Guia do esp32bench.dev</translation>
+    </message>
+    <message>
+        <source>&amp;Keyboard shortcuts</source>
+        <translation>&amp;Atalhos de teclado</translation>
+    </message>
+    <message>
+        <source>&amp;Report a problem…</source>
+        <translation>&amp;Relatar um problema…</translation>
     </message>
     <message>
         <source>&amp;About ESP32 Bench</source>
@@ -1135,6 +1191,34 @@ SHA-256: %2</translation>
 Code SHA-256: %2</source>
         <translation>Placa: %1
 SHA-256 do código: %2</translation>
+    </message>
+    <message>
+        <source>Bigger or smaller text in the console (also Ctrl and the mouse wheel)</source>
+        <translation>Texto maior ou menor no console (também com Ctrl e a roda do mouse)</translation>
+    </message>
+    <message>
+        <source>The console&apos;s text at its usual size</source>
+        <translation>O texto do console no tamanho normal</translation>
+    </message>
+    <message>
+        <source>Up / Down</source>
+        <translation>Cima / Baixo</translation>
+    </message>
+    <message>
+        <source>In the text to send: the lines sent before</source>
+        <translation>No texto a enviar: as linhas enviadas antes</translation>
+    </message>
+    <message>
+        <source>Undo a change to the circuit</source>
+        <translation>Desfazer uma alteração no circuito</translation>
+    </message>
+    <message>
+        <source>Keyboard shortcuts</source>
+        <translation>Atalhos de teclado</translation>
+    </message>
+    <message>
+        <source>What happened, and what you expected:</source>
+        <translation>O que aconteceu, e o que você esperava:</translation>
     </message>
     <message>
         <source>Flash a downloaded project?</source>

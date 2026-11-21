@@ -5,6 +5,7 @@
 
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -52,6 +53,27 @@ private slots:
         panel.showPorts({});
         QCOMPARE(panel.tree()->topLevelItemCount(), 0);
         QVERIFY(panel.statusText().contains(u"No boards found"_s));
+    }
+
+    void explainsWhyNoBoardShows()
+    {
+        CoreConnection core;
+        DevicesPanel panel(&core);
+        QVERIFY(panel.adviceShown().isEmpty());
+        panel.setAdvice(QJsonArray{QJsonObject{{u"kind"_s, u"data-cable"_s}},
+                                   QJsonObject{{u"kind"_s, u"install-driver"_s}},
+                                   QJsonObject{{u"kind"_s, u"bridge-without-port"_s}, {u"bridge"_s, u"ch340"_s}},
+                                   QJsonObject{{u"kind"_s, u"something-newer"_s}}});
+        const QString shown = panel.adviceShown();
+        QVERIFY(shown.contains(u"charge-only"_s));
+        QVERIFY(shown.contains(u"silabs.com"_s));
+        QVERIFY(shown.contains(u"CH340"_s));
+        QVERIFY(shown.contains(u"brltty"_s));
+        // Advice this app does not know yet is left out.
+        QCOMPARE(shown.count(u"<br>"_s), 2);
+        panel.setAdvice({});
+        QVERIFY(panel.adviceShown().isEmpty());
+        QCOMPARE(DevicesPanel::adviceText(QJsonObject{{u"kind"_s, u"serial-access"_s}}), DevicesPanel::accessHint());
     }
 
     void showsDisconnectedState()

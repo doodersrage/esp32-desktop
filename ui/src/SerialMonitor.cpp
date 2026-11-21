@@ -66,6 +66,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     connect(m_reset, &QPushButton::clicked, m_core, &CoreConnection::resetSerial);
     connect(m_clear, &QPushButton::clicked, m_output, &QPlainTextEdit::clear);
     connect(m_send, &QPushButton::clicked, this, &SerialMonitor::send);
+    new InputHistory(m_input); // Up and Down recall what was sent
     connect(m_input, &QLineEdit::returnPressed, this, &SerialMonitor::send);
 
     auto *top = new QHBoxLayout;

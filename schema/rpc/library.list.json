@@ -103,7 +103,29 @@
             "simulator": {
               "type": "boolean",
               "description": "Whether it runs in the app's simulator: a build for an ESP32, ESP32-S3 or ESP32-C3 board, of a sketch (or prebuilt firmware the library links) that does not use Bluetooth."
+            },
+            "starred": {
+              "type": "boolean",
+              "description": "Since protocol 0.25: whether the user starred it (library.star)."
             }
+          }
+        }
+      },
+      "update": {
+        "type": "object",
+        "description": "Since protocol 0.25: the desktop app's latest release, from the manifest's desktop, when it is newer than this core. Absent otherwise.",
+        "required": [
+          "version",
+          "url"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "description": "An https page to get it from."
           }
         }
       }

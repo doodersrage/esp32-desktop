@@ -86,6 +86,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
         m_core->setSimIcount(on);
     });
     connect(m_send, &QPushButton::clicked, this, &SimulatorPanel::send);
+    new InputHistory(m_input); // Up and Down recall what was sent
     connect(m_input, &QLineEdit::returnPressed, this, &SimulatorPanel::send);
 
     auto *top = new QHBoxLayout;

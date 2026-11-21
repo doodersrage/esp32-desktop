@@ -30,8 +30,15 @@ pub enum Error {
     Baud(u32),
     #[error("{0} is in use by another program")]
     Busy(PathBuf),
-    #[error(
-        "no permission to open {0}; install the esp32bench udev rule or join the group that owns serial ports (uucp on Arch, dialout on Debian, Ubuntu and Fedora)"
+    #[cfg_attr(
+        target_os = "linux",
+        error(
+            "no permission to open {0}; install the esp32bench udev rule or join the group that owns serial ports (uucp on Arch, dialout on Debian, Ubuntu and Fedora)"
+        )
+    )]
+    #[cfg_attr(
+        not(target_os = "linux"),
+        error("no permission to open {0}; another program may have it open")
     )]
     Permission(PathBuf),
     #[error("{0} does not exist")]
@@ -141,6 +148,8 @@ fn open_error(path: &Path, e: serialport::Error) -> Error {
         // serialport reports EBUSY (another program holds the port exclusively) as
         // NoDevice; a missing device comes back as Io(NotFound) from ENOENT.
         K::NoDevice => Error::Busy(p),
+        // Windows refuses a COM port another program has open with "access denied".
+        K::Io(std::io::ErrorKind::PermissionDenied) if cfg!(windows) => Error::Busy(p),
         K::Io(std::io::ErrorKind::PermissionDenied) => Error::Permission(p),
         K::Io(std::io::ErrorKind::NotFound) => Error::NotFound(p),
         K::Io(std::io::ErrorKind::ResourceBusy) => Error::Busy(p),

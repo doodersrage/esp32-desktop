@@ -7,6 +7,9 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFontDatabase>
+#include <QKeyEvent>
+#include <QShortcut>
+#include <QWheelEvent>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLineEdit>
@@ -14,6 +17,7 @@
 #include <QStandardPaths>
 #include <QToolButton>
 
+#include <algorithm>
 #include <memory>
 #include <QScrollBar>
 #include <QTextCursor>
@@ -22,6 +26,9 @@ using namespace Qt::StringLiterals;
 
 namespace {
 constexpr int MaxLines = 10000;
+constexpr int MinZoom = -4;
+constexpr int MaxZoom = 24;
+const QString ZoomSetting = u"console/zoom"_s;
 }
 
 ConsoleView::ConsoleView(QWidget *parent)
@@ -31,6 +38,48 @@ ConsoleView::ConsoleView(QWidget *parent)
     setLineWrapMode(QPlainTextEdit::NoWrap);
     setMaximumBlockCount(MaxLines);
     setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    m_zoom = std::clamp(QSettings().value(ZoomSetting, 0).toInt(), MinZoom, MaxZoom);
+    applyZoom();
+    const auto key = [this](const QKeySequence &seq, auto slot) {
+        auto *s = new QShortcut(seq, this, slot);
+        s->setContext(Qt::WidgetShortcut);
+    };
+    key(QKeySequence::ZoomIn, [this] { zoom(1); });
+    key(QKeySequence(Qt::CTRL | Qt::Key_Equal), [this] { zoom(1); });
+    key(QKeySequence::ZoomOut, [this] { zoom(-1); });
+    key(QKeySequence(Qt::CTRL | Qt::Key_0), [this] { resetZoom(); });
+}
+
+void ConsoleView::zoom(int steps)
+{
+    m_zoom = std::clamp(m_zoom + steps, MinZoom, MaxZoom);
+    QSettings().setValue(ZoomSetting, m_zoom);
+    applyZoom();
+}
+
+void ConsoleView::resetZoom()
+{
+    zoom(-m_zoom);
+}
+
+void ConsoleView::applyZoom()
+{
+    QFont f = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    const qreal base = f.pointSizeF() > 0 ? f.pointSizeF() : 10.0;
+    f.setPointSizeF(std::max(4.0, base + m_zoom));
+    setFont(f);
+}
+
+void ConsoleView::wheelEvent(QWheelEvent *event)
+{
+    if (event->modifiers() & Qt::ControlModifier) {
+        const int delta = event->angleDelta().y();
+        if (delta != 0)
+            zoom(delta > 0 ? 1 : -1);
+        event->accept();
+        return;
+    }
+    QPlainTextEdit::wheelEvent(event);
 }
 
 void ConsoleView::resetDecoder()
@@ -175,4 +224,62 @@ void ConsoleBar::saveTo(const QString &path)
                           m_view->appendNotice(tr("Could not save the output: %1").arg(message));
                       });
     m_core->saveConsole(path, m_view->toPlainText());
+}
+
+void ConsoleBar::focusFind()
+{
+    m_find->setFocus(Qt::ShortcutFocusReason);
+    m_find->selectAll();
+}
+
+InputHistory::InputHistory(QLineEdit *input)
+    : QObject(input)
+    , m_input(input)
+{
+    input->installEventFilter(this);
+}
+
+bool InputHistory::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched != m_input || event->type() != QEvent::KeyPress)
+        return false;
+    const auto *key = static_cast<QKeyEvent *>(event);
+    switch (key->key()) {
+    case Qt::Key_Return:
+    case Qt::Key_Enter: {
+        const QString text = m_input->text();
+        if (!text.isEmpty() && (m_lines.isEmpty() || m_lines.constLast() != text)) {
+            m_lines << text;
+            if (m_lines.size() > 100)
+                m_lines.removeFirst();
+        }
+        m_at = -1;
+        m_draft.clear();
+        return false; // the panel sends it
+    }
+    case Qt::Key_Up:
+        if (m_lines.isEmpty())
+            return true;
+        if (m_at == -1) {
+            m_draft = m_input->text();
+            m_at = int(m_lines.size()) - 1;
+        } else if (m_at > 0) {
+            --m_at;
+        }
+        m_input->setText(m_lines.at(m_at));
+        return true;
+    case Qt::Key_Down:
+        if (m_at == -1)
+            return true;
+        if (m_at < m_lines.size() - 1) {
+            ++m_at;
+            m_input->setText(m_lines.at(m_at));
+        } else {
+            m_at = -1;
+            m_input->setText(m_draft);
+        }
+        return true;
+    default:
+        return false;
+    }
 }
