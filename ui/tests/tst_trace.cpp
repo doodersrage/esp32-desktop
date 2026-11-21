@@ -12,6 +12,8 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QTemporaryDir>
+#include <QSignalSpy>
+#include <cmath>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -64,7 +66,7 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.27.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.28.0"_s}});
         } else if (m == u"sim.start") {
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false},
                                   {u"engine"_s, u"lcgamboa"_s}, {u"pins"_s, pinsToReport}});
@@ -131,6 +133,31 @@ private slots:
         fake.saveError = u"writing /tmp/blink.vcd: denied"_s;
         panel.saveTo(u"/tmp/blink.vcd"_s);
         QTRY_VERIFY(panel.statusText().contains(u"denied"_s));
+    }
+
+    void measuresAndZooms()
+    {
+        TraceView view;
+        view.resize(664, 120); // a 600-pixel plot after the labels
+        view.setPins({2});
+        view.setSpan(1'000'000);
+        view.addEdges(QJsonArray{QJsonObject{{u"gpio"_s, 2}, {u"t"_s, 5'000'000}, {u"level"_s, true}}});
+        // Two clicks: A then B; the time between them, and its frequency.
+        view.setMarkers(4'000'000, 4'500'000);
+        QCOMPARE(view.measurement(), u"A–B: 500 µs (2 kHz)"_s);
+        const QPoint at(64 + 300, 60);
+        QTest::mouseClick(&view, Qt::LeftButton, {}, at);
+        QVERIFY(view.markerA() > 4'000'000 && view.markerB() < 0); // a new A
+        QTest::mouseClick(&view, Qt::RightButton, {}, at);
+        QVERIFY(view.markerA() < 0);
+        QVERIFY(view.measurement().isEmpty());
+        // Ctrl+wheel zooms in around a time, which stays where it was.
+        QSignalSpy held(&view, &TraceView::held);
+        const qint64 t = view.timeAt(at.x());
+        view.zoomAround(t, 0.5);
+        QCOMPARE(view.span(), 500'000);
+        QVERIFY(std::abs(view.timeAt(at.x()) - t) < 2'000);
+        QCOMPARE(held.size(), 1);
     }
 
     void nothingToTraceWithoutPins()

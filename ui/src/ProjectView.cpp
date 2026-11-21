@@ -64,6 +64,11 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     // Page 0: nothing selected, or loading.
     auto *first = new QWidget(m_stack);
     m_placeholder = new QLabel(first);
+    // The guide's recent projects are links: "project:<id>".
+    connect(m_placeholder, &QLabel::linkActivated, this, [this](const QString &link) {
+        if (link.startsWith(u"project:"_s))
+            emit recentRequested(link.mid(8));
+    });
     m_placeholder->setAlignment(Qt::AlignCenter);
     m_placeholder->setWordWrap(true);
     m_placeholder->setEnabled(false);
@@ -268,7 +273,8 @@ void ProjectView::showGuide()
            "<li>Press <b>Run in simulator</b> to try it without hardware, or plug in a board, "
            "choose its port and press <b>Flash</b>.</li>"
            "</ol>"
-           "<p>The first build needs the build tools: <b>Tools → Toolchain setup</b> installs them.</p>"));
+           "<p>The first build needs the build tools: <b>Tools → Toolchain setup</b> installs them.</p>")
+        + recentHtml());
     m_placeholder->setEnabled(true);
     m_try->setVisible(m_tryAvailable);
     m_stack->setCurrentIndex(0);
@@ -635,4 +641,21 @@ void ProjectView::updateBuildButton()
 QString ProjectView::buildStateText() const
 {
     return m_buildState->text();
+}
+
+void ProjectView::setRecent(const QList<std::pair<QString, QString>> &recent)
+{
+    m_recent = recent.mid(0, 5);
+    if (m_stack->currentIndex() == 0 && m_placeholder->isEnabled())
+        showGuide();
+}
+
+QString ProjectView::recentHtml() const
+{
+    if (m_recent.isEmpty())
+        return {};
+    QStringList links;
+    for (const auto &[title, id] : m_recent)
+        links << u"<a href=\"project:%1\">%2</a>"_s.arg(id.toHtmlEscaped(), title.toHtmlEscaped());
+    return tr("<p><b>Recent projects:</b> %1</p>").arg(links.join(u" · "_s));
 }

@@ -3,6 +3,7 @@
 #include "ConsoleView.h"
 #include "CoreConnection.h"
 #include "Preferences.h"
+#include "SimulatorPanel.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -11,6 +12,7 @@
 #include <QIcon>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QLabel>
 #include <QSettings>
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -40,7 +42,34 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     , m_ending(new QComboBox(this))
     , m_send(new QPushButton(tr("Send"), this))
     , m_hex(new QCheckBox(tr("Hex"), this))
+    , m_expect(new QLabel(this))
 {
+    // Whether the board prints what the project flashed to it expects (serial.expect).
+    m_expect->setWordWrap(true);
+    m_expect->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_expect->hide();
+    connect(m_core, &CoreConnection::serialExpect, this,
+            [this](const QStringList &matched, const QStringList &missing, const QString &, int seconds, bool timedOut) {
+                QStringList shown;
+                for (const QString &p : missing)
+                    shown << SimulatorPanel::readablePattern(p);
+                QString text;
+                if (missing.isEmpty())
+                    text = tr("✓ The board prints what this project expects.");
+                else if (!timedOut)
+                    text = tr("Waiting for the expected output: %1 of %2 seen so far.")
+                               .arg(matched.size())
+                               .arg(matched.size() + missing.size());
+                else
+                    text = tr("Not seen yet (a board prints it within %1 s): %2. If the board started before the port "
+                              "opened, press Reset board to see it start again.")
+                               .arg(seconds)
+                               .arg(shown.join(u"; "_s));
+                m_expect->setText(text);
+                m_expect->setToolTip(tr("What a board running this project prints, from esp32bench.dev: %1")
+                                         .arg((matched + missing).join(u"; "_s)));
+                m_expect->show();
+            });
     m_hex->setToolTip(tr("Show what the board sends as hex bytes, and send what you type as hex (\"01 a0 ff\")"));
     connect(m_hex, &QCheckBox::toggled, this, [this](bool on) {
         m_output->setHex(on);
@@ -79,6 +108,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
         if (m_port->currentText().isEmpty())
             return;
         m_open->setEnabled(false);
+        m_expect->hide();
         m_core->openSerial(m_port->currentData().toString(), m_baud->currentData().toInt());
     });
     connect(m_reset, &QPushButton::clicked, m_core, &CoreConnection::resetSerial);
@@ -100,6 +130,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     bottom->addWidget(m_send);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
+    layout->addWidget(m_expect);
     layout->addWidget(m_output, 1);
     m_tools = new ConsoleBar(m_output, m_core, u"serial/timestamps"_s, this);
     layout->addWidget(m_tools);
@@ -161,8 +192,14 @@ QString SerialMonitor::outputText() const
     return m_output->toPlainText();
 }
 
-void SerialMonitor::openPort(const QString &path)
+QString SerialMonitor::expectText() const
 {
+    return m_expect->isHidden() ? QString() : m_expect->text();
+}
+
+void SerialMonitor::openPort(const QString &path, const QString &expect)
+{
+    m_expect->hide();
     if (m_open_) {
         if (m_port->currentData().toString() == path)
             return;
@@ -175,7 +212,7 @@ void SerialMonitor::openPort(const QString &path)
     }
     m_port->setCurrentIndex(i);
     m_open->setEnabled(false);
-    m_core->openSerial(path, m_baud->currentData().toInt());
+    m_core->openSerial(path, m_baud->currentData().toInt(), expect);
 }
 
 void SerialMonitor::setPorts(const QJsonArray &ports)

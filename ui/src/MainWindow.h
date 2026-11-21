@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CommandPalette.h"
+
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QUrl>
@@ -73,6 +75,9 @@ public:
     // After an upgrade, once: a line in the message bar with a link to the release
     // notes. Remembers the version, so a first start says nothing.
     void sayWhatsNew();
+    // Ctrl+K: find any action or project by typing.
+    void showCommandPalette();
+    CommandPalette *commandPalette() const { return m_palette; }
     // Tools → Preferences….
     void showPreferences();
     PreferencesDialog *preferences() const { return m_preferences; }
@@ -98,6 +103,7 @@ private:
     // The toolbar's project, Stop and next-step hint, from what the window shows now.
     void updateToolBar();
     void showShortcutsInToolTips();
+    void showRecentOnGuide(const QStringList &ids, const QStringList &titles);
     // The first-start layout: library, project, simulator and circuit; the rest open
     // when they have something to show. View → Reset layout returns to it.
     void resetLayout();
@@ -107,6 +113,8 @@ private:
     QJsonArray m_toolchain;  // the last toolchain.status, for problem reports
     QJsonObject m_firstError; // the failing build's first compiler error
     PreferencesDialog *m_preferences = nullptr;
+    CommandPalette *m_palette = nullptr;
+    QList<CommandPalette::Entry> paletteEntries() const;
     void showConnectionState();
     void startCore();
     void restoreLayout();

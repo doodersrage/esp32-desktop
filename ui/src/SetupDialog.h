@@ -4,12 +4,17 @@
 #pragma once
 
 #include <QDialog>
+#include <QElapsedTimer>
+#include <QList>
+
+#include <utility>
 #include <QJsonArray>
 
 class CoreConnection;
 class QLabel;
 class QPushButton;
 class QPlainTextEdit;
+class QProgressBar;
 class QTreeWidget;
 
 class SetupDialog : public QDialog {
@@ -27,6 +32,10 @@ public:
 
     QPushButton *installAllButton() const { return m_installAll; }
 
+    // Render toolchain.download (public for tests), and what the bar says.
+    void showDownload(qint64 bytes, qint64 total);
+    QString downloadText() const;
+
 private:
     void install(const QString &component, const QString &name);
     // Start the next queued install (Install everything needed).
@@ -36,6 +45,9 @@ private:
     QLabel *m_summary;
     QTreeWidget *m_tree;
     QPlainTextEdit *m_log;
+    QProgressBar *m_download;
+    QElapsedTimer m_clock;
+    QList<std::pair<qint64, qint64>> m_samples; // (ms, bytes) of the last half minute
     QPushButton *m_installAll = nullptr;
     // Components the app can install that are missing (id, name), and those still to
     // install in this round.

@@ -1,0 +1,72 @@
+{
+  "method": "frame.save",
+  "description": "Since protocol 0.28: write a picture to a file the user chose, as PNG: the Display dock's (as sim.frame carries it). The UI does no file access of its own.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "width",
+      "height",
+      "data"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Absolute path of the file to write; replaced if it exists."
+      },
+      "width": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4096
+      },
+      "height": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4096
+      },
+      "data": {
+        "type": "string",
+        "contentEncoding": "base64",
+        "description": "width * height * 3 bytes: red, green, blue, rows top to bottom."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "bytes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "bytes": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "path": "/home/me/panel.png",
+        "width": 1,
+        "height": 1,
+        "data": "/wAA"
+      },
+      "result": {
+        "path": "/home/me/panel.png",
+        "bytes": 69
+      }
+    }
+  ]
+}

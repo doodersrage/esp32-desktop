@@ -74,7 +74,7 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello")
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.27.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.28.0"_s}});
         else if (m == u"device.watch")
             reply(id, QJsonObject{{u"subscription"_s, 1}, {u"ports"_s, QJsonArray{}}});
         else if (m == u"library.list")
@@ -108,6 +108,21 @@ private slots:
         QCoreApplication::setOrganizationName(u"esp32bench-tests"_s);
         QStandardPaths::setTestModeEnabled(true);
         QSettings().clear();
+    }
+
+    void showsTheDownloadAndTimeLeft()
+    {
+        CoreConnection core;
+        SetupDialog dialog(&core);
+        QVERIFY(dialog.downloadText().isEmpty());
+        dialog.showDownload(100'000'000, 1'000'000'000);
+        QVERIFY(dialog.downloadText().contains(u"of"_s));
+        QTest::qWait(1100);
+        dialog.showDownload(200'000'000, 1'000'000'000);
+        // 100 MB in a second: about 8 s to go.
+        QVERIFY2(dialog.downloadText().contains(u"left"_s), qPrintable(dialog.downloadText()));
+        emit core.toolchainInstallFinished(true, {});
+        QVERIFY(dialog.downloadText().isEmpty());
     }
 
     void rendersStatus()

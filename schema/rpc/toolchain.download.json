@@ -1,0 +1,37 @@
+{
+  "event": "toolchain.download",
+  "description": "Since protocol 0.28: how much of a toolchain.install job's download has arrived, at most once a second while it changes. Sent for the ESP32 core (arduino-cli's archives, measured as they arrive); other components' downloads are small and send none.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "bytes",
+      "total"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "total": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "bytes": 52428800,
+        "total": 1810706323
+      }
+    }
+  ]
+}

@@ -701,6 +701,33 @@ async fn build_runs_after_consent_and_reports() {
 }
 
 #[tokio::test]
+async fn frame_save_writes_png() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let path = out.path().join("panel.png");
+    let params =
+        json!({ "path": path, "width": 2, "height": 1, "data": b64(&[255, 0, 0, 0, 0, 255]) });
+    assert_valid(
+        &method_def("frame.save")["params"],
+        &params,
+        "frame.save params",
+    );
+    let r = c.call("frame.save", params).await.unwrap();
+    assert_valid(&method_def("frame.save")["result"], &r, "frame.save result");
+    assert!(std::fs::read(&path).unwrap().starts_with(b"\x89PNG"));
+    for bad in [
+        json!({ "path": path, "width": 3, "height": 1, "data": b64(&[1, 2, 3]) }),
+        json!({ "path": "rel.png", "width": 1, "height": 1, "data": b64(&[1, 2, 3]) }),
+    ] {
+        match c.call("frame.save", bad).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+            other => panic!("expected invalid params, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
 async fn plot_save_writes_csv() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
@@ -1049,7 +1076,6 @@ async fn serial_daemon_waiting(
     (dir, sock, lock)
 }
 
-#[cfg(unix)]
 fn b64(bytes: &[u8]) -> String {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -1360,6 +1386,43 @@ async fn next_serial_event(c: &mut Client, secs: u64) -> Value {
             return n;
         }
     }
+}
+
+// A real board's output, checked against its project's expectation.
+#[cfg(unix)]
+#[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
+async fn serial_checks_a_boards_output_against_its_project() {
+    use std::os::fd::AsRawFd;
+    let (master, port) = pty();
+    let (_d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let params = json!({ "path": port, "baud": 115200, "expect": "blink" });
+    assert_valid(
+        &method_def("serial.open")["params"],
+        &params,
+        "serial.open params",
+    );
+    c.call("serial.open", params).await.unwrap();
+    let first = next_serial_event(&mut c, 10).await;
+    assert_eq!(first["method"], "serial.expect", "{first}");
+    assert_valid(
+        &method_def("serial.expect")["params"],
+        &first["params"],
+        "serial.expect",
+    );
+    assert_eq!(first["params"]["missing"], json!(["tick \\d+ ms"]));
+    let out = b"boot\ntick 1000 ms\n";
+    // SAFETY: write a valid buffer to the pty master.
+    unsafe { libc::write(master.as_raw_fd(), out.as_ptr().cast(), out.len()) };
+    let done = next_serial_event(&mut c, 10).await;
+    assert_eq!(done["method"], "serial.expect", "{done}");
+    assert_eq!(done["params"]["missing"], json!([]));
+    assert_eq!(done["params"]["timedOut"], false);
 }
 
 // The port is a symlink to a pty, so the "board" can come back at the same path.

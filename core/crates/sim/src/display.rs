@@ -147,6 +147,39 @@ impl Display {
     }
 }
 
+/// A picture as PNG: `rgb` is `width * height` pixels of red, green and blue, rows
+/// top to bottom (as sim.frame carries them). None if the sizes do not match.
+pub fn png(width: u32, height: u32, rgb: &[u8]) -> Option<Vec<u8>> {
+    use std::io::Write;
+    let row = usize::try_from(width).ok()?.checked_mul(3)?;
+    if width == 0 || height == 0 || rgb.len() != row.checked_mul(usize::try_from(height).ok()?)? {
+        return None;
+    }
+    let chunk = |out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]| {
+        out.extend_from_slice(&u32::try_from(data.len()).unwrap_or(u32::MAX).to_be_bytes());
+        let mut crc = crc32fast::Hasher::new();
+        crc.update(kind);
+        crc.update(data);
+        out.extend_from_slice(kind);
+        out.extend_from_slice(data);
+        out.extend_from_slice(&crc.finalize().to_be_bytes());
+    };
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    let mut ihdr = Vec::with_capacity(13);
+    ihdr.extend_from_slice(&width.to_be_bytes());
+    ihdr.extend_from_slice(&height.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]); // 8 bits, RGB, deflate, no filter, no interlace
+    chunk(&mut out, b"IHDR", &ihdr);
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    for line in rgb.chunks(row) {
+        z.write_all(&[0]).ok()?; // filter: none
+        z.write_all(line).ok()?;
+    }
+    chunk(&mut out, b"IDAT", &z.finish().ok()?);
+    chunk(&mut out, b"IEND", &[]);
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,5 +227,28 @@ mod tests {
         let n = drawn.len();
         drawn[n - 1] = 255;
         assert!(!parse_ppm(&drawn).unwrap().is_unconfigured());
+    }
+}
+
+#[cfg(test)]
+mod png_tests {
+    #[test]
+    fn writes_a_png() {
+        let px = [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255];
+        let png = super::png(2, 2, &px).unwrap();
+        assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert_eq!(&png[12..16], b"IHDR");
+        assert!(png.ends_with(&[0xae, 0x42, 0x60, 0x82])); // IEND's CRC
+        // The pixels come back out of the zlib stream with one filter byte a row.
+        let idat = png.windows(4).position(|w| w == b"IDAT").unwrap();
+        let len = u32::from_be_bytes(png[idat - 4..idat].try_into().unwrap()) as usize;
+        let mut raw = Vec::new();
+        use std::io::Read;
+        flate2::read::ZlibDecoder::new(&png[idat + 4..idat + 4 + len])
+            .read_to_end(&mut raw)
+            .unwrap();
+        assert_eq!(raw, [0, 255, 0, 0, 0, 255, 0, 0, 0, 0, 255, 255, 255, 255]);
+        assert!(super::png(2, 2, &px[..9]).is_none());
+        assert!(super::png(0, 2, &[]).is_none());
     }
 }

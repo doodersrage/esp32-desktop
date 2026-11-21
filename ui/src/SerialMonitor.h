@@ -11,6 +11,7 @@ class ConsoleBar;
 class CoreConnection;
 class QJsonArray;
 class QCheckBox;
+class QLabel;
 class QComboBox;
 class QLineEdit;
 class QPlainTextEdit;
@@ -25,7 +26,10 @@ public:
     explicit SerialMonitor(CoreConnection *core, QWidget *parent = nullptr);
 
     // Open `path` (e.g. from a double-click in the Devices panel).
-    void openPort(const QString &path);
+    // With `expect`, a library project: say whether the board prints what it expects
+    // (after flashing it).
+    void openPort(const QString &path, const QString &expect = {});
+    QString expectText() const;
     // At start: choose the port used last time when it shows up, and open it again
     // if it was open when the app quit (Preferences::reopenSerial).
     void restoreLastPort() { m_restore = true; }
@@ -63,6 +67,7 @@ private:
     QComboBox *m_ending;
     QPushButton *m_send;
     QCheckBox *m_hex;
+    QLabel *m_expect;
     bool m_restore = false;  // restoreLastPort() was called
     bool m_restored = false; // the last session's port chosen (or not there)
     bool m_open_ = false;

@@ -58,7 +58,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.27.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.28.0"_s}});
             return;
         }
         calls << m;
@@ -273,8 +273,18 @@ private slots:
         }
         panel.canvas()->clear();
         QVERIFY(panel.canvas()->seriesNames().isEmpty());
+        // A click on a legend entry hides that line, and again shows it.
+        emit core.plotRows(QJsonArray{row(1, 2)});
+        panel.resize(600, 300);
+        panel.grab(); // paints, which places the legend
+        QVERIFY(!panel.canvas()->legend().isEmpty());
+        const auto [rect, name] = panel.canvas()->legend().first();
+        QTest::mouseClick(panel.canvas(), Qt::LeftButton, {}, rect.center().toPoint());
+        QVERIFY(panel.canvas()->isHidden(name));
+        QTest::mouseClick(panel.canvas(), Qt::LeftButton, {}, rect.center().toPoint());
+        QVERIFY(!panel.canvas()->isHidden(name));
         // Every row received is kept for Save CSV…, as the core sent it.
-        QCOMPARE(panel.rows().size(), 2 + PlotCanvas::Kept + 20 + 200 * !qEnvironmentVariableIsEmpty("ESP32BENCH_SCREENSHOT"));
+        QCOMPARE(panel.rows().size(), 3 + PlotCanvas::Kept + 20 + 200 * !qEnvironmentVariableIsEmpty("ESP32BENCH_SCREENSHOT"));
         QCOMPARE(panel.rows().at(0).toArray(), row(21.5, 45));
         QVERIFY(panel.saveButton()->isEnabled());
     }

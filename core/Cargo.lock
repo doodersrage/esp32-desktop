@@ -720,7 +720,9 @@ name = "esp32bench-sim"
 version = "0.1.8"
 dependencies = [
  "base64 0.22.1",
+ "crc32fast",
  "esp32bench-distro",
+ "flate2",
  "libc",
  "serde",
  "serde_json",

@@ -8,12 +8,15 @@
 #include <QHBoxLayout>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QWheelEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QStandardPaths>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 
 using namespace Qt::StringLiterals;
@@ -80,6 +83,99 @@ void TraceView::setHold(bool hold)
         m_end = m_now;
         update();
     }
+}
+
+qint64 TraceView::timeAt(int x) const
+{
+    const int plotWidth = std::max(1, width() - LabelWidth - 8);
+    const double frac = std::clamp(double(x - LabelWidth) / plotWidth, 0.0, 1.0);
+    return m_end - m_span + qint64(frac * double(m_span));
+}
+
+void TraceView::setMarkers(qint64 a, qint64 b)
+{
+    m_markA = a;
+    m_markB = b;
+    update();
+    emit markersChanged();
+}
+
+QString TraceView::duration(qint64 ns)
+{
+    const QLocale loc;
+    if (ns >= 1'000'000'000)
+        return tr("%1 s").arg(loc.toString(double(ns) / 1e9, 'g', 4));
+    if (ns >= 1'000'000)
+        return tr("%1 ms").arg(loc.toString(double(ns) / 1e6, 'g', 4));
+    if (ns >= 1'000)
+        return tr("%1 µs").arg(loc.toString(double(ns) / 1e3, 'g', 4));
+    return tr("%1 ns").arg(ns);
+}
+
+QString TraceView::measurement() const
+{
+    if (m_markA < 0 || m_markB < 0)
+        return {};
+    const qint64 dt = std::abs(m_markB - m_markA);
+    if (dt == 0)
+        return tr("A–B: 0 s");
+    const double hz = 1e9 / double(dt);
+    const QLocale loc;
+    const QString freq = hz >= 1e6   ? tr("%1 MHz").arg(loc.toString(hz / 1e6, 'g', 4))
+                         : hz >= 1e3 ? tr("%1 kHz").arg(loc.toString(hz / 1e3, 'g', 4))
+                                     : tr("%1 Hz").arg(loc.toString(hz, 'g', 4));
+    return tr("A–B: %1 (%2)").arg(duration(dt), freq);
+}
+
+void TraceView::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::RightButton) {
+        setMarkers(-1, -1);
+        return;
+    }
+    if (event->button() != Qt::LeftButton || event->position().x() < LabelWidth)
+        return;
+    const qint64 t = timeAt(int(event->position().x()));
+    // A, then B, then a new A.
+    if (m_markA < 0 || m_markB >= 0)
+        setMarkers(t, -1);
+    else
+        setMarkers(m_markA, t);
+}
+
+void TraceView::zoomAround(qint64 at, double factor)
+{
+    const qint64 span = std::clamp<qint64>(qint64(double(m_span) * factor), 1000, 100'000'000'000LL);
+    // Keep `at` where it is on screen.
+    const double frac = m_span > 0 ? double(at - (m_end - m_span)) / double(m_span) : 1.0;
+    m_end = at + qint64((1.0 - frac) * double(span));
+    m_span = span;
+    if (!m_hold) {
+        m_hold = true;
+        emit held();
+    }
+    emit spanChanged(m_span);
+    update();
+}
+
+void TraceView::wheelEvent(QWheelEvent *event)
+{
+    const int dy = event->angleDelta().y();
+    if (dy == 0)
+        return;
+    if (event->modifiers() & Qt::ControlModifier) {
+        // Zoom around the mouse.
+        zoomAround(timeAt(int(event->position().x())), dy > 0 ? 0.8 : 1.25);
+    } else {
+        // Scroll back and forth in time; it holds the picture.
+        m_end = std::min(m_now, m_end - (dy > 0 ? 1 : -1) * m_span / 10);
+        if (!m_hold) {
+            m_hold = true;
+            emit held();
+        }
+        update();
+    }
+    event->accept();
 }
 
 QSize TraceView::sizeHint() const
@@ -168,6 +264,19 @@ void TraceView::paintEvent(QPaintEvent *)
         // Up to the latest time seen; nothing is known beyond it.
         drawTo(std::clamp(xFor(std::min(m_end, m_now)), plotLeft, plotLeft + plotWidth));
     }
+
+    // The measuring markers, where they are in view.
+    const auto marker = [&](qint64 t, const QString &name) {
+        if (t < start || t > m_end)
+            return;
+        const int x = xFor(t);
+        p.setPen(QPen(pal.color(QPalette::Highlight), 1, Qt::DashLine));
+        p.drawLine(x, AxisHeight - 4, x, height());
+        p.setPen(pal.color(QPalette::Highlight));
+        p.drawText(QRect(x + 3, AxisHeight - 4, 20, 14), Qt::AlignLeft | Qt::AlignTop, name);
+    };
+    marker(m_markA, u"A"_s);
+    marker(m_markB, u"B"_s);
 }
 
 TracePanel::TracePanel(CoreConnection *core, QWidget *parent)
@@ -179,6 +288,27 @@ TracePanel::TracePanel(CoreConnection *core, QWidget *parent)
     , m_save(new QPushButton(QIcon::fromTheme(u"document-save"_s), tr("Save VCD…"), this))
     , m_view(new TraceView(this))
 {
+    m_measure = new QLabel(this);
+    m_measure->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_view->setToolTip(tr("Click to place marker A, again for B, to measure the time between them; right-click "
+                          "clears them. Ctrl and the mouse wheel zoom; the wheel alone scrolls back in time."));
+    m_view->setAccessibleName(tr("Pin trace"));
+    connect(m_view, &TraceView::markersChanged, this, [this] { m_measure->setText(m_view->measurement()); });
+    connect(m_view, &TraceView::held, this, [this] {
+        const QSignalBlocker block(m_hold);
+        m_hold->setChecked(true);
+    });
+    connect(m_view, &TraceView::spanChanged, this, [this](qint64 ns) {
+        // The nearest listed span, without setting it back.
+        int best = 0;
+        for (int i = 1; i < m_span->count(); ++i) {
+            if (std::abs(std::log(double(m_span->itemData(i).toLongLong()) / double(ns)))
+                < std::abs(std::log(double(m_span->itemData(best).toLongLong()) / double(ns))))
+                best = i;
+        }
+        const QSignalBlocker block(m_span);
+        m_span->setCurrentIndex(best);
+    });
     m_span->setAccessibleName(tr("Time shown"));
     m_status->setWordWrap(true);
     m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -197,6 +327,7 @@ TracePanel::TracePanel(CoreConnection *core, QWidget *parent)
 
     auto *bar = new QHBoxLayout;
     bar->addWidget(m_status, 1);
+    bar->addWidget(m_measure);
     bar->addWidget(m_span);
     bar->addWidget(m_hold);
     bar->addWidget(m_save);
@@ -232,9 +363,15 @@ QString TracePanel::statusText() const
     return m_status->text();
 }
 
+QString TracePanel::measureText() const
+{
+    return m_measure->text();
+}
+
 void TracePanel::started()
 {
     m_view->clear();
+    m_view->setMarkers(-1, -1);
     m_view->setPins(m_core->simPins());
     m_save->setEnabled(m_core->canSaveTrace());
     m_status->setText(m_core->simPins().isEmpty()

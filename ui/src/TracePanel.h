@@ -14,6 +14,8 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QPushButton;
+class QMouseEvent;
+class QWheelEvent;
 
 // The waveforms. Presentation only: it draws the edges it is given.
 class TraceView : public QWidget {
@@ -44,11 +46,37 @@ public:
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
 
+    // Markers for measuring: a click places A, the next B, then A again; right-click
+    // clears them. In simulated ns; none is -1.
+    qint64 markerA() const { return m_markA; }
+    qint64 markerB() const { return m_markB; }
+    void setMarkers(qint64 a, qint64 b);
+    // The time between the markers, and its frequency, in words; empty without both.
+    QString measurement() const;
+    // The simulated time at x, and x of a time.
+    qint64 timeAt(int x) const;
+    // Zoom by a factor around simulated time `at` (Ctrl+wheel); it holds the picture.
+    void zoomAround(qint64 at, double factor);
+    qint64 span() const { return m_span; }
+    qint64 end() const { return m_end; }
+
+signals:
+    void markersChanged();
+    // The span changed by zooming, or the picture was held by it.
+    void spanChanged(qint64 ns);
+    void held();
+
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 
 private:
     QString timeLabel(qint64 ns) const;
+    static QString duration(qint64 ns);
+
+    qint64 m_markA = -1;
+    qint64 m_markB = -1;
 
     QList<int> m_pins;
     QHash<int, QList<Edge>> m_edges;
@@ -68,6 +96,7 @@ public:
     QString statusText() const;
     QPushButton *saveButton() const { return m_save; }
     QComboBox *spanBox() const { return m_span; }
+    QString measureText() const;
 
     // Ask the core to write the trace to `path` (the Save button asks for one).
     void saveTo(const QString &path);
@@ -79,6 +108,7 @@ private:
 
     CoreConnection *m_core;
     QLabel *m_status;
+    QLabel *m_measure;
     QComboBox *m_span;
     QCheckBox *m_hold;
     QPushButton *m_save;

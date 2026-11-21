@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QLocale>
 #include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -22,6 +23,7 @@ SetupDialog::SetupDialog(CoreConnection *core, QWidget *parent)
     , m_summary(new QLabel(this))
     , m_tree(new QTreeWidget(this))
     , m_log(new QPlainTextEdit(this))
+    , m_download(new QProgressBar(this))
 {
     m_tree->setAccessibleName(tr("Build and simulator tools"));
     m_log->setAccessibleName(tr("Install log"));
@@ -65,11 +67,22 @@ SetupDialog::SetupDialog(CoreConnection *core, QWidget *parent)
     layout->addWidget(m_tree, 2);
     layout->addWidget(m_summary);
     layout->addWidget(m_installAll, 0, Qt::AlignLeft);
+    layout->addWidget(m_download);
     layout->addWidget(m_log, 1);
     layout->addWidget(buttons);
 
     connect(m_core, &CoreConnection::toolchainStatus, this, &SetupDialog::showStatus);
     connect(m_core, &CoreConnection::toolchainProgress, m_log, &QPlainTextEdit::appendPlainText);
+    // The download, when the core measures it: how much, and about how long is left
+    // at the speed of the last half minute.
+    m_download->setAccessibleName(tr("Download progress"));
+    m_download->setTextVisible(true);
+    m_download->hide();
+    connect(m_core, &CoreConnection::toolchainDownload, this, &SetupDialog::showDownload);
+    connect(m_core, &CoreConnection::toolchainInstallFinished, m_download, [this] {
+        m_download->hide();
+        m_samples.clear();
+    });
     connect(m_core, &CoreConnection::toolchainInstallFinished, this, [this](bool ok, const QString &error) {
         m_log->appendPlainText(ok ? tr("Done.") : tr("Install failed: %1").arg(error));
         if (!ok)
@@ -175,4 +188,36 @@ void SetupDialog::showStatus(const QJsonArray &components)
     m_summary->setText(missingForBuild == 0
                            ? tr("Everything needed for builds is installed.")
                            : tr("Missing for builds: %1. Hover over a row for details.").arg(missingForBuild));
+}
+
+void SetupDialog::showDownload(qint64 bytes, qint64 total)
+{
+    if (total <= 0)
+        return;
+    if (!m_clock.isValid())
+        m_clock.start();
+    const qint64 now = m_clock.elapsed();
+    m_samples.append({now, bytes});
+    while (m_samples.size() > 2 && now - m_samples.first().first > 30'000)
+        m_samples.removeFirst();
+    m_download->setRange(0, 1000);
+    m_download->setValue(int(bytes * 1000 / total));
+    const QLocale loc;
+    QString text = tr("%1 of %2").arg(loc.formattedDataSize(bytes), loc.formattedDataSize(total));
+    if (m_samples.size() >= 2) {
+        const auto &[t0, b0] = m_samples.first();
+        const double rate = double(bytes - b0) / std::max<double>(1.0, double(now - t0) / 1000.0); // bytes a second
+        if (rate > 0) {
+            const qint64 left = qint64(double(total - bytes) / rate);
+            text += u" · "_s
+                    + (left >= 90 ? tr("about %1 min left").arg((left + 30) / 60) : tr("about %1 s left").arg(std::max<qint64>(left, 1)));
+        }
+    }
+    m_download->setFormat(text);
+    m_download->show();
+}
+
+QString SetupDialog::downloadText() const
+{
+    return m_download->isHidden() ? QString() : m_download->format();
 }

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.27.0";
+pub const PROTOCOL: &str = "0.28.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -322,6 +322,7 @@ pub fn router(state: Arc<State>) -> Router {
             }
         })
         .method("plot.save", |p, _| async move { plot_save(p).await })
+        .method("frame.save", |p, _| async move { frame_save(p).await })
         .method("library.star", {
             let s = stars.clone();
             move |p, _| {
@@ -954,10 +955,28 @@ fn toolchain_install(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         // Installs share the build lock: never swap the core out under a build.
         let _one_at_a_time = state.build_lock.lock().await;
         let env = toolchain_env(&state);
-        let r = esp32bench_toolchain::install(&env, id, |line| {
+        let watch = esp32bench_toolchain::DownloadWatch::start(&env, id);
+        let install = esp32bench_toolchain::install(&env, id, |line| {
             sub.send("toolchain.progress", json!({ "line": line }));
-        })
-        .await;
+        });
+        tokio::pin!(install);
+        // How far the download is, each second, while it lasts.
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+        let mut last = None;
+        let r = loop {
+            tokio::select! {
+                r = &mut install => break r,
+                _ = tick.tick(), if watch.is_some() => {
+                    if let Some(w) = &watch {
+                        let bytes = w.bytes();
+                        if last != Some(bytes) {
+                            last = Some(bytes);
+                            sub.send("toolchain.download", json!({ "bytes": bytes, "total": w.total }));
+                        }
+                    }
+                }
+            }
+        };
         let event = match r {
             Ok(()) => json!({ "ok": true }),
             Err(e) => json!({ "ok": false, "error": e.to_string() }),
@@ -1639,6 +1658,36 @@ async fn plot_save(params: Value) -> Result<Value, RpcError> {
     Ok(json!({ "path": p.path, "rows": p.rows.len() }))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FrameSaveParams {
+    path: PathBuf,
+    width: u32,
+    height: u32,
+    data: String,
+}
+
+/// Write a picture (as sim.frame carries one) to `path` as PNG.
+async fn frame_save(params: Value) -> Result<Value, RpcError> {
+    use base64::Engine;
+    let p: FrameSaveParams = parse_params(params)?;
+    if !p.path.is_absolute() {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    if p.width > 4096 || p.height > 4096 {
+        return Err(RpcError::invalid_params("the picture is too big"));
+    }
+    let rgb = base64::engine::general_purpose::STANDARD
+        .decode(&p.data)
+        .map_err(|e| RpcError::invalid_params(format!("data: {e}")))?;
+    let png = esp32bench_sim::display::png(p.width, p.height, &rgb)
+        .ok_or_else(|| RpcError::invalid_params("data is not width * height * 3 bytes"))?;
+    tokio::fs::write(&p.path, &png)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("writing {}: {e}", p.path.display())))?;
+    Ok(json!({ "path": p.path, "bytes": png.len() }))
+}
+
 /// Write a simulation's signal trace (running or ended) to `path` as VCD.
 async fn sim_trace_save(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: TraceSaveParams = parse_params(params)?;
@@ -1947,6 +1996,9 @@ struct SerialOpenParams {
     baud: u32,
     #[serde(default)]
     reconnect: bool,
+    /// A library project whose expected output to check this board's against.
+    #[serde(default)]
+    expect: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2305,6 +2357,40 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
             .map_err(|e| RpcError::internal(e.to_string()))?
             .map_err(serial_error)?
     };
+    // What the project flashed on this board should print (serial.expect), checked
+    // as on the simulator but on the board's own time: its seconds and five more.
+    let expect = match &p.expect {
+        Some(id) => match state.library.load().await {
+            Ok(Some(m)) => m
+                .project(id)
+                .and_then(|x| x.expect.as_ref())
+                .and_then(esp32bench_library::expect::Expect::from_value),
+            _ => None,
+        },
+        None => None,
+    };
+    let new_checker = {
+        let expect = expect.clone();
+        move || {
+            expect
+                .as_ref()
+                .map(esp32bench_library::expect::Checker::new)
+                .filter(|c| !c.is_empty())
+        }
+    };
+    let expect_wait = expect
+        .as_ref()
+        .map(|e| std::time::Duration::from_secs(u64::from(e.seconds) + 5));
+    let expect_event = move |progress: &esp32bench_library::expect::Progress, timed_out: bool| {
+        let e = expect.as_ref();
+        json!({
+            "matched": progress.matched,
+            "missing": progress.missing,
+            "needs": e.map(|e| e.needs.clone()),
+            "seconds": e.map(|e| e.seconds),
+            "timedOut": timed_out,
+        })
+    };
     let port: SharedPort = Arc::new(std::sync::Mutex::new(port));
     let conn = ctx.connection_id();
     let (path, baud, reconnect) = (p.path.clone(), p.baud, p.reconnect);
@@ -2327,7 +2413,31 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
             // Lines of numbers, for the app's plotter.
             let mut plot = esp32bench_serial::plot::Lines::new();
             let mut style = esp32bench_serial::style::Styler::new();
-            while let Some(event) = rx.recv().await {
+            let mut checker = new_checker();
+            let mut expect_deadline = None;
+            if let (Some(c), Some(wait)) = (&checker, expect_wait) {
+                sub.send("serial.expect", expect_event(&c.progress(), false));
+                expect_deadline = Some(tokio::time::Instant::now() + wait);
+            }
+            loop {
+                let event = tokio::select! {
+                    e = rx.recv() => match e {
+                        Some(e) => e,
+                        None => break,
+                    },
+                    () = async {
+                        match expect_deadline {
+                            Some(d) => tokio::time::sleep_until(d).await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        expect_deadline = None;
+                        if let Some(c) = &checker {
+                            sub.send("serial.expect", expect_event(&c.progress(), true));
+                        }
+                        continue;
+                    }
+                };
                 match event {
                     esp32bench_serial::Event::Data(bytes) => {
                         let mut params = json!({
@@ -2335,6 +2445,7 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                             "text": String::from_utf8_lossy(&bytes),
                         });
                         styled(&mut params, style.feed(&bytes));
+                        let progress = checker.as_mut().and_then(|c| c.feed(&bytes));
                         let rows = plot.feed(&bytes);
                         if !rows.is_empty() {
                             params["plot"] = json!(rows);
@@ -2346,6 +2457,14 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                         let sent = sub.send("serial.data", params);
                         if !sent {
                             break;
+                        }
+                        if let Some(progress) = progress {
+                            if progress.complete() {
+                                expect_deadline = None;
+                            }
+                            if expect_deadline.is_some() || progress.complete() {
+                                sub.send("serial.expect", expect_event(&progress, false));
+                            }
                         }
                     }
                     esp32bench_serial::Event::Closed(reason) => {
@@ -2363,6 +2482,12 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                                 style = esp32bench_serial::style::Styler::new();
                                 if !sub.send("serial.reconnected", json!({})) {
                                     break;
+                                }
+                                // It came back from a reset: it starts again.
+                                checker = new_checker();
+                                if let (Some(c), Some(wait)) = (&checker, expect_wait) {
+                                    sub.send("serial.expect", expect_event(&c.progress(), false));
+                                    expect_deadline = Some(tokio::time::Instant::now() + wait);
                                 }
                                 continue;
                             }

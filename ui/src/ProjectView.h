@@ -7,6 +7,8 @@
 #include <QJsonObject>
 #include <QWidget>
 
+#include <utility>
+
 class CoreConnection;
 class QComboBox;
 class QLabel;
@@ -37,6 +39,7 @@ public:
     // Whether the guide offers to try Blink (the library has it).
     void setTryAvailable(bool available);
     QPushButton *tryButton() const { return m_try; }
+    QLabel *placeholderLabel() const { return m_placeholder; }
     // Render a library.get result. Public so tests can feed fixed data.
     void showResult(const QJsonObject &result);
     // Render a local.get result: one of the user's ESP-IDF projects.
@@ -78,11 +81,21 @@ signals:
     void currentChanged();
     // The guide's Try Blink button.
     void tryRequested();
+    // A recent project on the guide was clicked.
+    void recentRequested(const QString &id);
     // build.status said whether this project's build for this board can be used as it
     // is (true), or must be built first.
     void buildCurrent(const QString &project, const QString &board, bool current);
 
+public:
+    // Nothing selected yet: how to get from a project to a running board.
+    void showGuide();
+    // The last projects shown (title, id), newest first, listed on the guide.
+    void setRecent(const QList<std::pair<QString, QString>> &recent);
+    QString recentHtml() const;
+
 private:
+    QList<std::pair<QString, QString>> m_recent;
     void showBuild(int index);
     void requestBuildState();
     // The chip id of `board` in a library.get result.
@@ -90,8 +103,6 @@ private:
     // The index of a build for a connected board's chip, or -1.
     int buildForConnectedChip() const;
     void showPlaceholder(const QString &text);
-    // Nothing selected yet: how to get from a project to a running board.
-    void showGuide();
     void setBuildToolTip(const QString &text);
     void updateBuildButton();
 

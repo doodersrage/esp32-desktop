@@ -43,6 +43,11 @@ public:
     // Back to the parts as they were before the last change (add, remove, move).
     void undo();
     QPushButton *undoButton() const { return m_undoButton; }
+    // The canvas's zoom: by a factor (between a quarter and four times), to fit the
+    // whole circuit, and the scale now.
+    void zoomBy(qreal factor);
+    void fitView();
+    qreal zoom() const;
 
     // For tests.
     QString statusText() const;
@@ -92,6 +97,7 @@ private:
     QPushButton *m_remove;
     QPushButton *m_addSuggested;
     QPushButton *m_undoButton;
+    QToolButton *m_fitButton = nullptr;
     // The board's circuits before each change, newest last.
     QList<QJsonObject> m_undo;
     // What the project's wiring gives (circuit.suggest) for the board shown.

@@ -6,6 +6,7 @@
 #include "MainWindow.h"
 #include "MessageBar.h"
 #include "Preferences.h"
+#include "CommandPalette.h"
 #include "SerialMonitor.h"
 
 #include <QCheckBox>
@@ -88,7 +89,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.27.0"_s}});
+                                  {u"protocol"_s, u"0.28.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
@@ -340,6 +341,20 @@ private slots:
             found |= a->toolTip().contains(QKeySequence(Qt::CTRL | Qt::Key_B).toString(QKeySequence::NativeText));
         QVERIFY(found);
         QCOMPARE(window.windowTitle(), u"ESP32 Bench"_s);
+
+        // Ctrl+K: actions found by typing, run with Enter.
+        window.showCommandPalette();
+        QTest::keyClicks(window.commandPalette()->field(), u"prefer"_s);
+        QVERIFY(window.commandPalette()->shown().contains(u"Preferences…"_s));
+        window.commandPalette()->runSelected();
+        QTRY_VERIFY(window.preferences() && window.preferences()->isVisible());
+        window.preferences()->reject();
+
+        // A real board's output, checked against the project flashed to it.
+        emit core.serialExpect({}, {u"tick \\d+ ms"_s}, u"none"_s, 8, false);
+        QVERIFY(window.serialMonitor()->expectText().contains(u"0 of 1"_s));
+        emit core.serialExpect({u"tick \\d+ ms"_s}, {}, u"none"_s, 8, false);
+        QVERIFY(window.serialMonitor()->expectText().contains(u"✓"_s));
 
         // Preferences: the consoles follow the text size, and Cancel puts it back.
         QSettings().setValue(u"console/zoom"_s, 0);

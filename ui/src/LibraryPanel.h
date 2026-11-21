@@ -8,6 +8,8 @@
 #include <QJsonObject>
 #include <QWidget>
 
+#include <utility>
+
 class CoreConnection;
 class QCheckBox;
 class QLabel;
@@ -48,6 +50,8 @@ public:
     QCheckBox *simulatorFilter() const { return m_simOnly; }
     QCheckBox *boardFilter() const { return m_fitsBoard; }
     QCheckBox *starredFilter() const { return m_starredOnly; }
+    // Every project listed: its name and id (for the command palette).
+    QList<std::pair<QString, QString>> projects() const;
     // Select a project by id (for links), now or once the list has arrived.
     void selectProject(const QString &id);
     QString statusText() const;

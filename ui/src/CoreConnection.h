@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 27;
+    static constexpr int ProtocolMinor = 28;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -92,7 +92,8 @@ public:
 
     // serial.open: one port at a time. serialOpened, then serialData until
     // serialClosed (unplugged, closed, or the connection dropped).
-    void openSerial(const QString &path, int baud);
+    // `expect`: a library project whose expected output to check (serial.expect).
+    void openSerial(const QString &path, int baud, const QString &expect = {});
     void closeSerial();
     void writeSerial(const QByteArray &bytes);
     void resetSerial();
@@ -158,6 +159,8 @@ public:
     void saveConsole(const QString &path, const QString &text);
     // plot.save: the core writes plot rows to `path` as CSV; plotSaved after.
     void savePlot(const QString &path, const QJsonArray &rows);
+    // frame.save: the core writes `image` to `path` as PNG; frameSaved after.
+    void saveFrame(const QString &path, const QImage &image);
     // library.export: the core saves the sketch for `board` under `dir`; sketchExported after.
     void exportSketch(const QString &project, const QString &board, const QString &dir);
     // build.status: whether the project is built for the board; buildStatusReady after.
@@ -211,6 +214,8 @@ signals:
     // Toolchain.
     void toolchainStatus(const QJsonArray &components);
     void toolchainProgress(const QString &line);
+    // toolchain.download: how much of the install's download has arrived.
+    void toolchainDownload(qint64 bytes, qint64 total);
     void toolchainInstallFinished(bool ok, const QString &error);
     // Boards. `operation` is "inspect", "flash" or "erase".
     void boardConsentRequired(const QString &port, const QString &project, const QString &board,
@@ -233,6 +238,9 @@ signals:
     // sim.expect: how much of what the project should print has appeared.
     void simExpect(const QStringList &matched, const QStringList &missing, const QString &needs, int seconds,
                    bool timedOut);
+    // serial.expect: the same, for a real board.
+    void serialExpect(const QStringList &matched, const QStringList &missing, const QString &needs, int seconds,
+                      bool timedOut);
     // A new picture on the simulator's virtual RGB panel (sim.frame).
     void simFrame(const QImage &image);
     // sim.pins: pins that changed, each {gpio, level?, output?}.
@@ -248,6 +256,7 @@ signals:
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
     void consoleSaved(const QString &path);
     void plotSaved(const QString &path, qint64 rows);
+    void frameSaved(const QString &path);
     void sketchExported(const QString &path, const QStringList &libraries);
     void buildStatusReady(const QString &project, const QString &board, const QJsonObject &status);
     // A failed build's first compiler error (build.finished's firstError); sent just

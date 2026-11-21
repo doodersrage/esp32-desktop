@@ -5,6 +5,9 @@
 #pragma once
 
 #include <QHash>
+#include <QRectF>
+#include <QSet>
+#include <utility>
 #include <QJsonArray>
 #include <QWidget>
 
@@ -23,13 +26,24 @@ public:
     void clear();
     QStringList seriesNames() const { return m_order; }
     QList<double> values(const QString &name) const { return m_series.value(name); }
+    // A line hidden by a click on its legend entry (not drawn, not in the scale).
+    void setHidden(const QString &name, bool hidden);
+    bool isHidden(const QString &name) const { return m_hidden.contains(name); }
+    // Where each legend entry is, from the last paint (for clicks, and tests).
+    QList<std::pair<QRectF, QString>> legend() const { return m_legend; }
 
     static constexpr int Kept = 500;
 
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void leaveEvent(QEvent *event) override;
 
 private:
+    QSet<QString> m_hidden;
+    QList<std::pair<QRectF, QString>> m_legend;
+    qreal m_hoverX = -1;
     QHash<QString, QList<double>> m_series;
     QStringList m_order;
     // Rows seen, so series that start later line up with the others.

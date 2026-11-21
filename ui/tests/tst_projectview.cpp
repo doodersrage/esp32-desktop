@@ -9,6 +9,7 @@
 #include <QSignalSpy>
 #include <QFile>
 #include <QJsonArray>
+#include <QLabel>
 #include <QJsonDocument>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -160,6 +161,21 @@ private slots:
         view.showBuildState(QJsonObject{{u"built"_s, true}, {u"builtAt"_s, 1795000000}, {u"current"_s, false}});
         QVERIFY(view.buildStateText().contains(u"built again"_s));
         QCOMPARE(current.last().at(2).toBool(), false);
+    }
+
+    void listsRecentProjectsOnTheGuide()
+    {
+        CoreConnection core;
+        ProjectView view(&core);
+        QSignalSpy asked(&view, &ProjectView::recentRequested);
+        view.showGuide();
+        QVERIFY(view.recentHtml().isEmpty());
+        view.setRecent({{u"Simon <says>"_s, u"simon"_s}, {u"Blink"_s, u"blink"_s}});
+        QVERIFY(view.recentHtml().contains(u"href=\"project:simon\""_s));
+        QVERIFY(view.recentHtml().contains(u"Simon &lt;says&gt;"_s));
+        view.placeholderLabel()->linkActivated(u"project:blink"_s);
+        QCOMPARE(asked.size(), 1);
+        QCOMPARE(asked.at(0).at(0).toString(), u"blink"_s);
     }
 
     void escapesNotesAndIgnoresStaleReplies()

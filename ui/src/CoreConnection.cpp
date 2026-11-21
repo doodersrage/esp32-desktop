@@ -283,13 +283,14 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBoardEvent(method, params);
         else if (m_boardJob == -1)
             m_earlyBoardEvents.append({method, params}); // our job id is not known yet
-    } else if (method == u"toolchain.progress" || method == u"toolchain.finished") {
+    } else if (method == u"toolchain.progress" || method == u"toolchain.finished"
+               || method == u"toolchain.download") {
         if (sub == m_installJob)
             handleInstallEvent(method, params);
         else if (m_installJob == -1)
             m_earlyInstallEvents.append({method, params}); // our job id is not known yet
     } else if (method == u"serial.data" || method == u"serial.closed" || method == u"serial.lost"
-               || method == u"serial.reconnected") {
+               || method == u"serial.reconnected" || method == u"serial.expect") {
         if (sub == m_serialSub)
             handleSerialEvent(method, params);
         else if (m_serialSub == -1)
@@ -489,15 +490,17 @@ void CoreConnection::cancelBuild()
     });
 }
 
-void CoreConnection::openSerial(const QString &path, int baud)
+void CoreConnection::openSerial(const QString &path, int baud, const QString &expect)
 {
     if (m_serialSub != 0)
         return; // one port at a time
     m_serialSub = -1;
     // reconnect: a board that resets over its own USB, or is plugged back in, is
     // opened again by the core (serial.lost, then serial.reconnected).
-    m_client->call(u"serial.open"_s,
-                   {{u"path"_s, path}, {u"baud"_s, baud}, {u"reconnect"_s, Preferences::serialReconnect()}}, this,
+    QJsonObject params{{u"path"_s, path}, {u"baud"_s, baud}, {u"reconnect"_s, Preferences::serialReconnect()}};
+    if (!expect.isEmpty())
+        params.insert(u"expect"_s, expect);
+    m_client->call(u"serial.open"_s, params, this,
                    [this, path, baud](const RpcReply &r) {
                        if (!r.ok) {
                            m_serialSub = 0;
@@ -524,6 +527,17 @@ void CoreConnection::handleSerialEvent(const QString &method, const QJsonObject 
             emit outputExplained(u"serial"_s, params.value(u"explain"_s).toArray());
         if (params.contains(u"plot"_s))
             emit plotRows(params.value(u"plot"_s).toArray());
+        return;
+    }
+    if (method == u"serial.expect") {
+        const auto list = [&](const char *key) {
+            QStringList out;
+            for (const QJsonValue &v : params.value(QLatin1StringView(key)).toArray())
+                out << v.toString();
+            return out;
+        };
+        emit serialExpect(list("matched"), list("missing"), params.value(u"needs"_s).toString(),
+                          params.value(u"seconds"_s).toInt(), params.value(u"timedOut"_s).toBool());
         return;
     }
     if (method == u"serial.lost") {
@@ -605,6 +619,10 @@ void CoreConnection::handleInstallEvent(const QString &method, const QJsonObject
 {
     if (method == u"toolchain.progress") {
         emit toolchainProgress(params.value(u"line"_s).toString());
+        return;
+    }
+    if (method == u"toolchain.download") {
+        emit toolchainDownload(params.value(u"bytes"_s).toInteger(), params.value(u"total"_s).toInteger());
         return;
     }
     m_installJob = 0;
@@ -965,6 +983,26 @@ void CoreConnection::savePlot(const QString &path, const QJsonArray &rows)
         }
         emit plotSaved(path, r.result.toObject().value(u"rows"_s).toInteger());
     });
+}
+
+void CoreConnection::saveFrame(const QString &path, const QImage &image)
+{
+    // Rows of red, green and blue, as sim.frame carries them.
+    const QImage rgb = image.convertToFormat(QImage::Format_RGB888);
+    QByteArray data;
+    data.reserve(rgb.width() * rgb.height() * 3);
+    for (int y = 0; y < rgb.height(); ++y)
+        data.append(reinterpret_cast<const char *>(rgb.constScanLine(y)), rgb.width() * 3);
+    m_client->call(u"frame.save"_s,
+                   {{u"path"_s, path}, {u"width"_s, rgb.width()}, {u"height"_s, rgb.height()},
+                    {u"data"_s, QString::fromLatin1(data.toBase64())}},
+                   this, [this, path](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"frame.save"_s, r.errorMessage);
+                           return;
+                       }
+                       emit frameSaved(path);
+                   });
 }
 
 void CoreConnection::exportSketch(const QString &project, const QString &board, const QString &dir)

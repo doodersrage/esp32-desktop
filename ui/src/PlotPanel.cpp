@@ -1,4 +1,7 @@
 #include "PlotPanel.h"
+
+#include <QMouseEvent>
+#include <cmath>
 #include <QStandardPaths>
 #include <QFileDialog>
 #include <QDir>
@@ -27,6 +30,7 @@ PlotCanvas::PlotCanvas(QWidget *parent)
     setMinimumHeight(120);
     setAutoFillBackground(true);
     setBackgroundRole(QPalette::Base);
+    setMouseTracking(true); // values under the mouse
 }
 
 void PlotCanvas::addRows(const QJsonArray &rows)
@@ -53,6 +57,7 @@ void PlotCanvas::addRows(const QJsonArray &rows)
 
 void PlotCanvas::clear()
 {
+    m_hidden.clear();
     m_series.clear();
     m_order.clear();
     m_firstRow.clear();
@@ -78,12 +83,19 @@ void PlotCanvas::paintEvent(QPaintEvent *)
                       "\"temp:21.5 humidity:45\"."));
         return;
     }
+    // The scale fits the lines shown; hidden ones (a click on their legend) do not count.
     double lo = INFINITY, hi = -INFINITY;
     for (const QString &n : m_order) {
+        if (m_hidden.contains(n))
+            continue;
         for (double v : m_series.value(n)) {
             lo = std::min(lo, v);
             hi = std::max(hi, v);
         }
+    }
+    if (!std::isfinite(lo)) {
+        lo = 0;
+        hi = 1;
     }
     if (hi - lo < 1e-9) {
         lo -= 1;
@@ -107,11 +119,20 @@ void PlotCanvas::paintEvent(QPaintEvent *)
     // and dark backgrounds (the plot is a drawing, like the circuit canvas).
     const qint64 firstShown = std::max<qint64>(0, m_rows - Kept);
     qreal legendX = left;
+    m_legend.clear();
+    // The row under the mouse, for reading values off the lines.
+    qint64 hoverRow = -1;
+    if (m_hoverX >= area.left() && m_hoverX <= area.right())
+        hoverRow = firstShown + qRound((m_hoverX - area.left()) / area.width() * std::max<qint64>(1, Kept - 1));
+    QStringList readings;
     for (int i = 0; i < m_order.size(); ++i) {
         const QString &name = m_order.at(i);
-        const QColor colour = QColor::fromHsv((i * 137) % 360, 200, 210);
+        const bool hidden = m_hidden.contains(name);
+        const QColor colour = QColor::fromHsv((i * 137) % 360, hidden ? 40 : 200, 210);
         const QList<double> s = m_series.value(name);
         const qint64 start = std::max(m_firstRow.value(name), m_rows - s.size());
+        if (hoverRow >= start && hoverRow < start + s.size() && !hidden)
+            readings << tr("%1: %2").arg(name).arg(s.at(hoverRow - start), 0, 'g', 6);
         QPainterPath path;
         for (int k = 0; k < s.size(); ++k) {
             const qint64 row = start + k;
@@ -124,15 +145,62 @@ void PlotCanvas::paintEvent(QPaintEvent *)
             else
                 path.lineTo(pt);
         }
-        p.setPen(QPen(colour, 2));
-        p.drawPath(path);
-        // The legend, with the latest value.
+        if (!hidden) {
+            p.setPen(QPen(colour, 2));
+            p.drawPath(path);
+        }
+        // The legend, with the latest value; a click on it hides or shows the line.
         const QString label = tr("%1: %2").arg(name).arg(s.isEmpty() ? 0.0 : s.last(), 0, 'g', 6);
         p.fillRect(QRectF(legendX, 4 + fm.height() / 2.0 - 2, 12, 4), colour);
-        p.setPen(pal.color(QPalette::Text));
+        p.setPen(pal.color(hidden ? QPalette::PlaceholderText : QPalette::Text));
         p.drawText(QPointF(legendX + 16, 4 + fm.ascent()), label);
-        legendX += 16 + fm.horizontalAdvance(label) + 16;
+        const qreal w = 16 + fm.horizontalAdvance(label);
+        m_legend.append({QRectF(legendX, 2, w, legendH), name});
+        legendX += w + 16;
     }
+    if (hoverRow >= 0 && !readings.isEmpty()) {
+        p.setPen(QPen(pal.color(QPalette::Highlight), 1, Qt::DashLine));
+        p.drawLine(QPointF(m_hoverX, area.top()), QPointF(m_hoverX, area.bottom()));
+        const QString text = readings.join(u"   "_s);
+        const QRectF box(std::min(m_hoverX + 6, area.right() - fm.horizontalAdvance(text) - 8), area.top() + 4,
+                         fm.horizontalAdvance(text) + 8, fm.height() + 4);
+        p.fillRect(box, pal.color(QPalette::ToolTipBase));
+        p.setPen(pal.color(QPalette::ToolTipText));
+        p.drawText(box, Qt::AlignCenter, text);
+    }
+}
+
+void PlotCanvas::setHidden(const QString &name, bool hidden)
+{
+    if (hidden)
+        m_hidden.insert(name);
+    else
+        m_hidden.remove(name);
+    update();
+}
+
+void PlotCanvas::mousePressEvent(QMouseEvent *event)
+{
+    for (const auto &[rect, name] : std::as_const(m_legend)) {
+        if (rect.contains(event->position())) {
+            setHidden(name, !m_hidden.contains(name));
+            return;
+        }
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void PlotCanvas::mouseMoveEvent(QMouseEvent *event)
+{
+    m_hoverX = event->position().x();
+    update();
+}
+
+void PlotCanvas::leaveEvent(QEvent *event)
+{
+    m_hoverX = -1;
+    update();
+    QWidget::leaveEvent(event);
 }
 
 PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
@@ -157,7 +225,8 @@ PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
     connect(m_core, &CoreConnection::plotSaved, this, [this](const QString &path, qint64 rows) {
         m_status->setText(tr("Saved %1 rows to %2.").arg(rows).arg(path));
     });
-    m_status->setText(tr("Numbers from the simulator or the serial monitor, whichever is running."));
+    m_status->setText(tr("Numbers from the simulator or the serial monitor, whichever is running. Click a name "
+                         "in the legend to hide or show its line; point at the plot to read its values."));
     m_status->setWordWrap(true);
     m_canvas->setAccessibleName(tr("Plot of the numbers received"));
     m_pause->setToolTip(tr("Stop adding new values, to look at what is shown"));

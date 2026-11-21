@@ -246,6 +246,14 @@
         <translation>Desfazer a última mudança nas peças (Ctrl+Z)</translation>
     </message>
     <message>
+        <source>Fit</source>
+        <translation>Ajustar</translation>
+    </message>
+    <message>
+        <source>Show the whole circuit (Ctrl+0); Ctrl and the mouse wheel zoom</source>
+        <translation>Mostrar o circuito inteiro (Ctrl+0); Ctrl e a roda do mouse dão zoom</translation>
+    </message>
+    <message>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
@@ -352,6 +360,21 @@
     <message>
         <source>Controls for %1 (this simulator does not run parts)</source>
         <translation>Controles de %1 (este simulador não roda peças)</translation>
+    </message>
+</context>
+<context>
+    <name>CommandPalette</name>
+    <message>
+        <source>Find an action or project</source>
+        <translation>Encontrar uma ação ou projeto</translation>
+    </message>
+    <message>
+        <source>Type to find an action, a project or a panel</source>
+        <translation>Digite para encontrar uma ação, um projeto ou um painel</translation>
+    </message>
+    <message>
+        <source>Matches</source>
+        <translation>Resultados</translation>
     </message>
 </context>
 <context>
@@ -756,6 +779,42 @@
 </context>
 <context>
     <name>DisplayPanel</name>
+    <message>
+        <source>Save picture…</source>
+        <translation>Salvar imagem…</translation>
+    </message>
+    <message>
+        <source>Fit</source>
+        <translation>Ajustar</translation>
+    </message>
+    <message>
+        <source>%1×</source>
+        <translation>%1×</translation>
+    </message>
+    <message>
+        <source>Zoom</source>
+        <translation>Zoom</translation>
+    </message>
+    <message>
+        <source>Fit the dock, or a fixed size: each panel pixel this many screen pixels</source>
+        <translation>Ajustar ao painel, ou um tamanho fixo: cada pixel da tela virtual vale esta quantidade de pixels</translation>
+    </message>
+    <message>
+        <source>Save the picture shown as a PNG file</source>
+        <translation>Salvar a imagem mostrada como arquivo PNG</translation>
+    </message>
+    <message>
+        <source>Save the picture</source>
+        <translation>Salvar a imagem</translation>
+    </message>
+    <message>
+        <source>PNG pictures (*.png)</source>
+        <translation>Imagens PNG (*.png)</translation>
+    </message>
+    <message>
+        <source>Saved the picture to %1.</source>
+        <translation>Imagem salva em %1.</translation>
+    </message>
     <message>
         <source>No picture. Firmware that draws on QEMU&apos;s virtual RGB panel (esp_lcd_qemu_rgb) shows here while it runs in the simulator.</source>
         <translation>Sem imagem. O firmware que desenha no painel RGB virtual do QEMU (esp_lcd_qemu_rgb) aparece aqui enquanto roda no simulador.</translation>
@@ -1211,6 +1270,10 @@ O painel Compilação abaixo tem o log completo.</translation>
         <translation>&amp;Exibir</translation>
     </message>
     <message>
+        <source>Find an action or &amp;project…</source>
+        <translation>Encontrar uma ação ou &amp;projeto…</translation>
+    </message>
+    <message>
         <source>&amp;Find…</source>
         <translation>&amp;Localizar…</translation>
     </message>
@@ -1341,6 +1404,10 @@ SHA-256: %2</translation>
 Code SHA-256: %2</source>
         <translation>Placa: %1
 SHA-256 do código: %2</translation>
+    </message>
+    <message>
+        <source>Project</source>
+        <translation>Projeto</translation>
     </message>
     <message>
         <source>ESP32 Bench is now %1 (it was %2).</source>
@@ -1570,8 +1637,8 @@ SHA-256 do código: %2</translation>
         <translation>%1 linhas salvas em %2.</translation>
     </message>
     <message>
-        <source>Numbers from the simulator or the serial monitor, whichever is running.</source>
-        <translation>Números do simulador ou do monitor serial, o que estiver rodando.</translation>
+        <source>Numbers from the simulator or the serial monitor, whichever is running. Click a name in the legend to hide or show its line; point at the plot to read its values.</source>
+        <translation>Números do simulador ou do monitor serial, o que estiver rodando. Clique em um nome da legenda para esconder ou mostrar a linha; aponte para o gráfico para ler os valores.</translation>
     </message>
     <message>
         <source>Plot of the numbers received</source>
@@ -1863,6 +1930,10 @@ SHA-256 do código: %2</translation>
         <source>Download this board&apos;s ready-made firmware from esp32bench.dev and check it, to run it in the simulator or flash it</source>
         <translation>Baixar o firmware pronto desta placa do esp32bench.dev e conferi-lo, para rodá-lo no simulador ou gravá-lo</translation>
     </message>
+    <message>
+        <source>&lt;p&gt;&lt;b&gt;Recent projects:&lt;/b&gt; %1&lt;/p&gt;</source>
+        <translation>&lt;p&gt;&lt;b&gt;Projetos recentes:&lt;/b&gt; %1&lt;/p&gt;</translation>
+    </message>
 </context>
 <context>
     <name>RpcClient</name>
@@ -1916,6 +1987,22 @@ SHA-256 do código: %2</translation>
     <message>
         <source>Hex</source>
         <translation>Hex</translation>
+    </message>
+    <message>
+        <source>✓ The board prints what this project expects.</source>
+        <translation>✓ A placa imprime o que este projeto espera.</translation>
+    </message>
+    <message>
+        <source>Waiting for the expected output: %1 of %2 seen so far.</source>
+        <translation>Esperando a saída esperada: %1 de %2 vistos até agora.</translation>
+    </message>
+    <message>
+        <source>Not seen yet (a board prints it within %1 s): %2. If the board started before the port opened, press Reset board to see it start again.</source>
+        <translation>Ainda não visto (uma placa imprime em %1 s): %2. Se a placa iniciou antes de a porta abrir, pressione Reiniciar placa para vê-la iniciar de novo.</translation>
+    </message>
+    <message>
+        <source>What a board running this project prints, from esp32bench.dev: %1</source>
+        <translation>O que uma placa com este projeto imprime, segundo o esp32bench.dev: %1</translation>
     </message>
     <message>
         <source>Show what the board sends as hex bytes, and send what you type as hex (&quot;01 a0 ff&quot;)</source>
@@ -2045,6 +2132,10 @@ SHA-256 do código: %2</translation>
         <translation>Instalar tudo o que é preciso</translation>
     </message>
     <message>
+        <source>Download progress</source>
+        <translation>Progresso do download</translation>
+    </message>
+    <message>
         <source>Done.</source>
         <translation>Concluído.</translation>
     </message>
@@ -2115,6 +2206,18 @@ SHA-256 do código: %2</translation>
     <message>
         <source>Missing for builds: %1. Hover over a row for details.</source>
         <translation>Faltando para compilar: %1. Passe o mouse sobre uma linha para ver detalhes.</translation>
+    </message>
+    <message>
+        <source>%1 of %2</source>
+        <translation>%1 de %2</translation>
+    </message>
+    <message>
+        <source>about %1 min left</source>
+        <translation>faltam cerca de %1 min</translation>
+    </message>
+    <message>
+        <source>about %1 s left</source>
+        <translation>faltam cerca de %1 s</translation>
     </message>
 </context>
 <context>
@@ -2255,6 +2358,14 @@ SHA-256 do código: %2</translation>
         <translation>Salvar VCD…</translation>
     </message>
     <message>
+        <source>Click to place marker A, again for B, to measure the time between them; right-click clears them. Ctrl and the mouse wheel zoom; the wheel alone scrolls back in time.</source>
+        <translation>Clique para pôr o marcador A, de novo para B, e medir o tempo entre eles; o clique direito os remove. Ctrl e a roda do mouse dão zoom; a roda sozinha volta no tempo.</translation>
+    </message>
+    <message>
+        <source>Pin trace</source>
+        <translation>Traço dos pinos</translation>
+    </message>
+    <message>
         <source>Time shown</source>
         <translation>Tempo mostrado</translation>
     </message>
@@ -2348,6 +2459,30 @@ SHA-256 do código: %2</translation>
     <message>
         <source>%1 µs</source>
         <translation>%1 µs</translation>
+    </message>
+    <message>
+        <source>%1 ns</source>
+        <translation>%1 ns</translation>
+    </message>
+    <message>
+        <source>A–B: 0 s</source>
+        <translation>A–B: 0 s</translation>
+    </message>
+    <message>
+        <source>%1 MHz</source>
+        <translation>%1 MHz</translation>
+    </message>
+    <message>
+        <source>%1 kHz</source>
+        <translation>%1 kHz</translation>
+    </message>
+    <message>
+        <source>%1 Hz</source>
+        <translation>%1 Hz</translation>
+    </message>
+    <message>
+        <source>A–B: %1 (%2)</source>
+        <translation>A–B: %1 (%2)</translation>
     </message>
     <message>
         <source>GPIO %1</source>

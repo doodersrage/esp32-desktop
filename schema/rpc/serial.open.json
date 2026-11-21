@@ -31,6 +31,10 @@
       "reconnect": {
         "type": "boolean",
         "description": "Since protocol 0.26. When the port goes away, send serial.lost and open it again once it is back (for 30 s), then serial.reconnected; serial.closed only if it does not come back. For boards that reset over their own USB, and for plugging a board back in. Default false."
+      },
+      "expect": {
+        "type": "string",
+        "description": "Since protocol 0.28: a library project id. Check what the board prints against that project's expected output (the manifest's expect): serial.expect events, timed by the project's seconds plus five, from the open and from each reconnection. Absent: no check."
       }
     }
   },
@@ -55,6 +59,7 @@
   ],
   "events": [
     "serial.data",
+    "serial.expect",
     "serial.lost",
     "serial.reconnected",
     "serial.closed"

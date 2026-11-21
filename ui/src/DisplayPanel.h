@@ -7,7 +7,10 @@
 #include <QWidget>
 
 class CoreConnection;
+class QComboBox;
 class QLabel;
+class QPushButton;
+class QScrollArea;
 
 class DisplayPanel : public QWidget {
     Q_OBJECT
@@ -18,6 +21,12 @@ public:
     QImage image() const { return m_image; }
     QString statusText() const;
     int scale() const { return m_scale; }
+    // 0 to fit the dock by whole multiples, else this many screen pixels a pixel.
+    void setZoom(int zoom);
+    QComboBox *zoomPicker() const { return m_zoom; }
+    QPushButton *saveButton() const { return m_save; }
+    // Have the core write the picture to `path` as PNG (frame.save).
+    void saveTo(const QString &path);
     // Room for the picture at its own size (or a typical panel before the first one).
     QSize sizeHint() const override;
 
@@ -32,8 +41,12 @@ private:
     void showFrame(const QImage &image);
     void rescale();
 
+    CoreConnection *m_core;
     QLabel *m_status;
     QLabel *m_picture;
+    QScrollArea *m_scroll;
+    QComboBox *m_zoom;
+    QPushButton *m_save;
     QImage m_image;
     int m_scale = 1;
     bool m_seenThisSession = false;

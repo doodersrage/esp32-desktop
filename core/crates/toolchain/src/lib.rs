@@ -432,6 +432,56 @@ pub fn installed_core_version(core_list: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// How much of a component's download has arrived, for a progress bar. arduino-cli
+/// says nothing when its output is not a terminal, so the ESP32 core's download is
+/// measured as the growth of Arduino's `staging` folder, where it keeps the archives;
+/// the total comes from the package index. Other components' downloads are small
+/// and are not watched.
+pub struct DownloadWatch {
+    dir: PathBuf,
+    start: u64,
+    pub total: u64,
+}
+
+impl DownloadWatch {
+    /// A watch on `id`'s download, started now; None if it is not watched or its size
+    /// is not known.
+    pub fn start(env: &Env, id: Id) -> Option<DownloadWatch> {
+        if id != Id::Esp32Core {
+            return None;
+        }
+        let total = core_download_bytes(&env.arduino_data, ARDUINO_ESP32_VERSION)?;
+        let dir = env.arduino_data.join("staging");
+        Some(DownloadWatch {
+            start: dir_size(&dir),
+            dir,
+            total,
+        })
+    }
+
+    /// Bytes downloaded since the watch started, at most the total.
+    pub fn bytes(&self) -> u64 {
+        dir_size(&self.dir)
+            .saturating_sub(self.start)
+            .min(self.total)
+    }
+}
+
+/// The size of the files under `dir`; 0 if it is not there. Links are not followed.
+pub fn dir_size(dir: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|e| match e.file_type() {
+            Ok(t) if t.is_dir() => dir_size(&e.path()),
+            Ok(t) if t.is_file() => e.metadata().map_or(0, |m| m.len()),
+            _ => 0,
+        })
+        .sum()
+}
+
 /// Bytes to download for esp32:esp32 at `version` and its tools for this host, from
 /// the package index files arduino-cli keeps. None if the index is not there yet.
 pub fn core_download_bytes(arduino_data: &Path, version: &str) -> Option<u64> {
@@ -579,5 +629,29 @@ pub async fn install(env: &Env, id: Id, mut log: impl FnMut(String)) -> Result<(
             log(format!("Installed {}", path.display()));
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod download_tests {
+    use super::*;
+
+    #[test]
+    fn measures_a_folder_as_it_grows() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path().join("staging/packages");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("old.tar.gz"), vec![0u8; 100]).unwrap();
+        let w = DownloadWatch {
+            start: dir_size(&t.path().join("staging")),
+            dir: t.path().join("staging"),
+            total: 1000,
+        };
+        assert_eq!(w.bytes(), 0);
+        std::fs::write(dir.join("new.tar.gz.partial"), vec![0u8; 400]).unwrap();
+        assert_eq!(w.bytes(), 400);
+        std::fs::write(dir.join("big"), vec![0u8; 5000]).unwrap();
+        assert_eq!(w.bytes(), 1000); // never past the total
+        assert_eq!(dir_size(&t.path().join("nowhere")), 0);
     }
 }

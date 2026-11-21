@@ -232,6 +232,9 @@ enum SerialCmd {
         /// wait up to 30 s for it to come back instead of ending.
         #[arg(long)]
         reconnect: bool,
+        /// A library project id: say whether the board prints what it expects.
+        #[arg(long)]
+        expect: Option<String>,
     },
 }
 
@@ -1004,7 +1007,28 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             reset,
             crlf,
             reconnect,
+            expect,
         }) => {
+            let expect = match &expect {
+                Some(id) => {
+                    let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+                    let Some(m) = cache.load().await? else {
+                        bail!("no project library cached yet; run `esp32bench library refresh`");
+                    };
+                    let Some(e) = m
+                        .project(id)
+                        .and_then(|x| x.expect.as_ref())
+                        .and_then(esp32bench_library::expect::Expect::from_value)
+                    else {
+                        bail!("`{id}` has no expected output to check");
+                    };
+                    Some(e)
+                }
+                None => None,
+            };
+            let mut checker = expect
+                .as_ref()
+                .map(esp32bench_library::expect::Checker::new);
             let (mut p, mut rx) = esp32bench_serial::Port::open(&port, baud)?;
             eprintln!(
                 "connected to {} at {baud} baud; Ctrl-C to quit",
@@ -1028,6 +1052,12 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         Some(esp32bench_serial::Event::Data(bytes)) => {
                             out.write_all(&bytes)?;
                             out.flush()?;
+                            if let Some(progress) = checker.as_mut().and_then(|c| c.feed(&bytes))
+                                && progress.complete()
+                            {
+                                eprintln!("\n-- the output is what this project expects");
+                                checker = None;
+                            }
                         }
                         Some(esp32bench_serial::Event::Closed(reason)) => {
                             eprintln!("\nport closed: {reason}");

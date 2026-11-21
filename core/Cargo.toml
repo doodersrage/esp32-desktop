@@ -27,6 +27,9 @@ publish = false
 anyhow = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
+# Already in the build through espflash; PNG for saved pictures (sim::display::png).
+crc32fast = "1"
+flate2 = "1"
 jsonschema = { version = "0.61", default-features = false }
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }

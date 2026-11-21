@@ -37,6 +37,7 @@ add_library(esp32bench_ui STATIC
     src/MainWindow.cpp src/MainWindow.h
     src/MessageBar.cpp src/MessageBar.h
     src/Preferences.cpp src/Preferences.h
+    src/CommandPalette.cpp src/CommandPalette.h
     src/Translations.cpp src/Translations.h
     src/Icons.cpp src/Icons.h
     src/TracePanel.cpp src/TracePanel.h
@@ -115,6 +116,7 @@ qt_add_resources(esp32bench_ui "fallback_icons"
         icons/esp32bench-fallback/scalable/view-refresh.svg
         icons/esp32bench-fallback/scalable/view-restore.svg
         icons/esp32bench-fallback/scalable/window-close.svg
+        icons/esp32bench-fallback/scalable/zoom-fit-best.svg
 )
 
 qt_add_executable(esp32bench-gui src/main.cpp)

@@ -18,6 +18,7 @@
 #include "Preferences.h"
 #include "TracePanel.h"
 #include "CircuitPanel.h"
+#include "CommandPalette.h"
 
 #include <algorithm>
 
@@ -358,7 +359,8 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
                     m_serialDock->raise();
                     // At the speed the new firmware talks, or its output is garbled.
                     m_serial->suggestBaud(m_serial->projectBaud(m_flashedProject));
-                    m_serial->openPort(m_lastBoardPort);
+                    // And whether it prints what the project expects.
+                    m_serial->openPort(m_lastBoardPort, m_flashedProject);
                     m_reopenSerial.clear();
                 } else if (!m_reopenSerial.isEmpty()) {
                     m_serial->openPort(std::exchange(m_reopenSerial, {}));
@@ -510,6 +512,12 @@ void MainWindow::buildToolBar()
     connect(m_nextStep, &QLabel::linkActivated, this, &MainWindow::showSetup);
     m_toolBar->addWidget(m_nextStep);
 
+    connect(m_project, &ProjectView::recentRequested, m_library, &LibraryPanel::selectProject);
+    {
+        QSettings settings;
+        showRecentOnGuide(settings.value(u"project/recent"_s).toStringList(),
+                          settings.value(u"project/recentTitles"_s).toStringList());
+    }
     connect(m_project, &ProjectView::currentChanged, this, [this] {
         if (const QString id = m_project->currentProjectId(); !id.isEmpty()) {
             QSettings settings;
@@ -526,6 +534,7 @@ void MainWindow::buildToolBar()
             }
             ids.prepend(id);
             titles.prepend(m_project->currentProjectTitle());
+            showRecentOnGuide(ids, titles);
             settings.setValue(u"project/recent"_s, ids.mid(0, 8));
             settings.setValue(u"project/recentTitles"_s, titles.mid(0, 8));
         }
@@ -714,6 +723,10 @@ void MainWindow::buildMenus()
     view->addAction(m_pinsDock->toggleViewAction());
     view->addAction(m_circuitDock->toggleViewAction());
     view->addSeparator();
+    // Ctrl+K: any action or project by typing.
+    QAction *palette = view->addAction(tr("Find an action or &project…"));
+    palette->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_K));
+    connect(palette, &QAction::triggered, this, &MainWindow::showCommandPalette);
     // Ctrl+F finds in the console being used, else in the library.
     QAction *find = view->addAction(tr("&Find…"));
     find->setShortcut(QKeySequence::Find);
@@ -868,6 +881,49 @@ void MainWindow::openLink(const QString &url)
         m_core->openLink(url);
     else
         m_pendingLinks << url;
+}
+
+void MainWindow::showRecentOnGuide(const QStringList &ids, const QStringList &titles)
+{
+    QList<std::pair<QString, QString>> recent;
+    for (qsizetype i = 0; i < ids.size(); ++i)
+        recent.append({i < titles.size() ? titles.at(i) : ids.at(i), ids.at(i)});
+    m_project->setRecent(recent);
+}
+
+QList<CommandPalette::Entry> MainWindow::paletteEntries() const
+{
+    QList<CommandPalette::Entry> out;
+    // The menus' actions that can be used now.
+    for (QAction *top : menuBar()->actions()) {
+        QMenu *menu = top->menu();
+        if (!menu)
+            continue;
+        const QString where = top->text().remove(u'&');
+        for (QAction *a : menu->actions()) {
+            if (a->isSeparator() || a->menu() || !a->isEnabled() || a->text().isEmpty())
+                continue;
+            const QString keys = a->shortcut().toString(QKeySequence::NativeText);
+            out.append({a->text().remove(u'&'), keys.isEmpty() ? where : u"%1, %2"_s.arg(where, keys),
+                        [a] { a->trigger(); }});
+        }
+    }
+    // The projects, to open.
+    for (const auto &[name, id] : m_library->projects()) {
+        out.append({name, tr("Project"), [this, id] { m_library->selectProject(id); }});
+    }
+    return out;
+}
+
+void MainWindow::showCommandPalette()
+{
+    if (!m_palette)
+        m_palette = new CommandPalette(this);
+    m_palette->setEntries(paletteEntries());
+    // Centred near the top of the window, as such palettes are.
+    m_palette->move(mapToGlobal(QPoint((width() - m_palette->width()) / 2, 60)));
+    m_palette->show();
+    m_palette->field()->setFocus();
 }
 
 void MainWindow::sayWhatsNew()

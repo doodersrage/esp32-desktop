@@ -78,7 +78,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.27.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.28.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -274,6 +274,21 @@ private slots:
         QTRY_COMPARE(panel.parts().size(), 2);
         panel.undoButton()->click();
         QTRY_COMPARE(panel.parts().size(), 1);
+    }
+
+    void zoomsAndFits()
+    {
+        CoreConnection core;
+        CircuitPanel panel(&core);
+        panel.resize(500, 400);
+        QCOMPARE(panel.zoom(), 1.0);
+        panel.zoomBy(1.25);
+        QCOMPARE(panel.zoom(), 1.25);
+        for (int i = 0; i < 20; ++i)
+            panel.zoomBy(1.25);
+        QCOMPARE(panel.zoom(), 4.0); // at most four times
+        panel.fitView();
+        QVERIFY(panel.zoom() <= 1.0); // never bigger than life
     }
 
     void editsAndRunsParts()

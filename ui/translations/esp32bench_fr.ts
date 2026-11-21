@@ -246,6 +246,14 @@
         <translation>Annuler la dernière modification des composants (Ctrl+Z)</translation>
     </message>
     <message>
+        <source>Fit</source>
+        <translation>Ajuster</translation>
+    </message>
+    <message>
+        <source>Show the whole circuit (Ctrl+0); Ctrl and the mouse wheel zoom</source>
+        <translation>Afficher tout le circuit (Ctrl+0) ; Ctrl et la molette zooment</translation>
+    </message>
+    <message>
         <source>%1: %2</source>
         <translation>%1 : %2</translation>
     </message>
@@ -352,6 +360,21 @@
     <message>
         <source>Controls for %1 (this simulator does not run parts)</source>
         <translation>Commandes de %1 (ce simulateur n’exécute pas les composants)</translation>
+    </message>
+</context>
+<context>
+    <name>CommandPalette</name>
+    <message>
+        <source>Find an action or project</source>
+        <translation>Trouver une action ou un projet</translation>
+    </message>
+    <message>
+        <source>Type to find an action, a project or a panel</source>
+        <translation>Tapez pour trouver une action, un projet ou un panneau</translation>
+    </message>
+    <message>
+        <source>Matches</source>
+        <translation>Résultats</translation>
     </message>
 </context>
 <context>
@@ -756,6 +779,42 @@
 </context>
 <context>
     <name>DisplayPanel</name>
+    <message>
+        <source>Save picture…</source>
+        <translation>Enregistrer l’image…</translation>
+    </message>
+    <message>
+        <source>Fit</source>
+        <translation>Ajuster</translation>
+    </message>
+    <message>
+        <source>%1×</source>
+        <translation>%1×</translation>
+    </message>
+    <message>
+        <source>Zoom</source>
+        <translation>Zoom</translation>
+    </message>
+    <message>
+        <source>Fit the dock, or a fixed size: each panel pixel this many screen pixels</source>
+        <translation>Ajuster au panneau, ou une taille fixe : chaque pixel de l’écran virtuel vaut ce nombre de pixels</translation>
+    </message>
+    <message>
+        <source>Save the picture shown as a PNG file</source>
+        <translation>Enregistrer l’image affichée en fichier PNG</translation>
+    </message>
+    <message>
+        <source>Save the picture</source>
+        <translation>Enregistrer l’image</translation>
+    </message>
+    <message>
+        <source>PNG pictures (*.png)</source>
+        <translation>Images PNG (*.png)</translation>
+    </message>
+    <message>
+        <source>Saved the picture to %1.</source>
+        <translation>Image enregistrée dans %1.</translation>
+    </message>
     <message>
         <source>No picture. Firmware that draws on QEMU&apos;s virtual RGB panel (esp_lcd_qemu_rgb) shows here while it runs in the simulator.</source>
         <translation>Aucune image. Le firmware qui dessine sur l’écran RGB virtuel de QEMU (esp_lcd_qemu_rgb) s’affiche ici pendant qu’il tourne dans le simulateur.</translation>
@@ -1211,6 +1270,10 @@ Le panneau Compilation ci-dessous contient tout le journal.</translation>
         <translation>&amp;Affichage</translation>
     </message>
     <message>
+        <source>Find an action or &amp;project…</source>
+        <translation>Trouver une action ou un &amp;projet…</translation>
+    </message>
+    <message>
         <source>&amp;Find…</source>
         <translation>&amp;Rechercher…</translation>
     </message>
@@ -1341,6 +1404,10 @@ SHA-256 : %2</translation>
 Code SHA-256: %2</source>
         <translation>Carte : %1
 SHA-256 du code : %2</translation>
+    </message>
+    <message>
+        <source>Project</source>
+        <translation>Projet</translation>
     </message>
     <message>
         <source>ESP32 Bench is now %1 (it was %2).</source>
@@ -1570,8 +1637,8 @@ SHA-256 du code : %2</translation>
         <translation>%1 lignes enregistrées dans %2.</translation>
     </message>
     <message>
-        <source>Numbers from the simulator or the serial monitor, whichever is running.</source>
-        <translation>Nombres du simulateur ou du moniteur série, celui qui tourne.</translation>
+        <source>Numbers from the simulator or the serial monitor, whichever is running. Click a name in the legend to hide or show its line; point at the plot to read its values.</source>
+        <translation>Les nombres du simulateur ou du moniteur série, celui qui fonctionne. Cliquez sur un nom de la légende pour masquer ou afficher sa ligne ; pointez le graphique pour lire ses valeurs.</translation>
     </message>
     <message>
         <source>Plot of the numbers received</source>
@@ -1863,6 +1930,10 @@ SHA-256 du code : %2</translation>
         <source>Download this board&apos;s ready-made firmware from esp32bench.dev and check it, to run it in the simulator or flash it</source>
         <translation>Télécharger le firmware prêt à l’emploi de cette carte depuis esp32bench.dev et le vérifier, pour l’exécuter dans le simulateur ou le flasher</translation>
     </message>
+    <message>
+        <source>&lt;p&gt;&lt;b&gt;Recent projects:&lt;/b&gt; %1&lt;/p&gt;</source>
+        <translation>&lt;p&gt;&lt;b&gt;Projets récents :&lt;/b&gt; %1&lt;/p&gt;</translation>
+    </message>
 </context>
 <context>
     <name>RpcClient</name>
@@ -1916,6 +1987,22 @@ SHA-256 du code : %2</translation>
     <message>
         <source>Hex</source>
         <translation>Hex</translation>
+    </message>
+    <message>
+        <source>✓ The board prints what this project expects.</source>
+        <translation>✓ La carte affiche ce que ce projet attend.</translation>
+    </message>
+    <message>
+        <source>Waiting for the expected output: %1 of %2 seen so far.</source>
+        <translation>En attente de la sortie attendue : %1 sur %2 vus jusqu’ici.</translation>
+    </message>
+    <message>
+        <source>Not seen yet (a board prints it within %1 s): %2. If the board started before the port opened, press Reset board to see it start again.</source>
+        <translation>Pas encore vu (une carte l’affiche en %1 s) : %2. Si la carte a démarré avant l’ouverture du port, appuyez sur Réinitialiser la carte pour la voir redémarrer.</translation>
+    </message>
+    <message>
+        <source>What a board running this project prints, from esp32bench.dev: %1</source>
+        <translation>Ce qu’affiche une carte avec ce projet, d’après esp32bench.dev : %1</translation>
     </message>
     <message>
         <source>Show what the board sends as hex bytes, and send what you type as hex (&quot;01 a0 ff&quot;)</source>
@@ -2045,6 +2132,10 @@ SHA-256 du code : %2</translation>
         <translation>Installer tout le nécessaire</translation>
     </message>
     <message>
+        <source>Download progress</source>
+        <translation>Progression du téléchargement</translation>
+    </message>
+    <message>
         <source>Done.</source>
         <translation>Terminé.</translation>
     </message>
@@ -2115,6 +2206,18 @@ SHA-256 du code : %2</translation>
     <message>
         <source>Missing for builds: %1. Hover over a row for details.</source>
         <translation>Manquant pour compiler : %1. Survolez une ligne pour plus de détails.</translation>
+    </message>
+    <message>
+        <source>%1 of %2</source>
+        <translation>%1 sur %2</translation>
+    </message>
+    <message>
+        <source>about %1 min left</source>
+        <translation>environ %1 min restantes</translation>
+    </message>
+    <message>
+        <source>about %1 s left</source>
+        <translation>environ %1 s restantes</translation>
     </message>
 </context>
 <context>
@@ -2255,6 +2358,14 @@ SHA-256 du code : %2</translation>
         <translation>Enregistrer en VCD…</translation>
     </message>
     <message>
+        <source>Click to place marker A, again for B, to measure the time between them; right-click clears them. Ctrl and the mouse wheel zoom; the wheel alone scrolls back in time.</source>
+        <translation>Cliquez pour placer le repère A, encore pour B, afin de mesurer le temps entre eux ; le clic droit les efface. Ctrl et la molette zooment ; la molette seule remonte dans le temps.</translation>
+    </message>
+    <message>
+        <source>Pin trace</source>
+        <translation>Trace des broches</translation>
+    </message>
+    <message>
         <source>Time shown</source>
         <translation>Durée affichée</translation>
     </message>
@@ -2348,6 +2459,30 @@ SHA-256 du code : %2</translation>
     <message>
         <source>%1 µs</source>
         <translation>%1 µs</translation>
+    </message>
+    <message>
+        <source>%1 ns</source>
+        <translation>%1 ns</translation>
+    </message>
+    <message>
+        <source>A–B: 0 s</source>
+        <translation>A–B : 0 s</translation>
+    </message>
+    <message>
+        <source>%1 MHz</source>
+        <translation>%1 MHz</translation>
+    </message>
+    <message>
+        <source>%1 kHz</source>
+        <translation>%1 kHz</translation>
+    </message>
+    <message>
+        <source>%1 Hz</source>
+        <translation>%1 Hz</translation>
+    </message>
+    <message>
+        <source>A–B: %1 (%2)</source>
+        <translation>A–B : %1 (%2)</translation>
     </message>
     <message>
         <source>GPIO %1</source>

@@ -481,3 +481,16 @@ void LibraryPanel::applyFilter()
         item->setHidden(!match);
     }
 }
+
+QList<std::pair<QString, QString>> LibraryPanel::projects() const
+{
+    QList<std::pair<QString, QString>> out;
+    for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+        const QTreeWidgetItem *item = m_tree->topLevelItem(i);
+        QString name = item->text(NameColumn);
+        if (item->data(NameColumn, StarredRole).toBool())
+            name = name.mid(2); // without the star
+        out.append({name, item->data(NameColumn, IdRole).toString()});
+    }
+    return out;
+}

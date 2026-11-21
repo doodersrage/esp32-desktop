@@ -1,6 +1,8 @@
 #include "CircuitPanel.h"
 
 #include <QKeyEvent>
+#include <QWheelEvent>
+#include <QShortcut>
 
 #include "CoreConnection.h"
 
@@ -415,6 +417,23 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     tools->addWidget(m_add);
     tools->addWidget(m_remove);
     tools->addWidget(m_undoButton);
+    // Zoom: Ctrl+wheel or Ctrl+= / Ctrl+- on the canvas, and Fit for all of it.
+    m_fitButton = new QToolButton(this);
+    m_fitButton->setIcon(QIcon::fromTheme(u"zoom-fit-best"_s));
+    m_fitButton->setText(tr("Fit"));
+    m_fitButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_fitButton->setToolTip(tr("Show the whole circuit (Ctrl+0); Ctrl and the mouse wheel zoom"));
+    connect(m_fitButton, &QToolButton::clicked, this, &CircuitPanel::fitView);
+    tools->addWidget(m_fitButton);
+    const auto key = [this](const QKeySequence &seq, auto slot) {
+        auto *s = new QShortcut(seq, m_view, slot);
+        s->setContext(Qt::WidgetWithChildrenShortcut);
+    };
+    key(QKeySequence::ZoomIn, [this] { zoomBy(1.25); });
+    key(QKeySequence(Qt::CTRL | Qt::Key_Equal), [this] { zoomBy(1.25); });
+    key(QKeySequence::ZoomOut, [this] { zoomBy(0.8); });
+    key(QKeySequence(Qt::CTRL | Qt::Key_0), [this] { fitView(); });
+    m_view->viewport()->installEventFilter(this);
     tools->addStretch(1);
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(m_status);
@@ -1006,8 +1025,41 @@ void CircuitPanel::selectPart(const QString &id, bool selected)
         i->setSelected(selected);
 }
 
+void CircuitPanel::zoomBy(qreal factor)
+{
+    const qreal now = m_view->transform().m11();
+    const qreal to = std::clamp(now * factor, 0.25, 4.0);
+    m_view->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+    m_view->scale(to / now, to / now);
+}
+
+void CircuitPanel::fitView()
+{
+    const QRectF all = m_scene->itemsBoundingRect().adjusted(-10, -10, 10, 10);
+    if (all.isEmpty())
+        return;
+    m_view->resetTransform();
+    m_view->fitInView(all, Qt::KeepAspectRatio);
+    // Never bigger than life: small circuits stay at their size.
+    if (m_view->transform().m11() > 1.0)
+        m_view->resetTransform();
+}
+
+qreal CircuitPanel::zoom() const
+{
+    return m_view->transform().m11();
+}
+
 bool CircuitPanel::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == m_view->viewport() && event->type() == QEvent::Wheel) {
+        const auto *wheel = static_cast<QWheelEvent *>(event);
+        if (!(wheel->modifiers() & Qt::ControlModifier))
+            return false;
+        if (wheel->angleDelta().y() != 0)
+            zoomBy(wheel->angleDelta().y() > 0 ? 1.25 : 0.8);
+        return true;
+    }
     if (watched != m_view || event->type() != QEvent::KeyPress)
         return QWidget::eventFilter(watched, event);
     const auto *key = static_cast<QKeyEvent *>(event);

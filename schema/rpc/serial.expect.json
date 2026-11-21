@@ -1,0 +1,68 @@
+{
+  "event": "serial.expect",
+  "description": "Since protocol 0.28: whether a real board, opened with serial.open's expect, prints what its project expects. As sim.expect, timed on the board's own clock: the project's seconds plus five, from the open and from each reconnection (a board may have printed its start before the port was opened: resetting it shows it again).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "matched",
+      "missing",
+      "needs",
+      "seconds",
+      "timedOut"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "matched": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Patterns (regular expressions) seen so far."
+      },
+      "missing": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Patterns not seen yet. Empty: the output is as expected."
+      },
+      "needs": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "What the output needs beyond the board: none, wifi (the simulated network reaches nothing), or parts (the project's parts on the Circuit dock)."
+      },
+      "seconds": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "description": "How long a board takes to print it all."
+      },
+      "timedOut": {
+        "type": "boolean"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "matched": [
+          "tick \\d+ ms"
+        ],
+        "missing": [],
+        "needs": "none",
+        "seconds": 8,
+        "timedOut": false
+      }
+    }
+  ]
+}
