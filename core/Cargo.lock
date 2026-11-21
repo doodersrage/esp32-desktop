@@ -550,7 +550,7 @@ checksum = "911aadae41ec99104efa865bd0b6e486b4b735999f9b571963748a46d16495ab"
 
 [[package]]
 name = "esp32bench"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "clap",
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-build"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "esp32bench-distro",
  "esp32bench-library",
@@ -589,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-circuit"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "jsonschema",
  "rhai",
@@ -601,7 +601,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-daemon"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-debug"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "esp32bench-sim",
  "serde_json",
@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-device"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "libc",
  "serde",
@@ -651,11 +651,11 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-distro"
-version = "0.1.8"
+version = "0.1.9"
 
 [[package]]
 name = "esp32bench-flash"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "esp32bench-sim",
  "espflash",
@@ -667,7 +667,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-library"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "esp32bench-distro",
  "jsonschema",
@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-qemu-host"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "base64 0.22.1",
  "esp32bench-circuit",
@@ -694,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-rpc"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -705,7 +705,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-serial"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "libc",
  "regex",
@@ -717,7 +717,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-sim"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "base64 0.22.1",
  "crc32fast",
@@ -734,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "esp32bench-toolchain"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "esp32bench-build",
  "esp32bench-distro",
