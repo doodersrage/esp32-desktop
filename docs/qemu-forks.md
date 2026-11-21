@@ -216,6 +216,16 @@ Every hooks test (`core/crates/qemu-host/tests/hooks.rs`: pins, an I2C device, a
 
 **Light sleep timing (patch 0016).** The S3's RTC_CNTL model ran its slow clock at the ESP32's 150 kHz, but the timer groups' calibration, which is how ESP-IDF learns the frequency, reports the S3's 136 kHz. So the sleep timer and the RTC counter ran about 10% fast against ESP-IDF's measurement, and after its correction a 500 ms light sleep came out 3 ms long with `-icount` (ESP-IDF's `esp_timer` example failed its ±1 ms check). The model now uses the calibration's frequencies; the example wakes after 499.7 ms with `-icount`.
 
+### Lost console output (fixed 2026-11-21, patch 0017, recipe 15)
+
+Under load the console lost bytes: boot logs were cut mid-word and lines lost their start ("-gpio in 4=1"), which made the `*_session_bridges_pins` hooks tests fail about one full-suite run in three. The cause was the fork's UART model (`hw/char/esp32_uart.c`, which the S3's and C3's inherit): it wrote each byte to the chardev as the firmware pushed it into the TX FIFO, ignored whether the write worked, and dropped the byte either way. On a Unix socket chardev every write is charged against the socket's buffer as a whole packet, so only a few hundred one-byte writes fit before the kernel refuses more; whenever the reader fell behind, the rest was lost.
+
+Patch 0017 keeps what the socket does not take in the FIFO and sends it when the socket has room, through a chardev watch as in QEMU's other UART models, so the firmware waits for room in the FIFO, as on a slow line. Bytes still go out as they are pushed, so timing is unchanged. With no reader connected (or a backend that cannot be watched) the bytes are still dropped, so a firmware never waits for a console nobody opened. The PICSimLab TX callback still sees every byte.
+
+Waiting for room means something must always empty the socket. The daemon's simulator task always reads the console, but `esp32bench-sim`'s `Uart` read it only when its caller asked, and the hooks tests read pins first and the console later. `Uart` now reads each console socket all the time, in a task of its own, into a queue its caller takes from.
+
+Sending the FIFO in batches (one write a line, or from a timer or the main loop) was tried and dropped: from the main loop it slowed the S3's `-icount` boot about three times (8 s to 28 s for `lcgamboa_esp32s3_runs_with_icount`), and a virtual-clock timer version sometimes stopped output for good with the full hooks suite running.
+
 ## Open questions
 
 None at the moment.

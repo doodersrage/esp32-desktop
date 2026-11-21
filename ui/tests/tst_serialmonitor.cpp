@@ -140,6 +140,8 @@ private slots:
         QCoreApplication::setApplicationName(u"tst_serialmonitor"_s);
         QSettings().remove(u"serial"_s);
     }
+    // Each test starts with no remembered port or baud rate.
+    void init() { QSettings().remove(u"serial"_s); }
 
     void opensShowsOutputAndSends()
     {

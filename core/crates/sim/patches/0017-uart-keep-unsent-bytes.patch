@@ -1,0 +1,119 @@
+esp32 UART: keep what the chardev does not take, rather than drop it
+
+The UART model (also the S3's and C3's, which inherit it) wrote each byte
+to its chardev as the firmware pushed it into the TX FIFO, ignored whether
+the write worked, and dropped the byte either way. On a Unix socket
+chardev every write is charged against the socket's buffer as a whole
+packet, so only a few hundred one-byte writes fit; whenever the reader fell
+behind (a busy host, or a reader that was not reading the console just
+then) the rest of the output was silently lost. esp32bench's pin tests saw
+lines lose their start ("-gpio in 4=1") and boot logs cut mid-word.
+
+What the backend does not take now stays in the FIFO and goes when the
+backend has room, through a chardev watch, as QEMU's other UART models do;
+the firmware waits for room in the FIFO, as on a slow line. Bytes still go
+out as they are pushed, so timing is as before. With no backend connected,
+or one that cannot be watched, they are still dropped, so the firmware
+never waits for a reader that is not there. The picsimlab TX callback
+still sees every byte.
+
+esp32bench reads the console socket all the time (esp32bench_sim::uart),
+so a firmware does not wait on it. Sending the FIFO in batches, from a
+timer or from the main loop, was tried and dropped: it slowed the S3 with
+-icount about three times, and a timer version sometimes stopped output
+for good on a heavily loaded host.
+
+diff --git a/hw/char/esp32_uart.c b/hw/char/esp32_uart.c
+index c34b496..b930c20 100644
+--- a/hw/char/esp32_uart.c
++++ b/hw/char/esp32_uart.c
+@@ -74,15 +74,6 @@ void esp32_uart_set_rx_timeout(ESP32UARTState *s)
+ }
+ 
+ 
+-static uint8_t fifo8_peek_(Fifo8 *fifo)
+-{
+-    if (fifo->num == 0) {
+-        abort();
+-    }
+-    return fifo->data[fifo->head];
+-}
+-
+-
+ static uint64_t uart_read(void *opaque, hwaddr addr, unsigned int size)
+ {
+     ESP32UARTState *s = ESP32_UART(opaque);
+@@ -181,7 +172,10 @@ static void uart_write(void *opaque, hwaddr addr,
+             error_report("esp_uart: write to UART FIFO while it is full");
+         } else {
+             fifo8_push(&s->tx_fifo, (uint8_t) (value & 0xff));
+-            uart_transmit(NULL, G_IO_OUT, s);
++            /* With a watch pending, the FIFO goes when the backend has room. */
++            if (!s->tx_watch_handle) {
++                uart_transmit(NULL, G_IO_OUT, s);
++            }
+         }
+         break;
+ 
+@@ -246,36 +240,40 @@ static void uart_write(void *opaque, hwaddr addr,
+ 
+ extern void (*picsimlab_uart_tx_event)(const uint8_t id, const uint8_t val);
+ 
++/*
++ * What the backend does not take stays in the FIFO and goes when the backend
++ * has room, through a chardev watch, as in QEMU's other UART models; the
++ * firmware waits for room in the FIFO, as on a slow line. Before, a byte the
++ * write did not take was dropped. With no backend connected, or one that
++ * cannot be watched, bytes are still dropped, so the firmware never waits for
++ * a reader that is not there.
++ */
+ static gboolean uart_transmit(void *do_not_use, GIOCondition cond, void *opaque)
+ {
+     ESP32UARTState *s = ESP32_UART(opaque);
+ 
+     s->tx_watch_handle = 0;
+ 
+-    /* drain the fifo instantly, if the char device backend is not connected */
+-    /*
+-    if (!qemu_chr_fe_backend_open(&s->chr)) {
+-        fifo8_reset(&s->tx_fifo);
+-        return FALSE;
+-    }
+-    */
+-
+     while (fifo8_num_used(&s->tx_fifo) > 0) {
+-        uint8_t b = fifo8_peek_(&s->tx_fifo);
+-        if (qemu_chr_fe_backend_open(&s->chr)){ 
+-          /*int r = */qemu_chr_fe_write(&s->chr, &b, 1);
++        uint32_t n = 0;
++        const uint8_t *buf = fifo8_peek_bufptr(&s->tx_fifo, fifo8_num_used(&s->tx_fifo), &n);
++        int sent = n;
++        if (qemu_chr_fe_backend_open(&s->chr)) {
++            sent = qemu_chr_fe_write(&s->chr, buf, n);
++            if (sent <= 0) {
++                /* The reader is behind: keep the bytes until it has room. */
++                s->tx_watch_handle = qemu_chr_fe_add_watch(&s->chr, G_IO_OUT | G_IO_HUP,
++                                                           uart_transmit, s);
++                if (s->tx_watch_handle) {
++                    break;
++                }
++                sent = n; /* no watch on this backend: drop them, as before */
++            }
+         }
+-        picsimlab_uart_tx_event(s->id, b);
+-        fifo8_pop(&s->tx_fifo); //don´t wait for uart read when port closed, serial data will be lost 
+-/*
+-        if (r == 1) {
+-            fifo8_pop(&s->tx_fifo);
+-        } else {
+-            s->tx_watch_handle = qemu_chr_fe_add_watch(&s->chr, G_IO_OUT | G_IO_HUP,
+-                                                       uart_transmit, s);
+-            break;
++        for (int i = 0; i < sent; i++) {
++            picsimlab_uart_tx_event(s->id, buf[i]);
+         }
+-*/
++        fifo8_drop(&s->tx_fifo, sent);
+     }
+ 
+     esp32_uart_update_irq(s);

@@ -6,7 +6,7 @@ The owner made macOS and Windows target platforms on 2026-11-19 (`docs/PLAN.md`,
 
 | | macOS 15, arm64 (Homebrew) | Windows Server 2025, x86-64 (MSYS2 UCRT64) |
 | --- | --- | --- |
-| Patches 0001-0016 apply | Yes | Yes, once git stops converting line endings (`core.autocrlf false` before both checkouts) |
+| Patches 0001-0017 apply | Yes | Yes, once git stops converting line endings (`core.autocrlf false` before both checkouts) |
 | Fork builds | Yes | Yes, statically (`--static`); see below |
 | Firmware boots on the executables | not tried (the library is what the app uses) | Yes: the hello firmware on the ESP32, S3 and C3 |
 | Library links | Yes, `libqemu-xtensa.dylib` (20 MB) and `libqemu-riscv32.dylib` (17 MB), with `tests/platforms/link-library.sh` | Yes, statically: `libqemu-xtensa.dll` (73 MB) and `libqemu-riscv32.dll` (76 MB), needing nothing but Windows' own DLLs |

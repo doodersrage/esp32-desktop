@@ -241,6 +241,13 @@ private slots:
         CoreConnection core;
         PlotPanel panel(&core);
         QSignalSpy first(&panel, &PlotPanel::firstRows);
+        // One row in a list of rows. Not QJsonArray{row(...)}: MSVC reads braces
+        // around a single QJsonArray as a copy of it, not a list holding it.
+        const auto oneRow = [](const QJsonArray &r) {
+            QJsonArray rows;
+            rows.append(r);
+            return rows;
+        };
         const auto row = [](double t, double h) {
             return QJsonArray{QJsonObject{{u"name"_s, u"temp"_s}, {u"value"_s, t}},
                               QJsonObject{{u"name"_s, u"hum"_s}, {u"value"_s, h}}};
@@ -254,7 +261,7 @@ private slots:
         QCOMPARE(panel.rows().size(), kept);
         // Paused: nothing added; then cleared.
         panel.findChild<QCheckBox *>()->setChecked(true);
-        emit core.plotRows(QJsonArray{row(30, 30)});
+        emit core.plotRows(oneRow(row(30, 30)));
         QCOMPARE(panel.canvas()->values(u"temp"_s).size(), 2);
         QCOMPARE(panel.rows().size(), kept);
         panel.findChild<QCheckBox *>()->setChecked(false);
@@ -281,7 +288,7 @@ private slots:
         panel.canvas()->clear();
         QVERIFY(panel.canvas()->seriesNames().isEmpty());
         // A click on a legend entry hides that line, and again shows it.
-        emit core.plotRows(QJsonArray{row(1, 2)});
+        emit core.plotRows(oneRow(row(1, 2)));
         kept += 1;
         QCOMPARE(panel.rows().size(), kept);
         panel.resize(600, 300);

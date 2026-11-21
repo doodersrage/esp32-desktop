@@ -36,27 +36,81 @@ pub enum WaitOutcome {
     Closed,
 }
 
+/// The console's sockets are read all the time, by a task per port, into a queue
+/// that `read_chunk` takes from. QEMU waits for the socket to have room rather than
+/// dropping output (patch 0017), so a caller busy with something else (the pins,
+/// say) must not leave the socket full: that would stop the firmware.
 pub struct Uart {
-    stream: Stream,
+    chunks: tokio::sync::mpsc::UnboundedReceiver<Chunk>,
+    queue: tokio::sync::mpsc::UnboundedSender<Chunk>,
+    writer: tokio::io::WriteHalf<Stream>,
     /// The USB-Serial-JTAG serial port, when the machine has one wired.
-    usb: Option<Stream>,
+    usb: Option<tokio::io::WriteHalf<Stream>>,
+    readers: Vec<tokio::task::JoinHandle<()>>,
+    closed: bool,
+}
+
+/// What a port's reader task queues: output, or UART0's end.
+enum Chunk {
+    Data(Vec<u8>),
+    Closed,
+}
+
+/// Read `port` until it ends, queueing what it says. Only UART0's end closes the
+/// console; the USB port ending leaves UART0 going.
+fn spawn_reader(
+    mut port: tokio::io::ReadHalf<Stream>,
+    queue: tokio::sync::mpsc::UnboundedSender<Chunk>,
+    uart0: bool,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut buf = vec![0u8; 4096];
+        loop {
+            match port.read(&mut buf).await {
+                Ok(n) if n > 0 => {
+                    if queue.send(Chunk::Data(buf[..n].to_vec())).is_err() {
+                        return;
+                    }
+                }
+                _ => {
+                    if uart0 {
+                        let _ = queue.send(Chunk::Closed);
+                    }
+                    return;
+                }
+            }
+        }
+    })
 }
 
 impl Uart {
     pub fn new(stream: Stream) -> Self {
-        Uart { stream, usb: None }
+        let (read, writer) = tokio::io::split(stream);
+        let (queue, chunks) = tokio::sync::mpsc::unbounded_channel();
+        let reader = spawn_reader(read, queue.clone(), true);
+        Uart {
+            chunks,
+            queue,
+            writer,
+            usb: None,
+            readers: vec![reader],
+            closed: false,
+        }
     }
 
     /// Also read from (and write to) the chip's USB serial port.
     pub fn with_usb(mut self, usb: Stream) -> Self {
-        self.usb = Some(usb);
+        let (read, writer) = tokio::io::split(usb);
+        self.readers
+            .push(spawn_reader(read, self.queue.clone(), false));
+        self.usb = Some(writer);
         self
     }
 
     /// Send bytes to the firmware: UART0's RX, and the USB serial port's OUT endpoint
     /// when there is one. A sketch reads whichever its `Serial` is.
     pub async fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        self.stream.write_all(bytes).await?;
+        self.writer.write_all(bytes).await?;
         if let Some(usb) = &mut self.usb
             && usb.write_all(bytes).await.is_err()
         {
@@ -65,35 +119,17 @@ impl Uart {
         Ok(())
     }
 
-    /// Read the next chunk, from either port. `None` means QEMU closed UART0's socket.
+    /// The next chunk, from either port. `None` means QEMU closed UART0's socket.
     pub async fn read_chunk(&mut self) -> Result<Option<Vec<u8>>, Error> {
-        let mut buf = vec![0u8; 4096];
-        loop {
-            let n = match &mut self.usb {
-                None => self.stream.read(&mut buf).await?,
-                Some(usb) => {
-                    let mut ubuf = vec![0u8; 4096];
-                    tokio::select! {
-                        n = self.stream.read(&mut buf) => n?,
-                        n = usb.read(&mut ubuf) => match n {
-                            Ok(n) if n > 0 => {
-                                ubuf.truncate(n);
-                                return Ok(Some(ubuf));
-                            }
-                            // The USB side closed: carry on with UART0 alone.
-                            _ => {
-                                self.usb = None;
-                                continue;
-                            }
-                        },
-                    }
-                }
-            };
-            if n == 0 {
-                return Ok(None);
+        if self.closed {
+            return Ok(None);
+        }
+        match self.chunks.recv().await {
+            Some(Chunk::Data(bytes)) => Ok(Some(bytes)),
+            Some(Chunk::Closed) | None => {
+                self.closed = true;
+                Ok(None)
             }
-            buf.truncate(n);
-            return Ok(Some(buf));
         }
     }
 
@@ -165,6 +201,14 @@ impl Uart {
     }
 }
 
+impl Drop for Uart {
+    fn drop(&mut self) {
+        for r in &self.readers {
+            r.abort();
+        }
+    }
+}
+
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() {
         return None;
@@ -182,6 +226,27 @@ mod tests {
     use super::*;
     use tokio::io::AsyncWriteExt;
     use tokio::net::UnixStream;
+
+    // The socket is drained even while nobody asks for output, so a firmware
+    // waiting for room (patch 0017) is never held up, and nothing is lost.
+    #[tokio::test]
+    async fn drains_the_socket_while_nobody_reads() {
+        let (a, mut b) = UnixStream::pair().unwrap();
+        let mut uart = Uart::new(a);
+        let data: Vec<u8> = (0..1_000_000u32).map(|i| (i % 251) as u8).collect();
+        // Far more than a socket holds; it only completes if something drains it.
+        tokio::time::timeout(Duration::from_secs(10), b.write_all(&data))
+            .await
+            .expect("the writer was held up: nothing drained the socket")
+            .unwrap();
+        drop(b);
+        let mut got = Vec::new();
+        while let Some(chunk) = uart.read_chunk().await.unwrap() {
+            got.extend_from_slice(&chunk);
+        }
+        assert_eq!(got, data);
+        assert_eq!(uart.read_chunk().await.unwrap(), None);
+    }
 
     #[tokio::test]
     async fn finds_marker_split_across_chunks() {

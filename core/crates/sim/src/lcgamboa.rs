@@ -42,12 +42,14 @@ const MARKER: &str = "installed";
 /// 14: the S3 takes the library's host hooks (pins, I2C, analog inputs), with its own
 ///     GPIO register map and two I2C controllers; its RTC slow clock runs at the
 ///     calibrated 136 kHz (light sleep woke milliseconds late).
-pub const RECIPE: u32 = 14;
+/// 15: the UARTs keep what the socket does not take, and send it when it has room
+///     (console output was lost whenever the reader fell behind).
+pub const RECIPE: u32 = 15;
 
 /// Changes esp32bench makes to the pinned commit, in order. Each file says what and
 /// why. Kept in `core/crates/sim/patches/` and built into the program, so an installed
 /// app can build the fork without the repo.
-pub const PATCHES: [(&str, &str); 16] = [
+pub const PATCHES: [(&str, &str); 17] = [
     (
         "0001.patch",
         include_str!("../patches/0001-build-library-with-pixman.patch"),
@@ -108,6 +110,10 @@ pub const PATCHES: [(&str, &str); 16] = [
     (
         "0016.patch",
         include_str!("../patches/0016-esp32s3-rtc-slow-clock.patch"),
+    ),
+    (
+        "0017.patch",
+        include_str!("../patches/0017-uart-keep-unsent-bytes.patch"),
     ),
 ];
 
@@ -427,6 +433,7 @@ pub fn steps(jobs: usize) -> Vec<Step> {
                 "../patches/0014.patch",
                 "../patches/0015.patch",
                 "../patches/0016.patch",
+                "../patches/0017.patch",
             ],
             "src",
         ),
