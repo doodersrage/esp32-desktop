@@ -7,6 +7,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QLineEdit;
 class QSpinBox;
 
 namespace Preferences {
@@ -26,6 +27,9 @@ bool reopenProject();
 bool serialReconnect();
 // Whether to reopen the serial monitor's port at start when it was open at quit.
 bool reopenSerial();
+// The editor files open in, as editor.open takes it: "" (the system's default), a
+// preset ("kate", "code") or a command template with {file}, {line} and {col}.
+QString editorCommand();
 // The interface size chosen, in percent (100 is the desktop's own scaling).
 int interfaceSize();
 // Before the QApplication exists: ask Qt for interfaceSize() (QT_SCALE_FACTOR),
@@ -48,6 +52,8 @@ public:
     QSpinBox *textSize() const { return m_textSize; }
     QCheckBox *releaseNoticesBox() const { return m_notices; }
     QComboBox *sizePicker() const { return m_size; }
+    QComboBox *editorPicker() const { return m_editor; }
+    QLineEdit *editorTemplate() const { return m_editorTemplate; }
 
 signals:
     // The consoles' text size changed: they apply it.
@@ -57,6 +63,8 @@ private:
     QComboBox *m_language;
     QComboBox *m_theme;
     QComboBox *m_size;
+    QComboBox *m_editor;
+    QLineEdit *m_editorTemplate;
     QSpinBox *m_textSize;
     QCheckBox *m_notices;
     QCheckBox *m_reopenProject;

@@ -480,6 +480,8 @@ void CoreConnection::handleBuildEvent(const QString &method, const QJsonObject &
     m_buildJob = 0;
     if (params.contains(u"firstError"_s))
         emit buildFirstError(params.value(u"firstError"_s).toObject());
+    // Every error and warning (protocol 0.44); none is an empty list.
+    emit buildDiagnostics(params.value(u"diagnostics"_s).toArray());
     if (params.contains(u"size"_s))
         emit buildSize(params.value(u"size"_s).toObject());
     if (params.contains(u"seconds"_s))
@@ -1590,4 +1592,19 @@ void CoreConnection::saveCircuit(const QString &project, const QString &board, c
                        emit circuitSaved(project, board);
                        emit circuitLoaded(project, board, circuit);
                    });
+}
+
+void CoreConnection::openInEditor(const QString &path, int line, int column, const QString &editor)
+{
+    QJsonObject params{{u"path"_s, path}};
+    if (line > 0)
+        params.insert(u"line"_s, line);
+    if (column > 0)
+        params.insert(u"column"_s, column);
+    if (!editor.isEmpty())
+        params.insert(u"editor"_s, editor);
+    m_client->call(u"editor.open"_s, params, this, [this](const RpcReply &r) {
+        if (!r.ok)
+            emit requestFailed(u"editor.open"_s, r.errorMessage);
+    });
 }

@@ -1,0 +1,48 @@
+{
+  "method": "editor.open",
+  "description": "Since protocol 0.44: open a file at a line in the user's own editor (phase 7): with `editor` a preset (kate, code) or a command template with {file}, {line} and {col}, split into arguments and run without a shell; without it the system's default program for the file. The editor is started detached and outlives the core (esp32bench_distro::editor).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Absolute path of an existing file."
+      },
+      "line": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "column": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "editor": {
+        "type": "string",
+        "maxLength": 1000,
+        "description": "kate, code, or a template such as `kate -l {line} -c {col} {file}`; empty or absent: the system's default."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "examples": [
+    {
+      "params": {
+        "path": "/home/u/esp/blink/main/blink.c",
+        "line": 12,
+        "column": 5,
+        "editor": "kate"
+      },
+      "result": {}
+    }
+  ]
+}

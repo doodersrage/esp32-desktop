@@ -1999,10 +1999,6 @@ Das Build-Fenster unten hat das ganze Protokoll.</translation>
         <translation>Datei öffnen</translation>
     </message>
     <message>
-        <source>Nothing on this computer opens %1. Its line %2 has the problem.</source>
-        <translation>Nichts auf diesem Computer öffnet %1. Das Problem liegt in Zeile %2.</translation>
-    </message>
-    <message>
         <source>Line %1 of %2 is not in this project&apos;s own code: it is in a library or in the ESP32 core the build uses.</source>
         <translation>Zeile %1 von %2 gehört nicht zum eigenen Code dieses Projekts: Sie liegt in einer Bibliothek oder im ESP32-Core, den der Build verwendet.</translation>
     </message>
@@ -2113,6 +2109,12 @@ Das Build-Fenster unten hat das ganze Protokoll.</translation>
     <message>
         <source>%1 · %2</source>
         <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <source>Could not open the file in the editor: %1
+Tools → Preferences chooses the editor.</source>
+        <translation>Die Datei ließ sich nicht im Editor öffnen: %1
+Unter Werkzeuge → Einstellungen wählen Sie den Editor.</translation>
     </message>
     <message>
         <source>Debugging</source>
@@ -2825,6 +2827,30 @@ Code-SHA-256: %2</translation>
         <translation>&amp;Farben:</translation>
     </message>
     <message>
+        <source>The system&apos;s default</source>
+        <translation>Der Standard des Systems</translation>
+    </message>
+    <message>
+        <source>Another, with this command</source>
+        <translation>Ein anderer, mit diesem Befehl</translation>
+    </message>
+    <message>
+        <source>Where a build problem&apos;s file opens, at its line. The system&apos;s default opens the file without going to the line.</source>
+        <translation>Wo sich die Datei eines Build-Problems öffnet, an seiner Zeile. Der Standard des Systems öffnet die Datei, ohne zur Zeile zu gehen.</translation>
+    </message>
+    <message>
+        <source>The editor&apos;s command: {file} is the file, {line} and {col} where in it</source>
+        <translation>Der Befehl des Editors: {file} ist die Datei, {line} und {col} die Stelle darin</translation>
+    </message>
+    <message>
+        <source>Editor command</source>
+        <translation>Editor-Befehl</translation>
+    </message>
+    <message>
+        <source>&amp;Editor:</source>
+        <translation>&amp;Editor:</translation>
+    </message>
+    <message>
         <source>&amp;Interface size:</source>
         <translation>&amp;Oberflächengröße:</translation>
     </message>
@@ -2912,6 +2938,22 @@ Code-SHA-256: %2</translation>
 Double-click to see the line.</source>
         <translation>%1
 Doppelklicken, um die Zeile zu sehen.</translation>
+    </message>
+    <message>
+        <source>%1:%2</source>
+        <translation>%1:%2</translation>
+    </message>
+    <message>
+        <source>%1: %2</source>
+        <translation>%1: %2</translation>
+    </message>
+    <message>
+        <source>%1:%2: %3</source>
+        <translation>%1:%2: %3</translation>
+    </message>
+    <message>
+        <source>Included from %1:%2</source>
+        <translation>Eingebunden aus %1:%2</translation>
     </message>
     <message>
         <source>Simulator</source>

@@ -1058,6 +1058,18 @@ async fn a_failed_build_names_its_first_error() {
         done["firstError"],
         json!({ "file": "blink.ino", "line": 12, "column": 3, "message": "'ledd' was not declared in this scope" })
     );
+    // Every diagnostic (protocol 0.44), checked against build.finished's schema.
+    assert_valid(
+        &method_def("build.finished")["params"],
+        &done,
+        "build.finished params",
+    );
+    let all = done["diagnostics"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no diagnostics: {done}"));
+    assert_eq!(all[0]["severity"], "error", "{done}");
+    assert_eq!(all[0]["file"], "blink.ino", "{done}");
+    assert_eq!(all[0]["line"], 12, "{done}");
 }
 
 #[tokio::test]
@@ -4659,6 +4671,49 @@ async fn link_open_names_a_library_project_and_nothing_more() {
         match c.call("link.open", open(bad)).await {
             Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS, "{bad}"),
             other => panic!("{bad}: expected invalid params, got {other:?}"),
+        }
+    }
+}
+
+// A file at a line in the user's editor: a template run without a shell, and refusals.
+#[cfg(unix)]
+#[tokio::test]
+async fn editor_open_runs_the_template_and_refuses_bad_ones() {
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let file = d.path().join("main.c");
+    std::fs::write(&file, "int main;\n").unwrap();
+    let params =
+        json!({ "path": file, "line": 1, "column": 5, "editor": "true {file}:{line}:{col}" });
+    assert_valid(
+        &method_def("editor.open")["params"],
+        &params,
+        "editor.open params",
+    );
+    let r = c.call("editor.open", params).await.unwrap();
+    assert_valid(
+        &method_def("editor.open")["result"],
+        &r,
+        "editor.open result",
+    );
+    for (params, want) in [
+        (
+            json!({ "path": d.path().join("missing.c"), "editor": "true {file}" }),
+            code::INVALID_PARAMS,
+        ),
+        (
+            json!({ "path": file, "editor": "true" }),
+            code::INVALID_PARAMS,
+        ),
+        (json!({ "path": "main.c" }), code::INVALID_PARAMS),
+        (
+            json!({ "path": file, "editor": "no-such-editor-esp32bench {file}" }),
+            code::FAILED,
+        ),
+    ] {
+        match c.call("editor.open", params.clone()).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, want, "{params}: {}", e.message),
+            other => panic!("{params}: {other:?}"),
         }
     }
 }

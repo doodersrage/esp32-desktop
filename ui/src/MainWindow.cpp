@@ -247,6 +247,13 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_problems = new ProblemsPanel(core, m_problemsDock);
     m_problemsDock->setWidget(m_problems);
     connect(m_problems, &ProblemsPanel::locationActivated, this, &MainWindow::showLocation);
+    connect(core, &CoreConnection::buildDiagnostics, m_problems, &ProblemsPanel::setBuildDiagnostics);
+    connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
+        if (method == u"editor.open")
+            m_messages->showError(tr("Could not open the file in the editor: %1\nTools → Preferences chooses the "
+                                     "editor.")
+                                      .arg(message));
+    });
     addDockWidget(Qt::BottomDockWidgetArea, m_problemsDock);
     tabifyDockWidget(m_buildDock, m_problemsDock);
     m_problemsDock->hide();
@@ -1327,10 +1334,8 @@ void MainWindow::showLocation(const QJsonObject &at)
         return;
     const QString path = at.value(u"path"_s).toString();
     if (!path.isEmpty()) {
-        if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
-            m_messages->showError(tr("Nothing on this computer opens %1. Its line %2 has the problem.")
-                                      .arg(QDir::toNativeSeparators(path))
-                                      .arg(line));
+        // In the user's editor, at the line (Preferences → Editor); the core starts it.
+        m_core->openInEditor(path, line, at.value(u"column"_s).toInt(), Preferences::editorCommand());
         return;
     }
     m_messages->showError(tr("Line %1 of %2 is not in this project's own code: it is in a library "

@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 43;
+    static constexpr int ProtocolMinor = 44;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -227,6 +227,9 @@ public:
     void runSimFor(int ms);
     // circuit.examples: the library projects that use a part of this kind (examplesListed).
     void circuitExamples(const QString &kind);
+    // editor.open: a file at a line in the user's editor (`editor`: kate, code, a
+    // template, or empty for the system's default); a failure is a requestFailed.
+    void openInEditor(const QString &path, int line, int column, const QString &editor);
     // circuit.pinNotes: a board's pins to be careful with (pinNotesListed).
     void getPinNotes(const QString &board);
     // circuit.export / circuit.import: a board's parts to or from a file.
@@ -282,6 +285,8 @@ signals:
                   const QJsonObject &location = {});
     // `image` is the merged flash image when ok.
     void buildFinished(bool ok, const QString &error, const QString &image);
+    // Every error and warning of the build that finished (build.finished's diagnostics).
+    void buildDiagnostics(const QJsonArray &diagnostics);
     // Serial monitor.
     void serialOpened(const QString &path, int baud);
     // `shown`: the text without colour codes (protocol 0.27; undefined from older

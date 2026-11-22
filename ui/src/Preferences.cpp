@@ -2,6 +2,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QLineEdit>
 #include <algorithm>
 #include <QCoreApplication>
 #include <QDialogButtonBox>
@@ -60,6 +61,11 @@ bool reopenSerial()
 {
     return QSettings().value(u"serial/reopen"_s, true).toBool();
 }
+QString editorCommand()
+{
+    return QSettings().value(u"editor/command"_s).toString().trimmed();
+}
+
 int interfaceSize()
 {
     const int size = QSettings().value(u"ui/size"_s, 100).toInt();
@@ -82,6 +88,8 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     , m_language(new QComboBox(this))
     , m_theme(new QComboBox(this))
     , m_size(new QComboBox(this))
+    , m_editor(new QComboBox(this))
+    , m_editorTemplate(new QLineEdit(this))
     , m_textSize(new QSpinBox(this))
     , m_notices(new QCheckBox(tr("Say when a newer release is out"), this))
     , m_reopenProject(new QCheckBox(tr("Reopen the last project at start"), this))
@@ -126,6 +134,22 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         m_theme->hide();
     }
     form->addRow(size, m_textSize);
+    // The editor a problem's file opens in, at its line.
+    m_editor->addItem(tr("The system's default"), QString());
+    m_editor->addItem(u"Kate"_s, u"kate"_s);
+    m_editor->addItem(u"Visual Studio Code"_s, u"code"_s);
+    m_editor->addItem(tr("Another, with this command"), u"custom"_s);
+    m_editor->setToolTip(tr("Where a build problem's file opens, at its line. The system's default opens the "
+                            "file without going to the line."));
+    m_editorTemplate->setPlaceholderText(u"kate -l {line} -c {col} {file}"_s);
+    m_editorTemplate->setToolTip(tr("The editor's command: {file} is the file, {line} and {col} where in it"));
+    m_editorTemplate->setAccessibleName(tr("Editor command"));
+    connect(m_editor, &QComboBox::currentIndexChanged, this,
+            [this] { m_editorTemplate->setEnabled(m_editor->currentData().toString() == u"custom"); });
+    auto *editorLabel = new QLabel(tr("&Editor:"), this);
+    editorLabel->setBuddy(m_editor);
+    form->addRow(editorLabel, m_editor);
+    form->addRow(QString(), m_editorTemplate);
     auto *interfaceSize = new QLabel(tr("&Interface size:"), this);
     interfaceSize->setBuddy(m_size);
     form->addRow(interfaceSize, m_size);
@@ -161,6 +185,16 @@ void PreferencesDialog::load()
         const QSignalBlocker block(m_textSize);
         m_textSize->setValue(s.value(u"console/zoom"_s, 0).toInt());
     }
+    {
+        const QString editor = Preferences::editorCommand();
+        int e = m_editor->findData(editor);
+        if (e < 0) {
+            e = m_editor->findData(u"custom"_s);
+            m_editorTemplate->setText(editor);
+        }
+        m_editor->setCurrentIndex(e);
+        m_editorTemplate->setEnabled(m_editor->currentData().toString() == u"custom");
+    }
     const int z = m_size->findData(Preferences::interfaceSize());
     m_size->setCurrentIndex(z < 0 ? 0 : z);
     m_notices->setChecked(Preferences::releaseNotices());
@@ -175,6 +209,8 @@ void PreferencesDialog::save()
     s.setValue(u"ui/language"_s, m_language->currentData().toString());
     s.setValue(u"ui/theme"_s, m_theme->currentData().toString());
     s.setValue(u"ui/size"_s, m_size->currentData().toInt());
+    const QString editor = m_editor->currentData().toString();
+    s.setValue(u"editor/command"_s, editor == u"custom"_s ? m_editorTemplate->text().trimmed() : editor);
     Preferences::applyTheme(); // at once
     s.setValue(u"console/zoom"_s, m_textSize->value());
     s.setValue(u"update/notices"_s, m_notices->isChecked());

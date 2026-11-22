@@ -41,6 +41,11 @@ public:
     // A crash whose backtrace the core decoded (sim.backtrace, serial.backtrace): where
     // it was, the sketch's own line first; double-click to see it.
     void addCrash(const QString &source, const QJsonArray &frames);
+    // A build's errors and warnings (build.finished's diagnostics), in place of the last
+    // build's: each opens at its line on a double-click.
+    void setBuildDiagnostics(const QJsonArray &diagnostics);
+    // A build diagnostic's row (replaced by the next build's).
+    static constexpr int DiagnosticRole = Qt::UserRole + 5;
     QTreeWidget *tree() const { return m_tree; }
 
 signals:

@@ -63,6 +63,16 @@ enum Cmd {
         #[arg(long)]
         clear: bool,
     },
+    /// Open a file at a line in your editor, as the app's Problems list does
+    /// (`main/app.c:12:5`): with --editor kate, code or a template such as
+    /// "kate -l {line} -c {col} {file}", else the system's default program.
+    Open {
+        /// The file, optionally with :line and :column.
+        at: String,
+        /// kate, code, or a command template with {file}, {line} and {col}.
+        #[arg(long)]
+        editor: Option<String>,
+    },
     /// Decode the crash backtraces in a saved log or pasted text (a file, or stdin)
     /// from the firmware's ELF, as the app does for a run's.
     Decode {
@@ -1121,11 +1131,17 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 install.version
             );
             let dirs = idf::Dirs::new(&esp32bench_library::cache_dir()?.join("builds"), &plan);
-            let out = idf::run(&plan, &dirs, |stream, line| match stream {
-                esp32bench_build::Stream::Stdout => println!("{line}"),
-                esp32bench_build::Stream::Stderr => eprintln!("{line}"),
+            let mut all = esp32bench_build::diagnostics::Collector::new(Some(&plan.path));
+            let r = idf::run(&plan, &dirs, |stream, line| {
+                all.line(&line);
+                match stream {
+                    esp32bench_build::Stream::Stdout => println!("{line}"),
+                    esp32bench_build::Stream::Stderr => eprintln!("{line}"),
+                }
             })
-            .await?;
+            .await;
+            print_diagnostics(all.diagnostics());
+            let out = r?;
             esp32bench_build::write_stamp(&dirs.out, &plan);
             eprintln!(
                 "\nimage {}\nelf   {}",
@@ -1194,12 +1210,17 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 &esp32bench_library::cache_dir()?.join("builds"),
                 &plan,
             );
-            let out =
-                esp32bench_build::run(&plan, &code, &tools, &dirs, |stream, line| match stream {
+            let mut all = esp32bench_build::diagnostics::Collector::new(None);
+            let r = esp32bench_build::run(&plan, &code, &tools, &dirs, |stream, line| {
+                all.line(&line);
+                match stream {
                     esp32bench_build::Stream::Stdout => println!("{line}"),
                     esp32bench_build::Stream::Stderr => eprintln!("{line}"),
-                })
-                .await?;
+                }
+            })
+            .await;
+            print_diagnostics(all.diagnostics());
+            let out = r?;
             esp32bench_build::write_stamp(&dirs.out, &plan);
             eprintln!(
                 "\nimage {}\nelf   {}",
@@ -1316,6 +1337,27 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             if !kept.is_empty() {
                 println!("{kept}");
             }
+        }
+        Cmd::Open { at, editor } => {
+            // `file:line:col`, `file:line` or `file`: numbers taken from the end only, so a
+            // Windows drive letter or a colon in a name stays in the path.
+            let mut parts: Vec<&str> = at.rsplitn(3, ':').collect();
+            parts.reverse();
+            let numbers: Vec<u32> = parts
+                .iter()
+                .skip(1)
+                .filter_map(|p| p.parse().ok())
+                .collect();
+            let (file, line, column) = match (parts.len(), numbers.len()) {
+                (3, 2) => (parts[0].to_owned(), numbers[0], numbers[1]),
+                (_, n) if n >= 1 && parts.last().is_some_and(|p| p.parse::<u32>().is_ok()) => {
+                    let line = parts.last().and_then(|p| p.parse().ok()).unwrap_or(1);
+                    (at[..at.rfind(':').unwrap_or(at.len())].to_owned(), line, 1)
+                }
+                _ => (at.clone(), 1, 1),
+            };
+            let path = std::path::absolute(&file)?;
+            esp32bench_distro::editor::open(&path, line, column, editor.as_deref())?;
         }
         Cmd::Decode { elf, chip, file } => {
             let text = match file {
@@ -2240,4 +2282,34 @@ async fn boot_test(
     } else {
         ExitCode::FAILURE
     })
+}
+
+/// A build's errors and warnings after its log, one per line in GCC's form
+/// (`file:line:column: severity: message`, with the full path for a local project's
+/// file), so an editor's build output can jump to them.
+fn print_diagnostics(all: &[esp32bench_build::diagnostics::Diagnostic]) {
+    if all.is_empty() {
+        return;
+    }
+    let errors = all.iter().filter(|d| d.severity == "error").count();
+    eprintln!("\nErrors: {errors}, warnings: {}", all.len() - errors);
+    for d in all {
+        let file = d
+            .path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .or_else(|| d.file.clone());
+        let mut at = String::new();
+        if let Some(file) = file {
+            at.push_str(&file);
+            if let Some(line) = d.line {
+                at.push_str(&format!(":{line}"));
+                if let Some(col) = d.column {
+                    at.push_str(&format!(":{col}"));
+                }
+            }
+            at.push_str(": ");
+        }
+        eprintln!("{at}{}: {}", d.severity, d.message);
+    }
 }

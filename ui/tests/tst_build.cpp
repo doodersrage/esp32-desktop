@@ -6,6 +6,7 @@
 #include "MainWindow.h"
 #include "MessageBar.h"
 #include "ProjectView.h"
+#include "ProblemsPanel.h"
 
 #include <QComboBox>
 #include <QFile>
@@ -22,6 +23,8 @@
 #include <QAction>
 #include <QKeySequence>
 #include <QLineEdit>
+#include <QSettings>
+#include <QTreeWidget>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -34,6 +37,7 @@ class FakeCore : public QObject {
 public:
     QStringList buildRequests; // the consent value of each build.start, or "-"
     QStringList statusRequests; // each build.status, as project/board
+    QList<QJsonObject> opened; // each editor.open's params
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -69,10 +73,15 @@ private:
                                {u"target"_s, u"esp32"_s}, {u"fqbn"_s, u"esp32:esp32:esp32:FlashMode=dio"_s},
                                {u"codeSha256"_s, QString(64, u'a')},
                                {u"install"_s, QJsonArray{u"Adafruit NeoPixel"_s}}};
+        if (method == u"editor.open") {
+            opened << params;
+            send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id}, {u"result"_s, QJsonObject{}}});
+            return;
+        }
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.43.0"_s}}}});
+                                               {u"protocol"_s, u"0.44.0"_s}}}});
         } else if (method == u"build.status") {
             statusRequests << params.value(u"project"_s).toString() + u"/"_s + params.value(u"board"_s).toString();
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
@@ -94,7 +103,14 @@ private:
                               {{u"ok"_s, false}, {u"error"_s, u"compile failed (exit status 1)"_s},
                                {u"firstError"_s, QJsonObject{{u"file"_s, u"blink.ino"_s}, {u"line"_s, 12},
                                                              {u"column"_s, 3},
-                                                             {u"message"_s, u"'ledd' was not declared"_s}}}}));
+                                                             {u"message"_s, u"'ledd' was not declared"_s}}},
+                               {u"diagnostics"_s,
+                                QJsonArray{QJsonObject{{u"file"_s, u"main/app.c"_s}, {u"path"_s, u"/home/u/app/main/app.c"_s},
+                                                       {u"line"_s, 12}, {u"column"_s, 3}, {u"severity"_s, u"error"_s},
+                                                       {u"message"_s, u"'ledd' was not declared"_s}},
+                                           QJsonObject{{u"file"_s, u"main/app.c"_s}, {u"path"_s, u"/home/u/app/main/app.c"_s},
+                                                       {u"line"_s, 20}, {u"column"_s, 7}, {u"severity"_s, u"warning"_s},
+                                                       {u"message"_s, u"unused variable 'n'"_s}}}}}));
             else
                 send(s, event(u"build.finished"_s, {{u"ok"_s, true}, {u"image"_s, u"/tmp/blink.bin"_s}}));
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
@@ -158,7 +174,12 @@ private slots:
     }
 
     // Keep QSettings away from the real configuration.
-    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+    void initTestCase()
+    {
+        QStandardPaths::setTestModeEnabled(true);
+        // QSettings needs a name to save under on Windows.
+        QCoreApplication::setOrganizationName(u"esp32bench-tests"_s);
+    }
 
     void portsAreNamedAndANewBoardIsPicked()
     {
@@ -235,6 +256,28 @@ private slots:
         core.startBuild(u"blink"_s, u"esp32"_s);
         QTRY_VERIFY(window.messageBar()->text().contains(u"blink.ino, line 12"_s));
         QVERIFY(window.messageBar()->text().contains(u"'ledd' was not declared"_s));
+        // Every error and warning in Problems; a double-click opens it in the editor
+        // chosen in Preferences, at its line and column.
+        QTreeWidget *tree = window.problems()->tree();
+        QTreeWidgetItem *warning = nullptr;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i)
+            if (tree->topLevelItem(i)->text(ProblemsPanel::TextColumn).startsWith(u"main/app.c:20: "_s))
+                warning = tree->topLevelItem(i);
+        QVERIFY(warning);
+        QSettings().setValue(u"editor/command"_s, u"kate"_s);
+        emit tree->itemActivated(warning, ProblemsPanel::TextColumn);
+        QTRY_COMPARE(fake.opened.size(), 1);
+        QCOMPARE(fake.opened.at(0).value(u"path"_s).toString(), u"/home/u/app/main/app.c"_s);
+        QCOMPARE(fake.opened.at(0).value(u"line"_s).toInt(), 20);
+        QCOMPARE(fake.opened.at(0).value(u"column"_s).toInt(), 7);
+        QCOMPARE(fake.opened.at(0).value(u"editor"_s).toString(), u"kate"_s);
+        QSettings().remove(u"editor/command"_s);
+        // The next build's problems replace these.
+        emit core.buildDiagnostics({});
+        int left = 0;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i)
+            left += tree->topLevelItem(i)->data(ProblemsPanel::TextColumn, ProblemsPanel::DiagnosticRole).toBool() ? 1 : 0;
+        QCOMPARE(left, 0);
     }
 
     void countsAndFiltersProblems()

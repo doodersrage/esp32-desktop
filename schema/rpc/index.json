@@ -1,5 +1,5 @@
 {
-  "protocol": "0.43.0",
+  "protocol": "0.44.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
     "backtrace.decode",
@@ -39,6 +39,7 @@
     "debug.watch",
     "device.list",
     "device.watch",
+    "editor.open",
     "frame.save",
     "job.cancel",
     "library.export",

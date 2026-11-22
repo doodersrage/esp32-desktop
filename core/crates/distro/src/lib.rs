@@ -6,6 +6,7 @@
 use std::path::Path;
 
 pub mod dirs;
+pub mod editor;
 
 /// A family of distributions that share package names and tools.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -91,6 +91,102 @@
         "type": "number",
         "minimum": 0,
         "description": "Since protocol 0.34: how long the build took, to a tenth of a second, not counting a wait for another build to finish."
+      },
+      "diagnostics": {
+        "type": "array",
+        "maxItems": 500,
+        "description": "Since protocol 0.44: every compiler and linker error and warning, in order, without repeats (esp32bench_build::diagnostics::Collector). file is as people know it (relative to a local project's folder, else its name); path is the file itself, only inside a local project; a linker error may have no file or line. includedFrom: the includes that led to the file, innermost first; notes: the compiler's notes on it.",
+        "items": {
+          "type": "object",
+          "required": [
+            "severity",
+            "message"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "column": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "severity": {
+              "enum": [
+                "error",
+                "warning"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "includedFrom": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "file",
+                  "line"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "file": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "line": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "column": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "file",
+                  "line",
+                  "message"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "file": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "line": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "column": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   },

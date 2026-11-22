@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.43.0";
+pub const PROTOCOL: &str = "0.44.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -552,6 +552,7 @@ pub fn router(state: Arc<State>) -> Router {
         })
         .method("plot.save", |p, _| async move { plot_save(p).await })
         .method("frame.save", |p, _| async move { frame_save(p).await })
+        .method("editor.open", |p, _| async move { editor_open(p) })
         .method("library.star", {
             let s = stars.clone();
             move |p, _| {
@@ -914,9 +915,11 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         let started = std::time::Instant::now();
         let dirs = esp32bench_build::Dirs::new(&state.builds_root, &plan);
         let mut first = esp32bench_build::diagnostics::Finder::new(None);
+        let mut all = esp32bench_build::diagnostics::Collector::new(None);
         let mut size = esp32bench_build::diagnostics::SizeReader::default();
         let r = esp32bench_build::run(&plan, &code, &tools, &dirs, |stream, line| {
             first.line(&line);
+            all.line(&line);
             size.line(&line);
             let mut params = json!({ "stream": stream, "line": line });
             if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
@@ -935,7 +938,7 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         if r.is_ok() {
             esp32bench_build::write_stamp(&dirs.out, &plan);
         }
-        let mut event = finished_event(r, first.first());
+        let mut event = finished_event(r, first.first(), all.diagnostics());
         if event["ok"] == true
             && let Some(sz) = size.size()
         {
@@ -1401,8 +1404,9 @@ async fn build_status(params: Value, state: Arc<State>) -> Result<Value, RpcErro
 fn finished_event<E: std::fmt::Display>(
     r: Result<esp32bench_build::Output, E>,
     first: Option<&esp32bench_build::diagnostics::FirstError>,
+    all: &[esp32bench_build::diagnostics::Diagnostic],
 ) -> Value {
-    match r {
+    let mut v = match r {
         Ok(out) => json!({ "ok": true, "image": out.image, "elf": out.elf }),
         Err(e) => {
             let mut v = json!({ "ok": false, "error": e.to_string() });
@@ -1411,7 +1415,12 @@ fn finished_event<E: std::fmt::Display>(
             }
             v
         }
+    };
+    // Every error and warning (protocol 0.44), for the Problems list.
+    if !all.is_empty() {
+        v["diagnostics"] = json!(all);
     }
+    v
 }
 
 /// A library project's prebuilt firmware: after consent for exactly this image, a job
@@ -1478,8 +1487,10 @@ fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Valu
         let started = std::time::Instant::now();
         let dirs = idf::Dirs::new(&state.builds_root, &plan);
         let mut first = esp32bench_build::diagnostics::Finder::new(Some(&plan.path));
+        let mut all = esp32bench_build::diagnostics::Collector::new(Some(&plan.path));
         let r = idf::run(&plan, &dirs, |stream, line| {
             first.line(&line);
+            all.line(&line);
             let mut params = json!({ "stream": stream, "line": line });
             if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
                 params["level"] = json!(level);
@@ -1493,7 +1504,7 @@ fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Valu
         if r.is_ok() {
             esp32bench_build::write_stamp(&dirs.out, &plan);
         }
-        let mut event = finished_event(r, first.first());
+        let mut event = finished_event(r, first.first(), all.diagnostics());
         // How long it took, in tenths of a second (not counting a wait for another build).
         event["seconds"] = json!((started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
         sub.send("build.finished", event);
@@ -2573,6 +2584,43 @@ struct FrameSaveParams {
 }
 
 /// Write a picture (as sim.frame carries one) to `path` as PNG.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EditorOpenParams {
+    path: PathBuf,
+    #[serde(default)]
+    line: Option<u32>,
+    #[serde(default)]
+    column: Option<u32>,
+    #[serde(default)]
+    editor: Option<String>,
+}
+
+/// editor.open: a file at a line in the user's editor (esp32bench_distro::editor).
+fn editor_open(params: Value) -> Result<Value, RpcError> {
+    let p: EditorOpenParams = parse_params(params)?;
+    if !p.path.is_absolute() {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    if p.editor.as_ref().is_some_and(|e| e.len() > 1000) {
+        return Err(RpcError::invalid_params(
+            "editor is at most 1000 characters",
+        ));
+    }
+    use esp32bench_distro::editor::Error as E;
+    esp32bench_distro::editor::open(
+        &p.path,
+        p.line.unwrap_or(1),
+        p.column.unwrap_or(1),
+        p.editor.as_deref(),
+    )
+    .map_err(|e| match e {
+        E::BadTemplate(_) | E::NotAFile(_) => RpcError::invalid_params(e.to_string()),
+        E::Start(..) => RpcError::new(code::FAILED, e.to_string()),
+    })?;
+    Ok(json!({}))
+}
+
 async fn frame_save(params: Value) -> Result<Value, RpcError> {
     use base64::Engine;
     let p: FrameSaveParams = parse_params(params)?;

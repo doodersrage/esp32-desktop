@@ -1999,10 +1999,6 @@ El panel Compilación de abajo tiene el registro completo.</translation>
         <translation>Abrir el archivo</translation>
     </message>
     <message>
-        <source>Nothing on this computer opens %1. Its line %2 has the problem.</source>
-        <translation>Nada en este ordenador abre %1. El problema está en su línea %2.</translation>
-    </message>
-    <message>
         <source>Line %1 of %2 is not in this project&apos;s own code: it is in a library or in the ESP32 core the build uses.</source>
         <translation>La línea %1 de %2 no es del código propio de este proyecto: está en una biblioteca o en el núcleo ESP32 que usa la compilación.</translation>
     </message>
@@ -2113,6 +2109,12 @@ El panel Compilación de abajo tiene el registro completo.</translation>
     <message>
         <source>%1 · %2</source>
         <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <source>Could not open the file in the editor: %1
+Tools → Preferences chooses the editor.</source>
+        <translation>No se pudo abrir el archivo en el editor: %1
+Herramientas → Preferencias elige el editor.</translation>
     </message>
     <message>
         <source>Debugging</source>
@@ -2825,6 +2827,30 @@ SHA-256 del código: %2</translation>
         <translation>&amp;Colores:</translation>
     </message>
     <message>
+        <source>The system&apos;s default</source>
+        <translation>El predeterminado del sistema</translation>
+    </message>
+    <message>
+        <source>Another, with this command</source>
+        <translation>Otro, con este comando</translation>
+    </message>
+    <message>
+        <source>Where a build problem&apos;s file opens, at its line. The system&apos;s default opens the file without going to the line.</source>
+        <translation>Dónde se abre el archivo de un problema de compilación, en su línea. El predeterminado del sistema abre el archivo sin ir a la línea.</translation>
+    </message>
+    <message>
+        <source>The editor&apos;s command: {file} is the file, {line} and {col} where in it</source>
+        <translation>El comando del editor: {file} es el archivo, {line} y {col} dónde dentro de él</translation>
+    </message>
+    <message>
+        <source>Editor command</source>
+        <translation>Comando del editor</translation>
+    </message>
+    <message>
+        <source>&amp;Editor:</source>
+        <translation>&amp;Editor:</translation>
+    </message>
+    <message>
         <source>&amp;Interface size:</source>
         <translation>&amp;Tamaño de la interfaz:</translation>
     </message>
@@ -2912,6 +2938,22 @@ SHA-256 del código: %2</translation>
 Double-click to see the line.</source>
         <translation>%1
 Haz doble clic para ver la línea.</translation>
+    </message>
+    <message>
+        <source>%1:%2</source>
+        <translation>%1:%2</translation>
+    </message>
+    <message>
+        <source>%1: %2</source>
+        <translation>%1: %2</translation>
+    </message>
+    <message>
+        <source>%1:%2: %3</source>
+        <translation>%1:%2: %3</translation>
+    </message>
+    <message>
+        <source>Included from %1:%2</source>
+        <translation>Incluido desde %1:%2</translation>
     </message>
     <message>
         <source>Simulator</source>

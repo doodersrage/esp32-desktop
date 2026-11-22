@@ -183,6 +183,54 @@ void ProblemsPanel::addCrash(const QString &source, const QJsonArray &frames)
     }
 }
 
+void ProblemsPanel::setBuildDiagnostics(const QJsonArray &diagnostics)
+{
+    for (int i = m_tree->topLevelItemCount() - 1; i >= 0; --i) {
+        if (m_tree->topLevelItem(i)->data(TextColumn, DiagnosticRole).toBool())
+            delete m_tree->takeTopLevelItem(i);
+    }
+    const QString time = QTime::currentTime().toString(u"hh:mm:ss"_s);
+    for (const QJsonValue &v : diagnostics) {
+        const QJsonObject d = v.toObject();
+        const bool error = d.value(u"severity"_s).toString() == u"error";
+        const QString file = d.value(u"file"_s).toString();
+        const int line = d.value(u"line"_s).toInt();
+        QString where = file;
+        if (!file.isEmpty() && line > 0)
+            where = tr("%1:%2").arg(file).arg(line);
+        const QString message = d.value(u"message"_s).toString();
+        auto *item = new QTreeWidgetItem(m_tree);
+        item->setText(TimeColumn, time);
+        item->setText(SourceColumn, tr("Build"));
+        item->setData(SourceColumn, SourceRole, u"build"_s);
+        item->setHidden(!m_only.isEmpty() && m_only != u"build");
+        item->setText(TextColumn, where.isEmpty() ? message : tr("%1: %2").arg(where, message));
+        item->setIcon(TextColumn, QIcon::fromTheme(error ? u"dialog-error"_s : u"dialog-warning"_s));
+        item->setData(TextColumn, DiagnosticRole, true);
+        item->setData(TextColumn, SearchRole, message);
+        QStringList tip{message};
+        for (const QJsonValue &n : d.value(u"notes"_s).toArray())
+            tip << tr("%1:%2: %3")
+                       .arg(n.toObject().value(u"file"_s).toString())
+                       .arg(n.toObject().value(u"line"_s).toInt())
+                       .arg(n.toObject().value(u"message"_s).toString());
+        for (const QJsonValue &f : d.value(u"includedFrom"_s).toArray())
+            tip << tr("Included from %1:%2").arg(f.toObject().value(u"file"_s).toString()).arg(f.toObject().value(u"line"_s).toInt());
+        item->setToolTip(TextColumn, tip.join(u"\n"_s));
+        if (line > 0)
+            item->setData(TextColumn, LocationRole,
+                          QJsonObject{{u"file"_s, file},
+                                      {u"line"_s, line},
+                                      {u"column"_s, d.value(u"column"_s).toInt(1)},
+                                      {u"path"_s, d.value(u"path"_s).toString()}});
+        if (error && !m_hasProblem) {
+            m_hasProblem = true;
+            emit firstProblem();
+        }
+    }
+    emit countChanged(m_tree->topLevelItemCount());
+}
+
 void ProblemsPanel::add(const QString &source, const QJsonArray &findings)
 {
     const QString from = source == u"sim" ? tr("Simulator") : source == u"serial" ? tr("Board") : tr("Build");
