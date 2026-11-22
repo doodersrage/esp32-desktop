@@ -1,0 +1,36 @@
+{
+  "event": "watch.building",
+  "description": "Since protocol 0.47: a watched project's build starts (watch.start); its build.log and build.finished follow on the same subscription. A build still running for an earlier save was stopped.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "plan"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "plan": {
+        "type": "object",
+        "description": "What is built, as build.start's plan for a local project."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 4,
+        "plan": {
+          "project": "local-1b6c57715d28",
+          "board": "esp32c3-supermini",
+          "fqbn": "esp32:esp32:nologo_esp32c3_super_mini:FlashMode=dio",
+          "path": "/home/u/EditLoop"
+        }
+      }
+    }
+  ]
+}

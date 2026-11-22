@@ -75,6 +75,7 @@ case "$1" in
       echo "/tmp/x/blink/blink.ino:12:3: error: 'ledd' was not declared in this scope" >&2
       exit 1
     fi
+    [ -e "$0.slow" ] && sleep 3
     out=""; build=""; prev=""
     for a in "$@"; do [ "$prev" = "--output-dir" ] && out="$a"; [ "$prev" = "--build-path" ] && build="$a"; prev="$a"; last="$a"; done
     name=$(basename "$last")
@@ -4846,4 +4847,136 @@ async fn arduino_sketches_open_and_build_in_place() {
         std::fs::read_to_string(sketch.join(".clangd")).unwrap(),
         "CompileFlags:\n  Add: [-DMINE]\n"
     );
+}
+
+/// Watching the user's own sketch (phase 7.4): a save is seen once, settled, and
+/// rebuilt; an editor's swap file is not a save; a breakpoint past the new end of its
+/// file is dropped; a newer save stops the build in progress.
+#[cfg(unix)]
+#[tokio::test]
+async fn watched_sketches_rebuild_on_save() {
+    use std::time::Duration;
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let sketch = d.path().join("Blinky");
+    std::fs::create_dir_all(&sketch).unwrap();
+    let ino = sketch.join("Blinky.ino");
+    std::fs::write(&ino, "void setup() {}\nvoid loop() {}\n\n\n\n").unwrap();
+    let r = c
+        .call("local.open", json!({ "path": sketch }))
+        .await
+        .unwrap();
+    let id = r["project"]["id"].as_str().unwrap().to_owned();
+    c.call(
+        "breakpoints.set",
+        json!({ "project": id, "breakpoints": ["Blinky.ino:5", "loop"] }),
+    )
+    .await
+    .unwrap();
+    let params = json!({ "project": id, "board": "esp32" });
+    assert_valid(
+        &method_def("watch.start")["params"],
+        &params,
+        "watch.start params",
+    );
+    let r = c.call("watch.start", params).await.unwrap();
+    assert_valid(
+        &method_def("watch.start")["result"],
+        &r,
+        "watch.start result",
+    );
+    let watch = r["subscription"].clone();
+
+    // The next events on the watch, checked against their schemas; none for `quiet`.
+    async fn next(c: &mut Client, within: Duration) -> Option<Value> {
+        let n = tokio::time::timeout(within, c.next_notification())
+            .await
+            .ok()?
+            .unwrap();
+        let event = n["method"].as_str().unwrap().to_owned();
+        assert_valid(&method_def(&event)["params"], &n["params"], &event);
+        Some(n)
+    }
+    // A save the moment watch.start answered is a change (the first look at the files is
+    // taken before the answer).
+    std::fs::write(sketch.join("pins.h"), "#define LED 2\n").unwrap();
+    let n = next(&mut c, Duration::from_secs(5))
+        .await
+        .expect("watch.changed for pins.h");
+    assert_eq!(n["params"]["files"], json!(["pins.h"]), "{n}");
+    loop {
+        let n = next(&mut c, Duration::from_secs(10))
+            .await
+            .expect("build.finished");
+        if n["method"] == "build.finished" {
+            break;
+        }
+    }
+    // An editor's swap file: nothing.
+    std::fs::write(sketch.join(".Blinky.ino.swp"), "x").unwrap();
+    assert!(next(&mut c, Duration::from_millis(1200)).await.is_none());
+
+    // A save that shortens the file: seen, the breakpoint on line 5 dropped, rebuilt.
+    std::fs::write(&ino, "void setup() {}\nvoid loop() { }\n").unwrap();
+    let n = next(&mut c, Duration::from_secs(5))
+        .await
+        .expect("watch.changed");
+    assert_eq!(n["method"], "watch.changed", "{n}");
+    assert_eq!(n["params"]["subscription"], watch);
+    assert_eq!(n["params"]["files"], json!(["Blinky.ino"]));
+    assert_eq!(n["params"]["droppedBreakpoints"], json!(["Blinky.ino:5"]));
+    let kept = c
+        .call("breakpoints.get", json!({ "project": id }))
+        .await
+        .unwrap();
+    assert_eq!(kept["breakpoints"], json!(["loop"]));
+    let n = next(&mut c, Duration::from_secs(5))
+        .await
+        .expect("watch.building");
+    assert_eq!(n["method"], "watch.building", "{n}");
+    let done = loop {
+        let n = next(&mut c, Duration::from_secs(10))
+            .await
+            .expect("build.finished");
+        if n["method"] == "build.finished" {
+            break n;
+        }
+    };
+    assert_eq!(done["params"]["ok"], true, "{done}");
+
+    // A save during a (slow) build: that build is stopped, the newer one finishes.
+    std::fs::write(d.path().join("fake-arduino-cli.slow"), "").unwrap();
+    std::fs::write(&ino, "void setup() {}\nvoid loop() { delay(1); }\n").unwrap();
+    loop {
+        let n = next(&mut c, Duration::from_secs(5))
+            .await
+            .expect("watch.building");
+        if n["method"] == "watch.building" {
+            break;
+        }
+    }
+    std::fs::write(&ino, "void setup() {}\nvoid loop() { delay(2); }\n").unwrap();
+    let mut finished = 0;
+    let mut changed_again = false;
+    while let Some(n) = next(&mut c, Duration::from_secs(8)).await {
+        match n["method"].as_str().unwrap() {
+            "watch.changed" => {
+                assert_eq!(
+                    finished, 0,
+                    "the first build finished before the newer save stopped it"
+                );
+                changed_again = true;
+            }
+            "build.finished" => {
+                finished += 1;
+                assert_eq!(n["params"]["ok"], true, "{n}");
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(changed_again);
+    assert_eq!(finished, 1);
+    let _ = std::fs::remove_file(d.path().join("fake-arduino-cli.slow"));
 }

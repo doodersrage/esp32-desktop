@@ -2115,6 +2115,14 @@ Das Build-Fenster unten hat das ganze Protokoll.</translation>
         <translation>%1 · %2</translation>
     </message>
     <message>
+        <source>Saved %1: building…</source>
+        <translation>%1 gespeichert: wird kompiliert…</translation>
+    </message>
+    <message>
+        <source>Breakpoints on lines that are no longer there were removed: %1</source>
+        <translation>Haltepunkte auf Zeilen, die es nicht mehr gibt, wurden entfernt: %1</translation>
+    </message>
+    <message>
         <source>clangd was not set up: %1</source>
         <translation>clangd wurde nicht eingerichtet: %1</translation>
     </message>
@@ -3157,6 +3165,14 @@ Doppelklicken, um die Zeile zu sehen.</translation>
     <message>
         <source>Board:</source>
         <translation>Board:</translation>
+    </message>
+    <message>
+        <source>Rebuild and run on save</source>
+        <translation>Beim Speichern neu kompilieren und ausführen</translation>
+    </message>
+    <message>
+        <source>Each time you save a file of this project in your editor, build it for the board shown and run it in the simulator, or restart the run (parts, wiring and breakpoints are kept). A failed build leaves the last one running.</source>
+        <translation>Bei jedem Speichern einer Datei dieses Projekts in Ihrem Editor wird es für das gezeigte Board kompiliert und im Simulator ausgeführt oder der Lauf neu gestartet (Bauteile, Verdrahtung und Haltepunkte bleiben). Ein fehlgeschlagener Build lässt den letzten weiterlaufen.</translation>
     </message>
     <message>
         <source>Could not load the project: %1</source>

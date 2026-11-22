@@ -2115,6 +2115,14 @@ O painel Compilação abaixo tem o log completo.</translation>
         <translation>%1 · %2</translation>
     </message>
     <message>
+        <source>Saved %1: building…</source>
+        <translation>%1 salvo: compilando…</translation>
+    </message>
+    <message>
+        <source>Breakpoints on lines that are no longer there were removed: %1</source>
+        <translation>Pontos de interrupção em linhas que não existem mais foram removidos: %1</translation>
+    </message>
+    <message>
         <source>clangd was not set up: %1</source>
         <translation>O clangd não foi configurado: %1</translation>
     </message>
@@ -3157,6 +3165,14 @@ Clique duas vezes para ver a linha.</translation>
     <message>
         <source>Board:</source>
         <translation>Placa:</translation>
+    </message>
+    <message>
+        <source>Rebuild and run on save</source>
+        <translation>Recompilar e rodar ao salvar</translation>
+    </message>
+    <message>
+        <source>Each time you save a file of this project in your editor, build it for the board shown and run it in the simulator, or restart the run (parts, wiring and breakpoints are kept). A failed build leaves the last one running.</source>
+        <translation>Cada vez que você salvar um arquivo deste projeto no seu editor, ele é compilado para a placa mostrada e roda no simulador, ou a execução reinicia (peças, fiação e pontos de interrupção são mantidos). Uma compilação que falhar deixa a anterior rodando.</translation>
     </message>
     <message>
         <source>Could not load the project: %1</source>

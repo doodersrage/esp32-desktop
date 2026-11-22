@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 46;
+    static constexpr int ProtocolMinor = 47;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -145,6 +145,9 @@ public:
     // Stop the simulation and start the same build again, debugged if it was.
     void restartSim();
     bool canRestartSim() const { return !m_simProject.isEmpty() && m_simSub >= 0; }
+    // The project and board the simulation (running or last started) is of.
+    QString simProject() const { return m_simProject; }
+    QString simBoard() const { return m_simBoard; }
     // serial.sendFile / sim.sendFile: a text file, line by line (fileSent).
     void sendSerialFile(const QString &path, const QString &ending, int lineDelay);
     void sendSimFile(const QString &path, const QString &ending, int lineDelay);
@@ -233,6 +236,15 @@ public:
     // clangd.setup: a .clangd in a local project for its build for `board`
     // (clangdReady with the result, else requestFailed).
     void setupClangd(const QString &project, const QString &board);
+    // watch.start (phase 7.4): rebuild the user's own project for `board` after each save,
+    // its builds reported like any other (buildStarted, buildLog, buildFinished...), then
+    // watchBuilt. One watch at a time: watching another stops the last.
+    void startWatch(const QString &project, const QString &board);
+    void stopWatch();
+    bool isWatching(const QString &project, const QString &board) const
+    {
+        return m_watchSub != 0 && m_watchProject == project && m_watchBoard == board;
+    }
     // circuit.pinNotes: a board's pins to be careful with (pinNotesListed).
     void getPinNotes(const QString &board);
     // circuit.export / circuit.import: a board's parts to or from a file.
@@ -292,6 +304,11 @@ signals:
     void buildDiagnostics(const QJsonArray &diagnostics);
     // clangd.setup's result: {clangd, compilationDatabase, queryDriver}.
     void clangdReady(const QJsonObject &result);
+    // A watched project's files changed (watch.changed): which, and the breakpoints
+    // dropped because their line is gone.
+    void watchChanged(const QStringList &files, const QStringList &droppedBreakpoints);
+    // A watched project's build finished (after buildFinished).
+    void watchBuilt(bool ok);
     // Serial monitor.
     void serialOpened(const QString &path, int baud);
     // `shown`: the text without colour codes (protocol 0.27; undefined from older
@@ -442,7 +459,12 @@ private:
     void onSocketConnected();
     void onNotification(const QString &method, const QJsonObject &params);
     void finishLibraryRefresh(const QJsonObject &params);
-    void handleBuildEvent(const QString &method, const QJsonObject &params);
+    // `watched`: a watched project's build (watch.start), which is not m_buildJob.
+    void handleBuildEvent(const QString &method, const QJsonObject &params, bool watched = false);
+    void handleWatchEvent(const QString &method, const QJsonObject &params);
+    qint64 m_watchSub = 0; // 0: none; -1: asked for
+    QString m_watchProject;
+    QString m_watchBoard;
     void handleSerialEvent(const QString &method, const QJsonObject &params);
     void handleInstallEvent(const QString &method, const QJsonObject &params);
     void startBoardJob(const QString &operation, const QString &method, const QJsonObject &params,

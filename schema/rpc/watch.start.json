@@ -1,0 +1,47 @@
+{
+  "method": "watch.start",
+  "description": "Since protocol 0.47: watch one of the user's own projects for saves and rebuild it for `board` after each (phase 7.4). The core looks at the project's files a few times a second (build folders, version control, hidden files and editors' temporary files left out), waits for a save to settle, then sends watch.changed and watch.building and builds, with build.start's events (build.log, build.finished) on this subscription. One build at a time: a newer save stops the build in progress and starts again. Breakpoints whose line is no longer in its file are dropped (breakpoints.get) and named in watch.changed. It runs until core.unsubscribe or job.cancel. No consent is asked: the user chose the folder.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "board"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "description": "A local project's id."
+      },
+      "board": {
+        "type": "string"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "project": "local-1b6c57715d28",
+        "board": "esp32c3-supermini"
+      },
+      "result": {
+        "subscription": 4
+      }
+    }
+  ]
+}

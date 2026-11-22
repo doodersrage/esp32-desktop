@@ -69,6 +69,10 @@ CoreConnection::CoreConnection(QObject *parent)
             m_libraryJob = 0;
             emit libraryRefreshed(false, tr("The connection to the core was lost."));
         }
+        // The watch ended with the connection; the app asks again once reconnected.
+        m_watchSub = 0;
+        m_watchProject.clear();
+        m_watchBoard.clear();
         // After an incompatible handshake we hang up on purpose; stay in that state
         // instead of retrying the same core forever.
         if (m_state == State::Incompatible)
@@ -267,6 +271,8 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
     if (method == u"device.changed" && sub == m_devicesSubscription) {
         emit deviceAdvice(params.value(u"advice"_s).toArray());
         emit devicesListed(params.value(u"ports"_s).toArray());
+    } else if (m_watchSub > 0 && sub == m_watchSub) {
+        handleWatchEvent(method, params);
     } else if (method == u"build.log" || method == u"build.finished") {
         if (sub == m_buildJob)
             handleBuildEvent(method, params);
@@ -468,7 +474,63 @@ void CoreConnection::startBuild(const QString &project, const QString &board, co
     });
 }
 
-void CoreConnection::handleBuildEvent(const QString &method, const QJsonObject &params)
+void CoreConnection::handleWatchEvent(const QString &method, const QJsonObject &params)
+{
+    if (method == u"watch.changed") {
+        QStringList files, dropped;
+        for (const QJsonValue &v : params.value(u"files"_s).toArray())
+            files << v.toString();
+        for (const QJsonValue &v : params.value(u"droppedBreakpoints"_s).toArray())
+            dropped << v.toString();
+        emit watchChanged(files, dropped);
+    } else if (method == u"watch.building") {
+        emit buildStarted(params.value(u"plan"_s).toObject());
+    } else if (method == u"build.log" || method == u"build.finished") {
+        handleBuildEvent(method, params, true);
+        if (method == u"build.finished")
+            emit watchBuilt(params.value(u"ok"_s).toBool());
+    }
+}
+
+void CoreConnection::startWatch(const QString &project, const QString &board)
+{
+    if (isWatching(project, board))
+        return;
+    stopWatch();
+    m_watchSub = -1;
+    m_watchProject = project;
+    m_watchBoard = board;
+    m_client->call(u"watch.start"_s, {{u"project"_s, project}, {u"board"_s, board}}, this,
+                   [this, project, board](const RpcReply &r) {
+                       if (m_watchProject != project || m_watchBoard != board) {
+                           // Stopped or replaced meanwhile.
+                           if (r.ok)
+                               m_client->call(u"core.unsubscribe"_s,
+                                              {{u"subscription"_s, r.result.toObject().value(u"subscription"_s).toInteger()}},
+                                              this, [](const RpcReply &) {});
+                           return;
+                       }
+                       if (!r.ok) {
+                           m_watchSub = 0;
+                           m_watchProject.clear();
+                           m_watchBoard.clear();
+                           emit requestFailed(u"watch.start"_s, r.errorMessage);
+                           return;
+                       }
+                       m_watchSub = r.result.toObject().value(u"subscription"_s).toInteger();
+                   });
+}
+
+void CoreConnection::stopWatch()
+{
+    const qint64 sub = std::exchange(m_watchSub, 0);
+    m_watchProject.clear();
+    m_watchBoard.clear();
+    if (sub > 0)
+        m_client->call(u"core.unsubscribe"_s, {{u"subscription"_s, sub}}, this, [](const RpcReply &) {});
+}
+
+void CoreConnection::handleBuildEvent(const QString &method, const QJsonObject &params, bool watched)
 {
     if (method == u"build.log") {
         emit buildLog(params.value(u"stream"_s).toString(), params.value(u"line"_s).toString(),
@@ -477,7 +539,8 @@ void CoreConnection::handleBuildEvent(const QString &method, const QJsonObject &
             emit outputExplained(u"build"_s, params.value(u"explain"_s).toArray());
         return;
     }
-    m_buildJob = 0;
+    if (!watched)
+        m_buildJob = 0;
     if (params.contains(u"firstError"_s))
         emit buildFirstError(params.value(u"firstError"_s).toObject());
     // Every error and warning (protocol 0.44); none is an empty list.

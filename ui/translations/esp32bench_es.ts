@@ -2115,6 +2115,14 @@ El panel Compilación de abajo tiene el registro completo.</translation>
         <translation>%1 · %2</translation>
     </message>
     <message>
+        <source>Saved %1: building…</source>
+        <translation>%1 guardado: compilando…</translation>
+    </message>
+    <message>
+        <source>Breakpoints on lines that are no longer there were removed: %1</source>
+        <translation>Se quitaron los puntos de interrupción en líneas que ya no existen: %1</translation>
+    </message>
+    <message>
         <source>clangd was not set up: %1</source>
         <translation>clangd no se configuró: %1</translation>
     </message>
@@ -3157,6 +3165,14 @@ Haz doble clic para ver la línea.</translation>
     <message>
         <source>Board:</source>
         <translation>Placa:</translation>
+    </message>
+    <message>
+        <source>Rebuild and run on save</source>
+        <translation>Recompilar y ejecutar al guardar</translation>
+    </message>
+    <message>
+        <source>Each time you save a file of this project in your editor, build it for the board shown and run it in the simulator, or restart the run (parts, wiring and breakpoints are kept). A failed build leaves the last one running.</source>
+        <translation>Cada vez que guardes un archivo de este proyecto en tu editor, se compila para la placa mostrada y se ejecuta en el simulador, o se reinicia la ejecución (se conservan las piezas, el cableado y los puntos de interrupción). Una compilación fallida deja en marcha la anterior.</translation>
     </message>
     <message>
         <source>Could not load the project: %1</source>

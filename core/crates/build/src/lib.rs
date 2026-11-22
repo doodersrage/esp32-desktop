@@ -23,6 +23,7 @@ pub mod clangd;
 pub mod diagnostics;
 pub mod idf;
 pub mod sketch;
+pub mod watch;
 
 /// Overrides the arduino-cli binary (tests use a stand-in).
 pub const ARDUINO_CLI_ENV: &str = "ESP32BENCH_ARDUINO_CLI";

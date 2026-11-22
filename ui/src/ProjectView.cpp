@@ -8,6 +8,8 @@
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
+#include <QSettings>
+#include <QCheckBox>
 #include <QStandardPaths>
 #include <QLocale>
 #include <QGuiApplication>
@@ -352,6 +354,21 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
         m_builtWhen = when;
     });
     boardRow->addRow(QString(), m_buildState);
+    // The edit loop (phase 7.5): the user's own project, rebuilt and run after each save
+    // in their editor. Off until turned on, per project.
+    m_watchBox = new QCheckBox(tr("Rebuild and run on save"), page);
+    m_watchBox->setToolTip(tr("Each time you save a file of this project in your editor, build it for the board "
+                              "shown and run it in the simulator, or restart the run (parts, wiring and "
+                              "breakpoints are kept). A failed build leaves the last one running."));
+    m_watchBox->hide();
+    connect(m_watchBox, &QCheckBox::toggled, this, [this](bool on) {
+        const QString id = m_project.value(u"id"_s).toString();
+        if (!m_local || id.isEmpty())
+            return;
+        QSettings().setValue(u"watch/"_s + id, on);
+        emit watchOnSaveChanged();
+    });
+    boardRow->addRow(QString(), m_watchBox);
     // Whether the project shown is built for the board shown (build.status), so Run
     // knows whether it builds first.
     connect(m_core, &CoreConnection::buildStatusReady, this,
@@ -634,6 +651,11 @@ void ProjectView::showLocal(const QJsonObject &result)
                               "from the Build dock.")
                                .arg(idf.value(u"version"_s).toString(), idf.value(u"path"_s).toString()));
 
+    {
+        const QSignalBlocker quiet(m_watchBox);
+        m_watchBox->setChecked(QSettings().value(u"watch/"_s + p.value(u"id"_s).toString(), false).toBool());
+    }
+    m_watchBox->setVisible(exists);
     m_openSite->setText(tr("Open folder"));
     m_openSite->setIcon(QIcon::fromTheme(u"folder-open"_s));
     m_copyLink->hide(); // a folder on this computer: nothing to send
@@ -696,6 +718,7 @@ void ProjectView::showResult(const QJsonObject &result)
         : m_wantBoard;
     m_wantBoard.clear();
     m_local = false;
+    m_watchBox->hide(); // the user's own projects only
     m_project = p;
     m_builds = p.value(u"builds"_s).toArray();
     m_openSite->setText(tr("Open on esp32bench.dev"));
@@ -963,4 +986,9 @@ QHash<int, QString> ProjectView::pinLabels(const QString &project, const QString
     for (auto it = labels.begin(); it != labels.end(); ++it)
         out.insert(it.key().toInt(), it.value().toString());
     return out;
+}
+
+bool ProjectView::watchOnSave() const
+{
+    return m_local && !m_watchBox->isHidden() && m_watchBox->isChecked();
 }

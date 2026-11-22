@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use esp32bench_rpc::Listener;
-use esp32bench_rpc::{Ctx, Router, RpcError, code, parse_params};
+use esp32bench_rpc::{Ctx, Router, RpcError, Subscription, code, parse_params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.46.0";
+pub const PROTOCOL: &str = "0.47.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -553,6 +553,13 @@ pub fn router(state: Arc<State>) -> Router {
         .method("plot.save", |p, _| async move { plot_save(p).await })
         .method("frame.save", |p, _| async move { frame_save(p).await })
         .method("editor.open", |p, _| async move { editor_open(p) })
+        .method("watch.start", {
+            let s = stars.clone();
+            move |p, ctx| {
+                let s = s.clone();
+                async move { watch_start(p, ctx, s).await }
+            }
+        })
         .method("clangd.setup", {
             let s = stars.clone();
             move |p, _| {
@@ -863,12 +870,7 @@ fn build_error(e: esp32bench_build::Error) -> RpcError {
 async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: BuildParams = parse_params(params)?;
     if esp32bench_build::idf::is_local(&p.project) {
-        if let Some(project) = state.local.get(&p.project)
-            && project.kind == esp32bench_build::idf::LocalKind::Arduino
-        {
-            return sketch_build_start(project, p.board, ctx, state).await;
-        }
-        return local_build_start(p, ctx, state);
+        return local_build_start(p, ctx, state).await;
     }
     let manifest = state
         .library
@@ -1482,58 +1484,38 @@ fn prebuilt_start(
     Ok(json!({ "job": job, "plan": result_plan }))
 }
 
-/// An ESP-IDF build of a local project. The user opened the folder, so no consent is
-/// asked for (rule 4 is about downloaded projects); the events are build.start's.
-fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
-    use esp32bench_build::{Error as E, idf};
-    esp32bench_build::safe_id(&p.board).map_err(build_error)?;
-    let project = state
-        .local
-        .get(&p.project)
-        .ok_or_else(|| build_error(E::NoLocalProject(p.project.clone())))?;
-    let install = state.idf().ok_or_else(|| build_error(E::NoIdf))?;
-    let plan = idf::plan(&project, &p.board, &install).map_err(build_error)?;
-    let result_plan = plan.clone();
-    let job = ctx.subscribe(move |sub| async move {
-        let _one_at_a_time = state.build_lock.lock().await;
-        let started = std::time::Instant::now();
-        let dirs = idf::Dirs::new(&state.builds_root, &plan);
-        let mut first = esp32bench_build::diagnostics::Finder::new(Some(&plan.path));
-        let mut all = esp32bench_build::diagnostics::Collector::new(Some(&plan.path));
-        let r = idf::run(&plan, &dirs, |stream, line| {
-            first.line(&line);
-            all.line(&line);
-            let mut params = json!({ "stream": stream, "line": line });
-            if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
-                params["level"] = json!(level);
-                if let Some(at) = first.location(&line) {
-                    params["location"] = json!(at);
-                }
-            }
-            sub.send("build.log", params);
-        })
-        .await;
-        if r.is_ok() {
-            esp32bench_build::write_stamp(&dirs.out, &plan);
-        }
-        let mut event = finished_event(r, first.first(), all.diagnostics());
-        // How long it took, in tenths of a second (not counting a wait for another build).
-        event["seconds"] = json!((started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
-        sub.send("build.finished", event);
-    });
-    Ok(json!({ "job": job, "plan": result_plan }))
+/// A build of the user's own project (no consent asked: the user chose the folder;
+/// rule 4 is about downloaded projects): ESP-IDF's, for a chip, or (phase 7) an Arduino
+/// sketch's, in place for a library board.
+#[derive(Clone)]
+enum LocalBuild {
+    Idf(esp32bench_build::idf::Plan),
+    Sketch(esp32bench_build::sketch::Plan, esp32bench_build::Toolchain),
 }
 
-/// A build of the user's own Arduino sketch (phase 7): in place, for a board from the
-/// library, with no consent asked (it is their folder); the events are build.start's.
-async fn sketch_build_start(
-    project: esp32bench_build::idf::LocalProject,
-    board: String,
-    ctx: Ctx,
-    state: Arc<State>,
-) -> Result<Value, RpcError> {
-    use esp32bench_build::sketch;
-    esp32bench_build::safe_id(&board).map_err(build_error)?;
+impl LocalBuild {
+    fn plan_json(&self) -> Value {
+        match self {
+            LocalBuild::Idf(plan) => json!(plan),
+            LocalBuild::Sketch(plan, _) => json!(plan),
+        }
+    }
+}
+
+/// How the user's project `project` builds for `board`, checked before anything runs.
+async fn local_plan(state: &State, project: &str, board: &str) -> Result<LocalBuild, RpcError> {
+    use esp32bench_build::{Error as E, idf, sketch};
+    esp32bench_build::safe_id(board).map_err(build_error)?;
+    let project = state
+        .local
+        .get(project)
+        .ok_or_else(|| build_error(E::NoLocalProject(project.to_owned())))?;
+    if project.kind == idf::LocalKind::Idf {
+        let install = state.idf().ok_or_else(|| build_error(E::NoIdf))?;
+        return Ok(LocalBuild::Idf(
+            idf::plan(&project, board, &install).map_err(build_error)?,
+        ));
+    }
     let tools = match &state.arduino_cli {
         Some(cli) => esp32bench_build::Toolchain {
             arduino_cli: cli.clone(),
@@ -1550,45 +1532,158 @@ async fn sketch_build_start(
             .iter()
             .find(|b| b.id == board)
             .and_then(|b| b.build_as.clone())
-            .unwrap_or_else(|| board.clone()),
-        _ => board.clone(),
+            .unwrap_or_else(|| board.to_owned()),
+        _ => board.to_owned(),
     };
-    let plan = sketch::plan(&project.id, &project.path, &board, &target).map_err(build_error)?;
-    let result_plan = plan.clone();
+    let plan = sketch::plan(&project.id, &project.path, board, &target).map_err(build_error)?;
+    Ok(LocalBuild::Sketch(plan, tools))
+}
+
+/// Run a local build, sending build.start's events (build.log, build.finished) to
+/// `sub`; one build at a time. Dropping the future stops it, compilers and all.
+async fn run_local(state: Arc<State>, build: LocalBuild, sub: &Subscription) {
+    use esp32bench_build::{idf, sketch};
+    let _one_at_a_time = state.build_lock.lock().await;
+    let started = std::time::Instant::now();
+    let path = match &build {
+        LocalBuild::Idf(plan) => plan.path.clone(),
+        LocalBuild::Sketch(plan, _) => plan.path.clone(),
+    };
+    let mut first = esp32bench_build::diagnostics::Finder::new(Some(&path));
+    let mut all = esp32bench_build::diagnostics::Collector::new(Some(&path));
+    let mut size = esp32bench_build::diagnostics::SizeReader::default();
+    let log = |stream: esp32bench_build::Stream, line: String| {
+        first.line(&line);
+        all.line(&line);
+        size.line(&line);
+        let mut params = json!({ "stream": stream, "line": line });
+        if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
+            params["level"] = json!(level);
+            if let Some(at) = first.location(&line) {
+                params["location"] = json!(at);
+            }
+        }
+        sub.send("build.log", params);
+    };
+    let r = match &build {
+        LocalBuild::Idf(plan) => {
+            let dirs = idf::Dirs::new(&state.builds_root, plan);
+            let r = idf::run(plan, &dirs, log).await;
+            if r.is_ok() {
+                esp32bench_build::write_stamp(&dirs.out, plan);
+            }
+            r
+        }
+        LocalBuild::Sketch(plan, tools) => {
+            let dirs = sketch::Dirs::new(&state.builds_root, plan);
+            let r = sketch::run(plan, tools, &dirs, log).await;
+            if r.is_ok() {
+                esp32bench_build::write_stamp(&dirs.out, plan);
+            }
+            r
+        }
+    };
+    let mut event = finished_event(r, first.first(), all.diagnostics());
+    if event["ok"] == true
+        && let Some(sz) = size.size()
+    {
+        event["size"] = json!(sz);
+    }
+    // How long it took, in tenths of a second (not counting a wait for another build).
+    event["seconds"] = json!((started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
+    sub.send("build.finished", event);
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectWatchParams {
+    project: String,
+    board: String,
+}
+
+/// How often a watched project's files are looked at, and how long they must stay the
+/// same before a save counts as finished (editors write in several steps).
+const WATCH_EVERY: std::time::Duration = std::time::Duration::from_millis(300);
+const WATCH_SETTLE: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// watch.start: rebuild the user's own project after each save (phase 7.4).
+async fn watch_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    use esp32bench_build::watch::{Snapshot, stale_breakpoints};
+    let p: ProjectWatchParams = parse_params(params)?;
+    // Checked now, so a project that cannot build is refused rather than watched.
+    local_plan(&state, &p.project, &p.board).await?;
+    let project = state
+        .local
+        .get(&p.project)
+        .ok_or_else(|| build_error(esp32bench_build::Error::NoLocalProject(p.project.clone())))?;
+    // Taken before the reply, so a save made as soon as it arrives is seen as a change.
+    let first = Snapshot::scan(&project.path);
     let job = ctx.subscribe(move |sub| async move {
-        let _one_at_a_time = state.build_lock.lock().await;
-        let started = std::time::Instant::now();
-        let dirs = sketch::Dirs::new(&state.builds_root, &plan);
-        let mut first = esp32bench_build::diagnostics::Finder::new(Some(&plan.path));
-        let mut all = esp32bench_build::diagnostics::Collector::new(Some(&plan.path));
-        let mut size = esp32bench_build::diagnostics::SizeReader::default();
-        let r = sketch::run(&plan, &tools, &dirs, |stream, line| {
-            first.line(&line);
-            all.line(&line);
-            size.line(&line);
-            let mut params = json!({ "stream": stream, "line": line });
-            if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
-                params["level"] = json!(level);
-                if let Some(at) = first.location(&line) {
-                    params["location"] = json!(at);
+        let sub = Arc::new(sub);
+        let mut seen = first;
+        let mut build: Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>> = None;
+        let mut tick = tokio::time::interval(WATCH_EVERY);
+        loop {
+            tokio::select! {
+                _ = tick.tick() => {
+                    let mut now = Snapshot::scan(&project.path);
+                    if now.changed_since(&seen).is_empty() {
+                        continue;
+                    }
+                    // Settled: the same twice in a row.
+                    loop {
+                        tokio::time::sleep(WATCH_SETTLE).await;
+                        let again = Snapshot::scan(&project.path);
+                        if again == now {
+                            break;
+                        }
+                        now = again;
+                    }
+                    let files = now.changed_since(&seen);
+                    seen = now;
+                    let kept = state.breakpoints.get(&project.id);
+                    let stale = stale_breakpoints(&project.path, &seen, &kept);
+                    if !stale.is_empty() {
+                        let left: Vec<String> = kept.into_iter().filter(|k| !stale.contains(k)).collect();
+                        let _ = state.breakpoints.set(&project.id, left);
+                    }
+                    let mut changed = json!({ "files": files });
+                    if !stale.is_empty() {
+                        changed["droppedBreakpoints"] = json!(stale);
+                    }
+                    if !sub.send("watch.changed", changed) {
+                        return;
+                    }
+                    // A newer save: replacing the build in progress (if any) drops it,
+                    // which stops it, compilers and all.
+                    let (state, sub, id, board) = (state.clone(), sub.clone(), project.id.clone(), p.board.clone());
+                    build = Some(Box::pin(async move {
+                        match local_plan(&state, &id, &board).await {
+                            Ok(b) => {
+                                sub.send("watch.building", json!({ "plan": b.plan_json() }));
+                                run_local(state, b, &sub).await;
+                            }
+                            Err(e) => {
+                                sub.send("build.finished", json!({ "ok": false, "error": e.message }));
+                            }
+                        }
+                    }));
+                }
+                _ = async { build.as_mut().expect("guarded").await }, if build.is_some() => {
+                    build = None;
                 }
             }
-            sub.send("build.log", params);
-        })
-        .await;
-        if r.is_ok() {
-            esp32bench_build::write_stamp(&dirs.out, &plan);
         }
-        let mut event = finished_event(r, first.first(), all.diagnostics());
-        if event["ok"] == true
-            && let Some(sz) = size.size()
-        {
-            event["size"] = json!(sz);
-        }
-        event["seconds"] = json!((started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
-        sub.send("build.finished", event);
     });
-    Ok(json!({ "job": job, "plan": result_plan }))
+    Ok(json!({ "subscription": job }))
+}
+
+/// build.start for the user's own project.
+async fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let build = local_plan(&state, &p.project, &p.board).await?;
+    let plan = build.plan_json();
+    let job = ctx.subscribe(move |sub| async move { run_local(state, build, &sub).await });
+    Ok(json!({ "job": job, "plan": plan }))
 }
 
 /// The boards a sketch builds for: the library's that this program has a board package

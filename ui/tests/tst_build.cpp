@@ -42,6 +42,16 @@ public:
     QStringList statusRequests; // each build.status, as project/board
     QList<QJsonObject> opened; // each editor.open's params
     QList<QJsonObject> clangd; // each clangd.setup's params
+    QList<QJsonObject> watches; // each watch.start's params
+    QList<QJsonObject> simStarts; // each sim.start's params
+    QPointer<QLocalSocket> watchSocket;
+    // An event on the watch (subscription 21).
+    void watchEvent(const QString &method, QJsonObject params)
+    {
+        params[u"subscription"_s] = 21;
+        if (watchSocket)
+            send(watchSocket, {{u"jsonrpc"_s, u"2.0"_s}, {u"method"_s, method}, {u"params"_s, params}});
+    }
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -77,6 +87,18 @@ private:
                                {u"target"_s, u"esp32"_s}, {u"fqbn"_s, u"esp32:esp32:esp32:FlashMode=dio"_s},
                                {u"codeSha256"_s, QString(64, u'a')},
                                {u"install"_s, QJsonArray{u"Adafruit NeoPixel"_s}}};
+        if (method == u"watch.start") {
+            watches << params;
+            watchSocket = s;
+            send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id}, {u"result"_s, QJsonObject{{u"subscription"_s, 21}}}});
+            return;
+        }
+        if (method == u"sim.start") {
+            simStarts << params;
+            send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
+                     {u"error"_s, QJsonObject{{u"code"_s, -32000}, {u"message"_s, u"no simulator here"_s}}}});
+            return;
+        }
         if (method == u"clangd.setup") {
             clangd << params;
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
@@ -93,7 +115,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.46.0"_s}}}});
+                                               {u"protocol"_s, u"0.47.0"_s}}}});
         } else if (method == u"build.status") {
             statusRequests << params.value(u"project"_s).toString() + u"/"_s + params.value(u"board"_s).toString();
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
@@ -297,6 +319,46 @@ private slots:
         for (int i = 0; i < tree->topLevelItemCount(); ++i)
             left += tree->topLevelItem(i)->data(ProblemsPanel::TextColumn, ProblemsPanel::DiagnosticRole).toBool() ? 1 : 0;
         QCOMPARE(left, 0);
+    }
+
+    // The edit loop (7.5): the user's sketch shown with "Rebuild and run on save" on is
+    // watched; a good build starts it in the simulator, a failed one shows Problems.
+    void runsTheWatchedProjectAfterEachGoodBuild()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        AnsweringWindow window(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QSettings().setValue(u"watch/local-1b6c57715d28"_s, true);
+        const QJsonObject sketch{
+            {u"project"_s, QJsonObject{{u"id"_s, u"local-1b6c57715d28"_s}, {u"name"_s, u"EditLoop"_s},
+                                       {u"path"_s, u"/home/u/EditLoop"_s}, {u"kind"_s, u"arduino"_s}}},
+            {u"boards"_s, QJsonArray{QJsonObject{{u"id"_s, u"esp32c3-supermini"_s}, {u"name"_s, u"ESP32-C3 SuperMini"_s},
+                                                 {u"chip"_s, u"esp32c3"_s}}}},
+            {u"idf"_s, QJsonValue::Null}, {u"exists"_s, true}, {u"sources"_s, QJsonArray{u"EditLoop.ino"_s}}};
+        window.projectView()->showLocal(sketch);
+        QVERIFY(window.projectView()->watchOnSave());
+        QTRY_COMPARE(fake.watches.size(), 1);
+        QCOMPARE(fake.watches.at(0).value(u"board"_s).toString(), u"esp32c3-supermini"_s);
+        fake.watchEvent(u"watch.changed"_s, {{u"files"_s, QJsonArray{u"EditLoop.ino"_s}}});
+        fake.watchEvent(u"watch.building"_s, {{u"plan"_s, QJsonObject{}}});
+        fake.watchEvent(u"build.finished"_s, {{u"ok"_s, true}, {u"image"_s, u"/c/x.bin"_s}});
+        QTRY_COMPARE(fake.simStarts.size(), 1);
+        QCOMPARE(fake.simStarts.at(0).value(u"project"_s).toString(), u"local-1b6c57715d28"_s);
+        // A failed build: nothing started, Problems shown.
+        fake.watchEvent(u"build.finished"_s,
+                        {{u"ok"_s, false}, {u"error"_s, u"compile failed"_s},
+                         {u"diagnostics"_s, QJsonArray{QJsonObject{{u"file"_s, u"EditLoop.ino"_s}, {u"line"_s, 3},
+                                                                    {u"severity"_s, u"error"_s}, {u"message"_s, u"x"_s}}}}});
+        QTRY_VERIFY(window.problems()->isVisibleTo(&window) || window.problems()->parentWidget()->isVisibleTo(&window));
+        QTest::qWait(100);
+        QCOMPARE(fake.simStarts.size(), 1);
+        // Turned off: the watch stops.
+        window.projectView()->watchBox()->setChecked(false);
+        QVERIFY(!core.isWatching(u"local-1b6c57715d28"_s, u"esp32c3-supermini"_s));
+        QSettings().remove(u"watch/local-1b6c57715d28"_s);
     }
 
     // clangd for the user's own project: asked first, then the editor's step shown.

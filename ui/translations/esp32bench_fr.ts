@@ -2115,6 +2115,14 @@ Le panneau Compilation ci-dessous contient tout le journal.</translation>
         <translation>%1 · %2</translation>
     </message>
     <message>
+        <source>Saved %1: building…</source>
+        <translation>%1 enregistré : compilation…</translation>
+    </message>
+    <message>
+        <source>Breakpoints on lines that are no longer there were removed: %1</source>
+        <translation>Les points d’arrêt sur des lignes qui n’existent plus ont été retirés : %1</translation>
+    </message>
+    <message>
         <source>clangd was not set up: %1</source>
         <translation>clangd n’a pas été configuré : %1</translation>
     </message>
@@ -3157,6 +3165,14 @@ Double-cliquez pour voir la ligne.</translation>
     <message>
         <source>Board:</source>
         <translation>Carte :</translation>
+    </message>
+    <message>
+        <source>Rebuild and run on save</source>
+        <translation>Recompiler et lancer à l’enregistrement</translation>
+    </message>
+    <message>
+        <source>Each time you save a file of this project in your editor, build it for the board shown and run it in the simulator, or restart the run (parts, wiring and breakpoints are kept). A failed build leaves the last one running.</source>
+        <translation>Chaque fois que vous enregistrez un fichier de ce projet dans votre éditeur, il est compilé pour la carte affichée et lancé dans le simulateur, ou l’exécution redémarre (composants, câblage et points d’arrêt conservés). Une compilation échouée laisse tourner la précédente.</translation>
     </message>
     <message>
         <source>Could not load the project: %1</source>

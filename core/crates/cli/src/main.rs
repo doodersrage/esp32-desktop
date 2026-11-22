@@ -63,6 +63,15 @@ enum Cmd {
         #[arg(long)]
         clear: bool,
     },
+    /// Rebuild one of your own projects for a board each time you save it, as the app's
+    /// "Rebuild and run on save" does: a newer save stops the build in progress. Ctrl+C
+    /// stops watching.
+    Watch {
+        /// A local project's id (`local list`).
+        project: String,
+        #[arg(long)]
+        board: String,
+    },
     /// Set up clangd for one of your own projects after a build for the board: write
     /// its `.clangd` (never over one of yours) and print the --query-driver your
     /// editor must pass to clangd.
@@ -1122,84 +1131,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             }
         }
         Cmd::Build { project, board, .. } if esp32bench_build::idf::is_local(&project) => {
-            // The user's own folder: no consent step (rule 4 is for downloaded code).
-            use esp32bench_build::idf;
-            let registry = idf::Registry::new(
-                esp32bench_sim::install::data_dir()?.join("local-projects.json"),
-            );
-            let lp = registry
-                .get(&project)
-                .ok_or_else(|| esp32bench_build::Error::NoLocalProject(project.clone()))?;
-            if lp.kind == idf::LocalKind::Arduino {
-                // The user's own Arduino sketch, built in place for a library board.
-                use esp32bench_build::sketch;
-                let manifest = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?)
-                    .load()
-                    .await?;
-                let target = manifest
-                    .as_ref()
-                    .and_then(|m| m.boards.iter().find(|b| b.id == board))
-                    .and_then(|b| b.build_as.clone())
-                    .unwrap_or_else(|| board.clone());
-                let plan = sketch::plan(&lp.id, &lp.path, &board, &target)?;
-                let tools = esp32bench_build::Toolchain::detect(
-                    esp32bench_build::default_sketchbook()
-                        .context("no data directory: set XDG_DATA_HOME or HOME")?,
-                )?;
-                eprintln!(
-                    "Build {} ({}) for {board} ({})",
-                    lp.name,
-                    lp.path.display(),
-                    plan.fqbn
-                );
-                let dirs =
-                    sketch::Dirs::new(&esp32bench_library::cache_dir()?.join("builds"), &plan);
-                let mut all = esp32bench_build::diagnostics::Collector::new(Some(&plan.path));
-                let r = sketch::run(&plan, &tools, &dirs, |stream, line| {
-                    all.line(&line);
-                    match stream {
-                        esp32bench_build::Stream::Stdout => println!("{line}"),
-                        esp32bench_build::Stream::Stderr => eprintln!("{line}"),
-                    }
-                })
-                .await;
-                print_diagnostics(all.diagnostics());
-                let out = r?;
-                esp32bench_build::write_stamp(&dirs.out, &plan);
-                eprintln!(
-                    "\nimage {}\nelf   {}",
-                    out.image.display(),
-                    out.elf.display()
-                );
-                return Ok(ExitCode::SUCCESS);
-            }
-            let install = idf::detect().ok_or(esp32bench_build::Error::NoIdf)?;
-            let plan = idf::plan(&lp, &board, &install)?;
-            eprintln!(
-                "Build {} ({}) for {} with ESP-IDF {}",
-                lp.name,
-                lp.path.display(),
-                plan.target,
-                install.version
-            );
-            let dirs = idf::Dirs::new(&esp32bench_library::cache_dir()?.join("builds"), &plan);
-            let mut all = esp32bench_build::diagnostics::Collector::new(Some(&plan.path));
-            let r = idf::run(&plan, &dirs, |stream, line| {
-                all.line(&line);
-                match stream {
-                    esp32bench_build::Stream::Stdout => println!("{line}"),
-                    esp32bench_build::Stream::Stderr => eprintln!("{line}"),
-                }
-            })
-            .await;
-            print_diagnostics(all.diagnostics());
-            let out = r?;
-            esp32bench_build::write_stamp(&dirs.out, &plan);
-            eprintln!(
-                "\nimage {}\nelf   {}",
-                out.image.display(),
-                out.elf.display()
-            );
+            local_build(&project, &board).await?;
         }
         Cmd::Build {
             project,
@@ -1388,6 +1320,55 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             };
             if !kept.is_empty() {
                 println!("{kept}");
+            }
+        }
+        Cmd::Watch { project, board } => {
+            use esp32bench_build::watch::Snapshot;
+            let registry = esp32bench_build::idf::Registry::new(
+                esp32bench_sim::install::data_dir()?.join("local-projects.json"),
+            );
+            let lp = registry
+                .get(&project)
+                .ok_or_else(|| esp32bench_build::Error::NoLocalProject(project.clone()))?;
+            eprintln!(
+                "Watching {} ({}); save to rebuild for {board}, Ctrl+C to stop",
+                lp.name,
+                lp.path.display()
+            );
+            let mut seen = Snapshot::scan(&lp.path);
+            let mut build: Option<
+                std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>>>>,
+            > = None;
+            let mut tick = tokio::time::interval(std::time::Duration::from_millis(300));
+            loop {
+                tokio::select! {
+                    _ = tick.tick() => {
+                        let mut now = Snapshot::scan(&lp.path);
+                        if now.changed_since(&seen).is_empty() {
+                            continue;
+                        }
+                        loop {
+                            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                            let again = Snapshot::scan(&lp.path);
+                            if again == now {
+                                break;
+                            }
+                            now = again;
+                        }
+                        eprintln!("\nchanged: {}", now.changed_since(&seen).join(", "));
+                        seen = now;
+                        // Replacing a build in progress stops it.
+                        let (p, b) = (project.clone(), board.clone());
+                        build = Some(Box::pin(async move { local_build(&p, &b).await }));
+                    }
+                    r = async { build.as_mut().expect("guarded").await }, if build.is_some() => {
+                        build = None;
+                        match r {
+                            Ok(()) => eprintln!("built; watching"),
+                            Err(e) => eprintln!("the build failed: {e}; watching"),
+                        }
+                    }
+                }
             }
         }
         Cmd::Clangd { project, board } => {
@@ -2398,4 +2379,88 @@ fn print_diagnostics(all: &[esp32bench_build::diagnostics::Diagnostic]) {
         }
         eprintln!("{at}{}: {}", d.severity, d.message);
     }
+}
+
+/// Build the user's own project (`local open`) for `board`: an ESP-IDF project with
+/// idf.py, a sketch in place with arduino-cli. No consent step: rule 4 is for
+/// downloaded code.
+async fn local_build(project: &str, board: &str) -> anyhow::Result<()> {
+    let (project, board) = (project.to_owned(), board.to_owned());
+    // The user's own folder: no consent step (rule 4 is for downloaded code).
+    use esp32bench_build::idf;
+    let registry =
+        idf::Registry::new(esp32bench_sim::install::data_dir()?.join("local-projects.json"));
+    let lp = registry
+        .get(&project)
+        .ok_or_else(|| esp32bench_build::Error::NoLocalProject(project.clone()))?;
+    if lp.kind == idf::LocalKind::Arduino {
+        // The user's own Arduino sketch, built in place for a library board.
+        use esp32bench_build::sketch;
+        let manifest = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?)
+            .load()
+            .await?;
+        let target = manifest
+            .as_ref()
+            .and_then(|m| m.boards.iter().find(|b| b.id == board))
+            .and_then(|b| b.build_as.clone())
+            .unwrap_or_else(|| board.clone());
+        let plan = sketch::plan(&lp.id, &lp.path, &board, &target)?;
+        let tools = esp32bench_build::Toolchain::detect(
+            esp32bench_build::default_sketchbook()
+                .context("no data directory: set XDG_DATA_HOME or HOME")?,
+        )?;
+        eprintln!(
+            "Build {} ({}) for {board} ({})",
+            lp.name,
+            lp.path.display(),
+            plan.fqbn
+        );
+        let dirs = sketch::Dirs::new(&esp32bench_library::cache_dir()?.join("builds"), &plan);
+        let mut all = esp32bench_build::diagnostics::Collector::new(Some(&plan.path));
+        let r = sketch::run(&plan, &tools, &dirs, |stream, line| {
+            all.line(&line);
+            match stream {
+                esp32bench_build::Stream::Stdout => println!("{line}"),
+                esp32bench_build::Stream::Stderr => eprintln!("{line}"),
+            }
+        })
+        .await;
+        print_diagnostics(all.diagnostics());
+        let out = r?;
+        esp32bench_build::write_stamp(&dirs.out, &plan);
+        eprintln!(
+            "\nimage {}\nelf   {}",
+            out.image.display(),
+            out.elf.display()
+        );
+        return Ok(());
+    }
+    let install = idf::detect().ok_or(esp32bench_build::Error::NoIdf)?;
+    let plan = idf::plan(&lp, &board, &install)?;
+    eprintln!(
+        "Build {} ({}) for {} with ESP-IDF {}",
+        lp.name,
+        lp.path.display(),
+        plan.target,
+        install.version
+    );
+    let dirs = idf::Dirs::new(&esp32bench_library::cache_dir()?.join("builds"), &plan);
+    let mut all = esp32bench_build::diagnostics::Collector::new(Some(&plan.path));
+    let r = idf::run(&plan, &dirs, |stream, line| {
+        all.line(&line);
+        match stream {
+            esp32bench_build::Stream::Stdout => println!("{line}"),
+            esp32bench_build::Stream::Stderr => eprintln!("{line}"),
+        }
+    })
+    .await;
+    print_diagnostics(all.diagnostics());
+    let out = r?;
+    esp32bench_build::write_stamp(&dirs.out, &plan);
+    eprintln!(
+        "\nimage {}\nelf   {}",
+        out.image.display(),
+        out.elf.display()
+    );
+    Ok(())
 }

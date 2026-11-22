@@ -249,6 +249,40 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_problemsDock->setWidget(m_problems);
     connect(m_problems, &ProblemsPanel::locationActivated, this, &MainWindow::showLocation);
     connect(m_project, &ProjectView::editRequested, this, &MainWindow::showLocation);
+    // The edit loop (phase 7.5): the user's own project rebuilt after each save and run.
+    const auto updateWatch = [this] {
+        const QString board = m_project->currentBuildBoard();
+        if (m_core->state() == CoreConnection::State::Connected && m_project->watchOnSave() && !board.isEmpty())
+            m_core->startWatch(m_project->currentProjectId(), board);
+        else
+            m_core->stopWatch();
+    };
+    connect(m_project, &ProjectView::currentChanged, this, updateWatch);
+    connect(m_project, &ProjectView::watchOnSaveChanged, this, updateWatch);
+    connect(core, &CoreConnection::stateChanged, this, updateWatch);
+    connect(core, &CoreConnection::watchChanged, this, [this](const QStringList &files, const QStringList &dropped) {
+        statusBar()->showMessage(tr("Saved %1: building…").arg(files.join(u", "_s)), 5000);
+        if (!dropped.isEmpty()) {
+            m_debugger->setProject(m_project->currentProjectId()); // its kept breakpoints again
+            m_messages->showExplanation(tr("Breakpoints on lines that are no longer there were removed: %1")
+                                            .arg(dropped.join(u", "_s)),
+                                        {});
+        }
+    });
+    connect(core, &CoreConnection::watchBuilt, this, [this](bool ok) {
+        if (!ok) {
+            // The last good build keeps running; the problems say why this one failed.
+            m_problemsDock->show();
+            m_problemsDock->raise();
+            return;
+        }
+        const QString project = m_project->currentProjectId();
+        const QString board = m_project->currentBuildBoard();
+        if (m_core->isSimRunning() && m_core->simProject() == project && m_core->simBoard() == board)
+            m_core->restartSim(); // the new build, debugged if it was; parts and breakpoints kept
+        else if (!m_core->isSimRunning())
+            m_core->startSim(project, board);
+    });
     // clangd: the app writes .clangd only after asking, as it is the user's folder.
     connect(m_project, &ProjectView::clangdRequested, this,
             [this](const QString &project, const QString &board, const QString &path) {

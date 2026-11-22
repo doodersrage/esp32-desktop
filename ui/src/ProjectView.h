@@ -13,6 +13,7 @@
 #include <utility>
 
 class CoreConnection;
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QPlainTextEdit;
@@ -87,6 +88,11 @@ public:
     // The project's id and the board id a build of it uses, or empty.
     QString currentProjectId() const;
     QString currentBuildBoard() const;
+    // Whether the project shown is one of the user's own, and set to rebuild and run on
+    // save (phase 7.5; per project, off until turned on).
+    bool isLocal() const { return m_local; }
+    bool watchOnSave() const;
+    QCheckBox *watchBox() const { return m_watchBox; }
     QString currentBoardName() const;
     QPushButton *openButton() const { return m_openSite; }
     QPushButton *copyLinkButton() const { return m_copyLink; }
@@ -125,6 +131,8 @@ signals:
     void boardSelected(const QString &project, const QString &board, const QJsonArray &pins);
     // What is shown or whether it can be built changed (currentProjectTitle(), buildAction()).
     void currentChanged();
+    // "Rebuild and run on save" was turned on or off.
+    void watchOnSaveChanged();
     // The guide's Try Blink button.
     void tryRequested();
     // Open in Arduino IDE was pressed for this project and board.
@@ -184,6 +192,7 @@ private:
     QPushButton *m_openSite;
     QPushButton *m_copyLink = nullptr;
     QToolButton *m_edit;
+    QCheckBox *m_watchBox = nullptr;
     QPushButton *m_build;
     QAction *m_buildAction;
     QComboBox *m_board;

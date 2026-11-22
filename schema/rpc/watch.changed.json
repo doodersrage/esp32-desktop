@@ -1,0 +1,43 @@
+{
+  "event": "watch.changed",
+  "description": "Since protocol 0.47: files of a watched project changed and settled (watch.start); a build follows.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "files"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "files": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Added, changed or removed, relative to the project."
+      },
+      "droppedBreakpoints": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Breakpoints removed because their line is no longer in their file."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 4,
+        "files": [
+          "EditLoop.ino"
+        ]
+      }
+    }
+  ]
+}
