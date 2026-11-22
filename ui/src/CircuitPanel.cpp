@@ -444,6 +444,18 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     tools->addWidget(m_remove);
     tools->addWidget(m_duplicate);
     tools->addWidget(m_paste);
+    m_copyPicture = new QToolButton(this);
+    m_copyPicture->setIcon(QIcon::fromTheme(u"edit-copy"_s));
+    m_copyPicture->setText(tr("Copy picture"));
+    m_copyPicture->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_copyPicture->setToolTip(tr("Copy the circuit as a picture, to show its wiring in a question or a README"));
+    connect(m_copyPicture, &QToolButton::clicked, this, [this] {
+        const QImage image = picture();
+        if (!image.isNull()) {
+            QGuiApplication::clipboard()->setImage(image);
+            m_status->setText(tr("Copied the circuit as a picture."));
+        }
+    });
     tools->addWidget(m_undoButton);
     tools->addWidget(m_redoButton);
     // Zoom: Ctrl+wheel or Ctrl+= / Ctrl+- on the canvas, and Fit for all of it.
@@ -454,6 +466,7 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     m_fitButton->setToolTip(tr("Show the whole circuit (Ctrl+0); Ctrl and the mouse wheel zoom"));
     connect(m_fitButton, &QToolButton::clicked, this, &CircuitPanel::fitView);
     tools->addWidget(m_fitButton);
+    tools->addWidget(m_copyPicture);
     const auto key = [this](const QKeySequence &seq, auto slot) {
         auto *s = new QShortcut(seq, m_view, slot);
         s->setContext(Qt::WidgetWithChildrenShortcut);
@@ -932,6 +945,21 @@ void CircuitPanel::redo()
     m_undo.append(m_circuit);
     m_undoButton->setEnabled(true);
     m_core->saveCircuit(m_project, m_board, next);
+}
+
+QImage CircuitPanel::picture() const
+{
+    const QRectF area = m_scene->itemsBoundingRect().adjusted(-16, -16, 16, 16);
+    if (area.isEmpty())
+        return {};
+    // Twice the canvas's size, sharp enough to read when pasted.
+    QImage image((area.size() * 2).toSize(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(palette().color(QPalette::Base));
+    QPainter p(&image);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::TextAntialiasing);
+    m_scene->render(&p, QRectF(QPointF(0, 0), QSizeF(image.size())), area);
+    return image;
 }
 
 bool CircuitPanel::copyPart()

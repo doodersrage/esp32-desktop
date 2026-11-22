@@ -48,3 +48,15 @@ QString Labels::duration(double seconds)
     const qint64 whole = tenths / 10;
     return QCoreApplication::translate("Labels", "%1 min %2 s").arg(whole / 60).arg(whole % 60, 2, 10, QLatin1Char('0'));
 }
+
+QString Labels::forumPost(const QString &context, const QString &text)
+{
+    const QString app = QCoreApplication::translate("Labels", "ESP32 Bench %1").arg(QCoreApplication::applicationVersion());
+    const QString about = context.isEmpty() ? app : QCoreApplication::translate("Labels", "%1 · %2").arg(app, context);
+    // A fence the text cannot close.
+    const QString fence = text.contains(QStringLiteral("```")) ? QStringLiteral("~~~~") : QStringLiteral("```");
+    QString body = text;
+    while (body.endsWith(QLatin1Char('\n')))
+        body.chop(1);
+    return QStringLiteral("%1\n%2text\n%3\n%2\n").arg(about, fence, body);
+}

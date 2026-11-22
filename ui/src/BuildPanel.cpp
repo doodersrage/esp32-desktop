@@ -1,6 +1,7 @@
 #include "BuildPanel.h"
 
 #include <QTextDocument>
+#include <QToolButton>
 
 #include "ConsoleView.h"
 #include "CoreConnection.h"
@@ -126,6 +127,14 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     top->addWidget(m_problems);
     top->addWidget(m_problemsOnly);
     top->addWidget(m_copyProblems);
+    m_forum = new QToolButton(this);
+    m_forum->setIcon(QIcon::fromTheme(u"edit-copy"_s));
+    m_forum->setText(tr("Copy for a forum post"));
+    m_forum->setAccessibleName(m_forum->text());
+    m_forum->setToolTip(tr("Copy the build's errors and warnings (or the last 200 lines of the log) as a code block "
+                           "for a forum post or an issue, with the app's version, the project and the board"));
+    connect(m_forum, &QToolButton::clicked, this, [this] { QGuiApplication::clipboard()->setText(forumText()); });
+    top->addWidget(m_forum);
     top->addWidget(m_cancel);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
@@ -273,6 +282,21 @@ bool BuildPanel::cancelRunning()
         return false;
     m_cancel->click();
     return true;
+}
+
+QString BuildPanel::forumText() const
+{
+    QString text = problemLines();
+    if (text.isEmpty()) {
+        QStringList lines;
+        for (QTextBlock b = m_log->document()->begin(); b.isValid(); b = b.next())
+            lines << b.text();
+        text = lines.mid(std::max<qsizetype>(0, lines.size() - 200)).join(u'\n');
+    }
+    const QString context = m_pendingProject.isEmpty()
+        ? QString()
+        : tr("building %1 for %2").arg(m_pendingProject, m_pendingBoard);
+    return Labels::forumPost(context, text);
 }
 
 QString BuildPanel::problemLines() const

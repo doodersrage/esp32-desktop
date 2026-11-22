@@ -1,5 +1,5 @@
 {
-  "protocol": "0.35.0",
+  "protocol": "0.36.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
     "backtrace.decode",
@@ -24,6 +24,8 @@
     "debug.delete",
     "debug.evaluate",
     "debug.inspect",
+    "debug.memory",
+    "debug.watch",
     "device.list",
     "device.watch",
     "frame.save",
@@ -66,6 +68,7 @@
     "device.changed",
     "library.refreshed",
     "serial.backtrace",
+    "serial.bootLoop",
     "serial.closed",
     "serial.data",
     "serial.expect",
@@ -74,6 +77,7 @@
     "serial.reconnected",
     "serial.recordFailed",
     "sim.backtrace",
+    "sim.bootLoop",
     "sim.clock",
     "sim.exited",
     "sim.expect",

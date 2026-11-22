@@ -24,6 +24,7 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QMimeData>
+#include <QImage>
 #include <QTest>
 #include <QToolButton>
 
@@ -84,7 +85,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.35.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.36.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -355,6 +356,10 @@ private slots:
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"5"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
         QVERIFY(!panel.copyPart()); // nothing selected
+        // The circuit as a picture, as Copy picture copies it.
+        const QImage picture = panel.picture();
+        QVERIFY(!picture.isNull());
+        QVERIFY(picture.width() > 100 && picture.height() > 100);
 
         panel.selectPart(u"led-1"_s, true);
         QTRY_COMPARE(panel.selectedPartId(), u"led-1"_s);

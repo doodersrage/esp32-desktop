@@ -1151,6 +1151,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 (Some(elf), Some(chip)) => Some(Crashes::new(elf, chip.id())?),
                 _ => None,
             };
+            let mut boots = esp32bench_serial::bootloop::Watcher::new();
             let expect = match &expect {
                 Some(id) => {
                     let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
@@ -1196,6 +1197,9 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                             out.flush()?;
                             if let Some(c) = crashes.as_mut() {
                                 let _ = c.feed(&bytes).await;
+                            }
+                            if let Some(b) = boots.feed(&bytes, std::time::Instant::now()) {
+                                say_boot_loop(&b);
                             }
                             if let Some(progress) = checker.as_mut().and_then(|c| c.feed(&bytes))
                                 && progress.complete()
@@ -1322,6 +1326,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             let mut crashes = elf
                 .map(|e| Crashes::new(e, session.chip.id()))
                 .transpose()?;
+            let mut boots = esp32bench_serial::bootloop::Watcher::new();
             if trace.is_some() && session.pins.is_empty() && circuit.is_none() {
                 bail!("--trace records bridged pins: add --pins or --circuit");
             }
@@ -1452,6 +1457,9 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                             if let Some(c) = crashes.as_mut() {
                                 let _ = c.feed(&bytes).await;
                             }
+                            if let Some(b) = boots.feed(&bytes, std::time::Instant::now()) {
+                                say_boot_loop(&b);
+                            }
                             if let Some(lines) = joiner.as_mut().and_then(|j| j.feed(&bytes)) {
                                 eprintln!(
                                     "[joining the simulated Wi-Fi: setting the sketch's network to {}, no password]",
@@ -1525,6 +1533,22 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// A boot loop, said on stderr.
+fn say_boot_loop(b: &esp32bench_serial::bootloop::BootLoop) {
+    let reason = b
+        .reason
+        .as_deref()
+        .map(|r| format!(" ({r})"))
+        .unwrap_or_default();
+    eprintln!(
+        "\n-- boot loop: {} resets in {} s{reason}; the firmware restarts over and over",
+        b.resets, b.seconds
+    );
+    if let Some(crash) = &b.crash {
+        eprintln!("-- the last crash before it: {crash}");
+    }
 }
 
 /// Decodes the crash backtraces in output from an ELF, printing them on stderr.

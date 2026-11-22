@@ -227,6 +227,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     connect(m_core, &CoreConnection::serialOpened, this, [this](const QString &path, int baud) {
         m_output->resetDecoder();
         m_output->appendNotice(tr("Connected to %1 at %2 baud.").arg(path).arg(baud));
+        m_tools->setContext(tr("a board on %1 at %2 baud").arg(path).arg(baud));
         QSettings settings;
         settings.setValue(u"serial/lastPort"_s, path);
         settings.setValue(u"serial/lastBaud"_s, baud);
@@ -240,6 +241,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     });
     connect(m_core, &CoreConnection::serialData, m_output, &ConsoleView::appendOutput);
     connect(m_core, &CoreConnection::serialBacktrace, m_output, &ConsoleView::appendBacktrace);
+    connect(m_core, &CoreConnection::serialBootLoop, m_output, &ConsoleView::appendBootLoop);
     // The core reopens a port that comes back (a reset over the board's own USB, or
     // plugging it in again).
     connect(m_core, &CoreConnection::serialLost, this, [this] {

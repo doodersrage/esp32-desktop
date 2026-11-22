@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QWidget>
@@ -11,6 +12,8 @@ class CoreConnection;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QPlainTextEdit;
+class QTreeWidgetItem;
 class QPushButton;
 class QTreeWidget;
 
@@ -46,6 +49,18 @@ public:
     QLineEdit *watchInput() const { return m_watchInput; }
     QTreeWidget *watches() const { return m_watches; }
     void addWatch(const QString &expression);
+    // Stop when a watched expression changes (a watchpoint), while paused.
+    bool watchChanges(const QString &expression);
+    // Look in stack frame `level` (0: where it stopped): its locals, registers and
+    // watches; the line it is at is marked (frameSelected).
+    void selectFrame(int level);
+    int selectedFrame() const { return m_frame; }
+    // The memory view: an address or expression, read again at each stop.
+    QLineEdit *memoryInput() const { return m_memoryInput; }
+    QString memoryText() const;
+    void readMemory();
+    // A hex dump as the memory view shows it: address, 16 bytes in hex, and as text.
+    static QString hexDump(quint64 address, const QByteArray &bytes);
     // Stop watching it (kept for the project too).
     void removeWatch(const QString &expression);
     QStringList watchExpressions() const;
@@ -60,13 +75,17 @@ public:
 
 signals:
     void breakpointsChanged();
+    // The frame looked in: where to mark the paused line.
+    void frameSelected(const QJsonObject &frame);
 
 private:
     enum class Mode { Off, Running, Paused };
     void setMode(Mode mode);
     void addBreakpoint();
-    void stopped(const QString &reason, const QJsonObject &frame, int breakpoint);
-    void showInspection(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals);
+    void stopped(const QString &reason, const QJsonObject &frame, int breakpoint, const QJsonObject &watch);
+    void showInspection(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals, int frame);
+    // Bold a value that changed since the last stop (frame 0 only); `last` keeps them.
+    void markChanged(QTreeWidgetItem *item, int column, const QString &key, QHash<QString, QString> &last);
     void keep(const QStringList &locations);
     void evaluateWatches();
     void keepWatches();
@@ -88,6 +107,14 @@ private:
     QTreeWidget *m_locals;
     QLineEdit *m_watchInput;
     QTreeWidget *m_watches;
+    QLineEdit *m_memoryInput;
+    QPlainTextEdit *m_memory;
+    int m_frame = 0;
+    QJsonArray m_frames;
+    // Values at the last stop, to show what changed: locals, registers, watches.
+    QHash<QString, QString> m_lastLocals;
+    QHash<QString, QString> m_lastRegisters;
+    QHash<QString, QString> m_lastWatches;
     Mode m_mode = Mode::Off;
     QString m_project;
     // The kept breakpoints, and how many of them are still being set at a run's start.

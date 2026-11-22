@@ -68,7 +68,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.35.0"_s}}}});
+                                               {u"protocol"_s, u"0.36.0"_s}}}});
         } else if (method == u"build.start") {
             const QString consent = params.value(u"consent"_s).toString();
             buildRequests << (consent.isEmpty() ? u"-"_s : consent);
@@ -258,6 +258,10 @@ private slots:
         QVERIFY(!panel.goToProblem(true));
         emit core.buildLog(u"stderr"_s, u"/tmp/b/blink.ino:12:3: error: oops"_s, u"error"_s, at);
         emit core.buildLog(u"stderr"_s, u"collect2: error: ld returned 1 exit status"_s, u"error"_s);
+        // Copy for a forum post: the problems as a code block, with the project and board.
+        QVERIFY2(panel.forumText().contains(u"building blink for esp32\n```text\n/tmp/b/blink.ino:12:3: error: oops\n"_s),
+                 qPrintable(panel.forumText()));
+        QVERIFY(!panel.forumText().contains(u"Compiling"_s));
         // Copy problems: only the error and warning lines.
         QVERIFY(!panel.copyProblemsButton()->isHidden());
         QCOMPARE(panel.problemLines(),

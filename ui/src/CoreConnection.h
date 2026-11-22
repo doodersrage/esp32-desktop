@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 35;
+    static constexpr int ProtocolMinor = 36;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -199,7 +199,12 @@ public:
     void debugRunTo(const QString &location);
     // debug.evaluate: debugEvaluated, with the value or why there is none.
     void debugEvaluate(const QString &expression);
-    void debugInspect();
+    // debug.inspect of a stack frame (0: where it stopped); debugInspected says which.
+    void debugInspect(int frame = 0);
+    // debug.watch: stop when an expression changes (watchpointSet).
+    void debugWatch(const QString &expression);
+    // debug.memory: `length` bytes from the address `address` evaluates to (memoryRead).
+    void debugMemory(const QString &address, int length);
 
     // Error code the core uses when consent is missing (docs/rpc.md).
     static constexpr int ConsentRequired = -32002;
@@ -323,6 +328,9 @@ signals:
     void simStopped(const QString &reason);
     // sim.paused: the simulation was paused or resumed.
     void simPaused(bool paused);
+    // sim.bootLoop / serial.bootLoop: {resets, seconds, reason?, crash?}.
+    void simBootLoop(const QJsonObject &loop);
+    void serialBootLoop(const QJsonObject &loop);
     // A crash backtrace the core decoded from the build's ELF (sim.backtrace,
     // serial.backtrace): frames of {addr, func?, file?, line?, sketch?}.
     void simBacktrace(const QJsonArray &frames);
@@ -330,13 +338,18 @@ signals:
 
     // Debugger.
     void debugStarted();
-    void debugStopped(const QString &reason, const QJsonObject &frame, int breakpoint);
+    // `watch`: for a watchpoint, its expression and old and new value.
+    void debugStopped(const QString &reason, const QJsonObject &frame, int breakpoint, const QJsonObject &watch = {});
     void debugRunning();
     void debugExited();
     // location: what was asked for (debug.break's location).
     void breakpointSet(const QJsonObject &breakpoint, const QString &location = {});
     void breakpointDeleted(int number);
-    void debugInspected(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals = {});
+    void debugInspected(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals = {},
+                        int frame = 0);
+    void watchpointSet(int number, const QString &expression);
+    // `address` as the core says it (0x…); `asked` what was typed.
+    void memoryRead(const QString &asked, const QString &address, const QByteArray &bytes);
     // `error` is empty when the expression has a value.
     void debugEvaluated(const QString &expression, const QString &value, const QString &error);
     // A request failed. `method` is the RPC method name.

@@ -31,6 +31,13 @@ public:
     bool debugEnabled = true;
     QJsonArray kept{u"blink.ino:7"_s}; // breakpoints.get's answer for any project
     QJsonArray watches; // watches.get's
+    int inspections = 0; // debug.inspect calls; each says pin is one more
+    void stopAtWatch()
+    {
+        event(u"debug.stopped"_s, {{u"reason"_s, u"watchpoint-trigger"_s}, {u"breakpoint"_s, m_next},
+                                   {u"frame"_s, QJsonObject{{u"addr"_s, u"0x400d1a2c"_s}, {u"func"_s, u"loop"_s}}},
+                                   {u"watch"_s, QJsonObject{{u"expression"_s, u"count"_s}, {u"old"_s, u"1"_s}, {u"new"_s, u"2"_s}}}});
+    }
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -68,7 +75,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.35.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.36.0"_s}});
             return;
         }
         if (m == u"device.list" || m == u"device.watch") {
@@ -138,9 +145,15 @@ private:
         } else if (m == u"breakpoints.set") {
             kept = p.value(u"breakpoints"_s).toArray();
             reply(id, QJsonObject{{u"breakpoints"_s, kept}});
+        } else if (m == u"debug.watch") {
+            reply(id, QJsonObject{{u"watchpoint"_s, QJsonObject{{u"number"_s, ++m_next}, {u"expression"_s, p.value(u"expression"_s)}}}});
+        } else if (m == u"debug.memory") {
+            reply(id, QJsonObject{{u"address"_s, u"0x3ffb0a10"_s}, {u"bytes"_s, u"48656c6c6f00ff"_s}});
         } else if (m == u"debug.inspect") {
+            ++inspections;
             reply(id, QJsonObject{
-                          {u"locals"_s, QJsonArray{QJsonObject{{u"name"_s, u"pin"_s}, {u"type"_s, u"int"_s}, {u"arg"_s, true}, {u"value"_s, u"2"_s}},
+                          {u"frame"_s, p.value(u"frame"_s).toInt()},
+                          {u"locals"_s, QJsonArray{QJsonObject{{u"name"_s, u"pin"_s}, {u"type"_s, u"int"_s}, {u"arg"_s, true}, {u"value"_s, QString::number(inspections + 1)}},
                                                    QJsonObject{{u"name"_s, u"reading"_s}, {u"type"_s, u"Reading"_s}}}},
                           {u"frames"_s, QJsonArray{setup, QJsonObject{{u"addr"_s, u"0x400d2b40"_s}, {u"func"_s, u"loopTask"_s}}}},
                           {u"registers"_s, QJsonArray{QJsonObject{{u"name"_s, u"pc"_s}, {u"value"_s, u"0x400d1a2c"_s}},
@@ -389,6 +402,66 @@ private slots:
         dialog.setBuild(u"unbuilt"_s, u"esp32"_s, u"Unbuilt"_s);
         dialog.decodeButton()->click();
         QTRY_VERIFY(dialog.statusText().contains(u"has no build"_s));
+    }
+
+    void looksInFramesWatchesChangesAndReadsMemory()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        DebugPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        core.startSim(u"blink"_s, u"esp32"_s, true);
+        QTRY_VERIFY(core.isDebugging());
+        QTRY_COMPARE(panel.stack()->topLevelItemCount(), 2);
+        QTRY_COMPARE(panel.locals()->topLevelItemCount(), 2);
+
+        // A caller's frame: inspected there, and its line asked to be marked.
+        QSignalSpy frames(&panel, &DebugPanel::frameSelected);
+        panel.selectFrame(1);
+        QTRY_COMPARE(panel.selectedFrame(), 1);
+        QCOMPARE(frames.last().at(0).toJsonObject().value(u"func"_s).toString(), u"loopTask"_s);
+        QJsonObject asked;
+        for (const QJsonObject &c : fake.calls)
+            if (c.value(u"method"_s) == u"debug.inspect"_s)
+                asked = c.value(u"params"_s).toObject();
+        QCOMPARE(asked.value(u"frame"_s).toInt(), 1);
+        panel.selectFrame(0);
+        QTRY_COMPARE(panel.selectedFrame(), 0);
+
+        // A watchpoint from a watched expression, and its stop.
+        panel.addWatch(u"count"_s);
+        QVERIFY(panel.watchChanges(u"count"_s));
+        // No breakpoints are kept here: the watchpoint is the list's only one.
+        QTRY_COMPARE(panel.breakpoints()->count(), 1);
+        QVERIFY(panel.breakpoints()->item(0)->text().contains(u"when count changes"_s));
+        const QString pinBefore = panel.locals()->topLevelItem(0)->text(1);
+        fake.stopAtWatch();
+        QTRY_VERIFY(panel.statusText().contains(u"count changed from 1 to 2"_s));
+        // What changed since the last stop is bold.
+        QTRY_VERIFY(panel.locals()->topLevelItem(0) && panel.locals()->topLevelItem(0)->text(1) != pinBefore);
+        QVERIFY(panel.locals()->topLevelItem(0)->font(1).bold());
+        QVERIFY(!panel.locals()->topLevelItem(1)->font(1).bold()); // the struct: unchanged
+        QVERIFY(!panel.registers()->topLevelItem(0)->font(1).bold());
+
+        // Memory, as a hex dump, read again at each stop.
+        panel.memoryInput()->setText(u"&greeting"_s);
+        QTest::keyClick(panel.memoryInput(), Qt::Key_Return);
+        QTRY_VERIFY(panel.memoryText().startsWith(u"3ffb0a10  48 65 6c 6c 6f 00 ff"_s));
+        QVERIFY(panel.memoryText().endsWith(u"Hello.."_s));
+        core.stopSim();
+    }
+
+    void dumpsMemoryAsHex()
+    {
+        const QByteArray bytes = QByteArray("0123456789abcdefXY");
+        const QString dump = DebugPanel::hexDump(0x3ffb0000, bytes);
+        const QStringList rows = dump.split(u'\n');
+        QCOMPARE(rows.size(), 2);
+        QCOMPARE(rows.at(0), u"3ffb0000  30 31 32 33 34 35 36 37  38 39 61 62 63 64 65 66  0123456789abcdef"_s);
+        QVERIFY(rows.at(1).startsWith(u"3ffb0010  58 59 "_s));
+        QVERIFY(rows.at(1).endsWith(u"XY"_s));
     }
 
     void debuggerSitsBesideTheConsole()

@@ -43,6 +43,25 @@
       "breakpoint": {
         "type": "integer",
         "minimum": 1
+      },
+      "watch": {
+        "type": "object",
+        "required": [
+          "expression"
+        ],
+        "additionalProperties": false,
+        "description": "Since protocol 0.36: a watchpoint stopped it (debug.watch): its expression, and its old and new value as GDB prints them.",
+        "properties": {
+          "expression": {
+            "type": "string"
+          },
+          "old": {
+            "type": "string"
+          },
+          "new": {
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -57,6 +76,24 @@
           "func": "setup",
           "file": "/home/me/blink/blink.ino",
           "line": 4
+        }
+      }
+    },
+    {
+      "params": {
+        "subscription": 5,
+        "reason": "watchpoint-trigger",
+        "breakpoint": 3,
+        "frame": {
+          "addr": "0x400d1a40",
+          "func": "loop",
+          "file": "/b/blink.ino",
+          "line": 14
+        },
+        "watch": {
+          "expression": "count",
+          "old": "1",
+          "new": "2"
         }
       }
     }

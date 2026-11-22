@@ -13,6 +13,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPlainTextEdit>
+#include <QSignalBlocker>
 #include <QPushButton>
 #include <QSplitter>
 #include <QTreeWidget>
@@ -44,7 +46,34 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     , m_locals(new QTreeWidget(this))
     , m_watchInput(new QLineEdit(this))
     , m_watches(new QTreeWidget(this))
+    , m_memoryInput(new QLineEdit(this))
+    , m_memory(new QPlainTextEdit(this))
 {
+    m_memoryInput->setAccessibleName(tr("Memory address"));
+    m_memoryInput->setPlaceholderText(tr("Address or expression, e.g. &config or buf"));
+    m_memoryInput->setToolTip(tr("Show 256 bytes of memory from there, read again every time the firmware stops"));
+    m_memory->setAccessibleName(tr("Memory"));
+    m_memory->setReadOnly(true);
+    m_memory->setLineWrapMode(QPlainTextEdit::NoWrap);
+    m_memory->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    connect(m_memoryInput, &QLineEdit::returnPressed, this, &DebugPanel::readMemory);
+    connect(m_core, &CoreConnection::memoryRead, this,
+            [this](const QString &asked, const QString &address, const QByteArray &bytes) {
+                if (asked == m_memoryInput->text().trimmed())
+                    m_memory->setPlainText(hexDump(address.toULongLong(nullptr, 16), bytes));
+            });
+    auto *stopOnChange = new QAction(tr("Stop when it changes"), m_watches);
+    stopOnChange->setToolTip(tr("A watchpoint: the firmware stops the moment this value changes"));
+    m_watches->addAction(stopOnChange);
+    connect(stopOnChange, &QAction::triggered, this, [this] {
+        if (QTreeWidgetItem *item = m_watches->currentItem())
+            watchChanges(item->text(0));
+    });
+    connect(m_core, &CoreConnection::watchpointSet, this, [this](int number, const QString &expression) {
+        auto *item = new QListWidgetItem(tr("%1: when %2 changes").arg(number).arg(expression), m_breakpoints);
+        item->setData(NumberRole, number);
+        item->setIcon(QIcon::fromTheme(u"view-refresh"_s));
+    });
     m_watchInput->setAccessibleName(tr("Expression to watch"));
     m_watchInput->setPlaceholderText(tr("Watch an expression, e.g. count * 2 or buf[3]"));
     m_watchInput->setToolTip(tr("A C or C++ expression, read again every time the firmware stops"));
@@ -82,6 +111,8 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
                     if (item->text(0) != expression)
                         continue;
                     item->setText(1, error.isEmpty() ? value : error);
+                    if (error.isEmpty())
+                        markChanged(item, 1, expression, m_lastWatches);
                     item->setForeground(1, palette().brush(error.isEmpty() ? QPalette::Text : QPalette::PlaceholderText));
                     item->setToolTip(1, error.isEmpty() ? value : error);
                 }
@@ -154,6 +185,11 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     stackLayout->setContentsMargins(0, 0, 0, 0);
     stackLayout->addWidget(new QLabel(tr("Call stack"), stackBox));
     stackLayout->addWidget(m_stack, 1);
+    m_stack->setToolTip(tr("Click a function to see its variables and the line it is at"));
+    connect(m_stack, &QTreeWidget::itemClicked, this,
+            [this](QTreeWidgetItem *item) { selectFrame(m_stack->indexOfTopLevelItem(item)); });
+    connect(m_stack, &QTreeWidget::itemActivated, this,
+            [this](QTreeWidgetItem *item) { selectFrame(m_stack->indexOfTopLevelItem(item)); });
 
     auto *localsBox = new QWidget(this);
     auto *localsLayout = new QVBoxLayout(localsBox);
@@ -172,7 +208,14 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     splitter->addWidget(stackBox);
     splitter->addWidget(localsBox);
     splitter->addWidget(m_registers);
-    for (int i = 0; i < 4; ++i)
+    auto *memoryBox = new QWidget(this);
+    auto *memoryLayout = new QVBoxLayout(memoryBox);
+    memoryLayout->setContentsMargins(0, 0, 0, 0);
+    memoryLayout->addWidget(new QLabel(tr("Memory"), memoryBox));
+    memoryLayout->addWidget(m_memoryInput);
+    memoryLayout->addWidget(m_memory, 1);
+    splitter->addWidget(memoryBox);
+    for (int i = 0; i < 5; ++i)
         splitter->setStretchFactor(i, 1);
     // Wide enough for a register's name and a 32-bit value, and a function and its file.
     m_registers->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -404,6 +447,69 @@ bool DebugPanel::setCondition(const QString &location, const QString &condition)
     return true;
 }
 
+void DebugPanel::markChanged(QTreeWidgetItem *item, int column, const QString &key, QHash<QString, QString> &last)
+{
+    // Only where the firmware stopped: another frame's values are not "since the last stop".
+    if (m_frame != 0)
+        return;
+    const QString value = item->text(column);
+    const auto was = last.constFind(key);
+    const bool changed = was != last.constEnd() && *was != value;
+    QFont font = item->font(column);
+    font.setBold(changed);
+    item->setFont(column, font);
+    item->setToolTip(column, changed ? tr("Changed since the last stop; it was %1").arg(*was) : value);
+    last.insert(key, value);
+}
+
+bool DebugPanel::watchChanges(const QString &expression)
+{
+    if (m_mode != Mode::Paused) {
+        m_status->setText(tr("Pause the firmware first: GDB sets watchpoints only while it is stopped."));
+        return false;
+    }
+    m_core->debugWatch(expression);
+    return true;
+}
+
+void DebugPanel::selectFrame(int level)
+{
+    if (m_mode != Mode::Paused || level < 0 || level >= m_frames.size())
+        return;
+    m_core->debugInspect(level);
+}
+
+void DebugPanel::readMemory()
+{
+    const QString at = m_memoryInput->text().trimmed();
+    if (at.isEmpty() || m_mode != Mode::Paused)
+        return;
+    m_core->debugMemory(at, 256);
+}
+
+QString DebugPanel::memoryText() const
+{
+    return m_memory->toPlainText();
+}
+
+QString DebugPanel::hexDump(quint64 address, const QByteArray &bytes)
+{
+    QStringList rows;
+    for (qsizetype i = 0; i < bytes.size(); i += 16) {
+        const QByteArray row = bytes.mid(i, 16);
+        QString hex, text;
+        for (qsizetype j = 0; j < 16; ++j) {
+            hex += j < row.size() ? u"%1 "_s.arg(quint8(row.at(j)), 2, 16, QLatin1Char('0')) : u"   "_s;
+            if (j == 7)
+                hex += u' ';
+            if (j < row.size())
+                text += row.at(j) >= 0x20 && row.at(j) < 0x7f ? QChar::fromLatin1(row.at(j)) : QChar(u'.');
+        }
+        rows << u"%1  %2 %3"_s.arg(address + quint64(i), 8, 16, QLatin1Char('0')).arg(hex, text);
+    }
+    return rows.join(u'\n');
+}
+
 void DebugPanel::evaluateWatches()
 {
     for (int i = 0; i < m_watches->topLevelItemCount(); ++i)
@@ -456,7 +562,7 @@ QString DebugPanel::where(const QJsonObject &frame)
     return frame.value(u"addr"_s).toString();
 }
 
-void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int breakpoint)
+void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int breakpoint, const QJsonObject &watch)
 {
     // A breakpoint of the list (not Run to a line's temporary one).
     bool listed = false;
@@ -464,6 +570,10 @@ void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int br
         listed = listed || m_breakpoints->item(i)->data(NumberRole).toInt() == breakpoint;
     if (reason == u"paused" && frame.value(u"func"_s).toString().isEmpty())
         m_status->setText(tr("Paused before the firmware starts. Add breakpoints, then Continue."));
+    else if (!watch.isEmpty())
+        m_status->setText(tr("%1 changed from %2 to %3, in %4.")
+                              .arg(watch.value(u"expression"_s).toString(), watch.value(u"old"_s).toString(tr("?")),
+                                   watch.value(u"new"_s).toString(tr("?")), where(frame)));
     else if (reason == u"breakpoint-hit" && listed)
         m_status->setText(tr("Stopped at breakpoint %1 in %2.").arg(breakpoint).arg(where(frame)));
     else
@@ -473,12 +583,16 @@ void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int br
             m_breakpoints->setCurrentRow(i);
     }
     setMode(Mode::Paused);
-    m_core->debugInspect();
-    evaluateWatches();
+    m_frame = 0;
+    m_core->debugInspect(0);
+    readMemory();
 }
 
-void DebugPanel::showInspection(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals)
+void DebugPanel::showInspection(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals,
+                                int frame)
 {
+    m_frame = frame;
+    m_frames = frames;
     m_locals->clear();
     for (const QJsonValue &v : locals) {
         const QJsonObject l = v.toObject();
@@ -492,6 +606,7 @@ void DebugPanel::showInspection(const QJsonArray &frames, const QJsonArray &regi
             item->setToolTip(1, tr("GDB shows this kind of value (a structure or an array) only in parts"));
         }
         item->setText(2, l.value(u"type"_s).toString());
+        markChanged(item, 1, l.value(u"name"_s).toString(), m_lastLocals);
     }
     m_stack->clear();
     for (const QJsonValue &v : frames) {
@@ -509,7 +624,15 @@ void DebugPanel::showInspection(const QJsonArray &frames, const QJsonArray &regi
         auto *item = new QTreeWidgetItem(m_registers);
         item->setText(0, r.value(u"name"_s).toString());
         item->setText(1, r.value(u"value"_s).toString());
+        markChanged(item, 1, r.value(u"name"_s).toString(), m_lastRegisters);
     }
+    // The frame looked in, selected; its watches read there.
+    if (QTreeWidgetItem *at = m_stack->topLevelItem(frame)) {
+        const QSignalBlocker block(m_stack);
+        m_stack->setCurrentItem(at);
+    }
+    emit frameSelected(frames.at(frame).toObject());
+    evaluateWatches();
 }
 
 void DebugPanel::setMode(Mode mode)

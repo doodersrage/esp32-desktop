@@ -1852,6 +1852,42 @@ async fn decodes_a_pasted_backtrace() {
     }
 }
 
+// A board that resets over and over: said once, with the reason and the crash.
+#[cfg(unix)]
+#[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
+async fn serial_says_when_a_board_boot_loops() {
+    use std::os::fd::AsRawFd;
+    let (master, port) = pty();
+    let (_d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    c.call("serial.open", json!({ "path": port, "baud": 115200 }))
+        .await
+        .unwrap();
+    let boot = b"Guru Meditation Error: Core  1 panic'ed (LoadProhibited)\r\nRebooting...\r\nrst:0xc (SW_CPU_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)\r\n";
+    for _ in 0..3 {
+        // SAFETY: write a valid buffer to the pty master.
+        unsafe { libc::write(master.as_raw_fd(), boot.as_ptr().cast(), boot.len()) };
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let n = next_serial_event(&mut c, 10).await;
+    assert_eq!(n["method"], "serial.bootLoop", "{n}");
+    assert_valid(
+        &method_def("serial.bootLoop")["params"],
+        &n["params"],
+        "serial.bootLoop",
+    );
+    assert_eq!(n["params"]["resets"], 3);
+    assert_eq!(n["params"]["reason"], "SW_CPU_RESET");
+    assert_eq!(
+        n["params"]["crash"],
+        "Guru Meditation Error: Core  1 panic'ed (LoadProhibited)"
+    );
+}
+
 // Output at the wrong speed: the core says so, once, with a speed to try.
 #[cfg(unix)]
 #[tokio::test]
@@ -2545,6 +2581,19 @@ async fn sim_pauses_and_decodes_backtraces() {
     );
     // Not the sketch: the project is blink, the file hello.c.
     assert!(bt["frames"][0].get("sketch").is_none(), "{bt}");
+
+    // Three resets in a row (echoed reset lines stand in for them): a boot loop.
+    for _ in 0..3 {
+        c.call(
+            "sim.write",
+            json!({ "subscription": sub, "data": send("rst:0xc (SW_CPU_RESET),boot:0x13\r\n") }),
+        )
+        .await
+        .unwrap();
+    }
+    let (b, _) = sim_event(&mut c, &sub, "sim.bootLoop").await;
+    assert_eq!(b["resets"], 3, "{b}");
+    assert_eq!(b["reason"], "SW_CPU_RESET", "{b}");
     c.call("core.unsubscribe", json!({ "subscription": sub }))
         .await
         .unwrap();
@@ -3077,6 +3126,84 @@ async fn sim_debugs_a_build_with_gdb() {
     )
     .await
     .unwrap();
+
+    // Memory: the chip info's first four bytes, its model, little-endian 1 (CHIP_ESP32).
+    let r = c
+        .call(
+            "debug.memory",
+            json!({ "subscription": sub, "address": "&info", "length": 4 }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("debug.memory")["result"],
+        &r,
+        "debug.memory result",
+    );
+    assert_eq!(r["bytes"], "01000000", "{r}");
+    assert!(r["address"].as_str().unwrap().starts_with("0x"), "{r}");
+    match c
+        .call(
+            "debug.memory",
+            json!({ "subscription": sub, "address": "&info", "length": 5000 }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("too long a read accepted: {other:?}"),
+    }
+
+    // A watchpoint stops when FreeRTOS's tick count changes, with the old and new value.
+    let r = c
+        .call(
+            "debug.watch",
+            json!({ "subscription": sub, "expression": "xTickCount" }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("debug.watch")["result"],
+        &r,
+        "debug.watch result",
+    );
+    let wpt = r["watchpoint"]["number"].clone();
+    c.call(
+        "debug.control",
+        json!({ "subscription": sub, "action": "continue" }),
+    )
+    .await
+    .unwrap();
+    let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
+    assert_eq!(stop["reason"], "watchpoint-trigger", "{stop}");
+    assert_eq!(stop["breakpoint"], wpt, "{stop}");
+    assert_eq!(stop["watch"]["expression"], "xTickCount", "{stop}");
+    let old: u64 = stop["watch"]["old"].as_str().unwrap().parse().unwrap();
+    let new: u64 = stop["watch"]["new"].as_str().unwrap().parse().unwrap();
+    assert_eq!(new, old + 1, "{stop}");
+    c.call(
+        "debug.delete",
+        json!({ "subscription": sub, "breakpoint": wpt }),
+    )
+    .await
+    .unwrap();
+
+    // The caller's frame: frame 1's locals, and the stack as before.
+    let r = c
+        .call("debug.inspect", json!({ "subscription": sub, "frame": 1 }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("debug.inspect")["result"],
+        &r,
+        "debug.inspect result",
+    );
+    assert_eq!(r["frame"], 1, "{r}");
+    assert!(r["frames"].as_array().unwrap().len() >= 2, "{r}");
+    let r = c
+        .call("debug.inspect", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+    assert_eq!(r["frame"], 0, "{r}");
     match c
         .call(
             "debug.break",

@@ -191,14 +191,6 @@ impl Styler {
                 tag: Some(c[2].trim().to_owned()),
             };
         }
-        const CRASHES: &[&str] = &[
-            "Guru Meditation Error",
-            "abort() was called",
-            "Brownout detector was triggered",
-            "assert failed",
-            "Stack smashing protect failure",
-            "CORRUPT HEAP",
-        ];
         if CRASHES.iter().any(|c| line.contains(c)) {
             return LineInfo {
                 level: Some(Level::Error),
@@ -211,6 +203,16 @@ impl Styler {
         }
     }
 }
+
+/// Text that starts the line a crash or panic prints, on Arduino-ESP32 and ESP-IDF.
+pub const CRASHES: &[&str] = &[
+    "Guru Meditation Error",
+    "abort() was called",
+    "Brownout detector was triggered",
+    "assert failed",
+    "Stack smashing protect failure",
+    "CORRUPT HEAP",
+];
 
 /// Notices output that looks like the wrong baud rate: most characters unreadable
 /// (control characters and invalid UTF-8) in the first stretch after the port opens.

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.35.0";
+pub const PROTOCOL: &str = "0.36.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -220,6 +220,7 @@ pub fn router(state: Arc<State>) -> Router {
     let (s10, s11, s12) = (state.clone(), state.clone(), state.clone());
     let (s13, s14, s15) = (state.clone(), state.clone(), state.clone());
     let (p1, d6) = (state.clone(), state.clone());
+    let (w1, w2) = (state.clone(), state.clone());
     let (d1, d2, d3, d4, d5) = (
         state.clone(),
         state.clone(),
@@ -293,6 +294,14 @@ pub fn router(state: Arc<State>) -> Router {
         .method("debug.control", move |p, ctx| {
             let s = d3.clone();
             async move { debug_control(p, ctx, s).await }
+        })
+        .method("debug.watch", move |p, ctx| {
+            let s = w1.clone();
+            async move { debug_watch(p, ctx, s).await }
+        })
+        .method("debug.memory", move |p, ctx| {
+            let s = w2.clone();
+            async move { debug_memory(p, ctx, s).await }
         })
         .method("debug.evaluate", move |p, ctx| {
             let s = d6.clone();
@@ -1290,7 +1299,9 @@ enum DebugReq {
     Control(String),
     RunTo(String),
     Evaluate(String),
-    Inspect,
+    Watch(String),
+    Memory(String, u32),
+    Inspect(u32),
 }
 
 /// GDB attached to a paused simulator, ready for requests.
@@ -1334,11 +1345,26 @@ async fn debug_request(gdb: &mut esp32bench_debug::Gdb, req: DebugReq) -> Result
         DebugReq::Control(a) => gdb.control(&a).await.map(|()| json!({})),
         DebugReq::RunTo(loc) => gdb.run_to(&loc).await.map(|()| json!({})),
         DebugReq::Evaluate(e) => gdb.evaluate(&e).await.map(|v| json!({ "value": v })),
-        DebugReq::Inspect => async {
+        DebugReq::Watch(e) => gdb.watch(&e).await.map(|w| {
+            json!({ "watchpoint": {
+                "number": w["number"].as_str().and_then(|n| n.parse::<u32>().ok()).unwrap_or(0),
+                "expression": w["exp"].as_str().unwrap_or(&e),
+            } })
+        }),
+        DebugReq::Memory(at, length) => gdb.memory(&at, length).await.map(|(begin, bytes)| {
+            json!({
+                "address": format!("0x{begin:08x}"),
+                "bytes": bytes.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            })
+        }),
+        DebugReq::Inspect(level) => async {
+            // The frame asked for (0: where it stopped); its locals and registers.
+            gdb.select_frame(level).await?;
             let frames = gdb.frames().await?;
             let registers = gdb.registers().await?;
             let locals = gdb.locals().await?;
             Ok(json!({
+                "frame": level,
                 "frames": frames.as_array().into_iter().flatten().map(stop_frame).collect::<Vec<_>>(),
                 "locals": locals,
                 "registers": registers.into_iter().map(|(name, value)| json!({ "name": name, "value": value })).collect::<Vec<_>>(),
@@ -1602,6 +1628,8 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                 sub.send("sim.expect", expect_event(&c.progress(), false));
                 expect_deadline = Some(tokio::time::Instant::now() + wait);
             }
+            // A firmware that resets over and over (sim.bootLoop).
+            let mut boots = esp32bench_serial::bootloop::Watcher::new();
             // Paused by sim.pause, and the output check's time left when it was.
             let mut paused = false;
             let mut expect_left: Option<std::time::Duration> = None;
@@ -1812,6 +1840,9 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                                     sub.send("sim.backtrace", bt);
                                 }
                             }
+                            if let Some(b) = boots.feed(&bytes, std::time::Instant::now()) {
+                                sub.send("sim.bootLoop", json!(b));
+                            }
                             if let Some(progress) = checker.as_mut().and_then(|c| c.feed(&bytes)) {
                                 if progress.complete() {
                                     expect_deadline = None;
@@ -1864,6 +1895,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                             let _ = done.send(r);
                         }
                         Some(SimCmd::Reset(done)) => {
+                            boots.asked(std::time::Instant::now());
                             let _ = done.send(session.reset().await.map_err(|e| e.to_string()));
                         }
                         Some(SimCmd::Pause(pause, done)) => {
@@ -1910,6 +1942,18 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                             });
                             if let Some(n) = v["bkptno"].as_str().and_then(|n| n.parse::<u32>().ok()) {
                                 params["breakpoint"] = json!(n);
+                            }
+                            // A watchpoint: its number, expression, and old and new value.
+                            let wpt = &v["wpt"];
+                            if let Some(n) = wpt["number"].as_str().and_then(|n| n.parse::<u32>().ok()) {
+                                params["breakpoint"] = json!(n);
+                                let mut watch = json!({ "expression": wpt["exp"].as_str().unwrap_or("") });
+                                for key in ["old", "new"] {
+                                    if let Some(x) = v["value"][key].as_str() {
+                                        watch[key] = json!(x);
+                                    }
+                                }
+                                params["watch"] = watch;
                             }
                             sub.send("debug.stopped", params);
                         }
@@ -2209,9 +2253,67 @@ async fn debug_evaluate(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Va
     .await
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InspectParams {
+    subscription: u64,
+    /// The stack frame to look in: 0, where the firmware stopped, by default.
+    #[serde(default)]
+    frame: u32,
+}
+
 async fn debug_inspect(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
-    let p: SerialRefParams = parse_params(params)?;
-    debug_call(&state, &ctx, p.subscription, DebugReq::Inspect).await
+    let p: InspectParams = parse_params(params)?;
+    if p.frame > 31 {
+        return Err(RpcError::invalid_params(
+            "frame is 0 to 31, as debug.inspect lists them",
+        ));
+    }
+    debug_call(&state, &ctx, p.subscription, DebugReq::Inspect(p.frame)).await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WatchParams {
+    subscription: u64,
+    expression: String,
+}
+
+async fn debug_watch(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: WatchParams = parse_params(params)?;
+    if !esp32bench_debug::valid_expression(&p.expression) {
+        return Err(RpcError::invalid_params(
+            "an expression is one line of at most 256 characters, without GDB's $_ functions",
+        ));
+    }
+    debug_call(&state, &ctx, p.subscription, DebugReq::Watch(p.expression)).await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemoryParams {
+    subscription: u64,
+    address: String,
+    length: u32,
+}
+
+async fn debug_memory(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: MemoryParams = parse_params(params)?;
+    if !esp32bench_debug::valid_expression(&p.address) {
+        return Err(RpcError::invalid_params(
+            "an address is one line of at most 256 characters, without GDB's $_ functions",
+        ));
+    }
+    if p.length == 0 || p.length > esp32bench_debug::MAX_MEMORY {
+        return Err(RpcError::invalid_params("length is 1 to 1024 bytes"));
+    }
+    debug_call(
+        &state,
+        &ctx,
+        p.subscription,
+        DebugReq::Memory(p.address, p.length),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -2969,6 +3071,8 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
             // Lines of numbers, for the app's plotter.
             let mut plot = esp32bench_serial::plot::Lines::new();
             let mut style = esp32bench_serial::style::Styler::new();
+            // A board that resets over and over (serial.bootLoop); kept across reconnections.
+            let mut boots = esp32bench_serial::bootloop::Watcher::new();
             let mut garble = esp32bench_serial::style::Garble::default();
             let mut checker = new_checker();
             let mut expect_deadline = None;
@@ -3038,6 +3142,9 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                             for bt in c.feed(&bytes).await {
                                 sub.send("serial.backtrace", bt);
                             }
+                        }
+                        if let Some(b) = boots.feed(&bytes, std::time::Instant::now()) {
+                            sub.send("serial.bootLoop", json!(b));
                         }
                         if garbled {
                             let mut hint = json!({ "baud": baud });

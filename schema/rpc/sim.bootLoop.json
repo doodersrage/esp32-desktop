@@ -1,0 +1,49 @@
+{
+  "event": "sim.bootLoop",
+  "description": "Since protocol 0.36: the firmware is resetting over and over: three resets (not power-ons, nor one the user asked for) within 30 seconds, from the ROM's rst: lines (esp32bench_serial::bootloop). Said once, until the resets stop for a minute.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "resets",
+      "seconds"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "resets": {
+        "type": "integer",
+        "minimum": 3,
+        "description": "Resets seen within 30 s."
+      },
+      "seconds": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Over how many seconds."
+      },
+      "reason": {
+        "type": "string",
+        "description": "The last reset's reason as the ROM names it (TG1WDT_SYS_RESET)."
+      },
+      "crash": {
+        "type": "string",
+        "description": "The last crash line before it (Guru Meditation Error: …)."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "resets": 3,
+        "seconds": 6,
+        "reason": "SW_CPU_RESET",
+        "crash": "Guru Meditation Error: Core  1 panic'ed (LoadProhibited). Exception was unhandled."
+      }
+    }
+  ]
+}

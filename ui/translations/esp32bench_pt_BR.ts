@@ -254,6 +254,14 @@
         <translation>Copia as linhas de erro e aviso da compilação, para colar em um fórum ou em uma issue</translation>
     </message>
     <message>
+        <source>Copy for a forum post</source>
+        <translation>Copiar para um fórum</translation>
+    </message>
+    <message>
+        <source>Copy the build&apos;s errors and warnings (or the last 200 lines of the log) as a code block for a forum post or an issue, with the app&apos;s version, the project and the board</source>
+        <translation>Copiar os erros e avisos do build (ou as últimas 200 linhas do log) como bloco de código para um fórum ou uma issue, com a versão do app, o projeto e a placa</translation>
+    </message>
+    <message>
         <source>Flashing %1 to %2…</source>
         <translation>Gravando %1 em %2…</translation>
     </message>
@@ -276,6 +284,10 @@
     <message>
         <source>Building %1 for %2…</source>
         <translation>Compilando %1 para %2…</translation>
+    </message>
+    <message>
+        <source>building %1 for %2</source>
+        <translation>compilando %1 para %2</translation>
     </message>
     <message>
         <source>Errors: %1</source>
@@ -391,6 +403,18 @@ Variáveis globais: %4 de %5</translation>
     <message>
         <source>Make the change Undo took back again (%1)</source>
         <translation>Faz de novo a alteração que Desfazer desfez (%1)</translation>
+    </message>
+    <message>
+        <source>Copy picture</source>
+        <translation>Copiar imagem</translation>
+    </message>
+    <message>
+        <source>Copy the circuit as a picture, to show its wiring in a question or a README</source>
+        <translation>Copiar o circuito como imagem, para mostrar a fiação numa pergunta ou num README</translation>
+    </message>
+    <message>
+        <source>Copied the circuit as a picture.</source>
+        <translation>Circuito copiado como imagem.</translation>
     </message>
     <message>
         <source>Fit</source>
@@ -566,6 +590,10 @@ Variáveis globais: %4 de %5</translation>
         <translation>Carimbos de hora</translation>
     </message>
     <message>
+        <source>Time between lines</source>
+        <translation>Tempo entre linhas</translation>
+    </message>
+    <message>
         <source>Find in the output</source>
         <translation>Procurar na saída</translation>
     </message>
@@ -626,6 +654,18 @@ Variáveis globais: %4 de %5</translation>
         <translation>Começa cada linha nova com a hora deste computador. No simulador, não é a hora do chip simulado.</translation>
     </message>
     <message>
+        <source>Start each new line with the time since the line before it began (+12 ms), to time loops and delays. In the simulator it is this computer&apos;s time.</source>
+        <translation>Começar cada linha nova com o tempo desde o início da anterior (+12 ms), para medir loops e esperas. No simulador é o tempo deste computador.</translation>
+    </message>
+    <message>
+        <source>Copy for a forum post</source>
+        <translation>Copiar para um fórum</translation>
+    </message>
+    <message>
+        <source>Copy the selected output, or the last 200 lines, as a code block for a forum post or an issue, with the app&apos;s version and what it is from</source>
+        <translation>Copiar a saída selecionada, ou as últimas 200 linhas, como bloco de código para um fórum ou uma issue, com a versão do app e de onde ela vem</translation>
+    </message>
+    <message>
         <source>Save…</source>
         <translation>Salvar…</translation>
     </message>
@@ -671,6 +711,26 @@ Variáveis globais: %4 de %5</translation>
     <message>
         <source>%1, line %2</source>
         <translation>%1, linha %2</translation>
+    </message>
+    <message>
+        <source>Boot loop: the firmware reset %1 times in %2 s.</source>
+        <translation>Loop de inicialização: o firmware reiniciou %1 vezes em %2 s.</translation>
+    </message>
+    <message>
+        <source>Boot loop: the firmware reset %1 times in %2 s (%3).</source>
+        <translation>Loop de inicialização: o firmware reiniciou %1 vezes em %2 s (%3).</translation>
+    </message>
+    <message>
+        <source>The last crash before it: %1</source>
+        <translation>A última falha antes disso: %1</translation>
+    </message>
+    <message>
+        <source>+%1 ms</source>
+        <translation>+%1 ms</translation>
+    </message>
+    <message>
+        <source>+%1 s</source>
+        <translation>+%1 s</translation>
     </message>
 </context>
 <context>
@@ -737,6 +797,34 @@ Variáveis globais: %4 de %5</translation>
     <message>
         <source>Remove</source>
         <translation>Remover</translation>
+    </message>
+    <message>
+        <source>Memory address</source>
+        <translation>Endereço de memória</translation>
+    </message>
+    <message>
+        <source>Address or expression, e.g. &amp;config or buf</source>
+        <translation>Endereço ou expressão, p. ex. &amp;config ou buf</translation>
+    </message>
+    <message>
+        <source>Show 256 bytes of memory from there, read again every time the firmware stops</source>
+        <translation>Mostrar 256 bytes de memória a partir dali, lidos de novo sempre que o firmware para</translation>
+    </message>
+    <message>
+        <source>Memory</source>
+        <translation>Memória</translation>
+    </message>
+    <message>
+        <source>Stop when it changes</source>
+        <translation>Parar quando mudar</translation>
+    </message>
+    <message>
+        <source>A watchpoint: the firmware stops the moment this value changes</source>
+        <translation>Um watchpoint: o firmware para no momento em que este valor muda</translation>
+    </message>
+    <message>
+        <source>%1: when %2 changes</source>
+        <translation>%1: quando %2 mudar</translation>
     </message>
     <message>
         <source>Expression to watch</source>
@@ -843,6 +931,10 @@ Variáveis globais: %4 de %5</translation>
         <translation>Parar aqui só quando uma expressão for verdadeira</translation>
     </message>
     <message>
+        <source>Click a function to see its variables and the line it is at</source>
+        <translation>Clique em uma função para ver suas variáveis e a linha em que está</translation>
+    </message>
+    <message>
         <source>Watch</source>
         <translation>Observar</translation>
     </message>
@@ -903,12 +995,28 @@ Variáveis globais: %4 de %5</translation>
         <translation>Pause o firmware primeiro: o GDB só muda breakpoints enquanto ele está parado.</translation>
     </message>
     <message>
+        <source>Changed since the last stop; it was %1</source>
+        <translation>Mudou desde a última parada; era %1</translation>
+    </message>
+    <message>
+        <source>Pause the firmware first: GDB sets watchpoints only while it is stopped.</source>
+        <translation>Pause o firmware primeiro: o GDB só põe watchpoints com ele parado.</translation>
+    </message>
+    <message>
         <source>%1 (%2, line %3)</source>
         <translation>%1 (%2, linha %3)</translation>
     </message>
     <message>
         <source>Paused before the firmware starts. Add breakpoints, then Continue.</source>
         <translation>Pausado antes de o firmware começar. Adicione breakpoints e depois escolha Continuar.</translation>
+    </message>
+    <message>
+        <source>%1 changed from %2 to %3, in %4.</source>
+        <translation>%1 mudou de %2 para %3, em %4.</translation>
+    </message>
+    <message>
+        <source>?</source>
+        <translation>?</translation>
     </message>
     <message>
         <source>Stopped at breakpoint %1 in %2.</source>
@@ -1170,6 +1278,14 @@ Variáveis globais: %4 de %5</translation>
     <message>
         <source>%1 min %2 s</source>
         <translation>%1 min %2 s</translation>
+    </message>
+    <message>
+        <source>ESP32 Bench %1</source>
+        <translation>ESP32 Bench %1</translation>
+    </message>
+    <message>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
     </message>
 </context>
 <context>
@@ -2760,6 +2876,10 @@ Clique duas vezes para ver a linha.</translation>
         <translation>Conectado a %1 a %2 baud.</translation>
     </message>
     <message>
+        <source>a board on %1 at %2 baud</source>
+        <translation>uma placa em %1 a %2 baud</translation>
+    </message>
+    <message>
         <source>Boards with built-in USB restart when their port is opened.</source>
         <translation>Placas com USB embutido reiniciam quando a porta delas é aberta.</translation>
     </message>
@@ -3060,6 +3180,10 @@ Clique duas vezes para ver a linha.</translation>
     <message>
         <source>Running %1 on a simulated %2.</source>
         <translation>Rodando %1 em um %2 simulado.</translation>
+    </message>
+    <message>
+        <source>%1 for %2, on a simulated %3</source>
+        <translation>%1 para %2, num %3 simulado</translation>
     </message>
     <message>
         <source>Simulated Wi-Fi: %1 (open, no internet). The firmware&apos;s web page: &lt;a href=&quot;%2&quot;&gt;%2&lt;/a&gt;</source>

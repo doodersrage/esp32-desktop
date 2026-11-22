@@ -16,6 +16,7 @@ class QComboBox;
 class QProgressBar;
 class QAction;
 class QPushButton;
+class QToolButton;
 
 class BuildPanel : public QWidget {
     Q_OBJECT
@@ -61,6 +62,10 @@ public:
     // The error and warning lines, for pasting into a forum post or an issue.
     QString problemLines() const;
     QPushButton *copyProblemsButton() const { return m_copyProblems; }
+    // The problem lines, else the log's last 200 lines, as a forum post's code block
+    // naming the app, the project and the board (Copy for a forum post).
+    QString forumText() const;
+    QToolButton *forumButton() const { return m_forum; }
     // Show what a located log line points at, as a double-click on it does. For tests.
     bool activateLine(int blockNumber);
 
@@ -91,6 +96,7 @@ private:
     QLabel *m_status;
     QPushButton *m_cancel;
     QPlainTextEdit *m_log;
+    QToolButton *m_forum = nullptr;
     QPushButton *m_copyProblems = nullptr;
     QLabel *m_problems;
     QCheckBox *m_problemsOnly;

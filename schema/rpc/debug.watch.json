@@ -1,0 +1,70 @@
+{
+  "method": "debug.watch",
+  "description": "Since protocol 0.36: stop when an expression's value changes (a watchpoint, GDB's -break-watch): a variable, buf[3] or *ptr in the paused frame's scope. debug.stopped says so with reason watchpoint-trigger, the watchpoint's number as breakpoint, and watch: the expression and its old and new value. debug.delete removes it. Chips have only a few hardware watchpoints.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "expression"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "expression": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "watchpoint"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "watchpoint": {
+        "type": "object",
+        "required": [
+          "number",
+          "expression"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expression": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "expression": "count"
+      },
+      "result": {
+        "watchpoint": {
+          "number": 3,
+          "expression": "count"
+        }
+      }
+    }
+  ]
+}

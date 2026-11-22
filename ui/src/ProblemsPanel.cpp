@@ -1,4 +1,6 @@
 #include "ProblemsPanel.h"
+
+#include "ConsoleView.h"
 #include <QFileInfo>
 
 #include "CoreConnection.h"
@@ -47,6 +49,12 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
     });
     connect(core, &CoreConnection::outputExplained, this, &ProblemsPanel::add);
     connect(core, &CoreConnection::simBacktrace, this, [this](const QJsonArray &f) { addCrash(u"sim"_s, f); });
+    for (const auto &[signal, source] : {std::pair{&CoreConnection::simBootLoop, u"sim"_s},
+                                         std::pair{&CoreConnection::serialBootLoop, u"serial"_s}}) {
+        connect(core, signal, this, [this, source](const QJsonObject &loop) {
+            add(source, QJsonArray{QJsonObject{{u"level"_s, u"problem"_s}, {u"text"_s, ConsoleView::bootLoopText(loop)}}});
+        });
+    }
     connect(core, &CoreConnection::serialBacktrace, this, [this](const QJsonArray &f) { addCrash(u"serial"_s, f); });
     connect(core, &CoreConnection::buildFirstError, this, [this](const QJsonObject &e) {
         add(u"build"_s, QJsonArray{QJsonObject{

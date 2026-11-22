@@ -1,6 +1,6 @@
 {
   "method": "debug.inspect",
-  "description": "While the firmware is stopped: its call stack (innermost first, at most 32 frames) and its general registers in hex (pc, a0-a15 and a few specials on Xtensa; pc and x0-x31 by ABI name on RISC-V).",
+  "description": "While the firmware is stopped: its call stack (innermost first, at most 32 frames) and its general registers in hex (pc, a0-a15 and a few specials on Xtensa; pc and x0-x31 by ABI name on RISC-V). Since protocol 0.36, with frame, of that stack frame (0 is where the firmware stopped, as frames lists them): its locals and registers, and expressions are evaluated there until the firmware runs again.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -12,6 +12,11 @@
       "subscription": {
         "type": "integer",
         "minimum": 1
+      },
+      "frame": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 31
       }
     }
   },
@@ -96,6 +101,11 @@
             }
           }
         }
+      },
+      "frame": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Since protocol 0.36: the frame shown."
       }
     }
   },

@@ -1,0 +1,68 @@
+{
+  "method": "debug.memory",
+  "description": "Since protocol 0.36: bytes of the debugged firmware's memory from the address an expression gives (an address, a pointer, &config), at most 1024; fewer where the memory ends.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "address",
+      "length"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "address": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "length": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1024
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "address",
+      "bytes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "address": {
+        "type": "string",
+        "pattern": "^0x[0-9a-f]+$"
+      },
+      "bytes": {
+        "type": "string",
+        "pattern": "^([0-9a-f]{2})*$",
+        "description": "Two hex digits per byte."
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "address": "&count",
+        "length": 4
+      },
+      "result": {
+        "address": "0x3ffb0a10",
+        "bytes": "2a000000"
+      }
+    }
+  ]
+}

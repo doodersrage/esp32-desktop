@@ -153,6 +153,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
                 m_output->appendNotice(tr("Started %1 for %2 on a simulated %3.")
                                            .arg(project, board, Labels::chipName(chip)));
                 m_runningText = tr("Running %1 on a simulated %2.").arg(project, Labels::chipName(chip));
+                m_tools->setContext(tr("%1 for %2, on a simulated %3").arg(project, board, Labels::chipName(chip)));
                 m_status->setText(m_runningText);
                 m_clock->hide();
                 m_lastProject = project;
@@ -209,6 +210,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     });
     connect(m_core, &CoreConnection::simOutput, m_output, &ConsoleView::appendOutput);
     connect(m_core, &CoreConnection::simBacktrace, m_output, &ConsoleView::appendBacktrace);
+    connect(m_core, &CoreConnection::simBootLoop, m_output, &ConsoleView::appendBootLoop);
     connect(m_core, &CoreConnection::simStopped, this, [this](const QString &reason) {
         m_output->appendNotice(tr("Simulator stopped: %1").arg(reason));
         m_status->setText(tr("Not running."));

@@ -1,6 +1,7 @@
 // SimulatorPanel and CoreConnection's sim calls against a fake core.
 
 #include "CoreConnection.h"
+#include "Labels.h"
 #include <QAction>
 #include <QTextBlock>
 #include "ConsoleView.h"
@@ -20,6 +21,9 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QSignalSpy>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QToolButton>
 #include <QTest>
 
 #include <cmath>
@@ -62,7 +66,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.35.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.36.0"_s}});
             return;
         }
         calls << m;
@@ -238,6 +242,40 @@ private slots:
         QTRY_VERIFY(!core.isSimRunning());
         QVERIFY(!core.isSimPaused());
         QVERIFY(!panel.pauseAction()->isEnabled());
+    }
+
+    void saysBootLoopsTimesLinesAndCopiesForAForum()
+    {
+        QCoreApplication::setApplicationVersion(u"9.9.9"_s);
+        CoreConnection core;
+        SimulatorPanel panel(&core);
+        emit core.simStarted(u"blink"_s, u"esp32"_s, u"esp32"_s);
+        emit core.simBootLoop(QJsonObject{{u"resets"_s, 3}, {u"seconds"_s, 6}, {u"reason"_s, u"SW_CPU_RESET"_s},
+                                          {u"crash"_s, u"Guru Meditation Error: Core 1 panic'ed"_s}});
+        QVERIFY2(panel.outputText().contains(u"Boot loop: the firmware reset 3 times in 6 s (SW_CPU_RESET). The last "
+                                             "crash before it: Guru Meditation Error: Core 1 panic'ed"_s),
+                 qPrintable(panel.outputText()));
+
+        // The time since the line before, at each line's start.
+        QCOMPARE(ConsoleView::deltaText(12), u"+12 ms"_s);
+        QCOMPARE(ConsoleView::deltaText(1500), u"+%1 s"_s.arg(QLocale().toString(1.5, 'f', 3)));
+        panel.consoleBar()->deltaBox()->setChecked(true);
+        emit core.simOutput("one\n");
+        QTest::qWait(30);
+        emit core.simOutput("two\n");
+        const QStringList lines = panel.console()->visibleLines();
+        QVERIFY2(lines.last().startsWith(u"+"_s) && lines.last().endsWith(u" ms two"_s), qPrintable(lines.join(u'|')));
+        QVERIFY(lines.at(lines.size() - 2).startsWith(u"+0 ms one"_s));
+        panel.consoleBar()->deltaBox()->setChecked(false);
+
+        // Copy for a forum post: the app, what it is from, and the output as a code block.
+        const QString post = panel.consoleBar()->forumText();
+        QVERIFY2(post.startsWith(u"ESP32 Bench 9.9.9 · blink for esp32, on a simulated ESP32\n```text\n"_s), qPrintable(post));
+        QVERIFY(post.contains(u"two"_s));
+        QVERIFY(post.endsWith(u"\n```\n"_s));
+        QCOMPARE(Labels::forumPost({}, u"a ``` b"_s), u"ESP32 Bench 9.9.9\n~~~~text\na ``` b\n~~~~\n"_s);
+        panel.consoleBar()->forumButton()->click();
+        QCOMPARE(QGuiApplication::clipboard()->text(), panel.consoleBar()->forumText());
     }
 
     void showsTheSimulatedTime()

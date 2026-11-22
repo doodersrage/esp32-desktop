@@ -48,6 +48,9 @@ public:
     QPushButton *redoButton() const { return m_redoButton; }
     QPushButton *duplicateButton() const { return m_duplicate; }
     QPushButton *pasteButton() const { return m_paste; }
+    // The circuit as a picture, on the palette's background, as Copy picture puts on
+    // the clipboard: to show the wiring in a question or a README.
+    QImage picture() const;
     // Copy the selected part (Ctrl+C on the canvas), to paste into any project's or
     // board's circuit (Ctrl+V): the Add dialog opens with its settings, on pins of
     // this project that no part uses. False when no part is selected.
@@ -117,6 +120,7 @@ private:
     QPushButton *m_redoButton = nullptr;
     QPushButton *m_duplicate = nullptr;
     QPushButton *m_paste = nullptr;
+    QToolButton *m_copyPicture = nullptr;
     void updatePaste();
     QToolButton *m_fitButton = nullptr;
     // The board's circuits before each change, newest last.

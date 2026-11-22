@@ -455,6 +455,57 @@ impl Gdb {
             .collect())
     }
 
+    /// Make frame `level` (0 is where the firmware stopped) the one locals, registers
+    /// and expressions are read in, until the firmware runs again.
+    pub async fn select_frame(&mut self, level: u32) -> Result<(), Error> {
+        self.command(&format!("-stack-select-frame {level}"))
+            .await
+            .map(|_| ())
+    }
+
+    /// Stop when `expression` (a variable, `buf[3]`, `*ptr`) changes: a watchpoint.
+    /// The stop says its old and new value. Returns GDB's `wpt` (its number, and the
+    /// expression as GDB read it); it is deleted like a breakpoint.
+    pub async fn watch(&mut self, expression: &str) -> Result<Value, Error> {
+        if !valid_expression(expression) {
+            return Err(Error::Gdb(
+                "an expression is one line, without GDB's $_ functions".into(),
+            ));
+        }
+        let r = self
+            .command(&format!("-break-watch {}", mi_quote(expression)))
+            .await?;
+        Ok(r["wpt"].clone())
+    }
+
+    /// `length` bytes of memory from the address `at` evaluates to (an address, a
+    /// pointer, `&config`): its start address and the bytes. At most
+    /// [`MAX_MEMORY`]; fewer where the memory cannot be read.
+    pub async fn memory(&mut self, at: &str, length: u32) -> Result<(u64, Vec<u8>), Error> {
+        if !valid_expression(at) {
+            return Err(Error::Gdb(
+                "an address is one line, without GDB's $_ functions".into(),
+            ));
+        }
+        let length = length.clamp(1, MAX_MEMORY);
+        let r = self
+            .command(&format!(
+                "-data-read-memory-bytes {} {length}",
+                mi_quote(at)
+            ))
+            .await?;
+        let first = &r["memory"][0];
+        let begin = first["begin"]
+            .as_str()
+            .and_then(|b| u64::from_str_radix(b.trim_start_matches("0x"), 16).ok())
+            .ok_or_else(|| Error::Gdb("no memory there".into()))?;
+        let hex = first["contents"].as_str().unwrap_or("");
+        let bytes = (0..hex.len() / 2)
+            .filter_map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok())
+            .collect();
+        Ok((begin, bytes))
+    }
+
     pub async fn frames(&mut self) -> Result<Value, Error> {
         Ok(self.command("-stack-list-frames 0 31").await?["stack"].clone())
     }
@@ -574,6 +625,9 @@ pub fn valid_location(loc: &str) -> bool {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | ':' | '.' | '/' | '-'))
 }
+
+/// The most bytes [`Gdb::memory`] reads at once.
+pub const MAX_MEMORY: u32 = 1024;
 
 /// A string as an MI c-string argument.
 fn mi_quote(s: &str) -> String {

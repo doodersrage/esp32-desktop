@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QPlainTextEdit>
+#include <QElapsedTimer>
 #include <QStringDecoder>
 #include <QTextBlock>
 
@@ -59,12 +60,20 @@ public:
     // A crash backtrace the core decoded (sim.backtrace, serial.backtrace): a notice
     // line per frame; a frame with a file and line is a link (frameActivated).
     void appendBacktrace(const QJsonArray &frames);
+    // A boot loop (sim.bootLoop, serial.bootLoop), in words, and as a notice.
+    static QString bootLoopText(const QJsonObject &loop);
+    void appendBootLoop(const QJsonObject &loop);
     // Start a new stream: forget any half-decoded character.
     void resetDecoder();
     // Start each new line with this computer's time (hh:mm:ss.zzz). Lines already
     // shown keep what they have.
     void setTimestamps(bool on);
     bool timestamps() const { return m_timestamps; }
+    // Start each new line with the time since the previous line began ("+12 ms"), for
+    // timing loops and delays; with time stamps, after them.
+    void setDeltas(bool on);
+    bool deltas() const { return m_deltas; }
+    static QString deltaText(qint64 ms);
     // Select the next (or previous) match after the cursor, wrapping round; false if
     // there is none.
     bool findText(const QString &text, bool backward = false);
@@ -117,6 +126,8 @@ private:
     int m_zoom = 0;
     bool m_hex = false;
     bool m_timestamps = false;
+    bool m_deltas = false;
+    QElapsedTimer m_lastLine; // when the last line began
     bool m_atLineStart = true;
 };
 
@@ -135,6 +146,14 @@ public:
     // Put the cursor in the find field, its text selected (Ctrl+F).
     void focusFind();
     QCheckBox *timestampBox() const { return m_stamps; }
+    QCheckBox *deltaBox() const { return m_deltas; }
+    // What the output is from, said with it in Copy for a forum post: "blink on a
+    // simulated ESP32".
+    void setContext(const QString &context) { m_context = context; }
+    // The selected output, else the last 200 lines shown, as a forum post's code
+    // block under a line naming the app and the context; put on the clipboard.
+    QString forumText() const;
+    QToolButton *forumButton() const { return m_forum; }
     // Ask the core to write the console's text to `path` (Save… asks for it).
     void saveTo(const QString &path);
 
@@ -147,6 +166,9 @@ private:
     QToolButton *m_prev;
     QToolButton *m_next;
     QCheckBox *m_stamps;
+    QCheckBox *m_deltas;
+    QToolButton *m_forum;
+    QString m_context;
     QToolButton *m_save;
 };
 

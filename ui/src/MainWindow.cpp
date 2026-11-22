@@ -646,12 +646,16 @@ void MainWindow::buildToolBar()
             m_debugDock->raise();
         }
     });
-    // Paused in the sketch shown: its line is marked in the Code tab.
-    connect(m_core, &CoreConnection::debugStopped, this, [this](const QString &, const QJsonObject &frame, int) {
+    // Paused in the sketch shown: its line is marked in the Code tab; and the line of a
+    // caller's frame when one is picked in the call stack.
+    const auto markFrame = [this](const QJsonObject &frame) {
         const QString id = m_project->currentProjectId();
         const bool here = !id.isEmpty() && QFileInfo(frame.value(u"file"_s).toString()).fileName() == id + u".ino"_s;
         m_project->showPausedLine(here ? frame.value(u"line"_s).toInt() : 0);
-    });
+    };
+    connect(m_core, &CoreConnection::debugStopped, this,
+            [markFrame](const QString &, const QJsonObject &frame) { markFrame(frame); });
+    connect(m_debugger, &DebugPanel::frameSelected, this, markFrame);
     for (auto signal : {&CoreConnection::debugRunning, &CoreConnection::debugExited})
         connect(m_core, signal, this, [this] { m_project->showPausedLine(0); });
     connect(m_core, &CoreConnection::simStopped, this, [this] { m_project->showPausedLine(0); });

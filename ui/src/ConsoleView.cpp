@@ -1,6 +1,10 @@
 #include "ConsoleView.h"
 
 #include "CoreConnection.h"
+#include <QLocale>
+#include <QGuiApplication>
+#include <QClipboard>
+#include "Labels.h"
 #include <QMouseEvent>
 #include <QFileInfo>
 
@@ -372,13 +376,19 @@ void ConsoleView::appendText(QString text)
     text.remove(u'\r');
     if (text.isEmpty())
         return;
-    if (m_timestamps) {
-        // This computer's clock, at the moment the line's first bytes arrived.
-        const QString stamp = u"[%1] "_s.arg(QTime::currentTime().toString(u"hh:mm:ss.zzz"_s));
+    if (m_timestamps || m_deltas) {
+        // This computer's clock, at the moment the line's first bytes arrived, and the
+        // time since the line before began.
+        const QString stamp = m_timestamps ? u"[%1] "_s.arg(QTime::currentTime().toString(u"hh:mm:ss.zzz"_s)) : QString();
         QString stamped;
         for (const QChar ch : std::as_const(text)) {
-            if (m_atLineStart)
+            if (m_atLineStart) {
                 stamped += stamp;
+                if (m_deltas) {
+                    stamped += m_lastLine.isValid() ? deltaText(m_lastLine.elapsed()) + u' ' : u"+0 ms "_s;
+                    m_lastLine.start();
+                }
+            }
             stamped += ch;
             m_atLineStart = ch == u'\n';
         }
@@ -462,6 +472,46 @@ void ConsoleView::mouseReleaseEvent(QMouseEvent *event)
         emit frameActivated(m_frameLinks.at(i));
 }
 
+QString ConsoleView::bootLoopText(const QJsonObject &loop)
+{
+    const QString reason = loop.value(u"reason"_s).toString();
+    QString text = reason.isEmpty()
+        ? tr("Boot loop: the firmware reset %1 times in %2 s.").arg(loop.value(u"resets"_s).toInt()).arg(loop.value(u"seconds"_s).toInt())
+        : tr("Boot loop: the firmware reset %1 times in %2 s (%3).")
+              .arg(loop.value(u"resets"_s).toInt())
+              .arg(loop.value(u"seconds"_s).toInt())
+              .arg(reason);
+    if (const QString crash = loop.value(u"crash"_s).toString(); !crash.isEmpty())
+        text += u" "_s + tr("The last crash before it: %1").arg(crash);
+    return text;
+}
+
+void ConsoleView::appendBootLoop(const QJsonObject &loop)
+{
+    appendNotice(bootLoopText(loop));
+}
+
+void ConsoleView::setDeltas(bool on)
+{
+    m_deltas = on;
+    m_lastLine.invalidate();
+}
+
+QString ConsoleView::deltaText(qint64 ms)
+{
+    if (ms < 1000)
+        return tr("+%1 ms").arg(ms);
+    return tr("+%1 s").arg(QLocale().toString(double(ms) / 1000.0, 'f', 3));
+}
+
+QString ConsoleBar::forumText() const
+{
+    QString text = m_view->textCursor().selectedText().replace(QChar::ParagraphSeparator, u'\n');
+    if (text.trimmed().isEmpty())
+        text = m_view->visibleLines().mid(std::max<qsizetype>(0, m_view->visibleLines().size() - 200)).join(u'\n');
+    return Labels::forumPost(m_context, text);
+}
+
 ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &setting, QWidget *parent)
     : QWidget(parent)
     , m_view(view)
@@ -472,6 +522,8 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     , m_prev(new QToolButton(this))
     , m_next(new QToolButton(this))
     , m_stamps(new QCheckBox(tr("Time stamps"), this))
+    , m_deltas(new QCheckBox(tr("Time between lines"), this))
+    , m_forum(new QToolButton(this))
     , m_save(new QToolButton(this))
 {
     m_find->setPlaceholderText(tr("Find in the output"));
@@ -520,6 +572,22 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
         m_view->setTimestamps(on);
     });
 
+    m_deltas->setToolTip(tr("Start each new line with the time since the line before it began (+12 ms), to time "
+                            "loops and delays. In the simulator it is this computer's time."));
+    m_deltas->setChecked(QSettings().value(setting + u"Between"_s, false).toBool());
+    m_view->setDeltas(m_deltas->isChecked());
+    connect(m_deltas, &QCheckBox::toggled, this, [this, setting](bool on) {
+        QSettings().setValue(setting + u"Between"_s, on);
+        m_view->setDeltas(on);
+    });
+    m_forum->setIcon(QIcon::fromTheme(u"edit-copy"_s));
+    m_forum->setText(tr("Copy for a forum post"));
+    m_forum->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    m_forum->setToolTip(tr("Copy the selected output, or the last 200 lines, as a code block for a forum post or "
+                           "an issue, with the app's version and what it is from"));
+    m_forum->setAccessibleName(m_forum->text());
+    connect(m_forum, &QToolButton::clicked, this, [this] { QGuiApplication::clipboard()->setText(forumText()); });
+
     m_save->setIcon(QIcon::fromTheme(u"document-save"_s));
     m_save->setText(tr("Save…"));
     m_save->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -542,6 +610,8 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     layout->addWidget(m_levels);
     layout->addWidget(m_tags);
     layout->addWidget(m_stamps);
+    layout->addWidget(m_deltas);
+    layout->addWidget(m_forum);
     layout->addWidget(m_save);
 }
 
