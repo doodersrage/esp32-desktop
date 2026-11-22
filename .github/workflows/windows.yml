@@ -147,19 +147,33 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           export ESP32BENCH_DAEMON="$(cygpath -w "$PWD/core/target/release/esp32benchd.exe")"
-          # Failed tests again, verbosely, with their exit codes (a crash shows no output).
-          ctest --test-dir build/ui --output-on-failure || {
-            set +e
-            export QT_FORCE_STDERR_LOGGING=1
-            for t in $(ctest --test-dir build/ui --rerun-failed -N | sed -n 's/.*Test *#[0-9]*: \(tst_[a-z]*\).*/\1/p'); do
-              echo "=== $t"
-              ./build/ui/$t.exe -o "$t.txt,txt" -o -,txt -v2 2>&1 | tail -60
-              code=${PIPESTATUS[0]}
-              printf 'exit code %d (0x%08X)\n' "$code" "$(( code & 0xFFFFFFFF ))"
-              tail -30 "$t.txt" 2> /dev/null
-            done
-            exit 1
-          }
+          export QT_FORCE_STDERR_LOGGING=1
+          set +e
+          # Each test once, keeping its own log: ctest shows none of a Windows test's
+          # output, so a failure there said nothing. A failed one's log is shown,
+          # then it runs again verbosely, with its exit code (a crash shows no log).
+          failed=()
+          for t in $(ctest --test-dir build/ui -N | sed -n 's/.*Test *#[0-9]*: \(tst_[a-z]*\).*/\1/p'); do
+            start=$SECONDS
+            ./build/ui/$t.exe -o "$t.txt,txt" > "$t.out" 2>&1
+            code=$?
+            if [ "$code" -eq 0 ]; then
+              echo "ok   $t ($(( SECONDS - start )) s)"
+              continue
+            fi
+            failed+=("$t")
+            printf '=== %s failed: exit code %d (0x%08X) after %d s\n' "$t" "$code" "$(( code & 0xFFFFFFFF ))" "$(( SECONDS - start ))"
+            grep -E 'FAIL!|Loc:|Actual|Expected|QWARN|QFATAL|Totals' "$t.txt" 2> /dev/null | head -40
+            tail -20 "$t.out"
+          done
+          [ ${#failed[@]} -eq 0 ] && exit 0
+          for t in "${failed[@]}"; do
+            echo "=== $t again"
+            ./build/ui/$t.exe -o "$t-again.txt,txt" -o -,txt -v2 2>&1 | tail -60
+            code=${PIPESTATUS[0]}
+            printf 'exit code %d (0x%08X)\n' "$code" "$(( code & 0xFFFFFFFF ))"
+          done
+          exit 1
 
       # ESP-IDF as Espressif's guide installs it on Windows (a clone in
       # %USERPROFILE%\esp\esp-idf and its install.ps1), for the smoke test's build of a
