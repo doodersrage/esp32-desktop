@@ -9,6 +9,7 @@
 #include <QWidget>
 
 class CoreConnection;
+class QComboBox;
 class QPushButton;
 class QTreeWidget;
 
@@ -22,6 +23,12 @@ public:
     static constexpr int LocationRole = Qt::UserRole + 2;
     // What to look up on esp32bench.dev's error pages: the error's own words.
     static constexpr int SearchRole = Qt::UserRole + 3;
+    // Where it came from: build, sim or serial.
+    static constexpr int SourceRole = Qt::UserRole + 4;
+    // Only the problems from `source` (build, sim, serial), or all for none; Clear then
+    // clears just those.
+    void showOnly(const QString &source);
+    QPushButton *clearButton() const { return m_clear; }
     // esp32bench.dev's search for an error's words (nothing else is sent).
     static QUrl searchUrl(const QString &words);
     // The words to search for: a crash's exception name (LoadProhibited), or a
@@ -47,5 +54,7 @@ signals:
 private:
     QTreeWidget *m_tree;
     QPushButton *m_clear;
+    QComboBox *m_filter = nullptr;
+    QString m_only;
     bool m_hasProblem = false;
 };

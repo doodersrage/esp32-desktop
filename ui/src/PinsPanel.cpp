@@ -11,6 +11,7 @@
 #include <QLocale>
 #include <QPushButton>
 #include <QMenu>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -148,11 +149,33 @@ void PinsPanel::update(const QJsonArray &pins)
             item->setText(RateColumn, rateText(p.value(u"rate"_s)));
         if (p.contains(u"level"_s)) {
             const bool high = p.value(u"level"_s).toBool();
+            const QString was = item->text(LevelColumn);
             item->setText(LevelColumn, high ? tr("high") : tr("low"));
+            // A change lights the row a moment, so a quick blink or press is seen.
+            if (was != item->text(LevelColumn) && was != tr("unknown"))
+                flash(p.value(u"gpio"_s).toInt());
             // Theme icons, so the indicator follows the Plasma colour scheme.
             item->setIcon(LevelColumn, QIcon::fromTheme(high ? u"state-ok"_s : u"state-offline"_s));
         }
     }
+}
+
+void PinsPanel::flash(int gpio)
+{
+    QTreeWidgetItem *item = row(gpio);
+    if (!item)
+        return;
+    QColor lit = palette().color(QPalette::Highlight);
+    lit.setAlpha(90);
+    for (int c = 0; c < ColumnCount; ++c)
+        item->setBackground(c, lit);
+    m_lit.insert(gpio);
+    QTimer::singleShot(FlashMs, this, [this, gpio] {
+        m_lit.remove(gpio);
+        if (QTreeWidgetItem *again = row(gpio))
+            for (int c = 0; c < ColumnCount; ++c)
+                again->setBackground(c, QBrush());
+    });
 }
 
 bool PinsPanel::pulse(int gpio, int ms)

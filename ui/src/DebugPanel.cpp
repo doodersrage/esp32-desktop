@@ -244,11 +244,19 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     stackLayout->setContentsMargins(0, 0, 0, 0);
     stackLayout->addWidget(new QLabel(tr("Call stack"), stackBox));
     stackLayout->addWidget(m_stack, 1);
-    m_stack->setToolTip(tr("Click a function to see its variables and the line it is at"));
+    m_stack->setToolTip(tr("Click a function to see its variables and the line it is at; double-click to open "
+                           "its source"));
     connect(m_stack, &QTreeWidget::itemClicked, this,
             [this](QTreeWidgetItem *item) { selectFrame(m_stack->indexOfTopLevelItem(item)); });
-    connect(m_stack, &QTreeWidget::itemActivated, this,
-            [this](QTreeWidgetItem *item) { selectFrame(m_stack->indexOfTopLevelItem(item)); });
+    connect(m_stack, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item) {
+        selectFrame(m_stack->indexOfTopLevelItem(item));
+        // Its source: the sketch's line in the Code tab, another file in the editor.
+        const QJsonObject f = m_frames.at(m_stack->indexOfTopLevelItem(item)).toObject();
+        const QString path = f.value(u"file"_s).toString();
+        const int line = f.value(u"line"_s).toInt();
+        if (!path.isEmpty() && line > 0)
+            emit sourceRequested(QJsonObject{{u"file"_s, QFileInfo(path).fileName()}, {u"line"_s, line}, {u"path"_s, path}});
+    });
 
     auto *localsBox = new QWidget(this);
     auto *localsLayout = new QVBoxLayout(localsBox);

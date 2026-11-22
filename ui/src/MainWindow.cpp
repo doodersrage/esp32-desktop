@@ -747,6 +747,7 @@ void MainWindow::buildToolBar()
     connect(m_core, &CoreConnection::debugStopped, this,
             [markFrame](const QString &, const QJsonObject &frame) { markFrame(frame); });
     connect(m_debugger, &DebugPanel::frameSelected, this, markFrame);
+    connect(m_debugger, &DebugPanel::sourceRequested, this, &MainWindow::showLocation);
     for (auto signal : {&CoreConnection::debugRunning, &CoreConnection::debugExited})
         connect(m_core, signal, this, [this] { m_project->showPausedLine(0); });
     connect(m_core, &CoreConnection::simStopped, this, [this] { m_project->showPausedLine(0); });
@@ -1014,6 +1015,10 @@ void MainWindow::buildMenus()
         if (m_project->buildAction()->isEnabled())
             m_project->buildAction()->trigger();
     });
+    QAction *nextBoard = project->addAction(tr("Next board"), this, [this] { m_project->stepBoard(1); });
+    nextBoard->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_BracketRight));
+    QAction *previousBoard = project->addAction(tr("Previous board"), this, [this] { m_project->stepBoard(-1); });
+    previousBoard->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_BracketLeft));
     project->addAction(m_buildPanel->nextProblemAction());
     project->addAction(m_buildPanel->previousProblemAction());
     project->addSeparator();

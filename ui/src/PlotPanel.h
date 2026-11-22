@@ -15,6 +15,7 @@
 
 class CoreConnection;
 class QCheckBox;
+class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
 
@@ -35,6 +36,10 @@ public:
     QList<std::pair<QRectF, QString>> legend() const { return m_legend; }
 
     static constexpr int Kept = 500;
+    // The Y axis from `low` to `high` instead of fitted to the values (when fixed and
+    // high > low).
+    void setRange(bool fixed, double low, double high);
+    bool fixedRange() const { return m_fixed; }
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -46,6 +51,9 @@ private:
     QSet<QString> m_hidden;
     QList<std::pair<QRectF, QString>> m_legend;
     qreal m_hoverX = -1;
+    bool m_fixed = false;
+    double m_fixedLo = 0;
+    double m_fixedHi = 1;
     QHash<QString, QList<double>> m_series;
     QStringList m_order;
     // Rows seen, so series that start later line up with the others.
@@ -65,6 +73,9 @@ public:
     void saveTo(const QString &path);
     QPushButton *saveButton() const { return m_save; }
     QCheckBox *pauseBox() const { return m_pause; }
+    QCheckBox *autoRangeBox() const { return m_autoRange; }
+    QDoubleSpinBox *lowBox() const { return m_low; }
+    QDoubleSpinBox *highBox() const { return m_high; }
     QPushButton *savePictureButton() const { return m_savePicture; }
     // The plot as drawn, at most 4096 pixels a side (frame.save's limit).
     QImage picture() const;
@@ -81,6 +92,9 @@ private:
     PlotCanvas *m_canvas;
     QLabel *m_status;
     QCheckBox *m_pause;
+    QCheckBox *m_autoRange = nullptr;
+    QDoubleSpinBox *m_low = nullptr;
+    QDoubleSpinBox *m_high = nullptr;
     QPushButton *m_clear;
     QPushButton *m_save;
     QPushButton *m_savePicture = nullptr;

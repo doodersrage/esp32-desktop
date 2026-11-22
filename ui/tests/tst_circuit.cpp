@@ -287,6 +287,8 @@ private slots:
         QTRY_VERIFY(panel.undoButton()->isEnabled());
 
         // Undo puts it back where it was laid out.
+        // Off while a save is unanswered: wait for it, as a person does.
+        QTRY_VERIFY(panel.undoButton()->isEnabled());
         panel.undoButton()->click();
         QTRY_VERIFY2(!partsOf(fake.saved, 0).contains(u"at"_s), qPrintable(fake.saves.join(u" | "_s)));
         QVERIFY(!panel.undoButton()->isEnabled());
@@ -300,6 +302,8 @@ private slots:
         QVERIFY(view->scene()->focusItem());
         QTest::keyClick(view, Qt::Key_Right);
         QTRY_VERIFY(partsOf(fake.saved, 0).contains(u"at"_s));
+        // Off while a save is unanswered: wait for it, as a person does.
+        QTRY_VERIFY(panel.undoButton()->isEnabled());
         panel.undoButton()->click();
         QTRY_VERIFY2(!partsOf(fake.saved, 0).contains(u"at"_s), qPrintable(fake.saves.join(u" | "_s)));
         // Tidy: nothing to do when no part was moved; after a move, all back in place.
@@ -314,6 +318,8 @@ private slots:
         // An added part can be undone too.
         panel.addPart(u"button"_s, 4, true, u"Go"_s);
         QTRY_COMPARE(panel.parts().size(), 2);
+        // Off while a save is unanswered: wait for it, as a person does.
+        QTRY_VERIFY(panel.undoButton()->isEnabled());
         panel.undoButton()->click();
         QTRY_COMPARE(panel.parts().size(), 1);
     }
@@ -337,9 +343,13 @@ private slots:
         // Redo makes again what Undo took back; a new change ends that.
         panel.addPart(u"button"_s, 4, true, u"Go"_s);
         QTRY_COMPARE(panel.parts().size(), 2);
+        // Off while a save is unanswered: wait for it, as a person does.
+        QTRY_VERIFY(panel.undoButton()->isEnabled());
         panel.undoButton()->click();
         QTRY_COMPARE(panel.parts().size(), 1);
         QVERIFY(panel.redoButton()->isEnabled());
+        // Off while a save is unanswered: wait for it, as a person does.
+        QTRY_VERIFY(panel.redoButton()->isEnabled());
         panel.redoButton()->click();
         QTRY_COMPARE(panel.parts().size(), 2);
         QVERIFY(!panel.redoButton()->isEnabled());
@@ -406,6 +416,8 @@ private slots:
         QVERIFY(!panel.undoButton()->isEnabled()); // nothing changed
         panel.importFrom(u"/tmp/x/c.json"_s);
         QTRY_COMPARE(panel.parts().at(0).toObject().value(u"id"_s).toString(), u"button-1"_s);
+        QTRY_VERIFY(panel.undoButton()->isEnabled());
+        // Off while a save is unanswered: wait for it, as a person does.
         QTRY_VERIFY(panel.undoButton()->isEnabled());
         panel.undoButton()->click();
         QTRY_COMPARE(panel.parts().at(0).toObject().value(u"id"_s).toString(), u"led-1"_s);

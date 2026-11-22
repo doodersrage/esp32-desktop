@@ -104,6 +104,10 @@ private slots:
         QTRY_COMPARE(panel.row(2)->text(PinsPanel::LevelColumn), u"low"_s);
         QCOMPARE(panel.row(4)->text(PinsPanel::DirectionColumn), u"input"_s);
         QVERIFY(!panel.row(9));
+        // A change lights the row a moment.
+        fake.pins(QJsonArray{QJsonObject{{u"gpio"_s, 2}, {u"level"_s, true}}});
+        QTRY_VERIFY(panel.isLit(2));
+        QTRY_VERIFY(!panel.isLit(2));
         // A pin to be careful with says so on its row.
         QTRY_VERIFY(panel.row(2)->toolTip(PinsPanel::GpioColumn).contains(u"strapping pin"_s));
         QVERIFY(panel.row(4)->toolTip(PinsPanel::GpioColumn).isEmpty());

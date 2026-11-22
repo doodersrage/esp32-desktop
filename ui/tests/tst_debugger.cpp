@@ -454,6 +454,16 @@ private slots:
         panel.selectFrame(0);
         QTRY_COMPARE(panel.selectedFrame(), 0);
 
+        // A double-click on a frame opens its source, where it has one.
+        QSignalSpy source(&panel, &DebugPanel::sourceRequested);
+        emit panel.stack()->itemActivated(panel.stack()->topLevelItem(1), 0); // loopTask: no file
+        QCOMPARE(source.size(), 0);
+        emit panel.stack()->itemActivated(panel.stack()->topLevelItem(0), 0);
+        QCOMPARE(source.size(), 1);
+        QCOMPARE(source.at(0).at(0).toJsonObject().value(u"file"_s).toString(), u"blink.ino"_s);
+        QCOMPARE(source.at(0).at(0).toJsonObject().value(u"line"_s).toInt(), 4);
+        QTRY_COMPARE(panel.selectedFrame(), 0);
+
         // A watchpoint from a watched expression, and its stop.
         panel.addWatch(u"count"_s);
         QVERIFY(panel.watchChanges(u"count"_s));

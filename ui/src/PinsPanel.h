@@ -6,6 +6,7 @@
 
 #include <QJsonArray>
 #include <QHash>
+#include <QSet>
 #include <QWidget>
 
 class CoreConnection;
@@ -33,6 +34,10 @@ public:
     // Drive a pin the other way from its switch for `ms`, then back: a button pressed
     // and let go (sim.pulsePin; the core times it). Also in a row's right-click menu.
     bool pulse(int gpio, int ms);
+    // Light a pin's row for a moment (its level changed).
+    void flash(int gpio);
+    bool isLit(int gpio) const { return m_lit.contains(gpio); }
+    static constexpr int FlashMs = 400;
 
 signals:
     // A double-click or Enter on a pin's row: show it in the trace.
@@ -48,4 +53,5 @@ private:
     QTreeWidget *m_tree;
     QHash<int, QString> m_labels;
     QString m_board; // the running simulation's
+    QSet<int> m_lit; // rows lit by a change
 };

@@ -93,6 +93,9 @@ public:
     QPushButton *pinoutButton() const { return m_pinout; }
     // The board's pinout page on esp32bench.dev.
     static QUrl pinoutUrl(const QString &board);
+    // The project's next (by > 0) or previous board, round from the end; false when
+    // there is none to step to (Ctrl+] and Ctrl+[).
+    bool stepBoard(int by);
     // Your notes for the project shown (My notes), saved a moment after typing.
     QPlainTextEdit *myNotes() const { return m_myNotes; }
     // Save what was typed now, not after the pause (for tests, and on switching).

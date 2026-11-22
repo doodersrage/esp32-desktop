@@ -448,6 +448,23 @@ private slots:
             titled |= d->windowTitle() == u"Problems (1)"_s;
         QVERIFY(titled);
         QCOMPARE(window.problems()->tree()->topLevelItem(0)->text(ProblemsPanel::TextColumn), u"The board browned out."_s);
+        // Only one kind of problem, and clearing just those.
+        emit core.simBootLoop(QJsonObject{{u"resets"_s, 3}, {u"seconds"_s, 4}});
+        const int before = window.problems()->tree()->topLevelItemCount();
+        window.problems()->showOnly(u"serial"_s);
+        int shown = 0;
+        for (int i = 0; i < before; ++i)
+            shown += window.problems()->tree()->topLevelItem(i)->isHidden() ? 0 : 1;
+        QVERIFY(shown < before);
+        window.problems()->clearButton()->click();
+        QCOMPARE(window.problems()->tree()->topLevelItemCount(), before - shown);
+        window.problems()->showOnly({});
+        // The interface size, read before the app starts.
+        QSettings().setValue(u"ui/size"_s, 150);
+        QCOMPARE(Preferences::interfaceSize(), 150);
+        QSettings().setValue(u"ui/size"_s, 9000);
+        QCOMPARE(Preferences::interfaceSize(), 300);
+        QSettings().remove(u"ui/size"_s);
         // Looking an error up on the site sends its own words only.
         QCOMPARE(ProblemsPanel::searchTerms(u"Guru Meditation Error: Core  1 panic'ed (LoadProhibited). Exception was unhandled."_s),
                  u"LoadProhibited"_s);

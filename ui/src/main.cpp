@@ -46,6 +46,8 @@ bool handToRunningInstance(const QString &link)
 
 int main(int argc, char *argv[])
 {
+    // The interface size chosen in Preferences, before Qt reads the scale.
+    Preferences::applyInterfaceSize();
     QApplication app(argc, argv);
     QApplication::setApplicationName(u"esp32bench"_s);
     QApplication::setOrganizationName(u"esp32bench"_s);

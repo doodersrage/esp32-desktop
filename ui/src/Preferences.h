@@ -26,6 +26,11 @@ bool reopenProject();
 bool serialReconnect();
 // Whether to reopen the serial monitor's port at start when it was open at quit.
 bool reopenSerial();
+// The interface size chosen, in percent (100 is the desktop's own scaling).
+int interfaceSize();
+// Before the QApplication exists: ask Qt for interfaceSize() (QT_SCALE_FACTOR),
+// unless the environment already sets a scale.
+void applyInterfaceSize();
 }
 
 class PreferencesDialog : public QDialog {
@@ -42,6 +47,7 @@ public:
     QComboBox *themePicker() const { return m_theme; }
     QSpinBox *textSize() const { return m_textSize; }
     QCheckBox *releaseNoticesBox() const { return m_notices; }
+    QComboBox *sizePicker() const { return m_size; }
 
 signals:
     // The consoles' text size changed: they apply it.
@@ -50,6 +56,7 @@ signals:
 private:
     QComboBox *m_language;
     QComboBox *m_theme;
+    QComboBox *m_size;
     QSpinBox *m_textSize;
     QCheckBox *m_notices;
     QCheckBox *m_reopenProject;

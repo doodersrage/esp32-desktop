@@ -2,6 +2,8 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <algorithm>
+#include <QCoreApplication>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGuiApplication>
@@ -58,12 +60,28 @@ bool reopenSerial()
 {
     return QSettings().value(u"serial/reopen"_s, true).toBool();
 }
+int interfaceSize()
+{
+    const int size = QSettings().value(u"ui/size"_s, 100).toInt();
+    return std::clamp(size, 50, 300);
+}
+
+void applyInterfaceSize()
+{
+    // Settings are the app's own: read them as the app will once it has its names.
+    QCoreApplication::setApplicationName(u"esp32bench"_s);
+    QCoreApplication::setOrganizationName(u"esp32bench"_s);
+    const int size = interfaceSize();
+    if (size != 100 && qEnvironmentVariableIsEmpty("QT_SCALE_FACTOR"))
+        qputenv("QT_SCALE_FACTOR", QByteArray::number(size / 100.0));
+}
 } // namespace Preferences
 
 PreferencesDialog::PreferencesDialog(QWidget *parent)
     : QDialog(parent)
     , m_language(new QComboBox(this))
     , m_theme(new QComboBox(this))
+    , m_size(new QComboBox(this))
     , m_textSize(new QSpinBox(this))
     , m_notices(new QCheckBox(tr("Say when a newer release is out"), this))
     , m_reopenProject(new QCheckBox(tr("Reopen the last project at start"), this))
@@ -82,6 +100,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_theme->addItem(tr("Light"), u"light"_s);
     m_theme->addItem(tr("Dark"), u"dark"_s);
     m_theme->setToolTip(tr("Light or dark colours, or the system's"));
+    for (const int size : {100, 125, 150, 175, 200})
+        m_size->addItem(tr("%1%").arg(size), size);
+    m_size->setToolTip(tr("Everything bigger than the desktop makes it, for a large or very sharp screen"));
     m_textSize->setRange(-4, 24);
     m_textSize->setToolTip(tr("Steps bigger or smaller than the system's fixed-width font, as Ctrl+= and Ctrl+- set"));
     connect(m_textSize, &QSpinBox::valueChanged, this, &PreferencesDialog::textSizeChanged);
@@ -105,6 +126,13 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         m_theme->hide();
     }
     form->addRow(size, m_textSize);
+    auto *interfaceSize = new QLabel(tr("&Interface size:"), this);
+    interfaceSize->setBuddy(m_size);
+    form->addRow(interfaceSize, m_size);
+    auto *sizeNote = new QLabel(tr("A new size is used from the next start."), this);
+    sizeNote->setWordWrap(true);
+    sizeNote->setForegroundRole(QPalette::PlaceholderText);
+    form->addRow(QString(), sizeNote);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, [this] {
         save();
@@ -133,6 +161,8 @@ void PreferencesDialog::load()
         const QSignalBlocker block(m_textSize);
         m_textSize->setValue(s.value(u"console/zoom"_s, 0).toInt());
     }
+    const int z = m_size->findData(Preferences::interfaceSize());
+    m_size->setCurrentIndex(z < 0 ? 0 : z);
     m_notices->setChecked(Preferences::releaseNotices());
     m_reopenProject->setChecked(Preferences::reopenProject());
     m_reconnect->setChecked(Preferences::serialReconnect());
@@ -144,6 +174,7 @@ void PreferencesDialog::save()
     QSettings s;
     s.setValue(u"ui/language"_s, m_language->currentData().toString());
     s.setValue(u"ui/theme"_s, m_theme->currentData().toString());
+    s.setValue(u"ui/size"_s, m_size->currentData().toInt());
     Preferences::applyTheme(); // at once
     s.setValue(u"console/zoom"_s, m_textSize->value());
     s.setValue(u"update/notices"_s, m_notices->isChecked());

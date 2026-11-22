@@ -91,6 +91,8 @@ signals:
     void breakpointsChanged();
     // The frame looked in: where to mark the paused line.
     void frameSelected(const QJsonObject &frame);
+    // A double-click on a frame: show its source ({file (its name), line, path}).
+    void sourceRequested(const QJsonObject &at);
 
 private:
     enum class Mode { Off, Running, Paused };

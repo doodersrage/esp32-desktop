@@ -4,6 +4,7 @@
 #include <QRegularExpression>
 #include <QGuiApplication>
 #include <QClipboard>
+#include <QComboBox>
 
 #include "ConsoleView.h"
 #include <QFileInfo>
@@ -48,10 +49,23 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
     });
     m_clear->setToolTip(tr("Clear the list"));
     connect(m_clear, &QPushButton::clicked, this, [this] {
-        m_tree->clear();
-        m_hasProblem = false;
-        emit countChanged(0);
+        // The kind shown, or all of them.
+        for (int i = m_tree->topLevelItemCount() - 1; i >= 0; --i) {
+            if (!m_tree->topLevelItem(i)->isHidden())
+                delete m_tree->takeTopLevelItem(i);
+        }
+        if (m_tree->topLevelItemCount() == 0)
+            m_hasProblem = false;
+        emit countChanged(m_tree->topLevelItemCount());
     });
+    // Only one kind: the build's, the simulator's or the board's.
+    m_filter = new QComboBox(this);
+    m_filter->setAccessibleName(tr("Show problems from"));
+    m_filter->addItem(tr("Everywhere"), QString());
+    m_filter->addItem(tr("Build"), u"build"_s);
+    m_filter->addItem(tr("Simulator"), u"sim"_s);
+    m_filter->addItem(tr("Board"), u"serial"_s);
+    connect(m_filter, &QComboBox::currentIndexChanged, this, [this] { showOnly(m_filter->currentData().toString()); });
     connect(core, &CoreConnection::outputExplained, this, &ProblemsPanel::add);
     connect(core, &CoreConnection::simBacktrace, this, [this](const QJsonArray &f) { addCrash(u"sim"_s, f); });
     for (const auto &[signal, source] : {std::pair{&CoreConnection::simBootLoop, u"sim"_s},
@@ -92,6 +106,7 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
     });
 
     auto *bar = new QHBoxLayout;
+    bar->addWidget(m_filter);
     bar->addStretch(1);
     bar->addWidget(m_clear);
     auto *layout = new QVBoxLayout(this);
@@ -113,6 +128,19 @@ QString ProblemsPanel::searchTerms(const QString &text)
     t.remove(QRegularExpression(u"['‘\"][^'’\"]*['’\"]"_s));
     t.remove(QRegularExpression(u"[^\\w\\s_-]"_s));
     return t.split(u' ', Qt::SkipEmptyParts).mid(0, 6).join(u' ');
+}
+
+void ProblemsPanel::showOnly(const QString &source)
+{
+    m_only = source;
+    const int i = m_filter->findData(source);
+    if (i >= 0 && i != m_filter->currentIndex())
+        m_filter->setCurrentIndex(i);
+    for (int n = 0; n < m_tree->topLevelItemCount(); ++n) {
+        QTreeWidgetItem *item = m_tree->topLevelItem(n);
+        item->setHidden(!source.isEmpty() && item->data(SourceColumn, SourceRole).toString() != source);
+    }
+    m_clear->setToolTip(source.isEmpty() ? tr("Clear the list") : tr("Clear the ones shown"));
 }
 
 QUrl ProblemsPanel::searchUrl(const QString &words)
@@ -164,6 +192,8 @@ void ProblemsPanel::add(const QString &source, const QJsonArray &findings)
         auto *item = new QTreeWidgetItem(m_tree);
         item->setText(TimeColumn, QTime::currentTime().toString(u"hh:mm:ss"_s));
         item->setText(SourceColumn, from);
+        item->setData(SourceColumn, SourceRole, source);
+        item->setHidden(!m_only.isEmpty() && m_only != source);
         item->setText(TextColumn, f.value(u"text"_s).toString());
         item->setIcon(TextColumn, QIcon::fromTheme(problem ? u"dialog-error"_s : u"help-about"_s));
         item->setData(TextColumn, UrlRole, f.value(u"url"_s).toString());

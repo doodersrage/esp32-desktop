@@ -483,6 +483,15 @@ void ProjectView::goToLine()
     }
 }
 
+bool ProjectView::stepBoard(int by)
+{
+    const int n = m_board->count();
+    if (n < 2 || m_stack->currentIndex() != 1)
+        return false;
+    m_board->setCurrentIndex(((m_board->currentIndex() + by) % n + n) % n);
+    return true;
+}
+
 QUrl ProjectView::pinoutUrl(const QString &board)
 {
     return QUrl(u"https://esp32bench.dev/boards/%1/"_s.arg(board));

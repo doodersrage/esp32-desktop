@@ -1039,6 +1039,10 @@ Variables globales : %4 sur %5</translation>
         <translation>Registre</translation>
     </message>
     <message>
+        <source>Click a function to see its variables and the line it is at; double-click to open its source</source>
+        <translation>Cliquez sur une fonction pour voir ses variables et sa ligne ; double-cliquez pour ouvrir sa source</translation>
+    </message>
+    <message>
         <source>Breakpoint %1: passes left before it stops: %2.</source>
         <translation>Point d’arrêt %1 : passages restants avant l’arrêt : %2.</translation>
     </message>
@@ -1085,10 +1089,6 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>Run past it this many times, then stop:</source>
         <translation>Le passer autant de fois, puis s’arrêter :</translation>
-    </message>
-    <message>
-        <source>Click a function to see its variables and the line it is at</source>
-        <translation>Cliquez sur une fonction pour voir ses variables et la ligne où elle en est</translation>
     </message>
     <message>
         <source>Watch</source>
@@ -2217,6 +2217,14 @@ Le panneau Compilation ci-dessous contient tout le journal.</translation>
         <translation>Supprimer la compilation de ce projet pour la carte affichée et la refaire depuis zéro : pour une compilation qui se comporte bizarrement</translation>
     </message>
     <message>
+        <source>Next board</source>
+        <translation>Carte suivante</translation>
+    </message>
+    <message>
+        <source>Previous board</source>
+        <translation>Carte précédente</translation>
+    </message>
+    <message>
         <source>&amp;View</source>
         <translation>&amp;Affichage</translation>
     </message>
@@ -2711,6 +2719,22 @@ SHA-256 du code : %2</translation>
         <source>Hold the picture still to look at it; values that come meanwhile are kept, and shown when you go on</source>
         <translation>Figer l’image pour la regarder ; les valeurs qui arrivent entre-temps sont gardées et affichées à la reprise</translation>
     </message>
+    <message>
+        <source>Auto range</source>
+        <translation>Plage automatique</translation>
+    </message>
+    <message>
+        <source>Fit the Y axis to the values; off, it keeps the range set beside it</source>
+        <translation>Ajuster l’axe Y aux valeurs ; désactivé, il garde la plage réglée à côté</translation>
+    </message>
+    <message>
+        <source>Lowest value shown</source>
+        <translation>Plus petite valeur affichée</translation>
+    </message>
+    <message>
+        <source>Highest value shown</source>
+        <translation>Plus grande valeur affichée</translation>
+    </message>
 </context>
 <context>
     <name>PreferencesDialog</name>
@@ -2755,12 +2779,28 @@ SHA-256 du code : %2</translation>
         <translation>Couleurs claires ou sombres, ou celles du système</translation>
     </message>
     <message>
+        <source>%1%</source>
+        <translation>%1 %</translation>
+    </message>
+    <message>
+        <source>Everything bigger than the desktop makes it, for a large or very sharp screen</source>
+        <translation>Tout plus grand que ce que fait le bureau, pour un grand écran ou un écran très net</translation>
+    </message>
+    <message>
         <source>Console &amp;text size (0 is the usual size):</source>
         <translation>&amp;Taille du texte de la console (0 est la taille habituelle) :</translation>
     </message>
     <message>
         <source>&amp;Colours:</source>
         <translation>&amp;Couleurs :</translation>
+    </message>
+    <message>
+        <source>&amp;Interface size:</source>
+        <translation>&amp;Taille de l’interface :</translation>
+    </message>
+    <message>
+        <source>A new size is used from the next start.</source>
+        <translation>Une nouvelle taille s’applique au prochain démarrage.</translation>
     </message>
     <message>
         <source>Steps bigger or smaller than the system&apos;s fixed-width font, as Ctrl+= and Ctrl+- set</source>
@@ -2806,6 +2846,14 @@ SHA-256 du code : %2</translation>
         <translation>Effacer la liste</translation>
     </message>
     <message>
+        <source>Show problems from</source>
+        <translation>Afficher les problèmes de</translation>
+    </message>
+    <message>
+        <source>Everywhere</source>
+        <translation>Partout</translation>
+    </message>
+    <message>
         <source>The build failed at %1, line %2: %3</source>
         <translation>La compilation a échoué à %1, ligne %2 : %3</translation>
     </message>
@@ -2816,6 +2864,10 @@ SHA-256 du code : %2</translation>
     <message>
         <source>Copy</source>
         <translation>Copier</translation>
+    </message>
+    <message>
+        <source>Clear the ones shown</source>
+        <translation>Effacer ceux affichés</translation>
     </message>
     <message>
         <source>Crashed in %1 (%2, line %3)</source>

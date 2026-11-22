@@ -25,6 +25,7 @@
 #include <QGuiApplication>
 #include <QToolButton>
 #include <QMenu>
+#include <QDoubleSpinBox>
 #include <QTest>
 
 #include <cmath>
@@ -469,6 +470,14 @@ private slots:
         // Every row received is kept for Save CSV…, as the core sent it; counted step by step.
         qsizetype kept = 2;
         QCOMPARE(panel.rows().size(), kept);
+        // A fixed Y range, kept between starts; Auto fits the values again.
+        panel.autoRangeBox()->setChecked(false);
+        panel.lowBox()->setValue(0);
+        panel.highBox()->setValue(50);
+        QVERIFY(panel.canvas()->fixedRange());
+        QCOMPARE(QSettings().value(u"plot/high"_s).toDouble(), 50.0);
+        panel.autoRangeBox()->setChecked(true);
+        QVERIFY(!panel.canvas()->fixedRange());
         // Paused: the picture holds still, but the rows are kept, and drawn on going on.
         panel.pauseBox()->setChecked(true);
         emit core.plotRows(oneRow(row(30, 30)));

@@ -20,6 +20,10 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+
+#include <QSettings>
+
+#include <QDoubleSpinBox>
 #include <cmath>
 
 using namespace Qt::StringLiterals;
@@ -101,7 +105,12 @@ void PlotCanvas::paintEvent(QPaintEvent *)
         lo -= 1;
         hi += 1;
     }
-    const double pad = (hi - lo) * 0.05;
+    // A range chosen in the dock wins: no rescaling as values come.
+    if (m_fixed) {
+        lo = m_fixedLo;
+        hi = m_fixedHi;
+    }
+    const double pad = m_fixed ? 0 : (hi - lo) * 0.05;
     lo -= pad;
     hi += pad;
     // The scale: top, middle and bottom values.
@@ -294,6 +303,41 @@ PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
 
     auto *top = new QHBoxLayout;
     top->addWidget(m_status, 1);
+    // The Y axis: fitted to the values (Auto), or a range kept between starts.
+    m_autoRange = new QCheckBox(tr("Auto range"), this);
+    m_autoRange->setToolTip(tr("Fit the Y axis to the values; off, it keeps the range set beside it"));
+    m_low = new QDoubleSpinBox(this);
+    m_high = new QDoubleSpinBox(this);
+    for (QDoubleSpinBox *b : {m_low, m_high}) {
+        b->setRange(-1e9, 1e9);
+        b->setDecimals(2);
+        b->setMaximumWidth(110);
+    }
+    m_low->setAccessibleName(tr("Lowest value shown"));
+    m_high->setAccessibleName(tr("Highest value shown"));
+    {
+        QSettings settings;
+        m_autoRange->setChecked(settings.value(u"plot/autoRange"_s, true).toBool());
+        m_low->setValue(settings.value(u"plot/low"_s, 0.0).toDouble());
+        m_high->setValue(settings.value(u"plot/high"_s, 100.0).toDouble());
+    }
+    const auto applyRange = [this] {
+        const bool fixed = !m_autoRange->isChecked();
+        m_low->setEnabled(fixed);
+        m_high->setEnabled(fixed);
+        m_canvas->setRange(fixed, m_low->value(), m_high->value());
+        QSettings settings;
+        settings.setValue(u"plot/autoRange"_s, !fixed);
+        settings.setValue(u"plot/low"_s, m_low->value());
+        settings.setValue(u"plot/high"_s, m_high->value());
+    };
+    connect(m_autoRange, &QCheckBox::toggled, this, applyRange);
+    connect(m_low, &QDoubleSpinBox::valueChanged, this, applyRange);
+    connect(m_high, &QDoubleSpinBox::valueChanged, this, applyRange);
+    applyRange();
+    top->addWidget(m_autoRange);
+    top->addWidget(m_low);
+    top->addWidget(m_high);
     top->addWidget(m_pause);
     top->addWidget(m_clear);
     top->addWidget(m_save);
@@ -301,6 +345,14 @@ PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     layout->addWidget(m_canvas, 1);
+}
+
+void PlotCanvas::setRange(bool fixed, double low, double high)
+{
+    m_fixed = fixed && high > low;
+    m_fixedLo = low;
+    m_fixedHi = high;
+    update();
 }
 
 void PlotPanel::clearRows()

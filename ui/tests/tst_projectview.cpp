@@ -68,6 +68,12 @@ private slots:
         const QJsonArray builds = p.value(u"builds"_s).toArray();
         QCOMPARE(view.boardPicker()->count(), builds.size());
         QVERIFY(builds.size() >= 2);
+        // Ctrl+] and Ctrl+[: the next and previous board, round from the end.
+        const int at = view.boardPicker()->currentIndex();
+        QVERIFY(view.stepBoard(1));
+        QCOMPARE(view.boardPicker()->currentIndex(), (at + 1) % int(builds.size()));
+        QVERIFY(view.stepBoard(-1));
+        QCOMPARE(view.boardPicker()->currentIndex(), at);
         // Board names come from the result's boards, with the chip.
         QVERIFY(view.boardPicker()->itemText(0).contains(u"(ESP32"_s));
         QCOMPARE(view.partsTree()->topLevelItemCount(), p.value(u"parts"_s).toArray().size());
