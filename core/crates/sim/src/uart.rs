@@ -2,6 +2,7 @@
 //! its USB-Serial-JTAG serial port (boards like the C3 SuperMini have no USB-UART chip,
 //! so their `Serial` is that). Output is raw bytes; callers decode at the edge.
 
+use std::collections::VecDeque;
 use std::time::Duration;
 
 use crate::link::Stream;
@@ -36,6 +37,84 @@ pub enum WaitOutcome {
     Closed,
 }
 
+/// A line one port printed counts as the same as the other's within this time.
+const SAME_LINE: Duration = Duration::from_secs(2);
+
+/// How long a merged console holds an unfinished line (a prompt) before passing it on.
+const HOLD: Duration = Duration::from_millis(50);
+
+/// UART0 and the USB serial port merged into one console. The ROM writes its boot
+/// text to both, so merging raw chunks interleaved the two copies mid-line: each
+/// port's output is taken a whole line at a time, and a line the other port printed
+/// just before is dropped, so the console reads as a real board's USB port does.
+#[derive(Default)]
+struct Merge {
+    partial: [Vec<u8>; 2],
+    recent: VecDeque<(usize, Vec<u8>, Instant)>,
+}
+
+impl Merge {
+    /// `port`'s new bytes: what to show now.
+    fn push(&mut self, port: usize, bytes: &[u8], now: Instant) -> Vec<u8> {
+        self.partial[port].extend_from_slice(bytes);
+        let mut out = Vec::new();
+        while let Some(end) = self.partial[port].iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = self.partial[port].drain(..=end).collect();
+            self.line(port, line, now, &mut out);
+        }
+        out
+    }
+
+    /// The unfinished lines, after a pause in the output.
+    fn flush(&mut self, now: Instant) -> Vec<u8> {
+        let mut out = Vec::new();
+        for port in 0..2 {
+            let line = std::mem::take(&mut self.partial[port]);
+            if !line.is_empty() {
+                self.line(port, line, now, &mut out);
+            }
+        }
+        out
+    }
+
+    fn pending(&self) -> bool {
+        self.partial.iter().any(|p| !p.is_empty())
+    }
+
+    fn line(&mut self, port: usize, line: Vec<u8>, now: Instant, out: &mut Vec<u8>) {
+        while self
+            .recent
+            .front()
+            .is_some_and(|(_, _, at)| now.duration_since(*at) > SAME_LINE)
+        {
+            self.recent.pop_front();
+        }
+        let key: Vec<u8> = {
+            let mut k = line.as_slice();
+            while let [rest @ .., b'\r' | b'\n'] = k {
+                k = rest;
+            }
+            k.to_vec()
+        };
+        // Blank lines are too common to be the same line.
+        if !key.is_empty() {
+            if let Some(i) = self
+                .recent
+                .iter()
+                .position(|(p, k, _)| *p != port && *k == key)
+            {
+                self.recent.remove(i);
+                return;
+            }
+            self.recent.push_back((port, key, now));
+            if self.recent.len() > 256 {
+                self.recent.pop_front();
+            }
+        }
+        out.extend_from_slice(&line);
+    }
+}
+
 /// The console's sockets are read all the time, by a task per port, into a queue
 /// that `read_chunk` takes from. QEMU waits for the socket to have room rather than
 /// dropping output (patch 0017), so a caller busy with something else (the pins,
@@ -48,11 +127,14 @@ pub struct Uart {
     usb: Option<tokio::io::WriteHalf<Stream>>,
     readers: Vec<tokio::task::JoinHandle<()>>,
     closed: bool,
+    /// Set when the USB port is merged in.
+    merge: Option<Merge>,
 }
 
-/// What a port's reader task queues: output, or UART0's end.
+/// What a port's reader task queues: output (from port 0, UART0, or 1, USB), or
+/// UART0's end.
 enum Chunk {
-    Data(Vec<u8>),
+    Data(usize, Vec<u8>),
     Closed,
 }
 
@@ -61,14 +143,18 @@ enum Chunk {
 fn spawn_reader(
     mut port: tokio::io::ReadHalf<Stream>,
     queue: tokio::sync::mpsc::UnboundedSender<Chunk>,
-    uart0: bool,
+    port_index: usize,
 ) -> tokio::task::JoinHandle<()> {
+    let uart0 = port_index == 0;
     tokio::spawn(async move {
         let mut buf = vec![0u8; 4096];
         loop {
             match port.read(&mut buf).await {
                 Ok(n) if n > 0 => {
-                    if queue.send(Chunk::Data(buf[..n].to_vec())).is_err() {
+                    if queue
+                        .send(Chunk::Data(port_index, buf[..n].to_vec()))
+                        .is_err()
+                    {
                         return;
                     }
                 }
@@ -87,7 +173,7 @@ impl Uart {
     pub fn new(stream: Stream) -> Self {
         let (read, writer) = tokio::io::split(stream);
         let (queue, chunks) = tokio::sync::mpsc::unbounded_channel();
-        let reader = spawn_reader(read, queue.clone(), true);
+        let reader = spawn_reader(read, queue.clone(), 0);
         Uart {
             chunks,
             queue,
@@ -95,15 +181,16 @@ impl Uart {
             usb: None,
             readers: vec![reader],
             closed: false,
+            merge: None,
         }
     }
 
     /// Also read from (and write to) the chip's USB serial port.
     pub fn with_usb(mut self, usb: Stream) -> Self {
         let (read, writer) = tokio::io::split(usb);
-        self.readers
-            .push(spawn_reader(read, self.queue.clone(), false));
+        self.readers.push(spawn_reader(read, self.queue.clone(), 1));
         self.usb = Some(writer);
+        self.merge = Some(Merge::default());
         self
     }
 
@@ -124,11 +211,39 @@ impl Uart {
         if self.closed {
             return Ok(None);
         }
-        match self.chunks.recv().await {
-            Some(Chunk::Data(bytes)) => Ok(Some(bytes)),
-            Some(Chunk::Closed) | None => {
-                self.closed = true;
-                Ok(None)
+        let Some(merge) = &mut self.merge else {
+            return match self.chunks.recv().await {
+                Some(Chunk::Data(_, bytes)) => Ok(Some(bytes)),
+                Some(Chunk::Closed) | None => {
+                    self.closed = true;
+                    Ok(None)
+                }
+            };
+        };
+        loop {
+            let next = if merge.pending() {
+                match tokio::time::timeout(HOLD, self.chunks.recv()).await {
+                    Ok(next) => next,
+                    Err(_) => {
+                        // Quiet: show the unfinished line, a prompt say.
+                        return Ok(Some(merge.flush(Instant::now())));
+                    }
+                }
+            } else {
+                self.chunks.recv().await
+            };
+            match next {
+                Some(Chunk::Data(port, bytes)) => {
+                    let out = merge.push(port, &bytes, Instant::now());
+                    if !out.is_empty() {
+                        return Ok(Some(out));
+                    }
+                }
+                Some(Chunk::Closed) | None => {
+                    self.closed = true;
+                    let rest = merge.flush(Instant::now());
+                    return Ok((!rest.is_empty()).then_some(rest));
+                }
             }
         }
     }
@@ -245,6 +360,52 @@ mod tests {
             got.extend_from_slice(&chunk);
         }
         assert_eq!(got, data);
+        assert_eq!(uart.read_chunk().await.unwrap(), None);
+    }
+
+    // The ROM's boot text on both ports reads once, line by line, not interleaved.
+    #[test]
+    fn merged_ports_show_each_line_once() {
+        let now = Instant::now();
+        let mut m = Merge::default();
+        let mut out = Vec::new();
+        out.extend(m.push(0, b"load:0x3fcd5820,len:0x1010\r\nload:0x", now));
+        out.extend(m.push(1, b"load:0x3fcd5820,len:0x1010\r\nload:0x403cbf10", now));
+        out.extend(m.push(0, b"403cbf10,len:0x9f4\r\n", now));
+        out.extend(m.push(1, b",len:0x9f4\r\nHello from Serial\r\n\r\n", now));
+        out.extend(m.push(0, b"\r\n", now));
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "load:0x3fcd5820,len:0x1010\r\nload:0x403cbf10,len:0x9f4\r\nHello from Serial\r\n\r\n\r\n"
+        );
+        // The same line again later is new output, and an unfinished one shows after a pause.
+        let later = now + SAME_LINE + Duration::from_millis(1);
+        assert_eq!(
+            m.push(0, b"Hello from Serial\n", later),
+            b"Hello from Serial\n"
+        );
+        assert!(m.push(1, b"> ", later).is_empty());
+        assert!(m.pending());
+        assert_eq!(m.flush(later), b"> ");
+    }
+
+    #[tokio::test]
+    async fn merges_the_usb_port() {
+        let (a, mut b) = UnixStream::pair().unwrap();
+        let (c, mut d) = UnixStream::pair().unwrap();
+        let mut uart = Uart::new(a).with_usb(c);
+        b.write_all(b"rst:0x15 (USB_UART_CHIP_RESET)\r\n")
+            .await
+            .unwrap();
+        d.write_all(b"rst:0x15 (USB_UART_CHIP_RESET)\r\nready> ")
+            .await
+            .unwrap();
+        let mut got = Vec::new();
+        while !got.ends_with(b"ready> ") {
+            got.extend(uart.read_chunk().await.unwrap().unwrap());
+        }
+        assert_eq!(got, b"rst:0x15 (USB_UART_CHIP_RESET)\r\nready> ");
+        drop(b);
         assert_eq!(uart.read_chunk().await.unwrap(), None);
     }
 
