@@ -1,6 +1,7 @@
 // DebugPanel, BuildPanel's Debug button and CoreConnection's debug calls against a
 // fake core.
 
+#include "BacktraceDialog.h"
 #include "BuildPanel.h"
 #include "CoreConnection.h"
 #include "DebugPanel.h"
@@ -16,6 +17,8 @@
 #include <QDockWidget>
 #include <QPushButton>
 #include <QTemporaryDir>
+#include <QPlainTextEdit>
+#include <QSignalSpy>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -27,6 +30,7 @@ public:
     QList<QJsonObject> calls; // method and params of each call after the handshake
     bool debugEnabled = true;
     QJsonArray kept{u"blink.ino:7"_s}; // breakpoints.get's answer for any project
+    QJsonArray watches; // watches.get's
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -64,7 +68,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.34.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.35.0"_s}});
             return;
         }
         if (m == u"device.list" || m == u"device.watch") {
@@ -87,7 +91,9 @@ private:
                 return;
             }
             QJsonObject bp = setup;
-            bp.insert(u"number"_s, 1);
+            bp.insert(u"number"_s, ++m_next);
+            if (p.contains(u"condition"_s))
+                bp.insert(u"condition"_s, p.value(u"condition"_s));
             reply(id, QJsonObject{{u"breakpoint"_s, bp}});
         } else if (m == u"debug.control") {
             reply(id, QJsonObject{});
@@ -109,6 +115,24 @@ private:
                       {u"error"_s, QJsonObject{{u"code"_s, -32000}, {u"message"_s, u"No symbol \"nope\" in current context."_s}}}});
             else
                 reply(id, QJsonObject{{u"value"_s, u"%1 = 84"_s.arg(e)}});
+        } else if (m == u"watches.get") {
+            reply(id, QJsonObject{{u"watches"_s, watches}});
+        } else if (m == u"watches.set") {
+            watches = p.value(u"watches"_s).toArray();
+            reply(id, QJsonObject{{u"watches"_s, watches}});
+        } else if (m == u"backtrace.decode") {
+            if (p.value(u"project"_s).toString() == u"unbuilt"_s) {
+                send({{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
+                      {u"error"_s, QJsonObject{{u"code"_s, -32000}, {u"message"_s, u"`unbuilt` has no build"_s}}}});
+                return;
+            }
+            QJsonArray found;
+            if (p.value(u"text"_s).toString().contains(u"Backtrace:"_s))
+                found << QJsonObject{{u"frames"_s, QJsonArray{QJsonObject{{u"addr"_s, u"0x400d1a2c"_s}, {u"func"_s, u"setup()"_s},
+                                                                          {u"file"_s, u"/b/blink/esp32/sketch/blink.ino"_s},
+                                                                          {u"line"_s, 4}, {u"sketch"_s, true}},
+                                                              QJsonObject{{u"addr"_s, u"0x40001234"_s}}}}};
+            reply(id, QJsonObject{{u"backtraces"_s, found}});
         } else if (m == u"breakpoints.get") {
             reply(id, QJsonObject{{u"breakpoints"_s, kept}});
         } else if (m == u"breakpoints.set") {
@@ -128,6 +152,7 @@ private:
     }
     QLocalServer *m_server;
     QPointer<QLocalSocket> m_sock;
+    int m_next = 0; // the last breakpoint number given
 };
 
 class TestDebugger : public QObject {
@@ -280,6 +305,90 @@ private slots:
         QCOMPARE(run.value(u"location"_s).toString(), u"blink.ino:12"_s);
         QTRY_COMPARE(fake.methods().count(u"debug.evaluate"_s), before + 2);
         core.stopSim();
+    }
+
+    void keepsWatchesAndConditions()
+    {
+        FakeCore fake(path());
+        fake.watches = QJsonArray{u"count"_s};
+        fake.kept = QJsonArray{u"blink.ino:7 if i == 3"_s, u"setup"_s};
+        CoreConnection core;
+        core.setSocketPath(path());
+        DebugPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        panel.setProject(u"blink"_s);
+        // The project's kept watches come back.
+        QTRY_COMPARE(panel.watchExpressions(), QStringList{u"count"_s});
+        panel.addWatch(u"buf[3]"_s);
+        QTRY_COMPARE(fake.watches, (QJsonArray{u"count"_s, u"buf[3]"_s}));
+        panel.removeWatch(u"count"_s);
+        QTRY_COMPARE(fake.watches, QJsonArray{u"buf[3]"_s});
+
+        // Not debugging: a condition changes the kept breakpoint.
+        QTRY_COMPARE(panel.breakpointLocations().size(), 2);
+        QCOMPARE(DebugPanel::keptLocation(u"blink.ino:7 if i == 3"_s), u"blink.ino:7"_s);
+        QCOMPARE(DebugPanel::keptCondition(u"blink.ino:7 if i == 3"_s), u"i == 3"_s);
+        QVERIFY(panel.setCondition(u"setup"_s, u"ready"_s));
+        QTRY_COMPARE(fake.kept, (QJsonArray{u"blink.ino:7 if i == 3"_s, u"setup if ready"_s}));
+        QVERIFY(panel.setCondition(u"blink.ino:7"_s, QString()));
+        QTRY_COMPARE(fake.kept, (QJsonArray{u"blink.ino:7"_s, u"setup if ready"_s}));
+        // The gutter's toggle finds a conditional one by its line.
+        QVERIFY(panel.toggleBreakpoint(u"setup"_s));
+        QTRY_COMPARE(fake.kept, QJsonArray{u"blink.ino:7"_s});
+        QVERIFY(panel.setCondition(u"blink.ino:9"_s, u"x > 1"_s)); // a new one
+        QTRY_COMPARE(fake.kept, (QJsonArray{u"blink.ino:7"_s, u"blink.ino:9 if x > 1"_s}));
+
+        // A debug run sets them with their conditions.
+        core.startSim(u"blink"_s, u"esp32"_s, true);
+        QTRY_VERIFY(core.isDebugging());
+        QTRY_COMPARE(panel.breakpoints()->count(), 2);
+        QJsonObject conditional;
+        for (const QJsonObject &c : fake.calls)
+            if (c.value(u"method"_s) == u"debug.break"_s && c.value(u"params"_s).toObject().contains(u"condition"_s))
+                conditional = c.value(u"params"_s).toObject();
+        QCOMPARE(conditional.value(u"location"_s).toString(), u"blink.ino:9"_s);
+        QCOMPARE(conditional.value(u"condition"_s).toString(), u"x > 1"_s);
+        QVERIFY(panel.breakpoints()->item(1)->text().contains(u"if x > 1"_s));
+        // Paused: a new condition is GDB's breakpoint again.
+        const qsizetype deletes = fake.methods().count(u"debug.delete"_s);
+        QVERIFY(panel.setCondition(u"blink.ino:7"_s, u"y"_s));
+        QTRY_COMPARE(fake.methods().count(u"debug.delete"_s), deletes + 1);
+        QTRY_VERIFY(fake.kept.contains(QJsonValue(u"blink.ino:7 if y"_s)));
+        QVERIFY(!fake.kept.contains(QJsonValue(u"blink.ino:7"_s)));
+        core.stopSim();
+    }
+
+    void decodesAPastedBacktrace()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        BacktraceDialog dialog(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QVERIFY(!dialog.decodeButton()->isEnabled());
+        dialog.setBuild(u"blink"_s, u"esp32"_s, u"Blink"_s);
+        dialog.input()->setPlainText(u"Guru Meditation Error\nBacktrace: 0x400d1a2c:0x3ffb0000"_s);
+        QVERIFY(dialog.decodeButton()->isEnabled());
+        dialog.decodeButton()->click();
+        QTRY_COMPARE(dialog.frames()->topLevelItemCount(), 2);
+        QCOMPARE(dialog.frames()->topLevelItem(0)->text(1), u"blink.ino, line 4"_s);
+        QVERIFY(dialog.frames()->topLevelItem(0)->font(0).bold());
+        QSignalSpy at(&dialog, &BacktraceDialog::locationActivated);
+        emit dialog.frames()->itemActivated(dialog.frames()->topLevelItem(0), 0);
+        QCOMPARE(at.size(), 1);
+        QCOMPARE(at.at(0).at(0).toJsonObject().value(u"line"_s).toInt(), 4);
+        emit dialog.frames()->itemActivated(dialog.frames()->topLevelItem(1), 0); // no line: nothing
+        QCOMPARE(at.size(), 1);
+        // No backtrace in the text, and a project with no build.
+        dialog.input()->setPlainText(u"hello"_s);
+        dialog.decodeButton()->click();
+        QTRY_VERIFY(dialog.statusText().startsWith(u"No backtrace"_s));
+        QVERIFY(!dialog.frames()->isVisibleTo(&dialog));
+        dialog.setBuild(u"unbuilt"_s, u"esp32"_s, u"Unbuilt"_s);
+        dialog.decodeButton()->click();
+        QTRY_VERIFY(dialog.statusText().contains(u"has no build"_s));
     }
 
     void debuggerSitsBesideTheConsole()

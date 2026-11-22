@@ -101,6 +101,8 @@ signals:
     void codeLineClicked(int line);
     // Run to this line, from the Code tab's right-click menu.
     void runToLineRequested(int line);
+    // Breakpoint with a condition, from the line menu.
+    void conditionRequested(int line);
     // Esc in the Code tab's find field.
     void codeFindEscaped();
     // The project and board now shown, with the build's pin list as the library has it.

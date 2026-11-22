@@ -1,0 +1,120 @@
+{
+  "method": "backtrace.decode",
+  "description": "Since protocol 0.35: the crash backtraces in text from anywhere (a saved log, a forum post), decoded against a build of a project for a board, as sim.backtrace decodes a run's: Xtensa's Backtrace: lines and RISC-V register dumps' MEPC and RA, from the build's ELF with the pinned toolchain's addr2line. No backtrace in the text gives an empty list.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "board",
+      "text"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "board": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "text": {
+        "type": "string",
+        "maxLength": 65536
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "backtraces"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "backtraces": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "frames"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "frames": {
+              "type": "array",
+              "maxItems": 96,
+              "items": {
+                "type": "object",
+                "required": [
+                  "addr"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "The code address, 0x and eight hex digits. Inlined code gives several frames with one address: the inlined function first."
+                  },
+                  "func": {
+                    "type": "string",
+                    "description": "The function, when the ELF names it."
+                  },
+                  "file": {
+                    "type": "string",
+                    "description": "The source file's path, when known."
+                  },
+                  "line": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "sketch": {
+                    "const": true,
+                    "description": "The frame is in the project's own sketch (<project>.ino)."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink",
+        "board": "esp32",
+        "text": "Backtrace: 0x400d2a5e:0x3ffb2270 0x400d1b6f:0x3ffb2290\n"
+      },
+      "result": {
+        "backtraces": [
+          {
+            "frames": [
+              {
+                "addr": "0x400d2a5e",
+                "func": "loop()",
+                "file": "/home/u/.local/share/esp32bench/builds/blink/esp32/sketch/blink.ino",
+                "line": 12,
+                "sketch": true
+              },
+              {
+                "addr": "0x400d1b6f",
+                "func": "loopTask(void*)",
+                "file": "/home/u/.arduino15/packages/esp32/hardware/esp32/3.3.12/cores/esp32/main.cpp",
+                "line": 74
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

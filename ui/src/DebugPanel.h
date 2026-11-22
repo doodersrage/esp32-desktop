@@ -46,6 +46,17 @@ public:
     QLineEdit *watchInput() const { return m_watchInput; }
     QTreeWidget *watches() const { return m_watches; }
     void addWatch(const QString &expression);
+    // Stop watching it (kept for the project too).
+    void removeWatch(const QString &expression);
+    QStringList watchExpressions() const;
+    // Ask for the condition of the breakpoint at `location` (added if there is none):
+    // it stops there only when the condition holds. An empty one removes it.
+    void editCondition(const QString &location);
+    // The same without asking, for tests.
+    bool setCondition(const QString &location, const QString &condition);
+    // A kept breakpoint's location and condition ("blink.ino:12 if i == 10").
+    static QString keptLocation(const QString &kept);
+    static QString keptCondition(const QString &kept);
 
 signals:
     void breakpointsChanged();
@@ -58,6 +69,7 @@ private:
     void showInspection(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals);
     void keep(const QStringList &locations);
     void evaluateWatches();
+    void keepWatches();
     static QString where(const QJsonObject &frame);
 
     CoreConnection *m_core;

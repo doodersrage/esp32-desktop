@@ -355,16 +355,28 @@ impl Gdb {
             .map(|_| ())
     }
 
-    /// Set a hardware breakpoint (flash code needs one) at a function or `file:line`.
-    pub async fn break_insert(&mut self, location: &str) -> Result<Value, Error> {
+    /// Set a hardware breakpoint (flash code needs one) at a function or `file:line`,
+    /// stopping only when `condition` (a C expression) is true, if one is given.
+    pub async fn break_insert(
+        &mut self,
+        location: &str,
+        condition: Option<&str>,
+    ) -> Result<Value, Error> {
         if !valid_location(location) {
             return Err(Error::Gdb(format!(
                 "`{location}` is not a function or file:line"
             )));
         }
-        let r = self
-            .command(&format!("-break-insert -h {location}"))
-            .await?;
+        let cmd = match condition {
+            Some(c) if !valid_expression(c) => {
+                return Err(Error::Gdb(
+                    "a condition is one line, without GDB's $_ functions".into(),
+                ));
+            }
+            Some(c) => format!("-break-insert -h -c {} {location}", mi_quote(c)),
+            None => format!("-break-insert -h {location}"),
+        };
+        let r = self.command(&cmd).await?;
         Ok(r["bkpt"].clone())
     }
 
@@ -408,9 +420,11 @@ impl Gdb {
                 "an expression is one line, without GDB's $_ functions".into(),
             ));
         }
-        let quoted = expression.replace('\\', "\\\\").replace('"', "\\\"");
         let r = self
-            .command(&format!("-data-evaluate-expression \"{quoted}\""))
+            .command(&format!(
+                "-data-evaluate-expression {}",
+                mi_quote(expression)
+            ))
             .await?;
         Ok(r["value"].as_str().unwrap_or("").to_owned())
     }
@@ -561,6 +575,23 @@ pub fn valid_location(loc: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | ':' | '.' | '/' | '-'))
 }
 
+/// A string as an MI c-string argument.
+fn mi_quote(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// A kept breakpoint (breakpoints.get/set) is its location, maybe followed by ` if `
+/// and a condition, as GDB's own `break` writes it: `blink.ino:12 if i == 10`. Its
+/// location and condition, if both are valid.
+pub fn split_breakpoint(kept: &str) -> Option<(&str, Option<&str>)> {
+    let (location, condition) = match kept.split_once(" if ") {
+        Some((l, c)) => (l.trim(), Some(c.trim())),
+        None => (kept.trim(), None),
+    };
+    (valid_location(location) && condition.is_none_or(valid_expression))
+        .then_some((location, condition))
+}
+
 /// An expression for [`Gdb::evaluate`]: one line of at most 256 characters, and none
 /// of GDB's convenience functions (`$_shell` runs a shell command); registers (`$pc`)
 /// and the program's own names are fine.
@@ -663,6 +694,19 @@ mod tests {
         ] {
             assert!(!is_general_register(r), "{r}");
         }
+    }
+
+    #[test]
+    fn kept_breakpoints_may_have_conditions() {
+        assert_eq!(split_breakpoint("setup"), Some(("setup", None)));
+        assert_eq!(
+            split_breakpoint("blink.ino:12 if i == 10"),
+            Some(("blink.ino:12", Some("i == 10")))
+        );
+        assert_eq!(split_breakpoint("blink.ino:12 if "), None);
+        assert_eq!(split_breakpoint("x y if i"), None);
+        assert_eq!(split_breakpoint("loop if $_shell(\"x\")"), None);
+        assert_eq!(mi_quote("a \"b\" \\"), "\"a \\\"b\\\" \\\\\"");
     }
 
     #[test]

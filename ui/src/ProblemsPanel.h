@@ -17,15 +17,22 @@ class ProblemsPanel : public QWidget {
 public:
     enum Column { TimeColumn, SourceColumn, TextColumn, ColumnCount };
     static constexpr int UrlRole = Qt::UserRole + 1;
+    // A crash's line, as ConsoleView::frameActivated gives it.
+    static constexpr int LocationRole = Qt::UserRole + 2;
 
     explicit ProblemsPanel(CoreConnection *core, QWidget *parent = nullptr);
     // Add findings as outputExplained has them; `source` is sim, serial or build.
     void add(const QString &source, const QJsonArray &findings);
+    // A crash whose backtrace the core decoded (sim.backtrace, serial.backtrace): where
+    // it was, the sketch's own line first; double-click to see it.
+    void addCrash(const QString &source, const QJsonArray &frames);
     QTreeWidget *tree() const { return m_tree; }
 
 signals:
     // The first problem (not a note) since the list was cleared.
     void firstProblem();
+    // A crash's entry was activated: {file, line, path}.
+    void locationActivated(const QJsonObject &at);
     // How many entries the list has now.
     void countChanged(int count);
 

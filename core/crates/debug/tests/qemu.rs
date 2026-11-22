@@ -91,7 +91,7 @@ async fn debug_session(
     });
     let (mut g, mut rx) = Gdb::start(gdb, elf).await.unwrap();
     g.connect(port).await.unwrap();
-    let bkpt = g.break_insert("app_main").await.unwrap();
+    let bkpt = g.break_insert("app_main", None).await.unwrap();
     assert_eq!(bkpt["func"], "app_main");
     g.control("continue").await.unwrap();
     let stop = stopped(&mut rx).await;

@@ -1,7 +1,8 @@
 {
-  "protocol": "0.34.0",
+  "protocol": "0.35.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
+    "backtrace.decode",
     "board.erase",
     "board.flash",
     "board.inspect",
@@ -50,7 +51,9 @@
     "sim.traceSave",
     "sim.write",
     "toolchain.install",
-    "toolchain.status"
+    "toolchain.status",
+    "watches.get",
+    "watches.set"
   ],
   "events": [
     "board.finished",

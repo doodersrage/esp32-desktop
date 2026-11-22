@@ -2,6 +2,73 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="de_DE">
 <context>
+    <name>BacktraceDialog</name>
+    <message>
+        <source>Decode</source>
+        <translation>Dekodieren</translation>
+    </message>
+    <message>
+        <source>Decode a crash backtrace</source>
+        <translation>Absturz-Backtrace dekodieren</translation>
+    </message>
+    <message>
+        <source>Crash output</source>
+        <translation>Absturzausgabe</translation>
+    </message>
+    <message>
+        <source>Paste what the board printed when it crashed, with its Backtrace: line (or, on an ESP32-C3, its register dump)</source>
+        <translation>Fügen Sie ein, was das Board beim Absturz ausgab, mit seiner Backtrace:-Zeile (oder beim ESP32-C3 seinem Registerauszug)</translation>
+    </message>
+    <message>
+        <source>Decoded frames</source>
+        <translation>Dekodierte Frames</translation>
+    </message>
+    <message>
+        <source>Function</source>
+        <translation>Funktion</translation>
+    </message>
+    <message>
+        <source>Where</source>
+        <translation>Wo</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation>Adresse</translation>
+    </message>
+    <message>
+        <source>Double-click a line to see it</source>
+        <translation>Doppelklicken Sie auf eine Zeile, um sie zu sehen</translation>
+    </message>
+    <message>
+        <source>Decoding…</source>
+        <translation>Dekodiere…</translation>
+    </message>
+    <message>
+        <source>Could not decode it: %1</source>
+        <translation>Konnte nicht dekodiert werden: %1</translation>
+    </message>
+    <message>
+        <source>Against the build of %1 for %2: decoding needs the same build the board ran.</source>
+        <translation>Mit dem Build von %1 für %2: Zum Dekodieren braucht es denselben Build, der auf dem Board lief.</translation>
+    </message>
+    <message>
+        <source>(unknown)</source>
+        <translation>(unbekannt)</translation>
+    </message>
+    <message>
+        <source>%1, line %2</source>
+        <translation>%1, Zeile %2</translation>
+    </message>
+    <message>
+        <source>No backtrace in that text: it needs the Backtrace: line, or on an ESP32-C3 the MEPC and RA of the register dump.</source>
+        <translation>Kein Backtrace in diesem Text: Es braucht die Backtrace:-Zeile oder beim ESP32-C3 MEPC und RA aus dem Registerauszug.</translation>
+    </message>
+    <message>
+        <source>Decoded, innermost first; the sketch&apos;s own lines are in bold.</source>
+        <translation>Dekodiert, innerster Aufruf zuerst; die Zeilen des Sketches selbst sind fett.</translation>
+    </message>
+</context>
+<context>
     <name>BoardInfoDialog</name>
     <message>
         <source>Partitions</source>
@@ -149,6 +216,22 @@
     <message>
         <source>Run the selected project in the simulator under GDB, paused before it starts, building it first if needed</source>
         <translation>Das ausgewählte Projekt im Simulator unter GDB ausführen, angehalten vor dem Start, und es vorher kompilieren, falls nötig</translation>
+    </message>
+    <message>
+        <source>Next problem</source>
+        <translation>Nächstes Problem</translation>
+    </message>
+    <message>
+        <source>Show the line of the build&apos;s next error or warning</source>
+        <translation>Die Zeile des nächsten Fehlers oder der nächsten Warnung des Builds zeigen</translation>
+    </message>
+    <message>
+        <source>Previous problem</source>
+        <translation>Vorheriges Problem</translation>
+    </message>
+    <message>
+        <source>Show the line of the build&apos;s previous error or warning</source>
+        <translation>Die Zeile des vorherigen Fehlers oder der vorherigen Warnung des Builds zeigen</translation>
     </message>
     <message>
         <source>Write the selected project to the board on the selected port, building it first if needed</source>
@@ -447,6 +530,10 @@ Globale Variablen: %4 von %5</translation>
     <message>
         <source>Add or remove a breakpoint on line %1</source>
         <translation>Haltepunkt in Zeile %1 setzen oder entfernen</translation>
+    </message>
+    <message>
+        <source>Breakpoint with a condition…</source>
+        <translation>Haltepunkt mit Bedingung…</translation>
     </message>
     <message>
         <source>Run to line %1</source>
@@ -748,6 +835,14 @@ Globale Variablen: %4 von %5</translation>
         <translation>Aufrufstapel</translation>
     </message>
     <message>
+        <source>Condition…</source>
+        <translation>Bedingung…</translation>
+    </message>
+    <message>
+        <source>Stop here only when an expression is true</source>
+        <translation>Hier nur anhalten, wenn ein Ausdruck wahr ist</translation>
+    </message>
+    <message>
         <source>Watch</source>
         <translation>Beobachten</translation>
     </message>
@@ -766,6 +861,10 @@ Globale Variablen: %4 von %5</translation>
     <message>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
+    </message>
+    <message>
+        <source>%1: %2, if %3</source>
+        <translation>%1: %2, wenn %3</translation>
     </message>
     <message>
         <source>Debugger: %1</source>
@@ -790,6 +889,14 @@ Globale Variablen: %4 von %5</translation>
     <message>
         <source>(read when the firmware stops)</source>
         <translation>(gelesen, wenn die Firmware anhält)</translation>
+    </message>
+    <message>
+        <source>Breakpoint condition</source>
+        <translation>Bedingung des Haltepunkts</translation>
+    </message>
+    <message>
+        <source>Stop at %1 only when this is true (a C expression, e.g. i == 10); empty to always stop:</source>
+        <translation>Bei %1 nur anhalten, wenn dies wahr ist (ein C-Ausdruck, z. B. i == 10); leer, um immer anzuhalten:</translation>
     </message>
     <message>
         <source>Pause the firmware first: GDB changes breakpoints only while it is stopped.</source>
@@ -1525,6 +1632,10 @@ Das Build-Fenster unten hat das ganze Protokoll.</translation>
         <translation>Flash löschen…</translation>
     </message>
     <message>
+        <source>%1 = %2</source>
+        <translation>%1 = %2</translation>
+    </message>
+    <message>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
@@ -1595,6 +1706,14 @@ Das Build-Fenster unten hat das ganze Protokoll.</translation>
     <message>
         <source>&amp;Project</source>
         <translation>&amp;Projekt</translation>
+    </message>
+    <message>
+        <source>&amp;Decode a crash backtrace…</source>
+        <translation>Absturz-Backtrace &amp;dekodieren…</translation>
+    </message>
+    <message>
+        <source>Turn a backtrace from a saved log or a forum post into lines of the project shown</source>
+        <translation>Einen Backtrace aus einem gespeicherten Log oder einem Forenbeitrag in Zeilen des gezeigten Projekts umwandeln</translation>
     </message>
     <message>
         <source>&amp;View</source>
@@ -1890,8 +2009,8 @@ Code-SHA-256: %2</translation>
         <translation>Wie schnell ein Pin wechselt, in simulierter Zeit, und wie lange er davon high ist (das Tastverhältnis einer PWM)</translation>
     </message>
     <message>
-        <source>The GPIOs this project uses. Outputs show what the firmware drives; the switch drives a pin as an input, like a button.</source>
-        <translation>Die GPIOs, die dieses Projekt nutzt. Ausgänge zeigen, was die Firmware treibt; der Schalter treibt einen Pin als Eingang, wie ein Taster.</translation>
+        <source>The GPIOs this project uses. Outputs show what the firmware drives; the switch drives a pin as an input, like a button. Double-click a pin to see it in the trace.</source>
+        <translation>Die GPIOs, die dieses Projekt nutzt. Ausgänge zeigen, was die Firmware treibt; der Schalter treibt einen Pin als Eingang, wie ein Taster. Doppelklicken Sie auf einen Pin, um ihn in der Ablaufspur zu sehen.</translation>
     </message>
     <message>
         <source>The simulator has stopped.</source>
@@ -2140,6 +2259,20 @@ Code-SHA-256: %2</translation>
     <message>
         <source>The build failed at %1, line %2: %3</source>
         <translation>Der Build ist bei %1, Zeile %2 fehlgeschlagen: %3</translation>
+    </message>
+    <message>
+        <source>Crashed in %1 (%2, line %3)</source>
+        <translation>Abgestürzt in %1 (%2, Zeile %3)</translation>
+    </message>
+    <message>
+        <source>Crashed in %1</source>
+        <translation>Abgestürzt in %1</translation>
+    </message>
+    <message>
+        <source>%1
+Double-click to see the line.</source>
+        <translation>%1
+Doppelklicken, um die Zeile zu sehen.</translation>
     </message>
     <message>
         <source>Simulator</source>

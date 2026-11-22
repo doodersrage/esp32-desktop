@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 34;
+    static constexpr int ProtocolMinor = 35;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -180,12 +180,19 @@ public:
     // breakpoints.get / breakpoints.set: a project's kept breakpoints (breakpointsListed).
     void getBreakpoints(const QString &project);
     void setBreakpoints(const QString &project, const QStringList &locations);
+    // watches.get / watches.set: the expressions a project's debug runs watch.
+    void getWatches(const QString &project);
+    void setWatches(const QString &project, const QStringList &expressions);
+    // backtrace.decode: the crash backtraces in pasted text, against the build of
+    // `project` for `board` (backtraceDecoded, or requestFailed).
+    void decodeBacktrace(const QString &project, const QString &board, const QString &text);
     // serial.record: append what the open port receives to `path`, or stop with an
     // empty path (serialRecording).
     void recordSerial(const QString &path);
 
     // debug.*: on the simulator started with debug. Results come as signals.
-    void debugBreak(const QString &location);
+    // With a condition, it stops only when that expression is true.
+    void debugBreak(const QString &location, const QString &condition = {});
     void debugDelete(int breakpoint);
     void debugControl(const QString &action);
     // debug.control's runTo: run to a function or file:line.
@@ -285,6 +292,9 @@ signals:
     void plotSaved(const QString &path, qint64 rows);
     void commandsListed(const QString &project, const QStringList &commands);
     void breakpointsListed(const QString &project, const QStringList &locations);
+    void watchesListed(const QString &project, const QStringList &expressions);
+    // Each is {frames}.
+    void backtraceDecoded(const QJsonArray &backtraces);
     // Recording started (on) or stopped, the file, and the bytes written to it.
     void serialRecording(bool on, const QString &path, qint64 bytes);
     // serial.recordFailed: writing the file failed, so it stopped.

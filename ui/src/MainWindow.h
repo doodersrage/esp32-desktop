@@ -16,6 +16,7 @@ class ProjectView;
 class QSplitter;
 class SerialMonitor;
 class SetupDialog;
+class BacktraceDialog;
 class SimulatorPanel;
 class DebugPanel;
 class DisplayPanel;
@@ -88,6 +89,8 @@ public:
     // Show where a build line or a crash backtrace points: a library sketch's line in the
     // Code tab, else the file in the user's editor.
     void showLocation(const QJsonObject &at);
+    // Project → Decode a crash backtrace…, against the project and board shown.
+    void showBacktraceDialog();
     // Help → Keyboard shortcuts' text (rich text), and its dialog.
     QString shortcutsText() const;
     void showShortcuts();
@@ -177,6 +180,11 @@ private:
     // The project the last flash wrote, for the serial monitor's baud rate after it.
     QString m_flashedProject;
     QString m_flashedBoard;
+    // The name hovered in the Code tab while paused, waiting for its value.
+    QString m_hoverWord;
+    QAction *m_decodeAction = nullptr;
+    BacktraceDialog *m_backtraces = nullptr;
+    QPoint m_hoverAt;
     // Try Blink was pressed: run it once it is shown and can be.
     bool m_tryPending = false;
     QToolBar *m_toolBar = nullptr;

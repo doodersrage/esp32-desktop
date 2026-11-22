@@ -1,8 +1,10 @@
 #include "CodeView.h"
 
 #include "ConsoleView.h"
+#include "SketchHighlighter.h"
 
 #include <QContextMenuEvent>
+#include <QHelpEvent>
 #include <QFontDatabase>
 #include <QMenu>
 #include <QMouseEvent>
@@ -46,6 +48,7 @@ private:
 CodeView::CodeView(QWidget *parent)
     : QPlainTextEdit(parent)
     , m_gutter(new CodeGutter(this))
+    , m_highlighter(new SketchHighlighter(document(), this))
 {
     setReadOnly(true);
     setLineWrapMode(QPlainTextEdit::NoWrap);
@@ -72,6 +75,7 @@ QMenu *CodeView::lineMenu(int line)
     auto *menu = new QMenu(this);
     menu->addAction(QIcon::fromTheme(u"media-record"_s), tr("Add or remove a breakpoint on line %1").arg(line), this,
                     [this, line] { emit gutterClicked(line); });
+    menu->addAction(tr("Breakpoint with a condition…"), this, [this, line] { emit conditionRequested(line); });
     QAction *run = menu->addAction(QIcon::fromTheme(u"media-playback-start"_s), tr("Run to line %1").arg(line), this,
                                    [this, line] { emit runToRequested(line); });
     run->setEnabled(m_runTo);
@@ -95,6 +99,35 @@ void CodeView::contextMenuEvent(QContextMenuEvent *event)
     lines->deleteLater();
     menu->setToolTipsVisible(true);
     menu->popup(event->globalPos());
+}
+
+QString CodeView::wordAt(const QPoint &pos) const
+{
+    const QTextCursor c = cursorForPosition(pos);
+    const QString text = c.block().text();
+    qsizetype start = c.positionInBlock(), end = start;
+    const auto name = [](QChar ch) { return ch.isLetterOrNumber() || ch == u'_'; };
+    // The cursor sits between characters: the point is over the one after it.
+    if (end >= text.size() || !name(text.at(end)))
+        return {};
+    while (start > 0 && name(text.at(start - 1)))
+        --start;
+    while (end < text.size() && name(text.at(end)))
+        ++end;
+    const QString word = text.mid(start, end - start);
+    return word.at(0).isDigit() ? QString() : word;
+}
+
+bool CodeView::viewportEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ToolTip && m_runTo) {
+        const auto *help = static_cast<QHelpEvent *>(event);
+        if (const QString word = wordAt(help->pos()); !word.isEmpty()) {
+            emit wordHovered(word, help->globalPos());
+            return true;
+        }
+    }
+    return QPlainTextEdit::viewportEvent(event);
 }
 
 bool CodeView::findText(const QString &text, bool backward)
@@ -189,6 +222,8 @@ void CodeView::changeEvent(QEvent *event)
     if (event->type() == QEvent::PaletteChange || event->type() == QEvent::FontChange) {
         setViewportMargins(gutterWidth(), 0, 0, 0);
         highlightPaused();
+        if (event->type() == QEvent::PaletteChange)
+            m_highlighter->updateFormats();
     }
 }
 

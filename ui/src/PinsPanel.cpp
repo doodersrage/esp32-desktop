@@ -33,7 +33,11 @@ PinsPanel::PinsPanel(CoreConnection *core, QWidget *parent)
     m_tree->setUniformRowHeights(true);
     m_tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_tree->setToolTip(tr("The GPIOs this project uses. Outputs show what the firmware drives; "
-                          "the switch drives a pin as an input, like a button."));
+                          "the switch drives a pin as an input, like a button. Double-click a pin to see "
+                          "it in the trace."));
+    connect(m_tree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item) {
+        emit pinActivated(item->data(GpioColumn, GpioRole).toInt());
+    });
 
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(m_status);

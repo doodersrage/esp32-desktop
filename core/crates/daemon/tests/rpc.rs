@@ -51,6 +51,9 @@ fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
     s.starred = esp32bench_library::starred::Starred::new(dir.join("starred.json"));
     s.known_boards = esp32bench_device::Known::new(dir.join("boards.json"));
     s.commands = esp32bench_library::commands::Commands::new(dir.join("commands.json"));
+    // Never the user's own data directory.
+    s.breakpoints = esp32bench_library::commands::Commands::new(dir.join("breakpoints.json"));
+    s.watches = esp32bench_library::commands::Commands::new(dir.join("watches.json"));
     Arc::new(s)
 }
 
@@ -822,6 +825,65 @@ async fn commands_are_kept_per_project() {
 }
 
 #[tokio::test]
+async fn watches_are_kept_per_project() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let get = json!({ "project": "blink" });
+    assert_valid(
+        &method_def("watches.get")["params"],
+        &get,
+        "watches.get params",
+    );
+    let r = c.call("watches.get", get.clone()).await.unwrap();
+    assert_valid(
+        &method_def("watches.get")["result"],
+        &r,
+        "watches.get result",
+    );
+    assert_eq!(r["watches"], json!([]));
+    let set = json!({ "project": "blink", "watches": ["count * 2", "buf[3]", "count * 2"] });
+    assert_valid(
+        &method_def("watches.set")["params"],
+        &set,
+        "watches.set params",
+    );
+    let r = c.call("watches.set", set).await.unwrap();
+    assert_valid(
+        &method_def("watches.set")["result"],
+        &r,
+        "watches.set result",
+    );
+    assert_eq!(r["watches"], json!(["count * 2", "buf[3]"]));
+    assert_eq!(
+        c.call("watches.get", get.clone()).await.unwrap()["watches"],
+        json!(["count * 2", "buf[3]"])
+    );
+    assert_eq!(
+        c.call("watches.get", json!({ "project": "other" }))
+            .await
+            .unwrap()["watches"],
+        json!([])
+    );
+    let long = "x".repeat(201);
+    for bad in [
+        json!({ "project": "blink", "watches": ["$_shell(\"x\")"] }),
+        json!({ "project": "blink", "watches": ["a\nb"] }),
+        json!({ "project": "blink", "watches": [long] }),
+        json!({ "project": "", "watches": [] }),
+        json!({ "project": "blink" }),
+    ] {
+        match c.call("watches.set", bad).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+            other => panic!("expected invalid params, got {other:?}"),
+        }
+    }
+    assert_eq!(
+        c.call("watches.get", get).await.unwrap()["watches"],
+        json!(["count * 2", "buf[3]"])
+    );
+}
+
+#[tokio::test]
 async fn breakpoints_are_kept_per_project() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
@@ -856,9 +918,23 @@ async fn breakpoints_are_kept_per_project() {
         c.call("breakpoints.get", get.clone()).await.unwrap()["breakpoints"],
         json!(["blink.ino:12", "setup"])
     );
+    // With a condition, as GDB's break writes it.
+    let r = c
+        .call(
+            "breakpoints.set",
+            json!({ "project": "blink", "breakpoints": ["blink.ino:12 if i == 10", "setup"] }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        r["breakpoints"],
+        json!(["blink.ino:12 if i == 10", "setup"])
+    );
     // Only places debug.break takes; nothing is kept from a refused list.
     for bad in [
         json!({ "project": "blink", "breakpoints": ["-exec"] }),
+        json!({ "project": "blink", "breakpoints": ["setup if $_shell(\"x\")"] }),
+        json!({ "project": "blink", "breakpoints": ["setup if "] }),
         json!({ "project": "" , "breakpoints": [] }),
     ] {
         match c.call("breakpoints.set", bad).await {
@@ -1713,6 +1789,66 @@ async fn serial_decodes_a_boards_backtrace() {
     {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
         other => panic!("odd project accepted: {other:?}"),
+    }
+}
+
+// A backtrace pasted from anywhere, decoded against a build.
+#[tokio::test]
+async fn decodes_a_pasted_backtrace() {
+    let elf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/firmware/build/hello-esp32/esp32bench-hello.elf");
+    let data = esp32bench_toolchain::Env::default_arduino_data().unwrap_or_default();
+    let Some(a2l) =
+        esp32bench_build::backtrace::find_addr2line(&data, "esp32").filter(|_| elf.is_file())
+    else {
+        eprintln!("skipping: needs the hello firmware and the Arduino core's toolchain");
+        return;
+    };
+    let app_main = app_main_address(&a2l, &elf);
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let text =
+        format!("rst:0xc\nGuru Meditation Error\nBacktrace: 0x{app_main}:0x3ffb0000\nRebooting...");
+    let params = json!({ "project": "blink", "board": "esp32", "text": text });
+    assert_valid(
+        &method_def("backtrace.decode")["params"],
+        &params,
+        "backtrace.decode params",
+    );
+    // Not built yet: nothing to decode from.
+    match c.call("backtrace.decode", params.clone()).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("decoded without a build: {other:?}"),
+    }
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&elf, out.join("blink.ino.elf")).unwrap();
+    let r = c.call("backtrace.decode", params).await.unwrap();
+    assert_valid(
+        &method_def("backtrace.decode")["result"],
+        &r,
+        "backtrace.decode result",
+    );
+    assert_eq!(r["backtraces"].as_array().unwrap().len(), 1, "{r}");
+    assert_eq!(r["backtraces"][0]["frames"][0]["func"], "app_main", "{r}");
+    // A last line without its newline counts too; text with no backtrace gives none.
+    let r = c
+        .call(
+            "backtrace.decode",
+            json!({ "project": "blink", "board": "esp32", "text": "hello\nworld" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r["backtraces"], json!([]));
+    for bad in [
+        json!({ "project": "../x", "board": "esp32", "text": "" }),
+        json!({ "project": "blink", "board": "esp32", "text": "x".repeat(70_000) }),
+    ] {
+        match c.call("backtrace.decode", bad).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+            other => panic!("expected invalid params, got {other:?}"),
+        }
     }
 }
 
@@ -2903,6 +3039,54 @@ async fn sim_debugs_a_build_with_gdb() {
     .unwrap();
     let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
     assert_eq!(stop["frame"]["line"], 37, "{stop}");
+
+    // A breakpoint with a condition stops only when it holds: the second tick.
+    let r = c
+        .call(
+            "debug.break",
+            json!({ "subscription": sub, "location": "hello.c:37", "condition": "tick == 2" }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("debug.break")["result"],
+        &r,
+        "debug.break result",
+    );
+    assert_eq!(r["breakpoint"]["condition"], "tick == 2", "{r}");
+    let conditional = r["breakpoint"]["number"].clone();
+    c.call(
+        "debug.control",
+        json!({ "subscription": sub, "action": "continue" }),
+    )
+    .await
+    .unwrap();
+    let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
+    assert_eq!(stop["breakpoint"], conditional, "{stop}");
+    let r = c
+        .call(
+            "debug.evaluate",
+            json!({ "subscription": sub, "expression": "tick" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r["value"], "2");
+    c.call(
+        "debug.delete",
+        json!({ "subscription": sub, "breakpoint": conditional }),
+    )
+    .await
+    .unwrap();
+    match c
+        .call(
+            "debug.break",
+            json!({ "subscription": sub, "location": "setup", "condition": "$_shell(\"x\")" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("$_shell condition accepted: {other:?}"),
+    }
 
     c.call(
         "debug.delete",

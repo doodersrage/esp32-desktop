@@ -1,6 +1,6 @@
 {
   "method": "breakpoints.set",
-  "description": "Since protocol 0.32: keep these breakpoints for a project, in the data directory's breakpoints.json; repeats are dropped, at most 20. Every location must be one debug.break takes (a function name or file:line), else nothing changes. An empty list forgets them.",
+  "description": "Since protocol 0.32: keep these breakpoints for a project, in the data directory's breakpoints.json; repeats are dropped, at most 20. Every location must be one debug.break takes (a function name or file:line), else nothing changes. An empty list forgets them. Since protocol 0.35 a breakpoint may stop only when a condition holds, written as GDB's break writes it: the location, ` if ` and a C expression (`blink.ino:12 if i == 10`); at most 200 characters.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -58,6 +58,21 @@
       "result": {
         "breakpoints": [
           "blink.ino:12",
+          "setup"
+        ]
+      }
+    },
+    {
+      "params": {
+        "project": "blink",
+        "breakpoints": [
+          "blink.ino:12 if i == 10",
+          "setup"
+        ]
+      },
+      "result": {
+        "breakpoints": [
+          "blink.ino:12 if i == 10",
           "setup"
         ]
       }

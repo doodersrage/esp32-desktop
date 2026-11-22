@@ -1,0 +1,54 @@
+{
+  "method": "watches.get",
+  "description": "Since protocol 0.35: the expressions kept for a project's debug runs (watches.set), in the order kept; empty if none.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "watches"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "watches": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink"
+      },
+      "result": {
+        "watches": [
+          "count * 2",
+          "buf[3]"
+        ]
+      }
+    }
+  ]
+}

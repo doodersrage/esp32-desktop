@@ -66,7 +66,7 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.34.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.35.0"_s}});
         } else if (m == u"sim.start") {
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false},
                                   {u"engine"_s, u"lcgamboa"_s}, {u"pins"_s, pinsToReport}});
@@ -201,6 +201,25 @@ private slots:
         QTest::keyClick(&view, Qt::Key_Down);
         QCOMPARE(view.selectedPin(), 4);
         QVERIFY(!view.stepMarker(false, true)); // GPIO 4 never changed
+    }
+
+    void showsAPinAskedFor()
+    {
+        TraceView view;
+        view.resize(664, 120);
+        view.setPins({2, 4});
+        view.setSpan(1'000'000);
+        view.addEdges(QJsonArray{QJsonObject{{u"gpio"_s, 4}, {u"t"_s, 2'000'000}, {u"level"_s, true}},
+                                 QJsonObject{{u"gpio"_s, 2}, {u"t"_s, 9'000'000}, {u"level"_s, true}}});
+        view.setPinHidden(4, true);
+        QSignalSpy held(&view, &TraceView::held);
+        QVERIFY(view.showPin(4));
+        QCOMPARE(view.selectedPin(), 4);
+        QVERIFY(view.shownPins().contains(4));
+        // Its latest change in view, the picture held there.
+        QVERIFY(view.end() - view.span() <= 2'000'000 && 2'000'000 <= view.end());
+        QCOMPARE(held.size(), 1);
+        QVERIFY(!view.showPin(7));
     }
 
     void namesPinsFromTheWiring()

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.34.0";
+pub const PROTOCOL: &str = "0.35.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -67,6 +67,8 @@ pub struct State {
     /// Breakpoints kept per project (breakpoints.get/breakpoints.set), in the same
     /// format: an object from project id to its locations.
     pub breakpoints: esp32bench_library::commands::Commands,
+    /// Expressions the debugger watches, per project (watches.get/watches.set).
+    pub watches: esp32bench_library::commands::Commands,
     /// ESP-IDF to use instead of detecting one (tests).
     pub idf_path: Option<PathBuf>,
 }
@@ -169,6 +171,11 @@ impl State {
                 esp32bench_sim::install::data_dir()
                     .map(|d| d.join("breakpoints.json"))
                     .unwrap_or_else(|_| PathBuf::from("esp32bench-breakpoints.json")),
+            ),
+            watches: esp32bench_library::commands::Commands::new(
+                esp32bench_sim::install::data_dir()
+                    .map(|d| d.join("watches.json"))
+                    .unwrap_or_else(|_| PathBuf::from("esp32bench-watches.json")),
             ),
             idf_path: None,
         }
@@ -381,6 +388,27 @@ pub fn router(state: Arc<State>) -> Router {
             move |p, _| {
                 let s = s.clone();
                 async move { breakpoints(p, s, true).await }
+            }
+        })
+        .method("backtrace.decode", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { backtrace_decode(p, s).await }
+            }
+        })
+        .method("watches.get", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { watches(p, s, false).await }
+            }
+        })
+        .method("watches.set", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { watches(p, s, true).await }
             }
         })
         .method("library.export", {
@@ -873,9 +901,12 @@ async fn breakpoints(params: Value, state: Arc<State>, set: bool) -> Result<Valu
         let list = p
             .breakpoints
             .ok_or_else(|| RpcError::invalid_params("breakpoints.set needs breakpoints"))?;
-        if let Some(bad) = list.iter().find(|l| !esp32bench_debug::valid_location(l)) {
+        if let Some(bad) = list.iter().find(|l| {
+            l.chars().count() > esp32bench_library::commands::MAX_LENGTH
+                || esp32bench_debug::split_breakpoint(l).is_none()
+        }) {
             return Err(RpcError::invalid_params(format!(
-                "`{bad}` is not a function name or file:line"
+                "`{bad}` is not a function name or file:line, maybe with ` if ` and a condition"
             )));
         }
         state
@@ -891,6 +922,46 @@ async fn breakpoints(params: Value, state: Arc<State>, set: bool) -> Result<Valu
         state.breakpoints.get(&p.project)
     };
     Ok(json!({ "breakpoints": kept }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WatchesParams {
+    project: String,
+    #[serde(default)]
+    watches: Option<Vec<String>>,
+}
+
+/// watches.get and watches.set: the expressions a project's debug runs read at every
+/// stop (debug.evaluate takes each).
+async fn watches(params: Value, state: Arc<State>, set: bool) -> Result<Value, RpcError> {
+    let p: WatchesParams = parse_params(params)?;
+    if p.project.is_empty() || p.project.len() > 200 {
+        return Err(RpcError::invalid_params("bad project id"));
+    }
+    let kept = if set {
+        let list = p
+            .watches
+            .ok_or_else(|| RpcError::invalid_params("watches.set needs watches"))?;
+        if let Some(bad) = list.iter().find(|e| {
+            e.chars().count() > esp32bench_library::commands::MAX_LENGTH
+                || !esp32bench_debug::valid_expression(e)
+        }) {
+            return Err(RpcError::invalid_params(format!(
+                "`{bad}` is not an expression of one line and at most 200 characters, without GDB's $_ functions"
+            )));
+        }
+        state
+            .watches
+            .set(&p.project, list)
+            .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+    } else {
+        if p.watches.is_some() {
+            return Err(RpcError::invalid_params("watches.get takes no watches"));
+        }
+        state.watches.get(&p.project)
+    };
+    Ok(json!({ "watches": kept }))
 }
 
 #[derive(Deserialize)]
@@ -1214,7 +1285,7 @@ const PIN_BATCH: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// A request for the GDB attached to a simulator started with `debug: true`.
 enum DebugReq {
-    Break(String),
+    Break(String, Option<String>),
     Delete(u32),
     Control(String),
     RunTo(String),
@@ -1251,8 +1322,11 @@ async fn start_debugger(
 
 async fn debug_request(gdb: &mut esp32bench_debug::Gdb, req: DebugReq) -> Result<Value, String> {
     let r = match req {
-        DebugReq::Break(loc) => gdb.break_insert(&loc).await.map(|b| {
+        DebugReq::Break(loc, cond) => gdb.break_insert(&loc, cond.as_deref()).await.map(|b| {
             let mut bp = stop_frame(&b);
+            if let Some(c) = b["cond"].as_str() {
+                bp["condition"] = json!(c);
+            }
             bp["number"] = json!(b["number"].as_str().and_then(|n| n.parse::<u32>().ok()).unwrap_or(0));
             json!({ "breakpoint": bp })
         }),
@@ -2024,6 +2098,9 @@ async fn sim_write(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
 struct DebugBreakParams {
     subscription: u64,
     location: String,
+    /// Stop only when this C expression is true.
+    #[serde(default)]
+    condition: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2073,7 +2150,21 @@ async fn debug_break(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
             "location must be a function name or file:line",
         ));
     }
-    debug_call(&state, &ctx, p.subscription, DebugReq::Break(p.location)).await
+    if p.condition
+        .as_deref()
+        .is_some_and(|c| !esp32bench_debug::valid_expression(c))
+    {
+        return Err(RpcError::invalid_params(
+            "a condition is one line of at most 256 characters, without GDB's $_ functions",
+        ));
+    }
+    debug_call(
+        &state,
+        &ctx,
+        p.subscription,
+        DebugReq::Break(p.location, p.condition),
+    )
+    .await
 }
 
 async fn debug_delete(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
@@ -2682,16 +2773,32 @@ struct CrashDecoder {
 impl CrashDecoder {
     /// For `project`'s build for `board` on `chip`; None without its ELF or addr2line.
     fn new(state: &State, project: &str, board: &str, chip: &str) -> Option<Self> {
-        esp32bench_build::safe_id(project).ok()?;
-        esp32bench_build::safe_id(board).ok()?;
+        Self::for_build(state, project, board, chip).ok()
+    }
+
+    /// The same, saying why there is none.
+    fn for_build(state: &State, project: &str, board: &str, chip: &str) -> Result<Self, RpcError> {
+        check_ids(project, board)?;
         let elf = state
             .builds_root
             .join(project)
             .join(board)
             .join("out")
             .join(format!("{project}.ino.elf"));
-        let addr2line = esp32bench_build::backtrace::find_addr2line(&state.arduino_data, chip)?;
-        elf.is_file().then(|| Self {
+        if !elf.is_file() {
+            return Err(RpcError::new(
+                code::NOT_FOUND,
+                format!("`{project}` has no build for `{board}` with an ELF file to decode from"),
+            ));
+        }
+        let addr2line = esp32bench_build::backtrace::find_addr2line(&state.arduino_data, chip)
+            .ok_or_else(|| {
+                RpcError::new(
+                    code::UNAVAILABLE,
+                    "decoding needs the ESP32 core's toolchain; install it from the toolchain setup",
+                )
+            })?;
+        Ok(Self {
             finder: esp32bench_build::backtrace::Finder::new(),
             addr2line,
             elf,
@@ -2728,6 +2835,34 @@ impl CrashDecoder {
         }
         out
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DecodeParams {
+    project: String,
+    board: String,
+    text: String,
+}
+
+/// backtrace.decode: the crash backtraces in pasted text (a log, a forum post),
+/// decoded against a build of a project, as sim.backtrace would have.
+async fn backtrace_decode(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: DecodeParams = parse_params(params)?;
+    if p.text.len() > 65_536 {
+        return Err(RpcError::invalid_params("the text is longer than 64 KiB"));
+    }
+    check_ids(&p.project, &p.board)?;
+    let chip = board_chip(&state, &p.board).await.ok_or_else(|| {
+        RpcError::new(
+            code::NOT_FOUND,
+            format!("no board `{}` in the library", p.board),
+        )
+    })?;
+    let mut decoder = CrashDecoder::for_build(&state, &p.project, &p.board, &chip)?;
+    let mut text = p.text.into_bytes();
+    text.push(b'\n');
+    Ok(json!({ "backtraces": decoder.feed(&text).await }))
 }
 
 /// The chip a board is: from the library, or a chip name itself (local projects build

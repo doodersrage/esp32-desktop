@@ -196,6 +196,10 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
         if (!currentProjectId().isEmpty() && !m_copyCode->isHidden())
             emit codeLineClicked(line);
     });
+    connect(m_code, &CodeView::conditionRequested, this, [this](int line) {
+        if (!currentProjectId().isEmpty() && !m_copyCode->isHidden())
+            emit conditionRequested(line);
+    });
     connect(m_code, &CodeView::runToRequested, this, [this](int line) {
         if (!currentProjectId().isEmpty() && !m_copyCode->isHidden())
             emit runToLineRequested(line);

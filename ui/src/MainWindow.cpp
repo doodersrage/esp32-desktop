@@ -12,6 +12,7 @@
 #include "SetupDialog.h"
 #include "SimulatorPanel.h"
 #include "DebugPanel.h"
+#include "BacktraceDialog.h"
 #include "CodeView.h"
 #include "DisplayPanel.h"
 #include "PinsPanel.h"
@@ -36,6 +37,7 @@
 #include <QLineEdit>
 #include <QMimeData>
 #include <QSysInfo>
+#include <QToolTip>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QCloseEvent>
@@ -242,6 +244,7 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_problemsDock->setObjectName(u"problemsDock"_s);
     m_problems = new ProblemsPanel(core, m_problemsDock);
     m_problemsDock->setWidget(m_problems);
+    connect(m_problems, &ProblemsPanel::locationActivated, this, &MainWindow::showLocation);
     addDockWidget(Qt::BottomDockWidgetArea, m_problemsDock);
     tabifyDockWidget(m_buildDock, m_problemsDock);
     m_problemsDock->hide();
@@ -320,6 +323,12 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_pinsDock->setObjectName(u"pinsDock"_s);
     m_pins = new PinsPanel(core, m_pinsDock);
     m_pinsDock->setWidget(m_pins);
+    // A pin double-clicked there: in the trace, selected, its latest change in view.
+    connect(m_pins, &PinsPanel::pinActivated, this, [this](int gpio) {
+        m_traceDock->show();
+        m_traceDock->raise();
+        m_trace->view()->showPin(gpio);
+    });
     addDockWidget(Qt::RightDockWidgetArea, m_pinsDock);
     m_pinsDock->hide();
     connect(core, &CoreConnection::simStarted, this, [this] {
@@ -605,6 +614,23 @@ void MainWindow::buildToolBar()
             [this] { m_debugger->setProject(m_project->currentProjectId()); });
     connect(m_debugger, &DebugPanel::breakpointsChanged, this, &MainWindow::showBreakpointLines);
     connect(m_project, &ProjectView::currentChanged, this, &MainWindow::showBreakpointLines);
+    connect(m_project, &ProjectView::conditionRequested, this, [this](int line) {
+        m_debugger->editCondition(u"%1.ino:%2"_s.arg(m_project->currentProjectId()).arg(line));
+    });
+    // While paused, the value of the name the mouse rests on, as a tooltip.
+    connect(m_project->codeView(), &CodeView::wordHovered, this, [this](const QString &word, const QPoint &at) {
+        m_hoverWord = word;
+        m_hoverAt = at;
+        m_core->debugEvaluate(word);
+    });
+    connect(m_core, &CoreConnection::debugEvaluated, this,
+            [this](const QString &expression, const QString &value, const QString &error) {
+                if (expression != m_hoverWord)
+                    return;
+                m_hoverWord.clear();
+                if (error.isEmpty())
+                    QToolTip::showText(m_hoverAt, tr("%1 = %2").arg(expression, value), m_project->codeView());
+            });
     connect(m_project, &ProjectView::runToLineRequested, this, [this](int line) {
         m_debugger->runTo(u"%1.ino:%2"_s.arg(m_project->currentProjectId()).arg(line));
     });
@@ -742,6 +768,8 @@ void MainWindow::updateToolBar()
     m_current->setText(m_current->fontMetrics().elidedText(current, Qt::ElideRight, 360));
     m_current->setToolTip(current);
     m_stopSim->setEnabled(m_core->isSimRunning());
+    if (m_decodeAction)
+        m_decodeAction->setEnabled(!m_project->currentProjectId().isEmpty() && !m_project->currentBuildBoard().isEmpty());
     m_boardMenu->setEnabled(m_buildPanel->portPicker()->currentIndex() >= 0
                             && m_core->state() == CoreConnection::State::Connected && !m_core->isBoardBusy());
     m_busyAction->setVisible(m_core->isBuilding() || m_core->isBoardBusy() || m_core->isInstalling());
@@ -830,6 +858,11 @@ void MainWindow::buildMenus()
     project->addAction(m_buildPanel->debugAction());
     project->addAction(m_sim->pauseAction());
     project->addAction(m_stopSim);
+    project->addSeparator();
+    m_decodeAction = project->addAction(tr("&Decode a crash backtrace…"), this, &MainWindow::showBacktraceDialog);
+    m_decodeAction->setToolTip(tr("Turn a backtrace from a saved log or a forum post into lines of the project shown"));
+    project->addAction(m_buildPanel->nextProblemAction());
+    project->addAction(m_buildPanel->previousProblemAction());
     project->addSeparator();
     project->addAction(m_buildPanel->flashAction());
 
@@ -1126,6 +1159,19 @@ void MainWindow::showLocation(const QJsonObject &at)
                               .arg(file));
 }
 
+void MainWindow::showBacktraceDialog()
+{
+    if (!m_backtraces) {
+        m_backtraces = new BacktraceDialog(m_core, this);
+        connect(m_backtraces, &BacktraceDialog::locationActivated, this, &MainWindow::showLocation);
+    }
+    m_backtraces->setBuild(m_project->currentProjectId(), m_project->currentBuildBoard(),
+                           m_project->currentProjectTitle());
+    m_backtraces->show();
+    m_backtraces->raise();
+    m_backtraces->activateWindow();
+}
+
 void MainWindow::find()
 {
     // In the Code tab: find in the sketch.
@@ -1187,8 +1233,8 @@ void MainWindow::showBreakpointLines()
     const QString prefix = m_project->currentProjectId() + u".ino:"_s;
     QSet<int> lines;
     for (const QString &loc : m_debugger->breakpointLocations()) {
-        if (loc.startsWith(prefix))
-            lines.insert(loc.mid(prefix.size()).toInt());
+        if (loc.startsWith(prefix)) // "blink.ino:12", maybe "… if i == 10"
+            lines.insert(loc.mid(prefix.size()).section(u' ', 0, 0).toInt());
     }
     lines.remove(0);
     m_project->codeView()->setBreakpointLines(lines);

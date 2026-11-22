@@ -1,4 +1,5 @@
 #include "ProblemsPanel.h"
+#include <QFileInfo>
 
 #include "CoreConnection.h"
 
@@ -29,7 +30,11 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
     m_tree->header()->setSectionResizeMode(SourceColumn, QHeaderView::ResizeToContents);
     m_tree->header()->setStretchLastSection(true);
     m_tree->setToolTip(tr("Double-click one to read about it on esp32bench.dev"));
-    connect(m_tree, &QTreeWidget::itemActivated, this, [](QTreeWidgetItem *item) {
+    connect(m_tree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item) {
+        if (const QJsonObject at = item->data(TextColumn, LocationRole).toJsonObject(); !at.isEmpty()) {
+            emit locationActivated(at);
+            return;
+        }
         const QUrl url(item->data(TextColumn, UrlRole).toString());
         if (url.scheme() == u"https")
             QDesktopServices::openUrl(url);
@@ -41,6 +46,8 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
         emit countChanged(0);
     });
     connect(core, &CoreConnection::outputExplained, this, &ProblemsPanel::add);
+    connect(core, &CoreConnection::simBacktrace, this, [this](const QJsonArray &f) { addCrash(u"sim"_s, f); });
+    connect(core, &CoreConnection::serialBacktrace, this, [this](const QJsonArray &f) { addCrash(u"serial"_s, f); });
     connect(core, &CoreConnection::buildFirstError, this, [this](const QJsonObject &e) {
         add(u"build"_s, QJsonArray{QJsonObject{
                             {u"level"_s, u"problem"_s},
@@ -56,6 +63,37 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(m_tree, 1);
     layout->addLayout(bar);
+}
+
+void ProblemsPanel::addCrash(const QString &source, const QJsonArray &frames)
+{
+    // The sketch's own frame if there is one, else the innermost named one.
+    QJsonObject at;
+    for (const QJsonValue &v : frames) {
+        if (v.toObject().value(u"sketch"_s).toBool()) {
+            at = v.toObject();
+            break;
+        }
+    }
+    for (const QJsonValue &v : frames) {
+        if (at.isEmpty() && v.toObject().contains(u"func"_s))
+            at = v.toObject();
+    }
+    if (at.isEmpty() && !frames.isEmpty())
+        at = frames.first().toObject();
+    const QString path = at.value(u"file"_s).toString();
+    const QString file = QFileInfo(path).fileName();
+    const int line = at.value(u"line"_s).toInt();
+    const QString func = at.value(u"func"_s).toString(at.value(u"addr"_s).toString());
+    const QString text = !file.isEmpty() && line > 0 ? tr("Crashed in %1 (%2, line %3)").arg(func, file).arg(line)
+                                                     : tr("Crashed in %1").arg(func);
+    add(source, QJsonArray{QJsonObject{{u"level"_s, u"problem"_s}, {u"text"_s, text}}});
+    QTreeWidgetItem *item = m_tree->topLevelItem(m_tree->topLevelItemCount() - 1);
+    if (item && !file.isEmpty() && line > 0) {
+        item->setData(TextColumn, LocationRole,
+                      QJsonObject{{u"file"_s, file}, {u"line"_s, line}, {u"path"_s, path}});
+        item->setToolTip(TextColumn, tr("%1\nDouble-click to see the line.").arg(text));
+    }
 }
 
 void ProblemsPanel::add(const QString &source, const QJsonArray &findings)

@@ -1,5 +1,7 @@
 #include "BuildPanel.h"
 
+#include <QTextDocument>
+
 #include "ConsoleView.h"
 #include "CoreConnection.h"
 #include "DevicesPanel.h"
@@ -73,6 +75,16 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
                            "building it first if needed"));
     m_debug->setShortcut(QKeySequence(Qt::Key_F5));
     connect(m_debug, &QAction::triggered, this, [this] { act(Then::Debug); });
+    m_nextProblem = new QAction(QIcon::fromTheme(u"go-down"_s), tr("Next problem"), this);
+    m_nextProblem->setShortcut(QKeySequence(Qt::Key_F8));
+    m_nextProblem->setToolTip(tr("Show the line of the build's next error or warning"));
+    m_previousProblem = new QAction(QIcon::fromTheme(u"go-up"_s), tr("Previous problem"), this);
+    m_previousProblem->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F8));
+    m_previousProblem->setToolTip(tr("Show the line of the build's previous error or warning"));
+    for (QAction *a : {m_nextProblem, m_previousProblem})
+        a->setEnabled(false);
+    connect(m_nextProblem, &QAction::triggered, this, [this] { goToProblem(true); });
+    connect(m_previousProblem, &QAction::triggered, this, [this] { goToProblem(false); });
     m_port->setToolTip(tr("Board to flash"));
     m_port->setMinimumContentsLength(16);
     m_port->setSizeAdjustPolicy(QComboBox::AdjustToContents);
@@ -175,6 +187,8 @@ QString BuildPanel::logText() const
 void BuildPanel::started(const QJsonObject &plan)
 {
     m_log->clear();
+    m_nextProblem->setEnabled(false);
+    m_previousProblem->setEnabled(false);
     m_errors = m_warnings = 0;
     showProblemCount();
     m_pendingProject = plan.value(u"project"_s).toString();
@@ -191,8 +205,11 @@ void BuildPanel::appendLine(const QString &, const QString &line, const QString 
     const int state = OutputLines::state(level);
     QTextBlock b = m_log->document()->lastBlock();
     OutputLines::mark(b, state, {}, m_log->palette());
-    if (!location.isEmpty())
+    if (!location.isEmpty()) {
         b.setUserData(new LocationData(location)); // the block owns it
+        m_nextProblem->setEnabled(true);
+        m_previousProblem->setEnabled(true);
+    }
     if (state == OutputLines::Error)
         ++m_errors;
     else if (state == OutputLines::Warning)
@@ -226,6 +243,28 @@ bool BuildPanel::activateLine(int blockNumber)
         return false;
     emit locationActivated(d->location);
     return true;
+}
+
+bool BuildPanel::goToProblem(bool forward)
+{
+    QTextDocument *doc = m_log->document();
+    const int count = doc->blockCount();
+    const int from = m_log->textCursor().hasSelection() || m_log->textCursor().blockNumber() > 0
+        ? m_log->textCursor().blockNumber()
+        : (forward ? -1 : count);
+    for (int step = 1; step <= count; ++step) {
+        // Round from the other end.
+        const int n = ((forward ? from + step : from - step) % count + count) % count;
+        const QTextBlock b = doc->findBlockByNumber(n);
+        if (!b.userData())
+            continue;
+        QTextCursor c(b);
+        c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        m_log->setTextCursor(c);
+        m_log->ensureCursorVisible();
+        return activateLine(n);
+    }
+    return false;
 }
 
 bool BuildPanel::cancelRunning()

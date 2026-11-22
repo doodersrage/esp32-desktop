@@ -93,7 +93,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.34.0"_s}});
+                                  {u"protocol"_s, u"0.35.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
@@ -431,6 +431,21 @@ private slots:
             titled |= d->windowTitle() == u"Problems (1)"_s;
         QVERIFY(titled);
         QCOMPARE(window.problems()->tree()->topLevelItem(0)->text(ProblemsPanel::TextColumn), u"The board browned out."_s);
+        // A decoded crash: where it was, the sketch's own line first; double-click shows it.
+        emit core.simBacktrace(QJsonArray{QJsonObject{{u"addr"_s, u"0x40001234"_s}, {u"func"_s, u"abort"_s}},
+                                          QJsonObject{{u"addr"_s, u"0x400d2a5e"_s}, {u"func"_s, u"loop()"_s},
+                                                      {u"file"_s, u"/s/blink/blink.ino"_s}, {u"line"_s, 12},
+                                                      {u"sketch"_s, true}}});
+        QTreeWidgetItem *crash = window.problems()->tree()->topLevelItem(1);
+        QVERIFY(crash);
+        QCOMPARE(crash->text(ProblemsPanel::TextColumn), u"Crashed in loop() (blink.ino, line 12)"_s);
+        QCOMPARE(crash->text(ProblemsPanel::SourceColumn), u"Simulator"_s);
+        QSignalSpy crashAt(window.problems(), &ProblemsPanel::locationActivated);
+        emit window.problems()->tree()->itemActivated(crash, ProblemsPanel::TextColumn);
+        QCOMPARE(crashAt.size(), 1);
+        QCOMPARE(crashAt.at(0).at(0).toJsonObject().value(u"path"_s).toString(), u"/s/blink/blink.ino"_s);
+        emit core.serialBacktrace(QJsonArray{QJsonObject{{u"addr"_s, u"0x40001234"_s}}});
+        QCOMPARE(window.problems()->tree()->topLevelItem(2)->text(ProblemsPanel::TextColumn), u"Crashed in 0x40001234"_s);
 
         // Undo in the message bar.
         bool undone = false;

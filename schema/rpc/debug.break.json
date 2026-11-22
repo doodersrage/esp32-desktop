@@ -1,6 +1,6 @@
 {
   "method": "debug.break",
-  "description": "Set a breakpoint in a simulator started with debug: true. The location is a function name or file:line. Breakpoints are hardware breakpoints (code runs from flash), and chips have only a few of them, so setting one can fail when they are all in use.",
+  "description": "Set a breakpoint in a simulator started with debug: true. The location is a function name or file:line. Breakpoints are hardware breakpoints (code runs from flash), and chips have only a few of them, so setting one can fail when they are all in use. Since protocol 0.35, with condition, it stops only when that C expression is true there (the result's breakpoint says it back as condition).",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -19,6 +19,12 @@
         "minLength": 1,
         "maxLength": 256,
         "pattern": "^[A-Za-z0-9_:./][A-Za-z0-9_:./-]*$"
+      },
+      "condition": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "description": "Since protocol 0.35: stop only when this expression is true. One line; GDB's $_ functions are refused."
       }
     }
   },
@@ -54,6 +60,9 @@
           "number": {
             "type": "integer",
             "minimum": 1
+          },
+          "condition": {
+            "type": "string"
           }
         }
       }
@@ -77,6 +86,23 @@
           "func": "setup",
           "file": "/home/me/.local/share/esp32bench/builds/blink/esp32/sketch/blink.ino",
           "line": 4
+        }
+      }
+    },
+    {
+      "params": {
+        "subscription": 5,
+        "location": "blink.ino:12",
+        "condition": "i == 10"
+      },
+      "result": {
+        "breakpoint": {
+          "number": 2,
+          "addr": "0x400d1a40",
+          "func": "loop",
+          "file": "/home/me/.local/share/esp32bench/builds/blink/esp32/sketch/blink.ino",
+          "line": 12,
+          "condition": "i == 10"
         }
       }
     }

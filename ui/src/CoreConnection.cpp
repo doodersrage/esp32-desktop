@@ -915,11 +915,14 @@ void CoreConnection::resetSim()
     });
 }
 
-void CoreConnection::debugBreak(const QString &location)
+void CoreConnection::debugBreak(const QString &location, const QString &condition)
 {
     if (!isDebugging())
         return;
-    m_client->call(u"debug.break"_s, {{u"subscription"_s, m_simSub}, {u"location"_s, location}}, this,
+    QJsonObject params{{u"subscription"_s, m_simSub}, {u"location"_s, location}};
+    if (!condition.isEmpty())
+        params.insert(u"condition"_s, condition);
+    m_client->call(u"debug.break"_s, params, this,
                    [this, location](const RpcReply &r) {
                        if (!r.ok) {
                            emit requestFailed(u"debug.break"_s, r.errorMessage);
@@ -1146,6 +1149,44 @@ void CoreConnection::setBreakpoints(const QString &project, const QStringList &l
                    [this](const RpcReply &r) {
                        if (!r.ok)
                            emit requestFailed(u"breakpoints.set"_s, r.errorMessage);
+                   });
+}
+
+void CoreConnection::getWatches(const QString &project)
+{
+    if (project.isEmpty())
+        return;
+    m_client->call(u"watches.get"_s, {{u"project"_s, project}}, this, [this, project](const RpcReply &r) {
+        if (!r.ok)
+            return;
+        QStringList out;
+        for (const QJsonValue &v : r.result.toObject().value(u"watches"_s).toArray())
+            out << v.toString();
+        emit watchesListed(project, out);
+    });
+}
+
+void CoreConnection::setWatches(const QString &project, const QStringList &expressions)
+{
+    if (project.isEmpty())
+        return;
+    m_client->call(u"watches.set"_s,
+                   {{u"project"_s, project}, {u"watches"_s, QJsonArray::fromStringList(expressions)}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok)
+                           emit requestFailed(u"watches.set"_s, r.errorMessage);
+                   });
+}
+
+void CoreConnection::decodeBacktrace(const QString &project, const QString &board, const QString &text)
+{
+    m_client->call(u"backtrace.decode"_s, {{u"project"_s, project}, {u"board"_s, board}, {u"text"_s, text}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"backtrace.decode"_s, r.errorMessage);
+                           return;
+                       }
+                       emit backtraceDecoded(r.result.toObject().value(u"backtraces"_s).toArray());
                    });
 }
 

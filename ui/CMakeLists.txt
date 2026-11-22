@@ -20,7 +20,9 @@ add_library(esp32bench_ui STATIC
     src/RpcClient.cpp src/RpcClient.h
     src/BoardInfoDialog.cpp src/BoardInfoDialog.h
     src/BuildPanel.cpp src/BuildPanel.h
+    src/BacktraceDialog.cpp src/BacktraceDialog.h
     src/CodeView.cpp src/CodeView.h
+    src/SketchHighlighter.cpp src/SketchHighlighter.h
     src/ConsoleView.cpp src/ConsoleView.h
     src/CoreConnection.cpp src/CoreConnection.h
     src/DebugPanel.cpp src/DebugPanel.h

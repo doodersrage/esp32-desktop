@@ -51,6 +51,18 @@ enum Cmd {
     /// work wherever a library project's does (build, the app's simulator, flashing).
     #[command(subcommand)]
     Local(LocalCmd),
+    /// Decode the crash backtraces in a saved log or pasted text (a file, or stdin)
+    /// from the firmware's ELF, as the app does for a run's.
+    Decode {
+        /// The firmware's ELF (a build's `<project>.ino.elf`).
+        #[arg(long)]
+        elf: PathBuf,
+        /// Its chip: esp32, esp32s3 or esp32c3.
+        #[arg(long)]
+        chip: Chip,
+        /// The text; stdin if none.
+        file: Option<PathBuf>,
+    },
     /// Build a library project with arduino-cli (or download and check its prebuilt
     /// firmware), or a local ESP-IDF project (`local open`) with idf.py. For a library
     /// project it shows what will run and stops, unless --yes says you agree: library
@@ -619,12 +631,23 @@ async fn circuit_command(cmd: CircuitCmd) -> Result<()> {
 #[derive(Subcommand)]
 enum SimCmd {
     /// Show the breakpoints kept for a project's debug runs, or keep these instead
-    /// (as `breakpoints.get` / `breakpoints.set`): function names or file:line.
+    /// (as `breakpoints.get` / `breakpoints.set`): function names or file:line, each
+    /// maybe with ` if ` and a condition ("blink.ino:12 if i == 10").
     Breakpoints {
         #[arg(long)]
         project: String,
         locations: Vec<String>,
         /// Forget the kept breakpoints.
+        #[arg(long)]
+        clear: bool,
+    },
+    /// Show the expressions watched in a project's debug runs, or keep these instead
+    /// (as `watches.get` / `watches.set`).
+    Watches {
+        #[arg(long)]
+        project: String,
+        expressions: Vec<String>,
+        /// Forget the kept expressions.
         #[arg(long)]
         clear: bool,
     },
@@ -1039,9 +1062,11 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         }) => {
             if let Some(bad) = locations
                 .iter()
-                .find(|l| !esp32bench_debug::valid_location(l))
+                .find(|l| esp32bench_debug::split_breakpoint(l).is_none())
             {
-                bail!("`{bad}` is not a function name or file:line");
+                bail!(
+                    "`{bad}` is not a function name or file:line, maybe with ` if ` and a condition"
+                );
             }
             let store = esp32bench_library::commands::Commands::new(
                 esp32bench_sim::install::data_dir()?.join("breakpoints.json"),
@@ -1053,6 +1078,46 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             };
             for l in kept {
                 println!("{l}");
+            }
+        }
+        Cmd::Sim(SimCmd::Watches {
+            project,
+            expressions,
+            clear,
+        }) => {
+            if let Some(bad) = expressions
+                .iter()
+                .find(|e| e.chars().count() > 200 || !esp32bench_debug::valid_expression(e))
+            {
+                bail!("`{bad}` is not an expression of one line and at most 200 characters");
+            }
+            let store = esp32bench_library::commands::Commands::new(
+                esp32bench_sim::install::data_dir()?.join("watches.json"),
+            );
+            let kept = if clear || !expressions.is_empty() {
+                store.set(&project, expressions)?
+            } else {
+                store.get(&project)
+            };
+            for e in kept {
+                println!("{e}");
+            }
+        }
+        Cmd::Decode { elf, chip, file } => {
+            let text = match file {
+                Some(f) => std::fs::read(&f).with_context(|| format!("reading {}", f.display()))?,
+                None => {
+                    let mut buf = Vec::new();
+                    tokio::io::AsyncReadExt::read_to_end(&mut tokio::io::stdin(), &mut buf).await?;
+                    buf
+                }
+            };
+            let mut crashes = Crashes::new(elf, chip.id())?;
+            let mut text = text;
+            text.push(b'\n');
+            if crashes.feed(&text).await == 0 {
+                eprintln!("no backtrace in the text");
+                return Ok(ExitCode::FAILURE);
             }
         }
         Cmd::Serial(SerialCmd::Commands {
@@ -1130,7 +1195,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                             out.write_all(&bytes)?;
                             out.flush()?;
                             if let Some(c) = crashes.as_mut() {
-                                c.feed(&bytes).await;
+                                let _ = c.feed(&bytes).await;
                             }
                             if let Some(progress) = checker.as_mut().and_then(|c| c.feed(&bytes))
                                 && progress.complete()
@@ -1385,7 +1450,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                             out.write_all(&bytes)?;
                             out.flush()?;
                             if let Some(c) = crashes.as_mut() {
-                                c.feed(&bytes).await;
+                                let _ = c.feed(&bytes).await;
                             }
                             if let Some(lines) = joiner.as_mut().and_then(|j| j.feed(&bytes)) {
                                 eprintln!(
@@ -1485,8 +1550,11 @@ impl Crashes {
         })
     }
 
-    async fn feed(&mut self, bytes: &[u8]) {
-        for addrs in self.finder.feed(bytes) {
+    /// Decode and print the backtraces these bytes finish; how many there were.
+    async fn feed(&mut self, bytes: &[u8]) -> usize {
+        let found = self.finder.feed(bytes);
+        let n = found.len();
+        for addrs in found {
             match esp32bench_build::backtrace::decode(&self.addr2line, &self.elf, &addrs).await {
                 Ok(frames) => {
                     eprintln!("-- backtrace:");
@@ -1502,6 +1570,7 @@ impl Crashes {
                 Err(e) => eprintln!("-- could not decode the backtrace: {e}"),
             }
         }
+        n
     }
 }
 

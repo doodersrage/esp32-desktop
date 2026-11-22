@@ -73,6 +73,9 @@ public:
     // step marker A to (Shift: marker B).
     int selectedPin() const { return m_selected; }
     void setSelectedPin(int gpio);
+    // Select a pin, showing it if it was hidden, with its latest change in view
+    // (the picture held there); false if the trace has no such pin.
+    bool showPin(int gpio);
     // Move marker A (or B) to the selected pin's next edge after it (or the previous
     // one before it); false when there is none. Scrolls it into view.
     bool stepMarker(bool b, bool forward);

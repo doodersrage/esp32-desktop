@@ -2,6 +2,73 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="fr_FR">
 <context>
+    <name>BacktraceDialog</name>
+    <message>
+        <source>Decode</source>
+        <translation>Décoder</translation>
+    </message>
+    <message>
+        <source>Decode a crash backtrace</source>
+        <translation>Décoder la pile d’appels d’un plantage</translation>
+    </message>
+    <message>
+        <source>Crash output</source>
+        <translation>Sortie du plantage</translation>
+    </message>
+    <message>
+        <source>Paste what the board printed when it crashed, with its Backtrace: line (or, on an ESP32-C3, its register dump)</source>
+        <translation>Collez ce que la carte a affiché en plantant, avec sa ligne Backtrace: (ou, sur un ESP32-C3, son vidage de registres)</translation>
+    </message>
+    <message>
+        <source>Decoded frames</source>
+        <translation>Appels décodés</translation>
+    </message>
+    <message>
+        <source>Function</source>
+        <translation>Fonction</translation>
+    </message>
+    <message>
+        <source>Where</source>
+        <translation>Où</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation>Adresse</translation>
+    </message>
+    <message>
+        <source>Double-click a line to see it</source>
+        <translation>Double-cliquez sur une ligne pour la voir</translation>
+    </message>
+    <message>
+        <source>Decoding…</source>
+        <translation>Décodage…</translation>
+    </message>
+    <message>
+        <source>Could not decode it: %1</source>
+        <translation>Impossible de le décoder : %1</translation>
+    </message>
+    <message>
+        <source>Against the build of %1 for %2: decoding needs the same build the board ran.</source>
+        <translation>D’après la compilation de %1 pour %2 : le décodage nécessite la compilation même que la carte exécutait.</translation>
+    </message>
+    <message>
+        <source>(unknown)</source>
+        <translation>(inconnue)</translation>
+    </message>
+    <message>
+        <source>%1, line %2</source>
+        <translation>%1, ligne %2</translation>
+    </message>
+    <message>
+        <source>No backtrace in that text: it needs the Backtrace: line, or on an ESP32-C3 the MEPC and RA of the register dump.</source>
+        <translation>Aucune pile d’appels dans ce texte : il faut la ligne Backtrace:, ou sur un ESP32-C3 le MEPC et le RA du vidage de registres.</translation>
+    </message>
+    <message>
+        <source>Decoded, innermost first; the sketch&apos;s own lines are in bold.</source>
+        <translation>Décodé, de l’appel le plus profond au plus externe ; les lignes du sketch lui-même sont en gras.</translation>
+    </message>
+</context>
+<context>
     <name>BoardInfoDialog</name>
     <message>
         <source>Partitions</source>
@@ -149,6 +216,22 @@
     <message>
         <source>Run the selected project in the simulator under GDB, paused before it starts, building it first if needed</source>
         <translation>Exécuter le projet choisi dans le simulateur sous GDB, en pause avant le démarrage, en le compilant d&apos;abord si besoin</translation>
+    </message>
+    <message>
+        <source>Next problem</source>
+        <translation>Problème suivant</translation>
+    </message>
+    <message>
+        <source>Show the line of the build&apos;s next error or warning</source>
+        <translation>Afficher la ligne de l’erreur ou de l’avertissement suivant de la compilation</translation>
+    </message>
+    <message>
+        <source>Previous problem</source>
+        <translation>Problème précédent</translation>
+    </message>
+    <message>
+        <source>Show the line of the build&apos;s previous error or warning</source>
+        <translation>Afficher la ligne de l’erreur ou de l’avertissement précédent de la compilation</translation>
     </message>
     <message>
         <source>Write the selected project to the board on the selected port, building it first if needed</source>
@@ -447,6 +530,10 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>Add or remove a breakpoint on line %1</source>
         <translation>Ajouter ou retirer un point d’arrêt à la ligne %1</translation>
+    </message>
+    <message>
+        <source>Breakpoint with a condition…</source>
+        <translation>Point d’arrêt conditionnel…</translation>
     </message>
     <message>
         <source>Run to line %1</source>
@@ -748,6 +835,14 @@ Variables globales : %4 sur %5</translation>
         <translation>Pile d’appels</translation>
     </message>
     <message>
+        <source>Condition…</source>
+        <translation>Condition…</translation>
+    </message>
+    <message>
+        <source>Stop here only when an expression is true</source>
+        <translation>S’arrêter ici seulement quand une expression est vraie</translation>
+    </message>
+    <message>
         <source>Watch</source>
         <translation>Surveiller</translation>
     </message>
@@ -766,6 +861,10 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>%1: %2</source>
         <translation>%1 : %2</translation>
+    </message>
+    <message>
+        <source>%1: %2, if %3</source>
+        <translation>%1 : %2, si %3</translation>
     </message>
     <message>
         <source>Debugger: %1</source>
@@ -790,6 +889,14 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>(read when the firmware stops)</source>
         <translation>(lue quand le firmware s’arrête)</translation>
+    </message>
+    <message>
+        <source>Breakpoint condition</source>
+        <translation>Condition du point d’arrêt</translation>
+    </message>
+    <message>
+        <source>Stop at %1 only when this is true (a C expression, e.g. i == 10); empty to always stop:</source>
+        <translation>S’arrêter à %1 seulement quand ceci est vrai (une expression C, p. ex. i == 10) ; vide pour toujours s’arrêter :</translation>
     </message>
     <message>
         <source>Pause the firmware first: GDB changes breakpoints only while it is stopped.</source>
@@ -1525,6 +1632,10 @@ Le panneau Compilation ci-dessous contient tout le journal.</translation>
         <translation>Effacer la flash…</translation>
     </message>
     <message>
+        <source>%1 = %2</source>
+        <translation>%1 = %2</translation>
+    </message>
+    <message>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
@@ -1595,6 +1706,14 @@ Le panneau Compilation ci-dessous contient tout le journal.</translation>
     <message>
         <source>&amp;Project</source>
         <translation>&amp;Projet</translation>
+    </message>
+    <message>
+        <source>&amp;Decode a crash backtrace…</source>
+        <translation>&amp;Décoder la pile d’appels d’un plantage…</translation>
+    </message>
+    <message>
+        <source>Turn a backtrace from a saved log or a forum post into lines of the project shown</source>
+        <translation>Transformer une pile d’appels d’un journal enregistré ou d’un forum en lignes du projet affiché</translation>
     </message>
     <message>
         <source>&amp;View</source>
@@ -1890,8 +2009,8 @@ SHA-256 du code : %2</translation>
         <translation>La vitesse à laquelle une broche change, en temps simulé, et la part du temps où elle est haute (le rapport cyclique d’une PWM)</translation>
     </message>
     <message>
-        <source>The GPIOs this project uses. Outputs show what the firmware drives; the switch drives a pin as an input, like a button.</source>
-        <translation>Les GPIO utilisés par ce projet. Les sorties montrent ce que pilote le firmware ; l’interrupteur pilote une broche en entrée, comme un bouton.</translation>
+        <source>The GPIOs this project uses. Outputs show what the firmware drives; the switch drives a pin as an input, like a button. Double-click a pin to see it in the trace.</source>
+        <translation>Les GPIO utilisés par ce projet. Les sorties montrent ce que pilote le firmware ; l’interrupteur pilote une broche en entrée, comme un bouton. Double-cliquez sur une broche pour la voir dans le chronogramme.</translation>
     </message>
     <message>
         <source>The simulator has stopped.</source>
@@ -2140,6 +2259,20 @@ SHA-256 du code : %2</translation>
     <message>
         <source>The build failed at %1, line %2: %3</source>
         <translation>La compilation a échoué à %1, ligne %2 : %3</translation>
+    </message>
+    <message>
+        <source>Crashed in %1 (%2, line %3)</source>
+        <translation>Plantage dans %1 (%2, ligne %3)</translation>
+    </message>
+    <message>
+        <source>Crashed in %1</source>
+        <translation>Plantage dans %1</translation>
+    </message>
+    <message>
+        <source>%1
+Double-click to see the line.</source>
+        <translation>%1
+Double-cliquez pour voir la ligne.</translation>
     </message>
     <message>
         <source>Simulator</source>

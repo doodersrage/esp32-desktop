@@ -17,6 +17,8 @@
 #include <QStandardPaths>
 #include <QCheckBox>
 #include <QPushButton>
+#include <QAction>
+#include <QKeySequence>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -66,7 +68,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.34.0"_s}}}});
+                                               {u"protocol"_s, u"0.35.0"_s}}}});
         } else if (method == u"build.start") {
             const QString consent = params.value(u"consent"_s).toString();
             buildRequests << (consent.isEmpty() ? u"-"_s : consent);
@@ -235,6 +237,27 @@ private slots:
         QCOMPARE(shown.size(), 1);
         QCOMPARE(shown.at(0).at(0).toJsonObject(), at);
         QVERIFY(!panel.activateLine(2));
+        // F8 and Shift+F8: the next and previous located problem, round from the end.
+        QVERIFY(panel.nextProblemAction()->isEnabled());
+        QCOMPARE(panel.nextProblemAction()->shortcut(), QKeySequence(Qt::Key_F8));
+        const QJsonObject later{{u"file"_s, u"blink.ino"_s}, {u"line"_s, 20}};
+        emit core.buildLog(u"stderr"_s, u"/tmp/b/blink.ino:20: warning: unused"_s, u"warning"_s, later);
+        shown.clear();
+        QVERIFY(panel.goToProblem(true));
+        QVERIFY(panel.goToProblem(true));
+        QVERIFY(panel.goToProblem(true)); // round to the first again
+        QCOMPARE(shown.size(), 3);
+        QCOMPARE(shown.at(0).at(0).toJsonObject(), at);
+        QCOMPARE(shown.at(1).at(0).toJsonObject(), later);
+        QCOMPARE(shown.at(2).at(0).toJsonObject(), at);
+        QVERIFY(panel.goToProblem(false));
+        QCOMPARE(shown.last().at(0).toJsonObject(), later);
+        // A new build has none yet.
+        emit core.buildStarted(QJsonObject{{u"project"_s, u"blink"_s}, {u"board"_s, u"esp32"_s}});
+        QVERIFY(!panel.nextProblemAction()->isEnabled());
+        QVERIFY(!panel.goToProblem(true));
+        emit core.buildLog(u"stderr"_s, u"/tmp/b/blink.ino:12:3: error: oops"_s, u"error"_s, at);
+        emit core.buildLog(u"stderr"_s, u"collect2: error: ld returned 1 exit status"_s, u"error"_s);
         // Copy problems: only the error and warning lines.
         QVERIFY(!panel.copyProblemsButton()->isHidden());
         QCOMPARE(panel.problemLines(),

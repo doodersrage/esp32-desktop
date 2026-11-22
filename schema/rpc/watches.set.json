@@ -1,0 +1,66 @@
+{
+  "method": "watches.set",
+  "description": "Since protocol 0.35: keep these watched expressions for a project, in the data directory's watches.json; repeats are dropped, at most 20. Every expression must be one debug.evaluate takes, of at most 200 characters, else nothing changes. An empty list forgets them.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "watches"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "watches": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "watches"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "watches": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink",
+        "watches": [
+          "count * 2",
+          "buf[3]"
+        ]
+      },
+      "result": {
+        "watches": [
+          "count * 2",
+          "buf[3]"
+        ]
+      }
+    }
+  ]
+}

@@ -30,6 +30,11 @@ public:
     QAction *flashAction() const { return m_flash; }
     QAction *simulateAction() const { return m_simulate; }
     QAction *debugAction() const { return m_debug; }
+    // F8 / Shift+F8: the build's next (or previous) error or warning that points at a
+    // line, shown as a double-click on it would; round from the end.
+    QAction *nextProblemAction() const { return m_nextProblem; }
+    QAction *previousProblemAction() const { return m_previousProblem; }
+    bool goToProblem(bool forward);
     // The last build that succeeded.
     QString builtProject() const { return m_builtProject; }
     // From build.status: this project's build for this board is ready to use.
@@ -104,6 +109,8 @@ private:
     QAction *m_flash;
     QAction *m_simulate;
     QAction *m_debug;
+    QAction *m_nextProblem;
+    QAction *m_previousProblem;
     QProgressBar *m_progress;
     // The last build that succeeded, which Flash writes.
     QString m_builtProject;

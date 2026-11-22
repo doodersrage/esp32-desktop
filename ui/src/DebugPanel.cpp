@@ -4,6 +4,7 @@
 
 #include <QAction>
 #include <QFileInfo>
+#include <QInputDialog>
 #include <QKeySequence>
 #include <QFontDatabase>
 #include <QHBoxLayout>
@@ -55,7 +56,21 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     forget->setShortcut(QKeySequence::Delete);
     forget->setShortcutContext(Qt::WidgetShortcut);
     m_watches->addAction(forget);
-    connect(forget, &QAction::triggered, this, [this] { delete m_watches->currentItem(); });
+    connect(forget, &QAction::triggered, this, [this] {
+        if (QTreeWidgetItem *item = m_watches->currentItem())
+            removeWatch(item->text(0));
+    });
+    connect(m_core, &CoreConnection::watchesListed, this, [this](const QString &project, const QStringList &list) {
+        if (project != m_project)
+            return;
+        m_watches->clear();
+        for (const QString &e : list) {
+            auto *item = new QTreeWidgetItem(m_watches);
+            item->setText(0, e);
+        }
+        if (m_mode == Mode::Paused)
+            evaluateWatches();
+    });
     connect(m_watchInput, &QLineEdit::returnPressed, this, [this] {
         addWatch(m_watchInput->text().trimmed());
         m_watchInput->clear();
@@ -108,6 +123,14 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
             m_core->debugDelete(item->data(NumberRole).toInt());
     });
     connect(m_breakpoints, &QListWidget::currentItemChanged, this, [this] { setMode(m_mode); });
+    m_breakpoints->setContextMenuPolicy(Qt::ActionsContextMenu);
+    auto *condition = new QAction(tr("Condition…"), m_breakpoints);
+    condition->setToolTip(tr("Stop here only when an expression is true"));
+    m_breakpoints->addAction(condition);
+    connect(condition, &QAction::triggered, this, [this] {
+        if (QListWidgetItem *item = m_breakpoints->currentItem())
+            editCondition(keptLocation(item->data(LocationRole).toString()));
+    });
 
     auto *controls = new QHBoxLayout;
     for (QPushButton *b : {m_continue, m_pause, m_next, m_step, m_finish})
@@ -170,8 +193,8 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
         setMode(Mode::Paused);
         // The kept breakpoints, set while the firmware has not started yet.
         m_restoring = int(m_kept.size());
-        for (const QString &loc : std::as_const(m_kept))
-            m_core->debugBreak(loc);
+        for (const QString &kept : std::as_const(m_kept))
+            m_core->debugBreak(keptLocation(kept), keptCondition(kept));
     });
     connect(m_core, &CoreConnection::breakpointsListed, this, [this](const QString &project, const QStringList &list) {
         if (project != m_project || m_mode != Mode::Off)
@@ -198,17 +221,27 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     });
     connect(m_core, &CoreConnection::breakpointSet, this, [this](const QJsonObject &bp, const QString &location) {
         const int number = bp.value(u"number"_s).toInt();
-        auto *item = new QListWidgetItem(tr("%1: %2").arg(number).arg(where(bp)), m_breakpoints);
+        const QString condition = bp.value(u"condition"_s).toString();
+        const QString kept = condition.isEmpty() ? location : u"%1 if %2"_s.arg(location, condition);
+        auto *item = new QListWidgetItem(condition.isEmpty() ? tr("%1: %2").arg(number).arg(where(bp))
+                                                             : tr("%1: %2, if %3").arg(number).arg(where(bp), condition),
+                                         m_breakpoints);
         item->setData(NumberRole, number);
-        item->setData(LocationRole, location);
+        item->setData(LocationRole, kept);
         item->setToolTip(bp.value(u"file"_s).toString());
         if (m_restoring > 0) {
             --m_restoring; // one of the kept ones
             return;
         }
         m_location->clear();
-        if (!location.isEmpty() && !m_kept.contains(location))
-            keep(m_kept + QStringList{location});
+        if (!location.isEmpty() && !m_kept.contains(kept)) {
+            // In place of the same location's breakpoint with another condition.
+            QStringList list;
+            for (const QString &k : std::as_const(m_kept))
+                if (keptLocation(k) != location)
+                    list << k;
+            keep(list + QStringList{kept});
+        }
     });
     connect(m_core, &CoreConnection::breakpointDeleted, this, [this](int number) {
         for (int i = 0; i < m_breakpoints->count(); ++i) {
@@ -245,6 +278,8 @@ void DebugPanel::setProject(const QString &project)
     if (project == m_project)
         return;
     m_project = project;
+    m_watches->clear();
+    m_core->getWatches(project);
     if (m_mode == Mode::Off) {
         m_kept.clear();
         emit breakpointsChanged();
@@ -275,16 +310,98 @@ void DebugPanel::addWatch(const QString &expression)
 {
     if (expression.isEmpty())
         return;
-    for (int i = 0; i < m_watches->topLevelItemCount(); ++i) {
-        if (m_watches->topLevelItem(i)->text(0) == expression)
-            return;
-    }
+    if (watchExpressions().contains(expression))
+        return;
     auto *item = new QTreeWidgetItem(m_watches);
     item->setText(0, expression);
     if (m_mode == Mode::Paused)
         m_core->debugEvaluate(expression);
     else
         item->setText(1, tr("(read when the firmware stops)"));
+    keepWatches();
+}
+
+void DebugPanel::removeWatch(const QString &expression)
+{
+    for (int i = 0; i < m_watches->topLevelItemCount(); ++i) {
+        if (m_watches->topLevelItem(i)->text(0) == expression) {
+            delete m_watches->takeTopLevelItem(i);
+            keepWatches();
+            return;
+        }
+    }
+}
+
+QStringList DebugPanel::watchExpressions() const
+{
+    QStringList out;
+    for (int i = 0; i < m_watches->topLevelItemCount(); ++i)
+        out << m_watches->topLevelItem(i)->text(0);
+    return out;
+}
+
+void DebugPanel::keepWatches()
+{
+    m_core->setWatches(m_project, watchExpressions());
+}
+
+QString DebugPanel::keptLocation(const QString &kept)
+{
+    return kept.section(u" if "_s, 0, 0).trimmed();
+}
+
+QString DebugPanel::keptCondition(const QString &kept)
+{
+    return kept.contains(u" if "_s) ? kept.section(u" if "_s, 1).trimmed() : QString();
+}
+
+void DebugPanel::editCondition(const QString &location)
+{
+    QString current;
+    for (const QString &k : std::as_const(m_kept)) {
+        if (keptLocation(k) == location)
+            current = keptCondition(k);
+    }
+    bool ok = false;
+    const QString condition = QInputDialog::getText(
+        this, tr("Breakpoint condition"),
+        tr("Stop at %1 only when this is true (a C expression, e.g. i == 10); empty to always stop:").arg(location),
+        QLineEdit::Normal, current, &ok);
+    if (ok)
+        setCondition(location, condition.trimmed());
+}
+
+bool DebugPanel::setCondition(const QString &location, const QString &condition)
+{
+    const QString kept = condition.isEmpty() ? location : u"%1 if %2"_s.arg(location, condition);
+    if (m_mode == Mode::Running) {
+        m_status->setText(tr("Pause the firmware first: GDB changes breakpoints only while it is stopped."));
+        return false;
+    }
+    if (m_mode == Mode::Paused) {
+        // GDB's breakpoint again, with the new condition.
+        for (int i = 0; i < m_breakpoints->count(); ++i) {
+            if (keptLocation(m_breakpoints->item(i)->data(LocationRole).toString()) == location)
+                m_core->debugDelete(m_breakpoints->item(i)->data(NumberRole).toInt());
+        }
+        m_core->debugBreak(location, condition);
+        return true;
+    }
+    QStringList list;
+    bool replaced = false;
+    for (const QString &k : std::as_const(m_kept)) {
+        if (keptLocation(k) == location) {
+            if (!replaced)
+                list << kept;
+            replaced = true;
+        } else {
+            list << k;
+        }
+    }
+    if (!replaced)
+        list << kept;
+    keep(list);
+    return true;
 }
 
 void DebugPanel::evaluateWatches()
@@ -301,7 +418,7 @@ bool DebugPanel::toggleBreakpoint(const QString &location)
     }
     if (m_mode == Mode::Paused) {
         for (int i = 0; i < m_breakpoints->count(); ++i) {
-            if (m_breakpoints->item(i)->data(LocationRole).toString() == location) {
+            if (keptLocation(m_breakpoints->item(i)->data(LocationRole).toString()) == location) {
                 m_core->debugDelete(m_breakpoints->item(i)->data(NumberRole).toInt());
                 return true;
             }
@@ -309,8 +426,11 @@ bool DebugPanel::toggleBreakpoint(const QString &location)
         m_core->debugBreak(location);
         return true;
     }
-    QStringList list = m_kept;
-    if (!list.removeAll(location))
+    QStringList list;
+    for (const QString &k : std::as_const(m_kept))
+        if (keptLocation(k) != location)
+            list << k;
+    if (list.size() == m_kept.size())
         list << location;
     keep(list);
     return true;

@@ -31,6 +31,10 @@ public:
     // What each pin is wired to (library.get's pinLabels), shown beside its number.
     void setLabels(const QHash<int, QString> &labels);
 
+signals:
+    // A double-click or Enter on a pin's row: show it in the trace.
+    void pinActivated(int gpio);
+
 private:
     void started();
     void update(const QJsonArray &pins);

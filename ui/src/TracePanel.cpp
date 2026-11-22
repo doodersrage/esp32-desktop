@@ -46,6 +46,25 @@ void TraceView::setSelectedPin(int gpio)
     emit markersChanged();
 }
 
+bool TraceView::showPin(int gpio)
+{
+    if (!m_pins.contains(gpio))
+        return false;
+    setPinHidden(gpio, false);
+    setSelectedPin(gpio);
+    const QList<Edge> list = m_edges.value(gpio);
+    if (!list.isEmpty() && (list.last().t < m_end - m_span || list.last().t > m_end)) {
+        m_end = std::min(m_now, list.last().t + m_span / 2);
+        if (!m_hold) {
+            m_hold = true;
+            emit held();
+        }
+        update();
+    }
+    setFocus(Qt::OtherFocusReason); // for the arrow keys
+    return true;
+}
+
 bool TraceView::stepMarker(bool b, bool forward)
 {
     if (m_selected < 0)

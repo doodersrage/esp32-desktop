@@ -4,6 +4,7 @@
 #include "CodeView.h"
 #include "CoreConnection.h"
 #include "Labels.h"
+#include "SketchHighlighter.h"
 #include "ProjectView.h"
 
 #include <QAction>
@@ -23,6 +24,10 @@
 #include <QToolButton>
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QApplication>
+#include <QHelpEvent>
+#include <QTextBlock>
+#include <QTextLayout>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -164,19 +169,67 @@ private slots:
         QSignalSpy runTo(&view, &ProjectView::runToLineRequested);
         QSignalSpy toggled(&view, &ProjectView::codeLineClicked);
         QMenu *menu = code->lineMenu(3);
-        QCOMPARE(menu->actions().size(), 2);
-        QVERIFY(!menu->actions().at(1)->isEnabled());
+        QCOMPARE(menu->actions().size(), 3);
+        QVERIFY(!menu->actions().at(2)->isEnabled());
+        QSignalSpy condition(code, &CodeView::conditionRequested);
+        menu->actions().at(1)->trigger();
+        QCOMPARE(condition.size(), 1);
+        QCOMPARE(condition.at(0).at(0).toInt(), 3);
         menu->actions().at(0)->trigger();
         QCOMPARE(toggled.size(), 1);
         QCOMPARE(toggled.at(0).at(0).toInt(), 3);
         delete menu;
         code->setRunToEnabled(true);
         menu = code->lineMenu(3);
-        QVERIFY(menu->actions().at(1)->isEnabled());
-        menu->actions().at(1)->trigger();
+        QVERIFY(menu->actions().at(2)->isEnabled());
+        menu->actions().at(2)->trigger();
         QCOMPARE(runTo.size(), 1);
         QCOMPARE(runTo.at(0).at(0).toInt(), 3);
         delete menu;
+    }
+
+    void coloursTheSketchAndNamesWhatIsHovered()
+    {
+        CodeView code;
+        code.resize(500, 300);
+        code.setPlainText(u"#include <Wire.h>\nint count = 42; // the count\nvoid loop() { Serial.println(\"hi /* not */\"); }\n/* a\nlong */ int x;"_s);
+        code.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&code));
+        const auto formatAt = [&](int block, int column) {
+            const QTextBlock b = code.document()->findBlockByNumber(block);
+            for (const QTextLayout::FormatRange &r : b.layout()->formats())
+                if (column >= r.start && column < r.start + r.length)
+                    return r.format;
+            return QTextCharFormat();
+        };
+        SketchHighlighter *h = code.highlighter();
+        QCOMPARE(formatAt(0, 2).foreground(), h->format(SketchHighlighter::Preprocessor).foreground());
+        QCOMPARE(formatAt(1, 0).fontWeight(), int(QFont::DemiBold)); // int
+        QCOMPARE(formatAt(1, 12).foreground(), h->format(SketchHighlighter::Number).foreground()); // 42
+        QVERIFY(formatAt(1, 20).fontItalic()); // the comment
+        // A comment marker inside a string is the string's.
+        const int quote = int(code.document()->findBlockByNumber(2).text().indexOf(u"/*"_s));
+        QCOMPARE(formatAt(2, quote).foreground(), h->format(SketchHighlighter::String).foreground());
+        QVERIFY(formatAt(3, 1).fontItalic());
+        QVERIFY(formatAt(4, 2).fontItalic()); // still in the comment
+        QVERIFY(!formatAt(4, 9).fontItalic()); // int x, after it
+
+        // The name under the mouse: hovering asks for its value only while paused.
+        QTextCursor c(code.document()->findBlockByNumber(1));
+        c.setPosition(c.position() + 6); // inside "count"
+        const QPoint at = code.cursorRect(c).center();
+        QCOMPARE(code.wordAt(at), u"count"_s);
+        QSignalSpy hovered(&code, &CodeView::wordHovered);
+        QHelpEvent tip(QEvent::ToolTip, at, code.viewport()->mapToGlobal(at));
+        QApplication::sendEvent(code.viewport(), &tip);
+        QCOMPARE(hovered.size(), 0);
+        code.setRunToEnabled(true);
+        QApplication::sendEvent(code.viewport(), &tip);
+        QCOMPARE(hovered.size(), 1);
+        QCOMPARE(hovered.at(0).at(0).toString(), u"count"_s);
+        // Not a number.
+        c.setPosition(code.document()->findBlockByNumber(1).position() + 13);
+        QVERIFY(code.wordAt(code.cursorRect(c).center()).isEmpty());
     }
 
     void saysWhenThingsHappened()

@@ -12,6 +12,7 @@
 #include <QPushButton>
 #include <QTemporaryDir>
 #include <QLocale>
+#include <QSignalSpy>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -51,7 +52,7 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.34.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.35.0"_s}});
         } else if (m == u"sim.start") {
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false},
                                   {u"engine"_s, u"lcgamboa"_s}, {u"pins"_s, pinsToReport}});
@@ -97,6 +98,11 @@ private slots:
         QTRY_COMPARE(panel.row(2)->text(PinsPanel::LevelColumn), u"low"_s);
         QCOMPARE(panel.row(4)->text(PinsPanel::DirectionColumn), u"input"_s);
         QVERIFY(!panel.row(9));
+        // A double-click on a pin asks to see it in the trace.
+        QSignalSpy activated(&panel, &PinsPanel::pinActivated);
+        emit panel.tree()->itemActivated(panel.row(4), 0);
+        QCOMPARE(activated.size(), 1);
+        QCOMPARE(activated.at(0).at(0).toInt(), 4);
         // How fast a pin toggles, and when it stops.
         QVERIFY(panel.row(2)->text(PinsPanel::RateColumn).isEmpty());
         fake.pins(QJsonArray{QJsonObject{{u"gpio"_s, 2}, {u"rate"_s, QJsonObject{{u"hz"_s, 1.0}, {u"high"_s, 0.5}}}}});
