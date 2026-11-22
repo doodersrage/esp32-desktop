@@ -19,6 +19,7 @@
 #include <QTemporaryDir>
 #include <QPlainTextEdit>
 #include <QSignalSpy>
+#include <QCheckBox>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -32,6 +33,7 @@ public:
     QJsonArray kept{u"blink.ino:7"_s}; // breakpoints.get's answer for any project
     QJsonArray watches; // watches.get's
     int inspections = 0; // debug.inspect calls; each says pin is one more
+    int hits = 0;        // times breakpoint 1 was reached
     void stopAtWatch()
     {
         event(u"debug.stopped"_s, {{u"reason"_s, u"watchpoint-trigger"_s}, {u"breakpoint"_s, m_next},
@@ -75,7 +77,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.36.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.37.0"_s}});
             return;
         }
         if (m == u"device.list" || m == u"device.watch") {
@@ -107,7 +109,8 @@ private:
             const QString a = p.value(u"action"_s).toString();
             if (a == u"continue") {
                 event(u"debug.running"_s, {});
-                event(u"debug.stopped"_s, {{u"reason"_s, u"breakpoint-hit"_s}, {u"breakpoint"_s, 1}, {u"frame"_s, setup}});
+                event(u"debug.stopped"_s,
+                      {{u"reason"_s, u"breakpoint-hit"_s}, {u"breakpoint"_s, 1}, {u"frame"_s, setup}, {u"hits"_s, ++hits}});
             } else if (a == u"runTo") {
                 // At GDB's temporary breakpoint, number 9: not one of the list.
                 QJsonObject at = setup;
@@ -450,6 +453,50 @@ private slots:
         QTest::keyClick(panel.memoryInput(), Qt::Key_Return);
         QTRY_VERIFY(panel.memoryText().startsWith(u"3ffb0a10  48 65 6c 6c 6f 00 ff"_s));
         QVERIFY(panel.memoryText().endsWith(u"Hello.."_s));
+        core.stopSim();
+    }
+
+    void countsHitsPassesAndShowsHex()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        DebugPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        panel.hexBox()->setChecked(false);
+        core.startSim(u"blink"_s, u"esp32"_s, true);
+        QTRY_VERIFY(core.isDebugging());
+        core.debugBreak(u"setup"_s);
+        QTRY_COMPARE(panel.breakpoints()->count(), 1);
+        panel.continueButton()->click();
+        QTRY_VERIFY(panel.statusText().startsWith(u"Stopped at breakpoint 1"_s));
+        QVERIFY(!panel.statusText().contains(u"reached"_s)); // the first time
+        panel.continueButton()->click();
+        QTRY_VERIFY2(panel.statusText().contains(u"it has been reached 2 times"_s), qPrintable(panel.statusText()));
+        QCOMPARE(panel.breakpoints()->item(0)->toolTip(), u"Reached 2 times in this run"_s);
+
+        // Pass it the next 499 times.
+        QVERIFY(panel.ignoreBreakpoint(1, 499));
+        QTRY_VERIFY(fake.methods().contains(u"debug.ignore"_s));
+        QJsonObject asked;
+        for (const QJsonObject &c : fake.calls)
+            if (c.value(u"method"_s) == u"debug.ignore"_s)
+                asked = c.value(u"params"_s).toObject();
+        QCOMPARE(asked.value(u"breakpoint"_s).toInt(), 1);
+        QCOMPARE(asked.value(u"count"_s).toInt(), 499);
+
+        // Hex: whole numbers only, and back.
+        QTRY_VERIFY(panel.locals()->topLevelItemCount() == 2);
+        const QString pin = panel.locals()->topLevelItem(0)->text(1);
+        panel.hexBox()->setChecked(true);
+        QCOMPARE(panel.locals()->topLevelItem(0)->text(1), u"0x%1"_s.arg(QString::number(pin.toInt(), 16)));
+        QCOMPARE(panel.locals()->topLevelItem(1)->text(1), u"…"_s); // a struct: as it was
+        panel.hexBox()->setChecked(false);
+        QCOMPARE(panel.locals()->topLevelItem(0)->text(1), pin);
+        QCOMPARE(DebugPanel::shownValue(u"-26"_s, true), u"-0x1a"_s);
+        QCOMPARE(DebugPanel::shownValue(u"3.5"_s, true), u"3.5"_s);
+        QCOMPARE(DebugPanel::shownValue(u"65 'A'"_s, true), u"65 'A'"_s);
         core.stopSim();
     }
 

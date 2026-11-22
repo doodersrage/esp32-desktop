@@ -9,6 +9,7 @@
 #include <QWidget>
 
 class CoreConnection;
+class QCheckBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -61,6 +62,13 @@ public:
     void readMemory();
     // A hex dump as the memory view shows it: address, 16 bytes in hex, and as text.
     static QString hexDump(quint64 address, const QByteArray &bytes);
+    // Pass a breakpoint the next `count` times (while paused): for a bug on the 500th
+    // loop. False when it cannot be now.
+    bool ignoreBreakpoint(int number, int count);
+    // Show numbers in locals and watches as hex (a value GDB printed as a whole
+    // number) or as GDB printed them. Kept between starts.
+    QCheckBox *hexBox() const { return m_hex; }
+    static QString shownValue(const QString &value, bool hex);
     // Stop watching it (kept for the project too).
     void removeWatch(const QString &expression);
     QStringList watchExpressions() const;
@@ -82,9 +90,12 @@ private:
     enum class Mode { Off, Running, Paused };
     void setMode(Mode mode);
     void addBreakpoint();
-    void stopped(const QString &reason, const QJsonObject &frame, int breakpoint, const QJsonObject &watch);
+    void stopped(const QString &reason, const QJsonObject &frame, int breakpoint, const QJsonObject &watch, int hits);
     void showInspection(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals, int frame);
     // Bold a value that changed since the last stop (frame 0 only); `last` keeps them.
+    // Put a value in a cell, as the Hex switch says, keeping GDB's text.
+    void setValue(QTreeWidgetItem *item, int column, const QString &value);
+    void reformatValues();
     void markChanged(QTreeWidgetItem *item, int column, const QString &key, QHash<QString, QString> &last);
     void keep(const QStringList &locations);
     void evaluateWatches();
@@ -107,6 +118,7 @@ private:
     QTreeWidget *m_locals;
     QLineEdit *m_watchInput;
     QTreeWidget *m_watches;
+    QCheckBox *m_hex;
     QLineEdit *m_memoryInput;
     QPlainTextEdit *m_memory;
     int m_frame = 0;

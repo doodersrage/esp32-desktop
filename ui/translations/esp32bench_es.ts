@@ -586,6 +586,22 @@ Variables globales: %4 de %5</translation>
 <context>
     <name>ConsoleBar</name>
     <message>
+        <source>Send which text file, line by line?</source>
+        <translation>¿Qué archivo de texto enviar línea a línea?</translation>
+    </message>
+    <message>
+        <source>Text files (*.txt *.cfg *.ini *.at);;All files (*)</source>
+        <translation>Archivos de texto (*.txt *.cfg *.ini *.at);;Todos los archivos (*)</translation>
+    </message>
+    <message>
+        <source>Send a file</source>
+        <translation>Enviar un archivo</translation>
+    </message>
+    <message>
+        <source>Wait after each line, in milliseconds (some boards need time to answer each command):</source>
+        <translation>Esperar tras cada línea, en milisegundos (algunas placas necesitan tiempo para responder a cada orden):</translation>
+    </message>
+    <message>
         <source>Time stamps</source>
         <translation>Marcas de tiempo</translation>
     </message>
@@ -656,6 +672,22 @@ Variables globales: %4 de %5</translation>
     <message>
         <source>Start each new line with the time since the line before it began (+12 ms), to time loops and delays. In the simulator it is this computer&apos;s time.</source>
         <translation>Empezar cada línea nueva con el tiempo desde que empezó la anterior (+12 ms), para medir bucles y esperas. En el simulador es el tiempo de este ordenador.</translation>
+    </message>
+    <message>
+        <source>Highlight…</source>
+        <translation>Resaltar…</translation>
+    </message>
+    <message>
+        <source>Words to mark the lines of, in every console: ERROR, WiFi connected, your own markers</source>
+        <translation>Palabras cuyas líneas se marcan en todas las consolas: ERROR, WiFi connected, tus propias marcas</translation>
+    </message>
+    <message>
+        <source>Highlight words</source>
+        <translation>Resaltar palabras</translation>
+    </message>
+    <message>
+        <source>Mark the lines that have any of these words (separated by commas; case does not matter):</source>
+        <translation>Marcar las líneas que tengan alguna de estas palabras (separadas por comas; da igual mayúsculas o minúsculas):</translation>
     </message>
     <message>
         <source>Copy for a forum post</source>
@@ -799,6 +831,14 @@ Variables globales: %4 de %5</translation>
         <translation>Quitar</translation>
     </message>
     <message>
+        <source>Hex</source>
+        <translation>Hex</translation>
+    </message>
+    <message>
+        <source>Show whole numbers in the variables and watches as hex</source>
+        <translation>Mostrar los números enteros de variables y expresiones vigiladas en hexadecimal</translation>
+    </message>
+    <message>
         <source>Memory address</source>
         <translation>Dirección de memoria</translation>
     </message>
@@ -911,6 +951,10 @@ Variables globales: %4 de %5</translation>
         <translation>Registro</translation>
     </message>
     <message>
+        <source>Breakpoint %1: passes left before it stops: %2.</source>
+        <translation>Punto de interrupción %1: pasadas que quedan antes de detenerse: %2.</translation>
+    </message>
+    <message>
         <source>Value</source>
         <translation>Valor</translation>
     </message>
@@ -929,6 +973,22 @@ Variables globales: %4 de %5</translation>
     <message>
         <source>Stop here only when an expression is true</source>
         <translation>Detenerse aquí solo cuando una expresión sea cierta</translation>
+    </message>
+    <message>
+        <source>Pass the next times…</source>
+        <translation>Saltar las próximas veces…</translation>
+    </message>
+    <message>
+        <source>Run past this breakpoint a number of times before it stops again</source>
+        <translation>Pasar este punto de interrupción varias veces antes de que vuelva a detenerse</translation>
+    </message>
+    <message>
+        <source>Pass the breakpoint</source>
+        <translation>Saltar el punto de interrupción</translation>
+    </message>
+    <message>
+        <source>Run past it this many times, then stop:</source>
+        <translation>Pasar por él estas veces y luego detenerse:</translation>
     </message>
     <message>
         <source>Click a function to see its variables and the line it is at</source>
@@ -999,6 +1059,10 @@ Variables globales: %4 de %5</translation>
         <translation>Cambió desde la última parada; antes era %1</translation>
     </message>
     <message>
+        <source>Breakpoint %1 stops again each time.</source>
+        <translation>El punto de interrupción %1 vuelve a detenerse cada vez.</translation>
+    </message>
+    <message>
         <source>Pause the firmware first: GDB sets watchpoints only while it is stopped.</source>
         <translation>Pausa el firmware primero: GDB pone puntos de vigilancia solo con él detenido.</translation>
     </message>
@@ -1019,12 +1083,20 @@ Variables globales: %4 de %5</translation>
         <translation>?</translation>
     </message>
     <message>
+        <source>Stopped at breakpoint %1 in %2; it has been reached %3 times.</source>
+        <translation>Detenido en el punto de interrupción %1 en %2; se ha alcanzado %3 veces.</translation>
+    </message>
+    <message>
         <source>Stopped at breakpoint %1 in %2.</source>
         <translation>Detenido en el punto de interrupción %1 en %2.</translation>
     </message>
     <message>
         <source>Paused in %1.</source>
         <translation>En pausa en %1.</translation>
+    </message>
+    <message>
+        <source>Reached %1 times in this run</source>
+        <translation>Alcanzado %1 veces en esta ejecución</translation>
     </message>
     <message>
         <source>%1 (argument)</source>
@@ -1223,6 +1295,42 @@ Variables globales: %4 de %5</translation>
     <message>
         <source>Saved the picture to %1.</source>
         <translation>Imagen guardada en %1.</translation>
+    </message>
+    <message>
+        <source>Record…</source>
+        <translation>Grabar…</translation>
+    </message>
+    <message>
+        <source>Record the panel as an animated picture (PNG) while the simulation runs, to show a display sketch in an issue or a README</source>
+        <translation>Grabar el panel como imagen animada (PNG) mientras corre la simulación, para mostrar un sketch de pantalla en una incidencia o un README</translation>
+    </message>
+    <message>
+        <source>Record the panel to</source>
+        <translation>Grabar el panel en</translation>
+    </message>
+    <message>
+        <source>Animated PNG pictures (*.png)</source>
+        <translation>Imágenes PNG animadas (*.png)</translation>
+    </message>
+    <message>
+        <source>Stop recording</source>
+        <translation>Detener la grabación</translation>
+    </message>
+    <message>
+        <source>Recording the panel…</source>
+        <translation>Grabando el panel…</translation>
+    </message>
+    <message>
+        <source>Saved the recording to %1.</source>
+        <translation>Grabación guardada en %1.</translation>
+    </message>
+    <message>
+        <source>Could not save the recording: %1</source>
+        <translation>No se pudo guardar la grabación: %1</translation>
+    </message>
+    <message>
+        <source>Could not record: %1</source>
+        <translation>No se pudo grabar: %1</translation>
     </message>
     <message>
         <source>Copy picture</source>
@@ -1724,6 +1832,14 @@ El panel Compilación de abajo tiene el registro completo.</translation>
         <translation>Detener la simulación</translation>
     </message>
     <message>
+        <source>Restart</source>
+        <translation>Reiniciar</translation>
+    </message>
+    <message>
+        <source>Stop the simulation and start the same build again, debugged if it was (%1)</source>
+        <translation>Detener la simulación y volver a iniciar la misma compilación, con depurador si lo tenía (%1)</translation>
+    </message>
+    <message>
         <source>Port:</source>
         <translation>Puerto:</translation>
     </message>
@@ -2129,6 +2245,18 @@ SHA-256 del código: %2</translation>
         <translation>Los GPIO que usa este proyecto. Las salidas muestran lo que el firmware activa; el interruptor activa un pin como entrada, como un botón. Haz doble clic en un pin para verlo en la traza.</translation>
     </message>
     <message>
+        <source>Pulse for %1 ms</source>
+        <translation>Pulsar durante %1 ms</translation>
+    </message>
+    <message>
+        <source>Pulse for %1 s</source>
+        <translation>Pulsar durante %1 s</translation>
+    </message>
+    <message>
+        <source>Show in the trace</source>
+        <translation>Mostrar en la traza</translation>
+    </message>
+    <message>
         <source>The simulator has stopped.</source>
         <translation>El simulador se ha detenido.</translation>
     </message>
@@ -2215,6 +2343,10 @@ SHA-256 del código: %2</translation>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
+    <message>
+        <source>%1: %2 (%3 to %4)</source>
+        <translation>%1: %2 (de %3 a %4)</translation>
+    </message>
 </context>
 <context>
     <name>PlotPanel</name>
@@ -2275,8 +2407,8 @@ SHA-256 del código: %2</translation>
         <translation>Gráfico de los números recibidos</translation>
     </message>
     <message>
-        <source>Stop adding new values, to look at what is shown</source>
-        <translation>Dejar de añadir valores nuevos, para mirar lo que se ve</translation>
+        <source>Hold the picture still to look at it; values that come meanwhile are kept, and shown when you go on</source>
+        <translation>Detener la imagen para mirarla; los valores que lleguen mientras se guardan y se muestran al seguir</translation>
     </message>
 </context>
 <context>
@@ -2756,6 +2888,10 @@ Haz doble clic para ver la línea.</translation>
         <translation>Texto para enviar a la placa</translation>
     </message>
     <message>
+        <source>Send file…</source>
+        <translation>Enviar archivo…</translation>
+    </message>
+    <message>
         <source>Hex</source>
         <translation>Hex</translation>
     </message>
@@ -2846,6 +2982,18 @@ Haz doble clic para ver la línea.</translation>
     <message>
         <source>Recording stopped: %1. %2 bytes were written to %3.</source>
         <translation>La grabación se detuvo: %1. Se escribieron %2 bytes en %3.</translation>
+    </message>
+    <message>
+        <source>Send a text file to the board line by line, such as a list of commands</source>
+        <translation>Enviar un archivo de texto a la placa línea a línea, como una lista de órdenes</translation>
+    </message>
+    <message>
+        <source>Sending %1…</source>
+        <translation>Enviando %1…</translation>
+    </message>
+    <message>
+        <source>Finished sending the file.</source>
+        <translation>Archivo enviado por completo.</translation>
     </message>
     <message>
         <source>Switch speed</source>
@@ -3110,6 +3258,10 @@ Haz doble clic para ver la línea.</translation>
         <translation>Enviar</translation>
     </message>
     <message>
+        <source>Send file…</source>
+        <translation>Enviar archivo…</translation>
+    </message>
+    <message>
         <source>Simulator output</source>
         <translation>Salida del simulador</translation>
     </message>
@@ -3156,6 +3308,18 @@ Haz doble clic para ver la línea.</translation>
     <message>
         <source>Count time in instructions, as the chip does: timing no longer depends on how busy this computer is. Simulations run slower (an ESP32 takes about two seconds to boot), and a sketch that waits in a loop reading hardware, such as an SD card library looking for a card, can take minutes. Applies from the next run.</source>
         <translation>Cuenta el tiempo en instrucciones, como el chip: los tiempos ya no dependen de lo ocupado que esté este ordenador. Las simulaciones van más lentas (un ESP32 tarda unos dos segundos en arrancar), y un sketch que espera en un bucle leyendo hardware, como una biblioteca de tarjetas SD buscando una tarjeta, puede tardar minutos. Se aplica desde la próxima ejecución.</translation>
+    </message>
+    <message>
+        <source>Send a text file to the simulated board line by line, such as a list of commands</source>
+        <translation>Enviar un archivo de texto a la placa simulada línea a línea, como una lista de órdenes</translation>
+    </message>
+    <message>
+        <source>Sending %1…</source>
+        <translation>Enviando %1…</translation>
+    </message>
+    <message>
+        <source>Finished sending the file.</source>
+        <translation>Archivo enviado por completo.</translation>
     </message>
     <message>
         <source>How long the firmware has run, in the simulation&apos;s own time. It can fall behind the real time, most with Chip-like timing on.</source>

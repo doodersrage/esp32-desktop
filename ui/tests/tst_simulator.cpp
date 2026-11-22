@@ -36,6 +36,7 @@ public:
     QStringList calls;
     QList<QByteArray> written;
     bool lastIcount = false; // the last sim.start's icount
+    QList<QJsonObject> sentFiles; // sim.sendFile params
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -66,7 +67,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.36.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.37.0"_s}});
             return;
         }
         calls << m;
@@ -115,6 +116,9 @@ private:
         } else if (m == u"sim.write") {
             written << QByteArray::fromBase64(p.value(u"data"_s).toString().toLatin1());
             reply(id, QJsonObject{});
+        } else if (m == u"sim.sendFile") {
+            sentFiles << p;
+            reply(id, QJsonObject{{u"lines"_s, 3}, {u"bytes"_s, 21}});
         } else if (m == u"sim.pause") {
             const bool paused = p.value(u"paused"_s).toBool();
             reply(id, QJsonObject{{u"paused"_s, paused}});
@@ -278,6 +282,48 @@ private slots:
         QCOMPARE(QGuiApplication::clipboard()->text(), panel.consoleBar()->forumText());
     }
 
+    void sendsFilesRestartsAndHighlights()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        SimulatorPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        core.startSim(u"blink"_s, u"esp32"_s);
+        QTRY_VERIFY(core.isSimRunning());
+
+        core.sendSimFile(u"/tmp/x/commands.txt"_s, u"\r\n"_s, 100);
+        QTRY_COMPARE(fake.sentFiles.size(), 1);
+        QCOMPARE(fake.sentFiles.at(0).value(u"lineDelay"_s).toInt(), 100);
+        QCOMPARE(fake.sentFiles.at(0).value(u"ending"_s).toString(), u"\r\n"_s);
+        QTRY_VERIFY(panel.outputText().contains(u"Finished sending the file."_s));
+
+        // Restart: the same build again, as a new run.
+        QVERIFY(core.canRestartSim());
+        core.restartSim();
+        QTRY_COMPARE(fake.calls.count(u"sim.start"_s), 2);
+        QVERIFY(fake.calls.contains(u"core.unsubscribe"_s));
+        QTRY_VERIFY(core.isSimRunning());
+
+        // Highlighted words mark their lines, in every console, and can change.
+        ConsoleView::setHighlightWords({u"error"_s, u" "_s, u"error"_s});
+        QCOMPARE(ConsoleView::highlightWords(), QStringList{u"error"_s});
+        emit core.simOutput("fine\nan ERROR here\n");
+        const QStringList lines = panel.console()->visibleLines();
+        const int error = int(lines.indexOf(u"an ERROR here"_s));
+        QVERIFY(error > 0);
+        QVERIFY(panel.console()->isHighlighted(error));
+        QVERIFY(!panel.console()->isHighlighted(error - 1));
+        ConsoleView other;
+        other.appendOutput("no error\n", {}, {});
+        QVERIFY(other.isHighlighted(0));
+        ConsoleView::setHighlightWords({});
+        QVERIFY(!panel.console()->isHighlighted(error));
+        QVERIFY(!other.isHighlighted(0));
+        core.stopSim();
+    }
+
     void showsTheSimulatedTime()
     {
         CoreConnection core;
@@ -378,12 +424,14 @@ private slots:
         // Every row received is kept for Save CSV…, as the core sent it; counted step by step.
         qsizetype kept = 2;
         QCOMPARE(panel.rows().size(), kept);
-        // Paused: nothing added; then cleared.
-        panel.findChild<QCheckBox *>()->setChecked(true);
+        // Paused: the picture holds still, but the rows are kept, and drawn on going on.
+        panel.pauseBox()->setChecked(true);
         emit core.plotRows(oneRow(row(30, 30)));
         QCOMPARE(panel.canvas()->values(u"temp"_s).size(), 2);
+        ++kept;
         QCOMPARE(panel.rows().size(), kept);
-        panel.findChild<QCheckBox *>()->setChecked(false);
+        panel.pauseBox()->setChecked(false);
+        QCOMPARE(panel.canvas()->values(u"temp"_s), (QList<double>{21.5, 21.6, 30}));
         // Only the latest rows are kept.
         QJsonArray many;
         for (int i = 0; i < PlotCanvas::Kept + 20; ++i)

@@ -183,6 +183,7 @@ private:
     // The name hovered in the Code tab while paused, waiting for its value.
     QString m_hoverWord;
     QAction *m_decodeAction = nullptr;
+    QAction *m_restartSim = nullptr;
     BacktraceDialog *m_backtraces = nullptr;
     QPoint m_hoverAt;
     // Try Blink was pressed: run it once it is shown and can be.

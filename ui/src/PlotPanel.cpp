@@ -150,7 +150,14 @@ void PlotCanvas::paintEvent(QPaintEvent *)
             p.drawPath(path);
         }
         // The legend, with the latest value; a click on it hides or shows the line.
-        const QString label = tr("%1: %2").arg(name).arg(s.isEmpty() ? 0.0 : s.last(), 0, 'g', 6);
+        // and the lowest and highest of those kept.
+        const QString label = s.isEmpty()
+            ? tr("%1: %2").arg(name).arg(0.0, 0, 'g', 6)
+            : tr("%1: %2 (%3 to %4)")
+                  .arg(name)
+                  .arg(s.last(), 0, 'g', 6)
+                  .arg(*std::min_element(s.cbegin(), s.cend()), 0, 'g', 6)
+                  .arg(*std::max_element(s.cbegin(), s.cend()), 0, 'g', 6);
         p.fillRect(QRectF(legendX, 4 + fm.height() / 2.0 - 2, 12, 4), colour);
         p.setPen(pal.color(hidden ? QPalette::PlaceholderText : QPalette::Text));
         p.drawText(QPointF(legendX + 16, 4 + fm.ascent()), label);
@@ -244,16 +251,29 @@ PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
                          "in the legend to hide or show its line; point at the plot to read its values."));
     m_status->setWordWrap(true);
     m_canvas->setAccessibleName(tr("Plot of the numbers received"));
-    m_pause->setToolTip(tr("Stop adding new values, to look at what is shown"));
+    m_pause->setToolTip(tr("Hold the picture still to look at it; values that come meanwhile are kept, and "
+                           "shown when you go on"));
+    connect(m_pause, &QCheckBox::toggled, this, [this](bool paused) {
+        if (!paused && !m_held.isEmpty())
+            m_canvas->addRows(std::exchange(m_held, {}));
+    });
     connect(m_clear, &QPushButton::clicked, this, &PlotPanel::clearRows);
     const auto add = [this](const QJsonArray &rows) {
-        if (rows.isEmpty() || m_pause->isChecked())
+        if (rows.isEmpty())
             return;
         if (!m_seen) {
             m_seen = true;
             emit firstRows();
         }
-        m_canvas->addRows(rows);
+        // Paused: kept for the CSV and for later, not drawn yet.
+        if (m_pause->isChecked()) {
+            for (const QJsonValue &r : rows)
+                m_held.append(r);
+            while (m_held.size() > PlotCanvas::Kept)
+                m_held.removeFirst();
+        } else {
+            m_canvas->addRows(rows);
+        }
         for (const QJsonValue &r : rows)
             m_rows.append(r);
         while (m_rows.size() > KeptRows)
@@ -287,6 +307,7 @@ void PlotPanel::clearRows()
 {
     m_canvas->clear();
     m_rows = {};
+    m_held = {};
     m_save->setEnabled(false);
     m_savePicture->setEnabled(false);
 }

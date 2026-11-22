@@ -67,5 +67,6 @@ private:
     QLineEdit *m_input;
     QComboBox *m_ending;
     QPushButton *m_send;
+    QPushButton *m_sendFile;
     ConsoleBar *m_tools = nullptr;
 };

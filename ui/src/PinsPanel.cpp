@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QLocale>
 #include <QPushButton>
+#include <QMenu>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -37,6 +38,19 @@ PinsPanel::PinsPanel(CoreConnection *core, QWidget *parent)
                           "it in the trace."));
     connect(m_tree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item) {
         emit pinActivated(item->data(GpioColumn, GpioRole).toInt());
+    });
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tree, &QWidget::customContextMenuRequested, this, [this](const QPoint &at) {
+        QTreeWidgetItem *item = m_tree->itemAt(at);
+        if (!item || !m_core->isSimRunning())
+            return;
+        const int gpio = item->data(GpioColumn, GpioRole).toInt();
+        QMenu menu(this);
+        for (const int ms : {100, 1000})
+            menu.addAction(ms < 1000 ? tr("Pulse for %1 ms").arg(ms) : tr("Pulse for %1 s").arg(ms / 1000), this,
+                           [this, gpio, ms] { pulse(gpio, ms); });
+        menu.addAction(tr("Show in the trace"), this, [this, gpio] { emit pinActivated(gpio); });
+        menu.exec(m_tree->viewport()->mapToGlobal(at));
     });
 
     auto *layout = new QVBoxLayout(this);
@@ -123,6 +137,17 @@ void PinsPanel::update(const QJsonArray &pins)
             item->setIcon(LevelColumn, QIcon::fromTheme(high ? u"state-ok"_s : u"state-offline"_s));
         }
     }
+}
+
+bool PinsPanel::pulse(int gpio, int ms)
+{
+    QTreeWidgetItem *item = row(gpio);
+    const auto *drive = item ? qobject_cast<QPushButton *>(m_tree->itemWidget(item, DriveColumn)) : nullptr;
+    if (!drive || !m_core->isSimRunning())
+        return false;
+    // The other way from where the switch holds it, and back.
+    m_core->pulseSimPin(gpio, !drive->isChecked(), ms);
+    return true;
 }
 
 QString PinsPanel::rateText(const QJsonValue &rate)

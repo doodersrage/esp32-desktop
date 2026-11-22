@@ -36,6 +36,7 @@ public:
     }
 
     QJsonObject saved; // the last frame.save's params
+    QList<QJsonObject> records; // sim.record params
 
     // A width x height picture: the left half red, the right half blue.
     void frame(int w, int h, const QString &format = u"rgb888"_s, int dropBytes = 0)
@@ -58,8 +59,13 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello")
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.36.0"_s}});
-        else if (m == u"frame.save") {
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.37.0"_s}});
+        else if (m == u"sim.record") {
+            const QJsonObject p = req.value(u"params"_s).toObject();
+            records << p;
+            reply(id, p.contains(u"path"_s) ? QJsonObject{{u"recording"_s, true}}
+                                            : QJsonObject{{u"path"_s, records.first().value(u"path"_s)}, {u"frames"_s, 7}, {u"bytes"_s, 900}});
+        } else if (m == u"frame.save") {
             saved = req.value(u"params"_s).toObject();
             reply(id, QJsonObject{{u"path"_s, saved.value(u"path"_s)}, {u"bytes"_s, 1}});
         } else if (m == u"sim.start")
@@ -79,6 +85,36 @@ private:
     QString path() const { return m_dir.filePath(u"core.sock"_s); }
 
 private slots:
+    void recordsThePanel()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        DisplayPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QVERIFY(!panel.recordButton()->isEnabled());
+        core.startSim(u"oled"_s, u"esp32"_s);
+        QTRY_VERIFY(panel.recordButton()->isEnabled());
+        panel.recordTo(u"/tmp/x/panel.png"_s);
+        QTRY_VERIFY(core.isRecordingSim());
+        QCOMPARE(panel.recordButton()->text(), u"Stop recording"_s);
+        QCOMPARE(fake.records.at(0).value(u"path"_s).toString(), u"/tmp/x/panel.png"_s);
+        panel.recordButton()->click(); // stop
+        QTRY_VERIFY(!core.isRecordingSim());
+        QTRY_VERIFY2(panel.statusText().contains(u"Saved the recording to /tmp/x/panel.png."_s),
+                     qPrintable(panel.statusText()));
+        QVERIFY(!fake.records.at(1).contains(u"path"_s));
+        QCOMPARE(panel.recordButton()->text(), u"Record…"_s);
+        // Stopping the run while recording writes it first.
+        panel.recordTo(u"/tmp/x/panel.png"_s);
+        QTRY_VERIFY(core.isRecordingSim());
+        core.stopSim();
+        QTRY_COMPARE(fake.records.size(), 4);
+        QVERIFY(!fake.records.at(3).contains(u"path"_s));
+        QTRY_VERIFY(panel.statusText().contains(u"Saved the recording"_s));
+    }
+
     void showsFramesSharplyAndOnlyFromItsSimulator()
     {
         FakeCore fake(path());

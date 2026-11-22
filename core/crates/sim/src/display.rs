@@ -129,6 +129,11 @@ impl Display {
         self.in_use
     }
 
+    /// The picture on the panel now, once firmware has set it up.
+    pub fn current(&self) -> Option<&Frame> {
+        self.last.as_ref().filter(|_| self.in_use)
+    }
+
     /// Refresh the panel and return its picture if it changed and is in use.
     pub async fn poll(&mut self, qmp: &mut Qmp) -> Result<Option<Frame>, Error> {
         qmp.execute("screendump", Some(json!({ "filename": self.path })))
@@ -147,42 +152,204 @@ impl Display {
     }
 }
 
-/// A picture as PNG: `rgb` is `width * height` pixels of red, green and blue, rows
-/// top to bottom (as sim.frame carries them). None if the sizes do not match.
-pub fn png(width: u32, height: u32, rgb: &[u8]) -> Option<Vec<u8>> {
-    use std::io::Write;
-    let row = usize::try_from(width).ok()?.checked_mul(3)?;
-    if width == 0 || height == 0 || rgb.len() != row.checked_mul(usize::try_from(height).ok()?)? {
-        return None;
-    }
-    let chunk = |out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]| {
-        out.extend_from_slice(&u32::try_from(data.len()).unwrap_or(u32::MAX).to_be_bytes());
-        let mut crc = crc32fast::Hasher::new();
-        crc.update(kind);
-        crc.update(data);
-        out.extend_from_slice(kind);
-        out.extend_from_slice(data);
-        out.extend_from_slice(&crc.finalize().to_be_bytes());
-    };
+fn png_chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+    out.extend_from_slice(&u32::try_from(data.len()).unwrap_or(u32::MAX).to_be_bytes());
+    let mut crc = crc32fast::Hasher::new();
+    crc.update(kind);
+    crc.update(data);
+    out.extend_from_slice(kind);
+    out.extend_from_slice(data);
+    out.extend_from_slice(&crc.finalize().to_be_bytes());
+}
+
+fn png_header(width: u32, height: u32) -> Vec<u8> {
     let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
     let mut ihdr = Vec::with_capacity(13);
     ihdr.extend_from_slice(&width.to_be_bytes());
     ihdr.extend_from_slice(&height.to_be_bytes());
     ihdr.extend_from_slice(&[8, 2, 0, 0, 0]); // 8 bits, RGB, deflate, no filter, no interlace
-    chunk(&mut out, b"IHDR", &ihdr);
+    png_chunk(&mut out, b"IHDR", &ihdr);
+    out
+}
+
+/// A picture's rows, each after its filter byte (none), compressed.
+fn png_data(width: u32, height: u32, rgb: &[u8]) -> Option<Vec<u8>> {
+    use std::io::Write;
+    let row = usize::try_from(width).ok()?.checked_mul(3)?;
+    if width == 0 || height == 0 || rgb.len() != row.checked_mul(usize::try_from(height).ok()?)? {
+        return None;
+    }
     let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     for line in rgb.chunks(row) {
-        z.write_all(&[0]).ok()?; // filter: none
+        z.write_all(&[0]).ok()?;
         z.write_all(line).ok()?;
     }
-    chunk(&mut out, b"IDAT", &z.finish().ok()?);
-    chunk(&mut out, b"IEND", &[]);
+    z.finish().ok()
+}
+
+/// A picture as PNG: `rgb` is `width * height` pixels of red, green and blue, rows
+/// top to bottom (as sim.frame carries them). None if the sizes do not match.
+pub fn png(width: u32, height: u32, rgb: &[u8]) -> Option<Vec<u8>> {
+    let data = png_data(width, height, rgb)?;
+    let mut out = png_header(width, height);
+    png_chunk(&mut out, b"IDAT", &data);
+    png_chunk(&mut out, b"IEND", &[]);
     Some(out)
+}
+
+/// Pictures of one size as an animated PNG that loops (APNG; browsers, GitHub and
+/// most image viewers play it, and others show the first picture): each with how
+/// long it shows, in milliseconds. None without pictures or if a size differs.
+pub fn apng(width: u32, height: u32, frames: &[(&[u8], u16)]) -> Option<Vec<u8>> {
+    if frames.is_empty() {
+        return None;
+    }
+    let mut out = png_header(width, height);
+    let mut actl = Vec::with_capacity(8);
+    actl.extend_from_slice(&u32::try_from(frames.len()).ok()?.to_be_bytes());
+    actl.extend_from_slice(&0u32.to_be_bytes()); // plays: for ever
+    png_chunk(&mut out, b"acTL", &actl);
+    let mut seq = 0u32;
+    for (i, &(rgb, delay)) in frames.iter().enumerate() {
+        let data = png_data(width, height, rgb)?;
+        let mut fctl = Vec::with_capacity(26);
+        fctl.extend_from_slice(&seq.to_be_bytes());
+        seq += 1;
+        fctl.extend_from_slice(&width.to_be_bytes());
+        fctl.extend_from_slice(&height.to_be_bytes());
+        fctl.extend_from_slice(&0u32.to_be_bytes()); // x
+        fctl.extend_from_slice(&0u32.to_be_bytes()); // y
+        fctl.extend_from_slice(&delay.max(1).to_be_bytes());
+        fctl.extend_from_slice(&1000u16.to_be_bytes()); // delay in thousandths of a second
+        fctl.extend_from_slice(&[0, 0]); // dispose: none; blend: source
+        png_chunk(&mut out, b"fcTL", &fctl);
+        if i == 0 {
+            png_chunk(&mut out, b"IDAT", &data);
+        } else {
+            let mut fdat = Vec::with_capacity(data.len() + 4);
+            fdat.extend_from_slice(&seq.to_be_bytes());
+            seq += 1;
+            fdat.extend_from_slice(&data);
+            png_chunk(&mut out, b"fdAT", &fdat);
+        }
+    }
+    png_chunk(&mut out, b"IEND", &[]);
+    Some(out)
+}
+
+/// The most pictures a recording keeps; later ones are not recorded.
+pub const MAX_RECORDED: usize = 600;
+
+/// The panel's pictures as they change, with when, for an animated PNG.
+#[derive(Default)]
+pub struct Recording {
+    frames: Vec<(Frame, Instant)>,
+}
+
+impl Recording {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A new picture at `at`; one of another size than the first, or past
+    /// [`MAX_RECORDED`], is left out.
+    pub fn push(&mut self, frame: Frame, at: Instant) {
+        let fits = self
+            .frames
+            .first()
+            .is_none_or(|(f, _)| f.width == frame.width && f.height == frame.height);
+        if fits && self.frames.len() < MAX_RECORDED {
+            self.frames.push((frame, at));
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.frames.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
+    /// The recording as an animated PNG, at `end`: each picture shows until the next
+    /// came (at least 20 ms, at most a minute), the last for a second.
+    pub fn finish(&self, end: Instant) -> Option<Vec<u8>> {
+        let (first, _) = self.frames.first()?;
+        let delays: Vec<u16> = self
+            .frames
+            .iter()
+            .enumerate()
+            .map(|(i, (_, at))| {
+                let next = self
+                    .frames
+                    .get(i + 1)
+                    .map_or(end.min(*at + Duration::from_secs(1)), |n| n.1);
+                u16::try_from(next.duration_since(*at).as_millis().clamp(20, 60_000))
+                    .unwrap_or(u16::MAX)
+            })
+            .collect();
+        let frames: Vec<(&[u8], u16)> = self
+            .frames
+            .iter()
+            .zip(delays)
+            .map(|((f, _), d)| (f.rgb.as_slice(), d))
+            .collect();
+        apng(first.width, first.height, &frames)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn records_an_animated_png() {
+        let t0 = Instant::now();
+        let mut r = Recording::new();
+        let red = Frame {
+            width: 2,
+            height: 1,
+            rgb: vec![255, 0, 0, 255, 0, 0],
+        };
+        let blue = Frame {
+            width: 2,
+            height: 1,
+            rgb: vec![0, 0, 255, 0, 0, 255],
+        };
+        r.push(red.clone(), t0);
+        r.push(blue, t0 + Duration::from_millis(250));
+        r.push(
+            Frame {
+                width: 3,
+                height: 1,
+                rgb: vec![0; 9],
+            },
+            t0 + Duration::from_millis(300),
+        ); // another size
+        assert_eq!(r.len(), 2);
+        let a = r.finish(t0 + Duration::from_secs(5)).unwrap();
+        assert!(a.starts_with(b"\x89PNG\r\n\x1a\n"));
+        let find = |kind: &[u8]| a.windows(4).filter(|w| *w == kind).count();
+        assert_eq!(find(b"acTL"), 1);
+        assert_eq!(find(b"fcTL"), 2);
+        assert_eq!(find(b"IDAT"), 1);
+        assert_eq!(find(b"fdAT"), 1);
+        // Two pictures; the first shows 250 ms, the last a second.
+        let actl = a.windows(4).position(|w| w == b"acTL").unwrap() + 4;
+        assert_eq!(u32::from_be_bytes(a[actl..actl + 4].try_into().unwrap()), 2);
+        let fctl = a.windows(4).position(|w| w == b"fcTL").unwrap() + 4;
+        assert_eq!(
+            u16::from_be_bytes(a[fctl + 20..fctl + 22].try_into().unwrap()),
+            250
+        );
+        let last = a.windows(4).rposition(|w| w == b"fcTL").unwrap() + 4;
+        assert_eq!(
+            u16::from_be_bytes(a[last + 20..last + 22].try_into().unwrap()),
+            1000
+        );
+        assert!(Recording::new().finish(t0).is_none());
+        assert_eq!(apng(2, 1, &[(&red.rgb, 10), (&[1, 2, 3], 10)]), None); // a short picture
+    }
 
     fn ppm(w: u32, h: u32, px: [u8; 3]) -> Vec<u8> {
         let mut v = format!("P6\n# comment\n{w} {h}\n255\n").into_bytes();

@@ -2,6 +2,9 @@
 
 #include "CoreConnection.h"
 
+#include <QCheckBox>
+#include <QRegularExpression>
+#include <QSettings>
 #include <QAction>
 #include <QFileInfo>
 #include <QInputDialog>
@@ -46,9 +49,16 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     , m_locals(new QTreeWidget(this))
     , m_watchInput(new QLineEdit(this))
     , m_watches(new QTreeWidget(this))
+    , m_hex(new QCheckBox(tr("Hex"), this))
     , m_memoryInput(new QLineEdit(this))
     , m_memory(new QPlainTextEdit(this))
 {
+    m_hex->setToolTip(tr("Show whole numbers in the variables and watches as hex"));
+    m_hex->setChecked(QSettings().value(u"debugger/hex"_s, false).toBool());
+    connect(m_hex, &QCheckBox::toggled, this, [this](bool on) {
+        QSettings().setValue(u"debugger/hex"_s, on);
+        reformatValues();
+    });
     m_memoryInput->setAccessibleName(tr("Memory address"));
     m_memoryInput->setPlaceholderText(tr("Address or expression, e.g. &config or buf"));
     m_memoryInput->setToolTip(tr("Show 256 bytes of memory from there, read again every time the firmware stops"));
@@ -110,7 +120,10 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
                     QTreeWidgetItem *item = m_watches->topLevelItem(i);
                     if (item->text(0) != expression)
                         continue;
-                    item->setText(1, error.isEmpty() ? value : error);
+                    if (error.isEmpty())
+                        setValue(item, 1, value);
+                    else
+                        item->setText(1, error);
                     if (error.isEmpty())
                         markChanged(item, 1, expression, m_lastWatches);
                     item->setForeground(1, palette().brush(error.isEmpty() ? QPalette::Text : QPalette::PlaceholderText));
@@ -162,11 +175,25 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
         if (QListWidgetItem *item = m_breakpoints->currentItem())
             editCondition(keptLocation(item->data(LocationRole).toString()));
     });
+    auto *ignore = new QAction(tr("Pass the next times…"), m_breakpoints);
+    ignore->setToolTip(tr("Run past this breakpoint a number of times before it stops again"));
+    m_breakpoints->addAction(ignore);
+    connect(ignore, &QAction::triggered, this, [this] {
+        QListWidgetItem *item = m_breakpoints->currentItem();
+        if (!item)
+            return;
+        bool ok = false;
+        const int count = QInputDialog::getInt(this, tr("Pass the breakpoint"),
+                                               tr("Run past it this many times, then stop:"), 10, 0, 1000000, 1, &ok);
+        if (ok)
+            ignoreBreakpoint(item->data(NumberRole).toInt(), count);
+    });
 
     auto *controls = new QHBoxLayout;
     for (QPushButton *b : {m_continue, m_pause, m_next, m_step, m_finish})
         controls->addWidget(b);
     controls->addStretch(1);
+    controls->addWidget(m_hex);
     // The location gets a row of its own, so its hint is not cut short.
     auto *add = new QHBoxLayout;
     add->addStretch(1);
@@ -452,7 +479,8 @@ void DebugPanel::markChanged(QTreeWidgetItem *item, int column, const QString &k
     // Only where the firmware stopped: another frame's values are not "since the last stop".
     if (m_frame != 0)
         return;
-    const QString value = item->text(column);
+    const QVariant raw = item->data(column, Qt::UserRole);
+    const QString value = raw.isValid() ? raw.toString() : item->text(column);
     const auto was = last.constFind(key);
     const bool changed = was != last.constEnd() && *was != value;
     QFont font = item->font(column);
@@ -460,6 +488,51 @@ void DebugPanel::markChanged(QTreeWidgetItem *item, int column, const QString &k
     item->setFont(column, font);
     item->setToolTip(column, changed ? tr("Changed since the last stop; it was %1").arg(*was) : value);
     last.insert(key, value);
+}
+
+bool DebugPanel::ignoreBreakpoint(int number, int count)
+{
+    if (m_mode != Mode::Paused) {
+        m_status->setText(tr("Pause the firmware first: GDB changes breakpoints only while it is stopped."));
+        return false;
+    }
+    m_core->debugIgnore(number, count);
+    m_status->setText(count > 0 ? tr("Breakpoint %1: passes left before it stops: %2.").arg(number).arg(count)
+                                : tr("Breakpoint %1 stops again each time.").arg(number));
+    return true;
+}
+
+QString DebugPanel::shownValue(const QString &value, bool hex)
+{
+    if (!hex)
+        return value;
+    // A whole number as GDB prints it ("42", "-3"), as hex; anything else as it is.
+    static const QRegularExpression whole(u"^-?\\d+$"_s);
+    if (!whole.match(value).hasMatch())
+        return value;
+    bool ok = false;
+    const qlonglong n = value.toLongLong(&ok);
+    if (!ok)
+        return value;
+    return n < 0 ? u"-0x%1"_s.arg(QString::number(-n, 16)) : u"0x%1"_s.arg(QString::number(n, 16));
+}
+
+void DebugPanel::setValue(QTreeWidgetItem *item, int column, const QString &value)
+{
+    item->setData(column, Qt::UserRole, value);
+    item->setText(column, shownValue(value, m_hex->isChecked()));
+}
+
+void DebugPanel::reformatValues()
+{
+    for (QTreeWidget *tree : {m_locals, m_watches}) {
+        for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *item = tree->topLevelItem(i);
+            const QVariant raw = item->data(1, Qt::UserRole);
+            if (raw.isValid())
+                item->setText(1, shownValue(raw.toString(), m_hex->isChecked()));
+        }
+    }
 }
 
 bool DebugPanel::watchChanges(const QString &expression)
@@ -562,7 +635,8 @@ QString DebugPanel::where(const QJsonObject &frame)
     return frame.value(u"addr"_s).toString();
 }
 
-void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int breakpoint, const QJsonObject &watch)
+void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int breakpoint, const QJsonObject &watch,
+                         int hits)
 {
     // A breakpoint of the list (not Run to a line's temporary one).
     bool listed = false;
@@ -574,13 +648,22 @@ void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int br
         m_status->setText(tr("%1 changed from %2 to %3, in %4.")
                               .arg(watch.value(u"expression"_s).toString(), watch.value(u"old"_s).toString(tr("?")),
                                    watch.value(u"new"_s).toString(tr("?")), where(frame)));
+    else if (reason == u"breakpoint-hit" && listed && hits > 1)
+        m_status->setText(tr("Stopped at breakpoint %1 in %2; it has been reached %3 times.")
+                              .arg(breakpoint)
+                              .arg(where(frame))
+                              .arg(hits));
     else if (reason == u"breakpoint-hit" && listed)
         m_status->setText(tr("Stopped at breakpoint %1 in %2.").arg(breakpoint).arg(where(frame)));
     else
         m_status->setText(tr("Paused in %1.").arg(where(frame)));
     for (int i = 0; i < m_breakpoints->count(); ++i) {
-        if (breakpoint > 0 && m_breakpoints->item(i)->data(NumberRole).toInt() == breakpoint)
+        QListWidgetItem *item = m_breakpoints->item(i);
+        if (breakpoint > 0 && item->data(NumberRole).toInt() == breakpoint) {
             m_breakpoints->setCurrentRow(i);
+            if (hits > 1)
+                item->setToolTip(tr("Reached %1 times in this run").arg(hits));
+        }
     }
     setMode(Mode::Paused);
     m_frame = 0;
@@ -600,7 +683,7 @@ void DebugPanel::showInspection(const QJsonArray &frames, const QJsonArray &regi
         item->setText(0, l.value(u"arg"_s).toBool() ? tr("%1 (argument)").arg(l.value(u"name"_s).toString())
                                                     : l.value(u"name"_s).toString());
         if (l.contains(u"value"_s)) {
-            item->setText(1, l.value(u"value"_s).toString());
+            setValue(item, 1, l.value(u"value"_s).toString());
         } else {
             item->setText(1, tr("…"));
             item->setToolTip(1, tr("GDB shows this kind of value (a structure or an array) only in parts"));

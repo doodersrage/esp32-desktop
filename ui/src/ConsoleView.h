@@ -74,6 +74,12 @@ public:
     void setDeltas(bool on);
     bool deltas() const { return m_deltas; }
     static QString deltaText(qint64 ms);
+    // Words whose lines are marked in every console (case does not matter), kept
+    // between starts (QSettings console/highlights).
+    static void setHighlightWords(const QStringList &words);
+    static QStringList highlightWords();
+    // Whether a line has a highlighted word, for tests.
+    bool isHighlighted(int blockNumber) const;
     // Select the next (or previous) match after the cursor, wrapping round; false if
     // there is none.
     bool findText(const QString &text, bool backward = false);
@@ -107,6 +113,8 @@ protected:
 
 private:
     QList<QJsonObject> m_frameLinks; // backtrace links, by their index in the href
+    // Mark the lines from block `from` on that have a highlighted word, unmark others.
+    void highlightFrom(int from);
     // After adding text: follow it when the view was at the end, else offer to.
     void followOrOffer(bool wasAtEnd);
     void placeJump();
@@ -154,6 +162,10 @@ public:
     // block under a line naming the app and the context; put on the clipboard.
     QString forumText() const;
     QToolButton *forumButton() const { return m_forum; }
+    QToolButton *highlightButton() const { return m_highlight; }
+    // Ask which text file to send line by line, and how long to wait after each line
+    // (kept as `setting`); false if the user cancelled.
+    static bool askSendFile(QWidget *parent, const QString &setting, QString *path, int *lineDelay);
     // Ask the core to write the console's text to `path` (Save… asks for it).
     void saveTo(const QString &path);
 
@@ -168,6 +180,7 @@ private:
     QCheckBox *m_stamps;
     QCheckBox *m_deltas;
     QToolButton *m_forum;
+    QToolButton *m_highlight;
     QString m_context;
     QToolButton *m_save;
 };

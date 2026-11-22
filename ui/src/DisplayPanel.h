@@ -26,6 +26,10 @@ public:
     QComboBox *zoomPicker() const { return m_zoom; }
     QPushButton *saveButton() const { return m_save; }
     QPushButton *copyButton() const { return m_copy; }
+    // Record… / Stop recording: the panel as an animated PNG, written by the core
+    // (sim.record).
+    QPushButton *recordButton() const { return m_record; }
+    void recordTo(const QString &path);
     // Have the core write the picture to `path` as PNG (frame.save).
     void saveTo(const QString &path);
     // Room for the picture at its own size (or a typical panel before the first one).
@@ -49,6 +53,7 @@ private:
     QComboBox *m_zoom;
     QPushButton *m_save;
     QPushButton *m_copy = nullptr;
+    QPushButton *m_record = nullptr;
     QString m_savingTo; // frame.save is shared with the plot: only this panel's saves
     QImage m_image;
     int m_scale = 1;

@@ -1,6 +1,6 @@
 {
   "method": "debug.break",
-  "description": "Set a breakpoint in a simulator started with debug: true. The location is a function name or file:line. Breakpoints are hardware breakpoints (code runs from flash), and chips have only a few of them, so setting one can fail when they are all in use. Since protocol 0.35, with condition, it stops only when that C expression is true there (the result's breakpoint says it back as condition).",
+  "description": "Set a breakpoint in a simulator started with debug: true. The location is a function name or file:line. Breakpoints are hardware breakpoints (code runs from flash), and chips have only a few of them, so setting one can fail when they are all in use. Since protocol 0.35, with condition, it stops only when that C expression is true there (the result's breakpoint says it back as condition). Since protocol 0.37, with ignore, it passes that many times before it stops (GDB's ignore count).",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -25,6 +25,11 @@
         "minLength": 1,
         "maxLength": 256,
         "description": "Since protocol 0.35: stop only when this expression is true. One line; GDB's $_ functions are refused."
+      },
+      "ignore": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Since protocol 0.37: pass this many times before stopping."
       }
     }
   },
@@ -63,6 +68,10 @@
           },
           "condition": {
             "type": "string"
+          },
+          "ignore": {
+            "type": "integer",
+            "minimum": 1
           }
         }
       }

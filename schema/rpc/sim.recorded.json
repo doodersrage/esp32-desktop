@@ -1,0 +1,42 @@
+{
+  "event": "sim.recorded",
+  "description": "Since protocol 0.37: a panel recording still going when the simulation ended was written (or could not be).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "path": {
+        "type": "string"
+      },
+      "frames": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "bytes": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "error": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "path": "/home/me/oled.png",
+        "frames": 42,
+        "bytes": 18234
+      }
+    }
+  ]
+}

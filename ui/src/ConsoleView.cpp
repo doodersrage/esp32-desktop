@@ -10,6 +10,8 @@
 
 #include <QCheckBox>
 #include <QPalette>
+#include <QTextBlockFormat>
+#include <QPointer>
 #include <QTextCharFormat>
 #include <QTextBlock>
 #include <QJsonObject>
@@ -17,6 +19,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QFontDatabase>
 #include <QKeyEvent>
 #include <QShortcut>
@@ -37,6 +40,21 @@
 using namespace Qt::StringLiterals;
 
 namespace {
+// Every console, for highlight words set in one to show in all.
+QList<QPointer<ConsoleView>> &views()
+{
+    static QList<QPointer<ConsoleView>> all;
+    return all;
+}
+QStringList &words()
+{
+    static QStringList list = QSettings().value(u"console/highlights"_s).toStringList();
+    return list;
+}
+}
+
+
+namespace {
 constexpr int MaxLines = 10000;
 constexpr int MinZoom = -4;
 constexpr int MaxZoom = 24;
@@ -49,6 +67,7 @@ ConsoleView::ConsoleView(QWidget *parent)
     setReadOnly(true);
     setLineWrapMode(QPlainTextEdit::NoWrap);
     setMaximumBlockCount(MaxLines);
+    views() << this;
     setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     m_zoom = std::clamp(QSettings().value(ZoomSetting, 0).toInt(), MinZoom, MaxZoom);
     applyZoom();
@@ -400,7 +419,10 @@ void ConsoleView::appendText(QString text)
     const bool atEnd = bar->value() == bar->maximum();
     QTextCursor c(document());
     c.movePosition(QTextCursor::End);
+    const int from = c.blockNumber();
     c.insertText(text);
+    if (!highlightWords().isEmpty())
+        highlightFrom(from);
     followOrOffer(atEnd);
 }
 
@@ -491,6 +513,49 @@ void ConsoleView::appendBootLoop(const QJsonObject &loop)
     appendNotice(bootLoopText(loop));
 }
 
+QStringList ConsoleView::highlightWords()
+{
+    return words();
+}
+
+void ConsoleView::setHighlightWords(const QStringList &list)
+{
+    QStringList clean;
+    for (const QString &w : list)
+        if (!w.trimmed().isEmpty() && !clean.contains(w.trimmed()))
+            clean << w.trimmed();
+    words() = clean;
+    QSettings().setValue(u"console/highlights"_s, clean);
+    for (const QPointer<ConsoleView> &v : std::as_const(views()))
+        if (v)
+            v->highlightFrom(0);
+}
+
+bool ConsoleView::isHighlighted(int blockNumber) const
+{
+    return document()->findBlockByNumber(blockNumber).blockFormat().hasProperty(QTextFormat::BackgroundBrush);
+}
+
+void ConsoleView::highlightFrom(int from)
+{
+    const QStringList list = words();
+    QColor mark = palette().color(QPalette::Highlight);
+    mark.setAlpha(60);
+    for (QTextBlock b = document()->findBlockByNumber(from); b.isValid(); b = b.next()) {
+        const bool hit = std::any_of(list.cbegin(), list.cend(),
+                                     [&](const QString &w) { return b.text().contains(w, Qt::CaseInsensitive); });
+        if (hit == b.blockFormat().hasProperty(QTextFormat::BackgroundBrush))
+            continue;
+        QTextCursor c(b);
+        QTextBlockFormat f = b.blockFormat();
+        if (hit)
+            f.setBackground(mark);
+        else
+            f.clearBackground();
+        c.setBlockFormat(f);
+    }
+}
+
 void ConsoleView::setDeltas(bool on)
 {
     m_deltas = on;
@@ -502,6 +567,29 @@ QString ConsoleView::deltaText(qint64 ms)
     if (ms < 1000)
         return tr("+%1 ms").arg(ms);
     return tr("+%1 s").arg(QLocale().toString(double(ms) / 1000.0, 'f', 3));
+}
+
+bool ConsoleBar::askSendFile(QWidget *parent, const QString &setting, QString *path, int *lineDelay)
+{
+    QSettings settings;
+    const QString file = QFileDialog::getOpenFileName(
+        parent, tr("Send which text file, line by line?"),
+        settings.value(setting + u"Dir"_s, QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString(),
+        tr("Text files (*.txt *.cfg *.ini *.at);;All files (*)"));
+    if (file.isEmpty())
+        return false;
+    bool ok = false;
+    const int delay = QInputDialog::getInt(parent, tr("Send a file"),
+                                           tr("Wait after each line, in milliseconds (some boards need time to "
+                                              "answer each command):"),
+                                           settings.value(setting + u"Delay"_s, 100).toInt(), 0, 10000, 50, &ok);
+    if (!ok)
+        return false;
+    settings.setValue(setting + u"Dir"_s, QFileInfo(file).absolutePath());
+    settings.setValue(setting + u"Delay"_s, delay);
+    *path = file;
+    *lineDelay = delay;
+    return true;
 }
 
 QString ConsoleBar::forumText() const
@@ -524,6 +612,7 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     , m_stamps(new QCheckBox(tr("Time stamps"), this))
     , m_deltas(new QCheckBox(tr("Time between lines"), this))
     , m_forum(new QToolButton(this))
+    , m_highlight(new QToolButton(this))
     , m_save(new QToolButton(this))
 {
     m_find->setPlaceholderText(tr("Find in the output"));
@@ -580,6 +669,17 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
         QSettings().setValue(setting + u"Between"_s, on);
         m_view->setDeltas(on);
     });
+    m_highlight->setText(tr("Highlight…"));
+    m_highlight->setToolTip(tr("Words to mark the lines of, in every console: ERROR, WiFi connected, your own markers"));
+    connect(m_highlight, &QToolButton::clicked, this, [this] {
+        bool ok = false;
+        const QString text = QInputDialog::getText(this, tr("Highlight words"),
+                                                   tr("Mark the lines that have any of these words (separated by "
+                                                      "commas; case does not matter):"),
+                                                   QLineEdit::Normal, ConsoleView::highlightWords().join(u", "_s), &ok);
+        if (ok)
+            ConsoleView::setHighlightWords(text.split(u',', Qt::SkipEmptyParts));
+    });
     m_forum->setIcon(QIcon::fromTheme(u"edit-copy"_s));
     m_forum->setText(tr("Copy for a forum post"));
     m_forum->setToolButtonStyle(Qt::ToolButtonIconOnly);
@@ -611,6 +711,7 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     layout->addWidget(m_tags);
     layout->addWidget(m_stamps);
     layout->addWidget(m_deltas);
+    layout->addWidget(m_highlight);
     layout->addWidget(m_forum);
     layout->addWidget(m_save);
 }

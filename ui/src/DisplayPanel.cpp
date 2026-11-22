@@ -53,6 +53,38 @@ DisplayPanel::DisplayPanel(CoreConnection *core, QWidget *parent)
         if (path == std::exchange(m_savingTo, {}))
             m_status->setText(tr("Saved the picture to %1.").arg(path));
     });
+    m_record = new QPushButton(QIcon::fromTheme(u"media-record"_s), tr("Record…"), this);
+    m_record->setToolTip(tr("Record the panel as an animated picture (PNG) while the simulation runs, to show "
+                            "a display sketch in an issue or a README"));
+    m_record->setEnabled(false);
+    connect(m_record, &QPushButton::clicked, this, [this] {
+        if (m_core->isRecordingSim()) {
+            m_core->recordSim({});
+            return;
+        }
+        const QString dir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+        const QString path = QFileDialog::getSaveFileName(
+            this, tr("Record the panel to"),
+            QDir(dir).filePath(u"esp32bench-panel-%1.png"_s.arg(QDateTime::currentDateTime().toString(u"yyyyMMdd-HHmmss"_s))),
+            tr("Animated PNG pictures (*.png)"));
+        if (!path.isEmpty())
+            recordTo(path);
+    });
+    connect(core, &CoreConnection::simRecordingChanged, this, [this](bool on) {
+        m_record->setText(on ? tr("Stop recording") : tr("Record…"));
+        m_record->setIcon(QIcon::fromTheme(on ? u"media-playback-stop"_s : u"media-record"_s));
+        if (on)
+            m_status->setText(tr("Recording the panel…"));
+    });
+    connect(core, &CoreConnection::simRecorded, this, [this](const QString &path, int, const QString &error) {
+        m_status->setText(error.isEmpty()
+                              ? tr("Saved the recording to %1.").arg(path)
+                              : tr("Could not save the recording: %1").arg(error));
+    });
+    connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
+        if (method == u"sim.record")
+            m_status->setText(tr("Could not record: %1").arg(message));
+    });
     m_copy = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), tr("Copy picture"), this);
     m_copy->setToolTip(tr("Copy the picture shown, to paste it into a message or a document"));
     m_copy->setEnabled(false);
@@ -77,6 +109,7 @@ DisplayPanel::DisplayPanel(CoreConnection *core, QWidget *parent)
     top->addWidget(m_status, 1);
     top->addWidget(m_zoom);
     top->addWidget(m_copy);
+    top->addWidget(m_record);
     top->addWidget(m_save);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
@@ -88,10 +121,12 @@ DisplayPanel::DisplayPanel(CoreConnection *core, QWidget *parent)
         m_image = QImage();
         m_picture->clear();
         m_status->setText(tr("Waiting for the firmware to draw."));
+        m_record->setEnabled(true);
     });
     connect(core, &CoreConnection::simStopped, this, [this] {
         m_status->setText(m_image.isNull() ? tr("The simulator has stopped. This firmware did not draw on the virtual panel.")
                                            : tr("The simulator has stopped; this is its last picture."));
+        m_record->setEnabled(false);
     });
 }
 
@@ -129,6 +164,11 @@ void DisplayPanel::setZoom(int zoom)
 {
     const int i = m_zoom->findData(zoom);
     m_zoom->setCurrentIndex(i < 0 ? 0 : i);
+}
+
+void DisplayPanel::recordTo(const QString &path)
+{
+    m_core->recordSim(path);
 }
 
 void DisplayPanel::saveTo(const QString &path)

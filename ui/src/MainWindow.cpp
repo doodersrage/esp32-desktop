@@ -555,6 +555,11 @@ void MainWindow::buildToolBar()
     m_stopSim->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
     connect(m_stopSim, &QAction::triggered, m_core, &CoreConnection::stopSim);
     m_toolBar->insertAction(m_stopSim, m_sim->pauseAction());
+    m_restartSim = new QAction(QIcon::fromTheme(u"view-refresh"_s), tr("Restart"), this);
+    m_restartSim->setToolTip(tr("Stop the simulation and start the same build again, debugged if it was (%1)")
+                                 .arg(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F5).toString(QKeySequence::NativeText)));
+    m_restartSim->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F5));
+    connect(m_restartSim, &QAction::triggered, m_core, &CoreConnection::restartSim);
     m_toolBar->addSeparator();
     auto *portLabel = new QLabel(tr("Port:"), m_toolBar);
     portLabel->setContentsMargins(6, 0, 4, 0);
@@ -772,6 +777,8 @@ void MainWindow::updateToolBar()
     m_current->setText(m_current->fontMetrics().elidedText(current, Qt::ElideRight, 360));
     m_current->setToolTip(current);
     m_stopSim->setEnabled(m_core->isSimRunning());
+    if (m_restartSim)
+        m_restartSim->setEnabled(m_core->isSimRunning() && m_core->canRestartSim());
     if (m_decodeAction)
         m_decodeAction->setEnabled(!m_project->currentProjectId().isEmpty() && !m_project->currentBuildBoard().isEmpty());
     m_boardMenu->setEnabled(m_buildPanel->portPicker()->currentIndex() >= 0
@@ -862,6 +869,7 @@ void MainWindow::buildMenus()
     project->addAction(m_buildPanel->debugAction());
     project->addAction(m_sim->pauseAction());
     project->addAction(m_stopSim);
+    project->addAction(m_restartSim);
     project->addSeparator();
     m_decodeAction = project->addAction(tr("&Decode a crash backtrace…"), this, &MainWindow::showBacktraceDialog);
     m_decodeAction->setToolTip(tr("Turn a backtrace from a saved log or a forum post into lines of the project shown"));

@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 36;
+    static constexpr int ProtocolMinor = 37;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -140,6 +140,18 @@ public:
     // no pin access. setSimPin drives one of them.
     QList<int> simPins() const { return m_simPins; }
     void setSimPin(int gpio, bool level);
+    // sim.pulsePin: `level` for `ms`, then back.
+    void pulseSimPin(int gpio, bool level, int ms);
+    // Stop the simulation and start the same build again, debugged if it was.
+    void restartSim();
+    bool canRestartSim() const { return !m_simProject.isEmpty() && m_simSub >= 0; }
+    // serial.sendFile / sim.sendFile: a text file, line by line (fileSent).
+    void sendSerialFile(const QString &path, const QString &ending, int lineDelay);
+    void sendSimFile(const QString &path, const QString &ending, int lineDelay);
+    // sim.record: start recording the panel into `path`, or stop with an empty path
+    // (simRecorded).
+    void recordSim(const QString &path);
+    bool isRecordingSim() const { return m_simSub > 0 && m_simRecording; }
     // sim.traceSave: write the signal trace of the running simulation, or of the last
     // one if none runs, to `path` as VCD. traceSaved or requestFailed follows.
     void saveTrace(const QString &path);
@@ -192,7 +204,9 @@ public:
 
     // debug.*: on the simulator started with debug. Results come as signals.
     // With a condition, it stops only when that expression is true.
-    void debugBreak(const QString &location, const QString &condition = {});
+    void debugBreak(const QString &location, const QString &condition = {}, int ignore = 0);
+    // debug.ignore: pass breakpoint `number` the next `count` times.
+    void debugIgnore(int number, int count);
     void debugDelete(int breakpoint);
     void debugControl(const QString &action);
     // debug.control's runTo: run to a function or file:line.
@@ -330,6 +344,11 @@ signals:
     void simPaused(bool paused);
     // sim.bootLoop / serial.bootLoop: {resets, seconds, reason?, crash?}.
     void simBootLoop(const QJsonObject &loop);
+    // `source` is serial or sim.
+    void fileSent(const QString &source, int lines);
+    // A panel recording written (ok) or not (`error`).
+    void simRecorded(const QString &path, int frames, const QString &error);
+    void simRecordingChanged(bool on);
     void serialBootLoop(const QJsonObject &loop);
     // A crash backtrace the core decoded from the build's ELF (sim.backtrace,
     // serial.backtrace): frames of {addr, func?, file?, line?, sketch?}.
@@ -339,7 +358,9 @@ signals:
     // Debugger.
     void debugStarted();
     // `watch`: for a watchpoint, its expression and old and new value.
-    void debugStopped(const QString &reason, const QJsonObject &frame, int breakpoint, const QJsonObject &watch = {});
+    // `hits`: for a breakpoint, how many times it has been reached.
+    void debugStopped(const QString &reason, const QJsonObject &frame, int breakpoint, const QJsonObject &watch = {},
+                      int hits = 0);
     void debugRunning();
     void debugExited();
     // location: what was asked for (debug.break's location).
@@ -400,6 +421,11 @@ private:
     QJsonObject m_simNetwork;
     bool m_simIcount = false;
     bool m_simPaused = false;
+    bool m_simRecording = false;
+    qint64 m_lastSimSub = 0; // the last simulation's subscription, after it ends
+    // The last simulation started, for restartSim.
+    QString m_simProject;
+    QString m_simBoard;
     bool m_autoStart = false;
     bool m_autoStartTried = false;
     QList<QPair<QString, QJsonObject>> m_earlySimEvents;

@@ -675,6 +675,10 @@ enum SimCmd {
         /// The image's ELF: crash backtraces are decoded from it, on stderr.
         #[arg(long)]
         elf: Option<PathBuf>,
+        /// Record QEMU's virtual RGB panel as it changes, and write it here as an
+        /// animated PNG when the run ends.
+        #[arg(long)]
+        record: Option<PathBuf>,
     },
     /// Boot an image and pass if a marker appears on UART0 before the timeout.
     BootTest {
@@ -1322,7 +1326,13 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             circuit,
             trace,
             elf,
+            record,
         }) => {
+            let mut recording = record
+                .as_ref()
+                .map(|_| esp32bench_sim::display::Recording::new());
+            // :pulse ends: when, which pin, and the level it goes back to.
+            let mut pulses: Vec<(tokio::time::Instant, u8, bool)> = Vec::new();
             let mut crashes = elf
                 .map(|e| Crashes::new(e, session.chip.id()))
                 .transpose()?;
@@ -1438,8 +1448,27 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         }
                         None => gpio = None,
                     },
+                    () = async {
+                        match pulses.iter().map(|p| p.0).min() {
+                            Some(d) => tokio::time::sleep_until(d).await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        let now = tokio::time::Instant::now();
+                        let (due, left): (Vec<_>, Vec<_>) = pulses.drain(..).partition(|p| p.0 <= now);
+                        pulses = left;
+                        if let Some(link) = gpio.as_mut() {
+                            for (_, g, level) in due {
+                                link.set(g, level).await?;
+                            }
+                        }
+                    }
                     () = tokio::time::sleep(display.interval()) => {
-                        if let Some(f) = display.poll(&mut s.qmp).await?
+                        let polled = display.poll(&mut s.qmp).await?;
+                        if let (Some(f), Some(r)) = (&polled, recording.as_mut()) {
+                            r.push(f.clone(), std::time::Instant::now());
+                        }
+                        if let Some(f) = polled
                             && let Some(dir) = &frames
                         {
                             saved += 1;
@@ -1494,6 +1523,23 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                             if l == ":pause" { s.pause().await? } else { s.resume().await? }
                             eprintln!("[{}]", if l == ":pause" { "paused" } else { "running" });
                         }
+                        // :pulse <gpio> <0|1> <ms>: that level for a time, then back.
+                        Some(l) if l.starts_with(":pulse ") => {
+                            let words: Vec<&str> = l.split_whitespace().collect();
+                            let parsed = match words.as_slice() {
+                                [_, g, v @ ("0" | "1"), ms] => g.parse::<u8>().ok().zip(ms.parse::<u64>().ok().filter(|m| (1..=10_000).contains(m))).map(|(g, ms)| (g, *v == "1", ms)),
+                                _ => None,
+                            };
+                            match (parsed, gpio.as_mut()) {
+                                (Some((g, level, ms)), Some(link)) => {
+                                    link.set(g, level).await?;
+                                    pulses.retain(|p| p.1 != g);
+                                    pulses.push((tokio::time::Instant::now() + Duration::from_millis(ms), g, !level));
+                                }
+                                (_, None) => eprintln!("no pins bridged; use --pins"),
+                                (None, _) => eprintln!("usage: :pulse <gpio> <0|1> <ms, 1 to 10000>"),
+                            }
+                        }
                         Some(l) => match l.strip_prefix(":set ") {
                             Some(cmd) => {
                                 let mut it = cmd.split_whitespace();
@@ -1512,6 +1558,20 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 }
             }
             s.shutdown().await?;
+            if let (Some(path), Some(r)) = (&record, &recording) {
+                match r.finish(std::time::Instant::now()) {
+                    Some(png) => {
+                        std::fs::write(path, &png)
+                            .with_context(|| format!("writing {}", path.display()))?;
+                        eprintln!(
+                            "recording: {} pictures written to {}",
+                            r.len(),
+                            path.display()
+                        );
+                    }
+                    None => eprintln!("recording: the panel showed nothing"),
+                }
+            }
             if let (Some(path), Some(r)) = (&trace, &recorder) {
                 std::fs::write(path, r.to_vcd(env!("CARGO_PKG_VERSION")))
                     .with_context(|| format!("writing {}", path.display()))?;

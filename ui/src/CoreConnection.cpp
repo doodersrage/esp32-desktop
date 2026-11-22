@@ -272,9 +272,13 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
             handleBuildEvent(method, params);
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
+    } else if (method == u"sim.recorded" && sub == m_lastSimSub && m_simSub != sub) {
+        // A recording written as the simulation ended, after it said so.
+        handleSimEvent(method, params);
     } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.trace" || method == u"sim.parts" || method == u"sim.partPicture"
                || method == u"sim.exited" || method == u"sim.wifiJoined" || method == u"sim.expect" || method == u"sim.clock"
                || method == u"sim.paused" || method == u"sim.backtrace" || method == u"sim.bootLoop"
+               || method == u"sim.recorded"
                || method.startsWith(u"debug.")) {
         if (sub == m_simSub)
             handleSimEvent(method, params);
@@ -740,6 +744,9 @@ void CoreConnection::startSim(const QString &project, const QString &board, bool
     m_simSub = -1;
     m_debugging = false;
     m_simPaused = false;
+    m_simRecording = false;
+    m_simProject = project;
+    m_simBoard = board;
     m_client->call(u"sim.start"_s,
                    {{u"project"_s, project}, {u"board"_s, board}, {u"debug"_s, debug}, {u"icount"_s, m_simIcount}},
                    this,
@@ -752,6 +759,7 @@ void CoreConnection::startSim(const QString &project, const QString &board, bool
                        }
                        const QJsonObject o = r.result.toObject();
                        m_simSub = o.value(u"subscription"_s).toInteger();
+                       m_lastSimSub = m_simSub;
                        m_debugging = o.value(u"debug"_s).toBool();
                        m_simPins.clear();
                        m_simPartsActive = o.value(u"partsActive"_s).toBool();
@@ -795,6 +803,13 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
     if (method == u"sim.paused") {
         m_simPaused = params.value(u"paused"_s).toBool();
         emit simPaused(m_simPaused);
+        return;
+    }
+    if (method == u"sim.recorded") {
+        m_simRecording = false;
+        emit simRecorded(params.value(u"path"_s).toString(), params.value(u"frames"_s).toInt(),
+                         params.value(u"error"_s).toString());
+        emit simRecordingChanged(false);
         return;
     }
     if (method == u"sim.bootLoop") {
@@ -850,7 +865,8 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
     }
     if (method == u"debug.stopped") {
         emit debugStopped(params.value(u"reason"_s).toString(), params.value(u"frame"_s).toObject(),
-                          params.value(u"breakpoint"_s).toInt(), params.value(u"watch"_s).toObject());
+                          params.value(u"breakpoint"_s).toInt(), params.value(u"watch"_s).toObject(),
+                          params.value(u"hits"_s).toInt());
         return;
     }
     if (method == u"debug.running") {
@@ -867,6 +883,8 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
     m_simSub = 0;
     m_debugging = false;
     m_simPaused = false;
+    if (std::exchange(m_simRecording, false))
+        emit simRecordingChanged(false);
     m_simPins.clear();
     m_simPartsActive = false;
     m_simNetwork = {};
@@ -880,10 +898,24 @@ void CoreConnection::stopSim()
     const qint64 sub = std::exchange(m_simSub, 0);
     m_debugging = false;
     m_simPaused = false;
+    const bool recording = std::exchange(m_simRecording, false);
     m_simPins.clear();
     m_simPartsActive = false;
     m_simNetwork = {};
-    m_client->call(u"core.unsubscribe"_s, {{u"subscription"_s, sub}}, this, [](const RpcReply &) {});
+    const auto unsubscribe = [this, sub] {
+        m_client->call(u"core.unsubscribe"_s, {{u"subscription"_s, sub}}, this, [](const RpcReply &) {});
+    };
+    if (recording) {
+        // Write the recording first: ending the subscription ends the session at once.
+        emit simRecordingChanged(false);
+        m_client->call(u"sim.record"_s, {{u"subscription"_s, sub}}, this, [this, unsubscribe](const RpcReply &r) {
+            const QJsonObject o = r.result.toObject();
+            emit simRecorded(o.value(u"path"_s).toString(), o.value(u"frames"_s).toInt(), r.ok ? QString() : r.errorMessage);
+            unsubscribe();
+        });
+    } else {
+        unsubscribe();
+    }
     emit simStopped(tr("Stopped."));
 }
 
@@ -924,13 +956,15 @@ void CoreConnection::resetSim()
     });
 }
 
-void CoreConnection::debugBreak(const QString &location, const QString &condition)
+void CoreConnection::debugBreak(const QString &location, const QString &condition, int ignore)
 {
     if (!isDebugging())
         return;
     QJsonObject params{{u"subscription"_s, m_simSub}, {u"location"_s, location}};
     if (!condition.isEmpty())
         params.insert(u"condition"_s, condition);
+    if (ignore > 0)
+        params.insert(u"ignore"_s, ignore);
     m_client->call(u"debug.break"_s, params, this,
                    [this, location](const RpcReply &r) {
                        if (!r.ok) {
@@ -1048,6 +1082,91 @@ void CoreConnection::debugMemory(const QString &address, int length)
                        emit memoryRead(address, o.value(u"address"_s).toString(),
                                        QByteArray::fromHex(o.value(u"bytes"_s).toString().toLatin1()));
                    });
+}
+
+void CoreConnection::debugIgnore(int number, int count)
+{
+    if (!isDebugging())
+        return;
+    m_client->call(u"debug.ignore"_s, {{u"subscription"_s, m_simSub}, {u"breakpoint"_s, number}, {u"count"_s, count}},
+                   this, [this](const RpcReply &r) {
+                       if (!r.ok)
+                           emit requestFailed(u"debug.ignore"_s, r.errorMessage);
+                   });
+}
+
+void CoreConnection::pulseSimPin(int gpio, bool level, int ms)
+{
+    if (m_simSub <= 0 || !m_simPins.contains(gpio))
+        return;
+    m_client->call(u"sim.pulsePin"_s,
+                   {{u"subscription"_s, m_simSub}, {u"gpio"_s, gpio}, {u"level"_s, level}, {u"ms"_s, ms}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok)
+                           emit requestFailed(u"sim.pulsePin"_s, r.errorMessage);
+                   });
+}
+
+void CoreConnection::restartSim()
+{
+    if (!canRestartSim())
+        return;
+    const bool debug = m_debugging;
+    const QString project = m_simProject, board = m_simBoard;
+    stopSim();
+    startSim(project, board, debug);
+}
+
+void CoreConnection::sendSerialFile(const QString &path, const QString &ending, int lineDelay)
+{
+    if (m_serialSub <= 0)
+        return;
+    m_client->call(u"serial.sendFile"_s,
+                   {{u"subscription"_s, m_serialSub}, {u"path"_s, path}, {u"ending"_s, ending}, {u"lineDelay"_s, lineDelay}},
+                   this, [this](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"serial.sendFile"_s, r.errorMessage);
+                           return;
+                       }
+                       emit fileSent(u"serial"_s, r.result.toObject().value(u"lines"_s).toInt());
+                   });
+}
+
+void CoreConnection::sendSimFile(const QString &path, const QString &ending, int lineDelay)
+{
+    if (m_simSub <= 0)
+        return;
+    m_client->call(u"sim.sendFile"_s,
+                   {{u"subscription"_s, m_simSub}, {u"path"_s, path}, {u"ending"_s, ending}, {u"lineDelay"_s, lineDelay}},
+                   this, [this](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"sim.sendFile"_s, r.errorMessage);
+                           return;
+                       }
+                       emit fileSent(u"sim"_s, r.result.toObject().value(u"lines"_s).toInt());
+                   });
+}
+
+void CoreConnection::recordSim(const QString &path)
+{
+    if (m_simSub <= 0)
+        return;
+    QJsonObject params{{u"subscription"_s, m_simSub}};
+    if (!path.isEmpty())
+        params.insert(u"path"_s, path);
+    m_client->call(u"sim.record"_s, params, this, [this, path](const RpcReply &r) {
+        if (!r.ok) {
+            m_simRecording = false;
+            emit requestFailed(u"sim.record"_s, r.errorMessage);
+            emit simRecordingChanged(false);
+            return;
+        }
+        const QJsonObject o = r.result.toObject();
+        m_simRecording = !path.isEmpty();
+        if (path.isEmpty())
+            emit simRecorded(o.value(u"path"_s).toString(), o.value(u"frames"_s).toInt(), {});
+        emit simRecordingChanged(m_simRecording);
+    });
 }
 
 void CoreConnection::setSimPin(int gpio, bool level)

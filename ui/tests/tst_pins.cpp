@@ -23,6 +23,7 @@ class FakeCore : public QObject {
 public:
     QJsonArray pinsToReport{2, 4};
     QList<QJsonObject> setPins; // sim.setPin params
+    QList<QJsonObject> pulses;  // sim.pulsePin params
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -52,10 +53,13 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.36.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.37.0"_s}});
         } else if (m == u"sim.start") {
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false},
                                   {u"engine"_s, u"lcgamboa"_s}, {u"pins"_s, pinsToReport}});
+        } else if (m == u"sim.pulsePin") {
+            pulses << req.value(u"params"_s).toObject();
+            reply(id, QJsonObject{});
         } else if (m == u"sim.setPin") {
             setPins << req.value(u"params"_s).toObject();
             reply(id, QJsonObject{});
@@ -98,6 +102,13 @@ private slots:
         QTRY_COMPARE(panel.row(2)->text(PinsPanel::LevelColumn), u"low"_s);
         QCOMPARE(panel.row(4)->text(PinsPanel::DirectionColumn), u"input"_s);
         QVERIFY(!panel.row(9));
+        // A pulse: the other way from the switch, then back; the core times it.
+        QVERIFY(panel.pulse(4, 100));
+        QTRY_COMPARE(fake.pulses.size(), 1);
+        QCOMPARE(fake.pulses.at(0).value(u"gpio"_s).toInt(), 4);
+        QCOMPARE(fake.pulses.at(0).value(u"level"_s).toBool(), true); // the switch holds it low
+        QCOMPARE(fake.pulses.at(0).value(u"ms"_s).toInt(), 100);
+        QVERIFY(!panel.pulse(9, 100)); // not a pin of this run
         // A double-click on a pin asks to see it in the trace.
         QSignalSpy activated(&panel, &PinsPanel::pinActivated);
         emit panel.tree()->itemActivated(panel.row(4), 0);

@@ -1888,6 +1888,62 @@ async fn serial_says_when_a_board_boot_loops() {
     );
 }
 
+// A text file sent line by line, with its line ending.
+#[cfg(unix)]
+#[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
+async fn serial_sends_a_file_line_by_line() {
+    use std::os::fd::AsRawFd;
+    let (master, port) = pty();
+    let (d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let r = c
+        .call("serial.open", json!({ "path": port, "baud": 115200 }))
+        .await
+        .unwrap();
+    let sub = r["subscription"].clone();
+    let file = d.path().join("commands.txt");
+    std::fs::write(&file, "AT\r\nAT+GMR\n").unwrap();
+    let params = json!({ "subscription": sub, "path": file, "ending": "\r\n", "lineDelay": 20 });
+    assert_valid(
+        &method_def("serial.sendFile")["params"],
+        &params,
+        "serial.sendFile params",
+    );
+    let r = c.call("serial.sendFile", params).await.unwrap();
+    assert_valid(
+        &method_def("serial.sendFile")["result"],
+        &r,
+        "serial.sendFile result",
+    );
+    assert_eq!(r, json!({ "lines": 2, "bytes": 12 }));
+    // What the "board" received.
+    let mut got = Vec::new();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while got.len() < 12 && std::time::Instant::now() < deadline {
+        let mut buf = [0u8; 64];
+        // SAFETY: read into a valid buffer from the pty master.
+        let n = unsafe { libc::read(master.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
+        if n > 0 {
+            got.extend_from_slice(&buf[..n as usize]);
+        }
+    }
+    assert_eq!(String::from_utf8_lossy(&got), "AT\r\nAT+GMR\r\n");
+    for bad in [
+        json!({ "subscription": sub, "path": "relative.txt" }),
+        json!({ "subscription": sub, "path": file, "ending": "\t" }),
+        json!({ "subscription": sub, "path": file, "lineDelay": 20_000 }),
+    ] {
+        match c.call("serial.sendFile", bad).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+            other => panic!("expected invalid params, got {other:?}"),
+        }
+    }
+}
+
 // Output at the wrong speed: the core says so, once, with a speed to try.
 #[cfg(unix)]
 #[tokio::test]
@@ -2563,6 +2619,19 @@ async fn sim_pauses_and_decodes_backtraces() {
     assert_eq!(e["paused"], false);
     sim_wait_for(&mut c, &sub, "esp32bench-hello echo ping 7").await;
 
+    // A file of lines sent to the console: each echoed.
+    let file = d.path().join("lines.txt");
+    std::fs::write(&file, "ping 8\nping 9\n").unwrap();
+    let r = c
+        .call(
+            "sim.sendFile",
+            json!({ "subscription": sub, "path": file, "ending": "\r\n" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r["lines"], 2, "{r}");
+    sim_wait_for(&mut c, &sub, "esp32bench-hello echo ping 9").await;
+
     let line = format!("Backtrace: 0x{app_main}:0x3ffb0000\r\n");
     c.call(
         "sim.write",
@@ -3060,14 +3129,23 @@ async fn sim_debugs_a_build_with_gdb() {
             .any(|x| x["name"] == "pc")
     );
 
-    c.call(
-        "debug.control",
-        json!({ "subscription": sub, "action": "next" }),
-    )
-    .await
-    .unwrap();
-    let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
-    assert_eq!(stop["reason"], "end-stepping-range");
+    // Step over a line. On a loaded machine GDB has once reported the breakpoint the
+    // step started from as hit again; then step again. Any other stop fails.
+    let mut stop = Value::Null;
+    for _ in 0..2 {
+        c.call(
+            "debug.control",
+            json!({ "subscription": sub, "action": "next" }),
+        )
+        .await
+        .unwrap();
+        stop = debug_wait(&mut c, &sub, "debug.stopped").await;
+        if !(stop["reason"] == "breakpoint-hit" && stop["breakpoint"] == number) {
+            break;
+        }
+        eprintln!("the step reported breakpoint {number} again: {stop}");
+    }
+    assert_eq!(stop["reason"], "end-stepping-range", "{stop}");
 
     // Run to a line: the tick's printf, reached within a second.
     match c
@@ -3204,6 +3282,52 @@ async fn sim_debugs_a_build_with_gdb() {
         .await
         .unwrap();
     assert_eq!(r["frame"], 0, "{r}");
+
+    // Pass a breakpoint twice, then stop: the third time, and it says so.
+    let r = c
+        .call(
+            "debug.break",
+            json!({ "subscription": sub, "location": "hello.c:37", "ignore": 2 }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("debug.break")["result"],
+        &r,
+        "debug.break result",
+    );
+    assert_eq!(r["breakpoint"]["ignore"], 2, "{r}");
+    let counted = r["breakpoint"]["number"].clone();
+    c.call(
+        "debug.control",
+        json!({ "subscription": sub, "action": "continue" }),
+    )
+    .await
+    .unwrap();
+    let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
+    assert_eq!(stop["breakpoint"], counted, "{stop}");
+    assert_eq!(stop["hits"], 3, "{stop}");
+    let params = json!({ "subscription": sub, "breakpoint": counted, "count": 1 });
+    assert_valid(
+        &method_def("debug.ignore")["params"],
+        &params,
+        "debug.ignore params",
+    );
+    c.call("debug.ignore", params).await.unwrap();
+    c.call(
+        "debug.control",
+        json!({ "subscription": sub, "action": "continue" }),
+    )
+    .await
+    .unwrap();
+    let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
+    assert_eq!(stop["hits"], 5, "{stop}");
+    c.call(
+        "debug.delete",
+        json!({ "subscription": sub, "breakpoint": counted }),
+    )
+    .await
+    .unwrap();
     match c
         .call(
             "debug.break",
@@ -3369,6 +3493,25 @@ async fn sim_sends_the_virtual_panel() {
             break;
         }
     }
+    // A recording of the panel: the picture there now, as an animated PNG.
+    let png = d.path().join("panel.png");
+    let r = c
+        .call("sim.record", json!({ "subscription": sub, "path": png }))
+        .await
+        .unwrap();
+    assert_valid(&method_def("sim.record")["result"], &r, "sim.record result");
+    let r = c
+        .call("sim.record", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+    assert_valid(&method_def("sim.record")["result"], &r, "sim.record result");
+    assert!(r["frames"].as_u64().unwrap() >= 1, "{r}");
+    let data = std::fs::read(&png).unwrap();
+    assert!(data.starts_with(b"\x89PNG") && data.windows(4).any(|w| w == b"acTL"));
+    match c.call("sim.record", json!({ "subscription": sub })).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
+        other => panic!("stopped a recording that was not going: {other:?}"),
+    }
     c.call("core.unsubscribe", json!({ "subscription": sub }))
         .await
         .unwrap();
@@ -3503,6 +3646,42 @@ async fn sim_bridges_the_projects_pins() {
     }
     let times: Vec<u64> = traced.iter().map(|e| e["t"].as_u64().unwrap()).collect();
     assert!(times.windows(2).all(|w| w[0] <= w[1]), "{times:?}");
+    // A pulse: GPIO 4 low for 300 ms, then high again by itself.
+    let params = json!({ "subscription": sub, "gpio": 4, "level": false, "ms": 300 });
+    assert_valid(
+        &method_def("sim.pulsePin")["params"],
+        &params,
+        "sim.pulsePin params",
+    );
+    c.call("sim.pulsePin", params).await.unwrap();
+    let from = text.len();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let after = &text[from..];
+        if after
+            .find("esp32bench-gpio in 4=0")
+            .is_some_and(|low| after[low..].contains("esp32bench-gpio in 4=1"))
+        {
+            break;
+        }
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
+            .await
+            .unwrap_or_else(|_| panic!("the pulse did not go low and back: {}", &text[from..]))
+            .unwrap();
+        if n["method"] == "sim.output" {
+            text.push_str(n["params"]["text"].as_str().unwrap());
+        }
+    }
+    match c
+        .call(
+            "sim.pulsePin",
+            json!({ "subscription": sub, "gpio": 4, "level": false, "ms": 0 }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("a 0 ms pulse accepted: {other:?}"),
+    }
     // Only the project's pins.
     match c
         .call(

@@ -237,7 +237,7 @@ private slots:
             if (m == u"core.hello")
                 return {result(req, QJsonObject{{u"name"_s, u"esp32benchd"_s},
                                                 {u"version"_s, u"0.0.1"_s},
-                                                {u"protocol"_s, u"0.36.0"_s}})};
+                                                {u"protocol"_s, u"0.37.0"_s}})};
             if (m == u"device.watch") {
                 const QJsonArray ports{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s}}};
                 auto changed = [](int sub, const QString &path) {

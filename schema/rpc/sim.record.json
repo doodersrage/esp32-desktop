@@ -1,0 +1,60 @@
+{
+  "method": "sim.record",
+  "description": "Since protocol 0.37: with path (absolute), record the virtual panel's pictures as they change (at most 600); without one, stop and write them there as an animated PNG that loops (APNG). A recording still going when the simulation ends is written then (sim.recorded).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "path": {
+        "type": "string"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [],
+    "additionalProperties": false,
+    "properties": {
+      "recording": {
+        "const": true
+      },
+      "path": {
+        "type": "string"
+      },
+      "frames": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "bytes": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5
+      },
+      "result": {
+        "path": "/home/me/oled.png",
+        "frames": 42,
+        "bytes": 18234
+      }
+    }
+  ]
+}

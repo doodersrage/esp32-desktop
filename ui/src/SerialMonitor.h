@@ -81,6 +81,7 @@ private:
     QLineEdit *m_input;
     QComboBox *m_ending;
     QPushButton *m_send;
+    QPushButton *m_sendFile;
     QCheckBox *m_hex;
     QLabel *m_expect;
     QLabel *m_garbled = nullptr;

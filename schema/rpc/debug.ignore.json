@@ -1,0 +1,50 @@
+{
+  "method": "debug.ignore",
+  "description": "Since protocol 0.37: pass a breakpoint the next count times it is reached (GDB's -break-after); 0 stops at it again.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "breakpoint",
+      "count"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "breakpoint": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "count": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [],
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "breakpoint": 2,
+        "count": 499
+      },
+      "result": {}
+    }
+  ]
+}

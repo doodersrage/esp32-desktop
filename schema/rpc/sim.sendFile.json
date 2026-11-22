@@ -1,0 +1,73 @@
+{
+  "method": "sim.sendFile",
+  "description": "Since protocol 0.37: the same as serial.sendFile, to the simulated board's console.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "path": {
+        "type": "string",
+        "description": "An absolute path to a text file of at most 256 KiB."
+      },
+      "ending": {
+        "enum": [
+          "\n",
+          "\r\n",
+          ""
+        ],
+        "description": "What ends each line sent; a line feed by default."
+      },
+      "lineDelay": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10000,
+        "description": "Milliseconds to wait after each line; 0 by default."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "lines",
+      "bytes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "lines": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "bytes": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "path": "/home/me/commands.txt"
+      },
+      "result": {
+        "lines": 3,
+        "bytes": 21
+      }
+    }
+  ]
+}

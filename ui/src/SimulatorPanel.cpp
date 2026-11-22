@@ -7,6 +7,7 @@
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFileInfo>
 #include <QSettings>
 #include <QHBoxLayout>
 #include <QRegularExpression>
@@ -56,6 +57,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     , m_input(new QLineEdit(this))
     , m_ending(new QComboBox(this))
     , m_send(new QPushButton(tr("Send"), this))
+    , m_sendFile(new QPushButton(QIcon::fromTheme(u"document-send"_s), tr("Send file…"), this))
 {
     m_output->setAccessibleName(tr("Simulator output"));
     m_input->setAccessibleName(tr("Text to send"));
@@ -110,6 +112,19 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
         m_core->setSimIcount(on);
     });
     connect(m_send, &QPushButton::clicked, this, &SimulatorPanel::send);
+    m_sendFile->setToolTip(tr("Send a text file to the simulated board line by line, such as a list of commands"));
+    connect(m_sendFile, &QPushButton::clicked, this, [this] {
+        QString path;
+        int delay = 0;
+        if (m_core->isSimRunning() && ConsoleBar::askSendFile(this, u"simulator/sendFile"_s, &path, &delay)) {
+            m_output->appendNotice(tr("Sending %1…").arg(QFileInfo(path).fileName()));
+            m_core->sendSimFile(path, m_ending->currentData().toString(), delay);
+        }
+    });
+    connect(m_core, &CoreConnection::fileSent, this, [this](const QString &source, int) {
+        if (source == u"sim")
+            m_output->appendNotice(tr("Finished sending the file."));
+    });
     new InputHistory(m_input); // Up and Down recall what was sent
     connect(m_input, &QLineEdit::returnPressed, this, &SimulatorPanel::send);
 
@@ -138,6 +153,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     bottom->addWidget(m_input, 1);
     bottom->addWidget(m_ending);
     bottom->addWidget(m_send);
+    bottom->addWidget(m_sendFile);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     layout->addWidget(m_network);
@@ -283,5 +299,6 @@ void SimulatorPanel::setRunning(bool running)
     m_input->setEnabled(running);
     m_ending->setEnabled(running);
     m_send->setEnabled(running);
+    m_sendFile->setEnabled(running);
     updatePause();
 }

@@ -64,6 +64,7 @@ public:
     // Have the core write them to `path` as CSV (plot.save); Save CSV… asks for it.
     void saveTo(const QString &path);
     QPushButton *saveButton() const { return m_save; }
+    QCheckBox *pauseBox() const { return m_pause; }
     QPushButton *savePictureButton() const { return m_savePicture; }
     // The plot as drawn, at most 4096 pixels a side (frame.save's limit).
     QImage picture() const;
@@ -85,6 +86,7 @@ private:
     QPushButton *m_savePicture = nullptr;
     QString m_savingTo;
     QList<QJsonValue> m_rows; // QList drops its first item cheaply
+    QJsonArray m_held;        // rows that came while paused, to draw on going on
     bool m_seen = false;
 
     void clearRows();

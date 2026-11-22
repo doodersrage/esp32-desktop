@@ -1,0 +1,75 @@
+{
+  "method": "serial.sendFile",
+  "description": "Since protocol 0.37: send a text file to the board line by line, each with ending, waiting lineDelay after each (for configuration scripts and AT command lists). The core reads the file; the reply comes once all of it is sent.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "path": {
+        "type": "string",
+        "description": "An absolute path to a text file of at most 256 KiB."
+      },
+      "ending": {
+        "enum": [
+          "\n",
+          "\r\n",
+          ""
+        ],
+        "description": "What ends each line sent; a line feed by default."
+      },
+      "lineDelay": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10000,
+        "description": "Milliseconds to wait after each line; 0 by default."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "lines",
+      "bytes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "lines": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "bytes": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 4,
+        "path": "/home/me/at-commands.txt",
+        "ending": "\r\n",
+        "lineDelay": 200
+      },
+      "result": {
+        "lines": 12,
+        "bytes": 143
+      }
+    }
+  ]
+}

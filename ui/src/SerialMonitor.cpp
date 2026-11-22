@@ -1,4 +1,6 @@
 #include "SerialMonitor.h"
+
+#include <QFileInfo>
 #include <QDir>
 #include <QDateTime>
 #include <QFileDialog>
@@ -46,6 +48,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     , m_input(new QLineEdit(this))
     , m_ending(new QComboBox(this))
     , m_send(new QPushButton(tr("Send"), this))
+    , m_sendFile(new QPushButton(QIcon::fromTheme(u"document-send"_s), tr("Send file…"), this))
     , m_hex(new QCheckBox(tr("Hex"), this))
     , m_expect(new QLabel(this))
 {
@@ -152,6 +155,19 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
         m_record->setText(tr("Record…"));
     });
     connect(m_send, &QPushButton::clicked, this, &SerialMonitor::send);
+    m_sendFile->setToolTip(tr("Send a text file to the board line by line, such as a list of commands"));
+    connect(m_sendFile, &QPushButton::clicked, this, [this] {
+        QString path;
+        int delay = 0;
+        if (m_core->isSerialOpen() && ConsoleBar::askSendFile(this, u"serial/sendFile"_s, &path, &delay)) {
+            m_output->appendNotice(tr("Sending %1…").arg(QFileInfo(path).fileName()));
+            m_core->sendSerialFile(path, m_ending->currentData().toString(), delay);
+        }
+    });
+    connect(m_core, &CoreConnection::fileSent, this, [this](const QString &source, int) {
+        if (source == u"serial")
+            m_output->appendNotice(tr("Finished sending the file."));
+    });
     new InputHistory(m_input); // Up and Down recall what was sent
     connect(m_input, &QLineEdit::returnPressed, this, &SerialMonitor::send);
 
@@ -210,6 +226,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     bottom->addWidget(m_hex);
     bottom->addWidget(m_keep);
     bottom->addWidget(m_send);
+    bottom->addWidget(m_sendFile);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     auto *garbled = new QHBoxLayout;
@@ -421,6 +438,7 @@ void SerialMonitor::setOpen(bool open)
             w->setEnabled(open);
     }
     m_send->setEnabled(open);
+    m_sendFile->setEnabled(open);
     m_ending->setEnabled(open);
 }
 

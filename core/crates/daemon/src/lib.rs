@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.36.0";
+pub const PROTOCOL: &str = "0.37.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -220,7 +220,8 @@ pub fn router(state: Arc<State>) -> Router {
     let (s10, s11, s12) = (state.clone(), state.clone(), state.clone());
     let (s13, s14, s15) = (state.clone(), state.clone(), state.clone());
     let (p1, d6) = (state.clone(), state.clone());
-    let (w1, w2) = (state.clone(), state.clone());
+    let (w1, w2, w3) = (state.clone(), state.clone(), state.clone());
+    let (q1, q2, q3, q4) = (state.clone(), state.clone(), state.clone(), state.clone());
     let (d1, d2, d3, d4, d5) = (
         state.clone(),
         state.clone(),
@@ -251,6 +252,22 @@ pub fn router(state: Arc<State>) -> Router {
         .method("sim.pause", move |p, ctx| {
             let s = p1.clone();
             async move { sim_pause(p, ctx, s).await }
+        })
+        .method("serial.sendFile", move |p, ctx| {
+            let s = q2.clone();
+            async move { serial_send_file(p, ctx, s).await }
+        })
+        .method("sim.sendFile", move |p, ctx| {
+            let s = q3.clone();
+            async move { sim_send_file(p, ctx, s).await }
+        })
+        .method("sim.record", move |p, ctx| {
+            let s = q4.clone();
+            async move { sim_record(p, ctx, s).await }
+        })
+        .method("sim.pulsePin", move |p, ctx| {
+            let s = q1.clone();
+            async move { sim_pulse_pin(p, ctx, s).await }
         })
         .method("sim.setPin", move |p, ctx| {
             let s = d5.clone();
@@ -294,6 +311,10 @@ pub fn router(state: Arc<State>) -> Router {
         .method("debug.control", move |p, ctx| {
             let s = d3.clone();
             async move { debug_control(p, ctx, s).await }
+        })
+        .method("debug.ignore", move |p, ctx| {
+            let s = w3.clone();
+            async move { debug_ignore(p, ctx, s).await }
         })
         .method("debug.watch", move |p, ctx| {
             let s = w1.clone();
@@ -1255,6 +1276,18 @@ fn toolchain_install(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
 enum SimCmd {
     Write(Vec<u8>),
     SetPin(u8, bool, tokio::sync::oneshot::Sender<Result<(), String>>),
+    /// Start recording the panel into a file (Some), or stop and write it (None).
+    Record(
+        Option<PathBuf>,
+        tokio::sync::oneshot::Sender<Result<Value, String>>,
+    ),
+    /// Drive a pin to a level, then back after a time (sim.pulsePin).
+    Pulse(
+        u8,
+        bool,
+        std::time::Duration,
+        tokio::sync::oneshot::Sender<Result<(), String>>,
+    ),
     Control(
         String,
         String,
@@ -1294,7 +1327,8 @@ const PIN_BATCH: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// A request for the GDB attached to a simulator started with `debug: true`.
 enum DebugReq {
-    Break(String, Option<String>),
+    Break(String, Option<String>, u32),
+    Ignore(u32, u32),
     Delete(u32),
     Control(String),
     RunTo(String),
@@ -1333,15 +1367,19 @@ async fn start_debugger(
 
 async fn debug_request(gdb: &mut esp32bench_debug::Gdb, req: DebugReq) -> Result<Value, String> {
     let r = match req {
-        DebugReq::Break(loc, cond) => gdb.break_insert(&loc, cond.as_deref()).await.map(|b| {
+        DebugReq::Break(loc, cond, ignore) => gdb.break_insert(&loc, cond.as_deref(), ignore).await.map(|b| {
             let mut bp = stop_frame(&b);
             if let Some(c) = b["cond"].as_str() {
                 bp["condition"] = json!(c);
+            }
+            if let Some(n) = b["ignore"].as_str().and_then(|n| n.parse::<u32>().ok()).filter(|&n| n > 0) {
+                bp["ignore"] = json!(n);
             }
             bp["number"] = json!(b["number"].as_str().and_then(|n| n.parse::<u32>().ok()).unwrap_or(0));
             json!({ "breakpoint": bp })
         }),
         DebugReq::Delete(n) => gdb.break_delete(n).await.map(|()| json!({})),
+        DebugReq::Ignore(n, count) => gdb.ignore(n, count).await.map(|()| json!({})),
         DebugReq::Control(a) => gdb.control(&a).await.map(|()| json!({})),
         DebugReq::RunTo(loc) => gdb.run_to(&loc).await.map(|()| json!({})),
         DebugReq::Evaluate(e) => gdb.evaluate(&e).await.map(|v| json!({ "value": v })),
@@ -1632,6 +1670,10 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             let mut boots = esp32bench_serial::bootloop::Watcher::new();
             // Paused by sim.pause, and the output check's time left when it was.
             let mut paused = false;
+            // Pulses to end: when, which pin, and the level it goes back to.
+            let mut pulses: Vec<(tokio::time::Instant, u8, bool)> = Vec::new();
+            // The panel being recorded (sim.record), and where to.
+            let mut recording: Option<(PathBuf, esp32bench_sim::display::Recording)> = None;
             let mut expect_left: Option<std::time::Duration> = None;
             loop {
                 let wait = display.as_ref().map(esp32bench_sim::display::Display::interval);
@@ -1656,6 +1698,9 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                         let Some(d) = display.as_mut() else { continue };
                         match d.poll(&mut session.qmp).await {
                             Ok(Some(frame)) => {
+                                if let Some((_, r)) = recording.as_mut() {
+                                    r.push(frame.clone(), std::time::Instant::now());
+                                }
                                 sub.send("sim.frame", json!({
                                     "width": frame.width,
                                     "height": frame.height,
@@ -1869,9 +1914,52 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                             break;
                         }
                     },
+                    () = async {
+                        match pulses.iter().map(|p| p.0).min() {
+                            Some(d) => tokio::time::sleep_until(d).await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        let now = tokio::time::Instant::now();
+                        let (due, left): (Vec<_>, Vec<_>) = pulses.drain(..).partition(|p| p.0 <= now);
+                        pulses = left;
+                        if let Some(link) = gpio.as_mut() {
+                            for (_, g, level) in due {
+                                let _ = link.set(g, level).await;
+                            }
+                        }
+                    }
                     cmd = rx.recv() => match cmd {
                         Some(SimCmd::Write(bytes)) => {
                             let _ = session.uart.write(&bytes).await;
+                        }
+                        Some(SimCmd::Record(Some(path), done)) => {
+                            let mut r = esp32bench_sim::display::Recording::new();
+                            // From the picture there now.
+                            if let Some(f) = display.as_ref().and_then(|d| d.current()) {
+                                r.push(f.clone(), std::time::Instant::now());
+                            }
+                            recording = Some((path, r));
+                            let _ = done.send(Ok(json!({ "recording": true })));
+                        }
+                        Some(SimCmd::Record(None, done)) => {
+                            let r = match recording.take() {
+                                Some((path, r)) => write_recording(path, r).await,
+                                None => Err("nothing is being recorded".to_owned()),
+                            };
+                            let _ = done.send(r);
+                        }
+                        Some(SimCmd::Pulse(g, level, length, done)) => {
+                            let r = match gpio.as_mut().filter(|_| bridged.contains(&g)) {
+                                Some(link) => link.set(g, level).await.map_err(|e| e.to_string()),
+                                None => Err("this simulator has no pin access".into()),
+                            };
+                            if r.is_ok() {
+                                // A pulse on a pin already pulsing ends with this one.
+                                pulses.retain(|&(_, pin, _)| pin != g);
+                                pulses.push((tokio::time::Instant::now() + length, g, !level));
+                            }
+                            let _ = done.send(r);
                         }
                         Some(SimCmd::SetPin(g, level, done)) => {
                             let r = match gpio.as_mut().filter(|_| bridged.contains(&g)) {
@@ -1942,6 +2030,13 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                             });
                             if let Some(n) = v["bkptno"].as_str().and_then(|n| n.parse::<u32>().ok()) {
                                 params["breakpoint"] = json!(n);
+                                // How many times it has been reached: GDB is stopped, so it answers.
+                                if let Some(d) = debugger.as_mut()
+                                    && let Ok(hits) = d.gdb.hits(n).await
+                                    && hits > 0
+                                {
+                                    params["hits"] = json!(hits);
+                                }
                             }
                             // A watchpoint: its number, expression, and old and new value.
                             let wpt = &v["wpt"];
@@ -1967,6 +2062,13 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                         }
                     },
                 }
+            }
+            // A recording still going is written, and said (sim.recorded).
+            if let Some((path, r)) = recording.take() {
+                match write_recording(path, r).await {
+                    Ok(v) => sub.send("sim.recorded", v),
+                    Err(e) => sub.send("sim.recorded", json!({ "error": e })),
+                };
             }
             // Ask QEMU to quit; the Session's drop kills it if it does not.
             let _ = session.shutdown().await;
@@ -2145,6 +2247,28 @@ struct DebugBreakParams {
     /// Stop only when this C expression is true.
     #[serde(default)]
     condition: Option<String>,
+    /// Pass it this many times before stopping.
+    #[serde(default)]
+    ignore: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DebugIgnoreParams {
+    subscription: u64,
+    breakpoint: u32,
+    count: u32,
+}
+
+async fn debug_ignore(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: DebugIgnoreParams = parse_params(params)?;
+    debug_call(
+        &state,
+        &ctx,
+        p.subscription,
+        DebugReq::Ignore(p.breakpoint, p.count),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -2206,7 +2330,7 @@ async fn debug_break(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         &state,
         &ctx,
         p.subscription,
-        DebugReq::Break(p.location, p.condition),
+        DebugReq::Break(p.location, p.condition, p.ignore),
     )
     .await
 }
@@ -2456,6 +2580,85 @@ struct SetPinParams {
     subscription: u64,
     gpio: u8,
     level: bool,
+}
+
+/// Write a recording of the panel as an animated PNG.
+async fn write_recording(
+    path: PathBuf,
+    r: esp32bench_sim::display::Recording,
+) -> Result<Value, String> {
+    let frames = r.len();
+    let png = tokio::task::spawn_blocking(move || r.finish(std::time::Instant::now()))
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "the panel showed nothing while it was recorded".to_owned())?;
+    tokio::fs::write(&path, &png)
+        .await
+        .map_err(|e| format!("writing {}: {e}", path.display()))?;
+    Ok(json!({ "path": path, "frames": frames, "bytes": png.len() }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecordParams {
+    subscription: u64,
+    #[serde(default)]
+    path: Option<PathBuf>,
+}
+
+/// sim.record: with a path, record the virtual panel's pictures as they change; without
+/// one, stop and write them there as an animated PNG.
+async fn sim_record(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: RecordParams = parse_params(params)?;
+    if p.path.as_ref().is_some_and(|p| !p.is_absolute()) {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    let (done, result) = tokio::sync::oneshot::channel();
+    sim_sender(&state, &ctx, p.subscription)?
+        .send(SimCmd::Record(p.path, done))
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?;
+    result
+        .await
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?
+        .map_err(|e| RpcError::new(code::FAILED, e))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PulsePinParams {
+    subscription: u64,
+    gpio: u8,
+    /// The level during the pulse: a button to GND is pressed at false.
+    level: bool,
+    /// How long, in milliseconds.
+    ms: u32,
+}
+
+/// Drive an input pin to `level` for `ms`, then back: a button pressed and let go.
+async fn sim_pulse_pin(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: PulsePinParams = parse_params(params)?;
+    if !(1..=10_000).contains(&p.ms) {
+        return Err(RpcError::invalid_params("ms is 1 to 10000"));
+    }
+    let (done, result) = tokio::sync::oneshot::channel();
+    sim_sender(&state, &ctx, p.subscription)?
+        .send(SimCmd::Pulse(
+            p.gpio,
+            p.level,
+            std::time::Duration::from_millis(u64::from(p.ms)),
+            done,
+        ))
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?;
+    result
+        .await
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?
+        .map_err(|_| {
+            RpcError::new(
+                code::FAILED,
+                format!("GPIO {} is not one of this simulation's pins", p.gpio),
+            )
+        })?;
+    Ok(json!({}))
 }
 
 async fn sim_set_pin(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
@@ -3247,6 +3450,102 @@ fn open_port(state: &State, ctx: &Ctx, subscription: u64) -> Result<SharedPort, 
                 format!("no open serial port {subscription} on this connection"),
             )
         })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SendFileParams {
+    subscription: u64,
+    path: PathBuf,
+    /// What ends each line sent: "\n", "\r\n" or nothing.
+    #[serde(default = "lf")]
+    ending: String,
+    /// Milliseconds to wait after each line.
+    #[serde(default, rename = "lineDelay")]
+    line_delay: u32,
+}
+
+fn lf() -> String {
+    "\n".into()
+}
+
+/// The most a sent file may hold.
+const SEND_FILE_MAX: u64 = 256 * 1024;
+
+/// A text file's lines as sendFile sends them, each with `ending`.
+async fn lines_to_send(p: &SendFileParams) -> Result<Vec<Vec<u8>>, RpcError> {
+    if !p.path.is_absolute() {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    if !["\n", "\r\n", ""].contains(&p.ending.as_str()) {
+        return Err(RpcError::invalid_params(
+            "ending is \"\\n\", \"\\r\\n\" or \"\"",
+        ));
+    }
+    if p.line_delay > 10_000 {
+        return Err(RpcError::invalid_params("lineDelay is at most 10000 ms"));
+    }
+    let size = tokio::fs::metadata(&p.path)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("reading {}: {e}", p.path.display())))?
+        .len();
+    if size > SEND_FILE_MAX {
+        return Err(RpcError::invalid_params("the file is larger than 256 KiB"));
+    }
+    let data = tokio::fs::read(&p.path)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("reading {}: {e}", p.path.display())))?;
+    let mut lines: Vec<Vec<u8>> = data
+        .split(|&b| b == b'\n')
+        .map(|l| {
+            let mut l = l.strip_suffix(b"\r").unwrap_or(l).to_vec();
+            l.extend_from_slice(p.ending.as_bytes());
+            l
+        })
+        .collect();
+    // The newline that ends the file starts no line of its own.
+    if data.ends_with(b"\n") {
+        lines.pop();
+    }
+    Ok(lines)
+}
+
+/// serial.sendFile: a text file sent to the board line by line, with a pause after
+/// each; the reply comes when it has all been sent.
+async fn serial_send_file(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: SendFileParams = parse_params(params)?;
+    let lines = lines_to_send(&p).await?;
+    let port = open_port(&state, &ctx, p.subscription)?;
+    let mut bytes = 0;
+    for line in &lines {
+        let port = port.clone();
+        let line = line.clone();
+        bytes += line.len();
+        tokio::task::spawn_blocking(move || {
+            port.lock().unwrap_or_else(|p| p.into_inner()).write(&line)
+        })
+        .await
+        .map_err(|e| RpcError::internal(e.to_string()))?
+        .map_err(serial_error)?;
+        tokio::time::sleep(std::time::Duration::from_millis(u64::from(p.line_delay))).await;
+    }
+    Ok(json!({ "lines": lines.len(), "bytes": bytes }))
+}
+
+/// sim.sendFile: the same, to the simulated board's console.
+async fn sim_send_file(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: SendFileParams = parse_params(params)?;
+    let lines = lines_to_send(&p).await?;
+    let sender = sim_sender(&state, &ctx, p.subscription)?;
+    let mut bytes = 0;
+    for line in lines.iter().cloned() {
+        bytes += line.len();
+        sender
+            .send(SimCmd::Write(line))
+            .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?;
+        tokio::time::sleep(std::time::Duration::from_millis(u64::from(p.line_delay))).await;
+    }
+    Ok(json!({ "lines": lines.len(), "bytes": bytes }))
 }
 
 async fn serial_write(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {

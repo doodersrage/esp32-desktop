@@ -356,28 +356,51 @@ impl Gdb {
     }
 
     /// Set a hardware breakpoint (flash code needs one) at a function or `file:line`,
-    /// stopping only when `condition` (a C expression) is true, if one is given.
+    /// stopping only when `condition` (a C expression) is true, if one is given, and
+    /// not the first `ignore` times it is reached.
     pub async fn break_insert(
         &mut self,
         location: &str,
         condition: Option<&str>,
+        ignore: u32,
     ) -> Result<Value, Error> {
         if !valid_location(location) {
             return Err(Error::Gdb(format!(
                 "`{location}` is not a function or file:line"
             )));
         }
-        let cmd = match condition {
+        let mut cmd = String::from("-break-insert -h");
+        if ignore > 0 {
+            cmd += &format!(" -i {ignore}");
+        }
+        match condition {
             Some(c) if !valid_expression(c) => {
                 return Err(Error::Gdb(
                     "a condition is one line, without GDB's $_ functions".into(),
                 ));
             }
-            Some(c) => format!("-break-insert -h -c {} {location}", mi_quote(c)),
-            None => format!("-break-insert -h {location}"),
-        };
+            Some(c) => cmd += &format!(" -c {}", mi_quote(c)),
+            None => {}
+        }
+        cmd += &format!(" {location}");
         let r = self.command(&cmd).await?;
         Ok(r["bkpt"].clone())
+    }
+
+    /// Pass breakpoint `number` the next `count` times it is reached (0: stop again).
+    pub async fn ignore(&mut self, number: u32, count: u32) -> Result<(), Error> {
+        self.command(&format!("-break-after {number} {count}"))
+            .await
+            .map(|_| ())
+    }
+
+    /// How many times breakpoint `number` has been reached, ignored passes included.
+    pub async fn hits(&mut self, number: u32) -> Result<u32, Error> {
+        let r = self.command(&format!("-break-info {number}")).await?;
+        Ok(r["BreakpointTable"]["body"][0]["times"]
+            .as_str()
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(0))
     }
 
     pub async fn break_delete(&mut self, number: u32) -> Result<(), Error> {

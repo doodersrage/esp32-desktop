@@ -30,6 +30,9 @@ public:
 
     // What each pin is wired to (library.get's pinLabels), shown beside its number.
     void setLabels(const QHash<int, QString> &labels);
+    // Drive a pin the other way from its switch for `ms`, then back: a button pressed
+    // and let go (sim.pulsePin; the core times it). Also in a row's right-click menu.
+    bool pulse(int gpio, int ms);
 
 signals:
     // A double-click or Enter on a pin's row: show it in the trace.
