@@ -14,6 +14,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QPushButton>
+#include <QCoreApplication>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -34,7 +35,13 @@ private:
 
 private slots:
     // Keep QSettings away from the real configuration; each test starts unfiltered.
-    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+    void initTestCase()
+    {
+        // An organisation, so QSettings can save: on Windows it is the registry key
+        // Software\<organisation>\<app>, which an empty name does not make.
+        QCoreApplication::setOrganizationName(u"esp32bench-tests"_s);
+        QStandardPaths::setTestModeEnabled(true);
+    }
     void init() { QSettings().remove(u"library"_s); }
 
     void countsRemembersAndClearsFilters()
