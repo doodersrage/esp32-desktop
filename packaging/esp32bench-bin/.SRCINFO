@@ -1,6 +1,6 @@
 pkgbase = esp32bench-bin
 	pkgdesc = ESP32 workbench and simulator: build, flash, monitor and simulate ESP32 projects (prebuilt)
-	pkgver = 0.1.10
+	pkgver = 0.1.11
 	pkgrel = 1
 	url = https://github.com/doodersrage/esp32-desktop
 	arch = x86_64
@@ -30,7 +30,7 @@ pkgbase = esp32bench-bin
 	optdepends = libslirp: build and run the simulator
 	provides = esp32bench
 	conflicts = esp32bench
-	source = https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.10/esp32bench-0.1.10-x86_64.tar.gz
-	sha256sums = 19f62a2fb7f81ab6ebb260df76070f739570776fa421ecc4ce4308827b46ee2c
+	source = https://github.com/doodersrage/esp32-desktop/releases/download/v0.1.11/esp32bench-0.1.11-x86_64.tar.gz
+	sha256sums = 9cd46c5f37ab22c5f77a735e5e41cfd42f87dcdfa54846d4e17b9601df5dc884
 
 pkgname = esp32bench-bin
