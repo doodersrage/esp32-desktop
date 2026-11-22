@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.37.0";
+pub const PROTOCOL: &str = "0.38.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -222,6 +222,7 @@ pub fn router(state: Arc<State>) -> Router {
     let (p1, d6) = (state.clone(), state.clone());
     let (w1, w2, w3) = (state.clone(), state.clone(), state.clone());
     let (q1, q2, q3, q4) = (state.clone(), state.clone(), state.clone(), state.clone());
+    let (r1, r2, r3, r4) = (state.clone(), state.clone(), state.clone(), state.clone());
     let (d1, d2, d3, d4, d5) = (
         state.clone(),
         state.clone(),
@@ -261,6 +262,18 @@ pub fn router(state: Arc<State>) -> Router {
             let s = q3.clone();
             async move { sim_send_file(p, ctx, s).await }
         })
+        .method("debug.children", move |p, ctx| {
+            let s = r2.clone();
+            async move { debug_children(p, ctx, s).await }
+        })
+        .method("debug.assign", move |p, ctx| {
+            let s = r3.clone();
+            async move { debug_assign(p, ctx, s).await }
+        })
+        .method("sim.runFor", move |p, ctx| {
+            let s = r1.clone();
+            async move { sim_run_for(p, ctx, s).await }
+        })
         .method("sim.record", move |p, ctx| {
             let s = q4.clone();
             async move { sim_record(p, ctx, s).await }
@@ -295,6 +308,10 @@ pub fn router(state: Arc<State>) -> Router {
         .method("circuit.suggest", move |p, _ctx| {
             let s = c5.clone();
             async move { circuit_suggest(p, s).await }
+        })
+        .method("circuit.examples", move |p, _ctx| {
+            let s = r4.clone();
+            async move { circuit_examples(p, s).await }
         })
         .method("circuit.set", move |p, _ctx| {
             let s = c3.clone();
@@ -1276,6 +1293,8 @@ fn toolchain_install(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
 enum SimCmd {
     Write(Vec<u8>),
     SetPin(u8, bool, tokio::sync::oneshot::Sender<Result<(), String>>),
+    /// Run for this many milliseconds of simulated time, then pause (sim.runFor).
+    RunFor(u32, tokio::sync::oneshot::Sender<Result<(), String>>),
     /// Start recording the panel into a file (Some), or stop and write it (None).
     Record(
         Option<PathBuf>,
@@ -1334,6 +1353,8 @@ enum DebugReq {
     RunTo(String),
     Evaluate(String),
     Watch(String),
+    Children(String),
+    Assign(String, String),
     Memory(String, u32),
     Inspect(u32),
 }
@@ -1389,6 +1410,8 @@ async fn debug_request(gdb: &mut esp32bench_debug::Gdb, req: DebugReq) -> Result
                 "expression": w["exp"].as_str().unwrap_or(&e),
             } })
         }),
+        DebugReq::Children(e) => gdb.children(&e).await.map(|c| json!({ "children": c })),
+        DebugReq::Assign(e, v) => gdb.assign(&e, &v).await.map(|value| json!({ "value": value })),
         DebugReq::Memory(at, length) => gdb.memory(&at, length).await.map(|(begin, bytes)| {
             json!({
                 "address": format!("0x{begin:08x}"),
@@ -1767,6 +1790,17 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                                     parts_changed.insert(id.clone(), json!({ "id": id, "error": message }));
                                     continue;
                                 }
+                                // A sim.runFor's time is up: pause there.
+                                PinEvent::Reached { ns } => {
+                                    if !paused && session.pause().await.is_ok() {
+                                        paused = true;
+                                        let now = tokio::time::Instant::now();
+                                        expect_left = expect_deadline.take().map(|d| d.saturating_duration_since(now));
+                                        sub.send("sim.clock", json!({ "ns": ns }));
+                                        sub.send("sim.paused", json!({ "paused": true, "ns": ns }));
+                                    }
+                                    continue;
+                                }
                                 // The host sends it twice a second.
                                 PinEvent::Clock { ns } => {
                                     sub.send("sim.clock", json!({ "ns": ns }));
@@ -1932,6 +1966,28 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                     cmd = rx.recv() => match cmd {
                         Some(SimCmd::Write(bytes)) => {
                             let _ = session.uart.write(&bytes).await;
+                        }
+                        Some(SimCmd::RunFor(ms, done)) => {
+                            let r = if debugger.is_some() {
+                                Err("a debug run is stepped from the debugger".to_owned())
+                            } else {
+                                match gpio.as_mut() {
+                                    Some(link) => link.run_for(ms).await.map_err(|e| e.to_string()),
+                                    None => Err("running for a time needs lcgamboa's QEMU, which reads the simulated clock".to_owned()),
+                                }
+                            };
+                            // Paused: go on, to stop again when the time is up.
+                            let r = match r {
+                                Ok(()) if paused => session.resume().await.map(|()| {
+                                    paused = false;
+                                    if let Some(left) = expect_left.take() {
+                                        expect_deadline = Some(tokio::time::Instant::now() + left);
+                                    }
+                                    sub.send("sim.paused", json!({ "paused": false }));
+                                }).map_err(|e| e.to_string()),
+                                other => other,
+                            };
+                            let _ = done.send(r);
                         }
                         Some(SimCmd::Record(Some(path), done)) => {
                             let mut r = esp32bench_sim::display::Recording::new();
@@ -2415,6 +2471,49 @@ async fn debug_watch(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct AssignParams {
+    subscription: u64,
+    expression: String,
+    value: String,
+}
+
+async fn debug_children(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: WatchParams = parse_params(params)?;
+    if !esp32bench_debug::valid_expression(&p.expression) {
+        return Err(RpcError::invalid_params(
+            "an expression is one line of at most 256 characters, without GDB's $_ functions",
+        ));
+    }
+    debug_call(
+        &state,
+        &ctx,
+        p.subscription,
+        DebugReq::Children(p.expression),
+    )
+    .await
+}
+
+async fn debug_assign(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: AssignParams = parse_params(params)?;
+    if !esp32bench_debug::valid_expression(&p.expression)
+        || !esp32bench_debug::valid_expression(&p.value)
+        || p.value.contains(';')
+    {
+        return Err(RpcError::invalid_params(
+            "the expression and the value are each one line of at most 256 characters, without GDB's $_ functions",
+        ));
+    }
+    debug_call(
+        &state,
+        &ctx,
+        p.subscription,
+        DebugReq::Assign(p.expression, p.value),
+    )
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct MemoryParams {
     subscription: u64,
     address: String,
@@ -2526,6 +2625,57 @@ async fn circuit_suggest(params: Value, state: Arc<State>) -> Result<Value, RpcE
     Ok(json!({ "circuit": s.circuit, "unmatched": s.unmatched }))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExamplesParams {
+    kind: String,
+}
+
+/// circuit.examples: the library projects whose wiring has a part of this kind (as
+/// circuit.suggest reads it), with the boards it is wired on: something to try a
+/// part just placed with.
+async fn circuit_examples(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: ExamplesParams = parse_params(params)?;
+    if p.kind.is_empty() || p.kind.len() > 64 {
+        return Err(RpcError::invalid_params("kind is a part model's kind"));
+    }
+    let Some(manifest) = state
+        .library
+        .load()
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+    else {
+        return Ok(json!({ "projects": [] }));
+    };
+    let mut projects = Vec::new();
+    for project in &manifest.projects {
+        let hints: Vec<&str> = project.parts.iter().map(|x| x.name.as_str()).collect();
+        let boards: Vec<&str> = project
+            .builds
+            .iter()
+            .filter(|b| {
+                let wiring: Vec<esp32bench_circuit::suggest::Wire> = b
+                    .wiring
+                    .iter()
+                    .map(|w| esp32bench_circuit::suggest::Wire {
+                        from: &w.from,
+                        to: &w.to,
+                    })
+                    .collect();
+                esp32bench_circuit::suggest::uses_kind(&wiring, &hints, &p.kind)
+            })
+            .map(|b| b.board.as_str())
+            .collect();
+        if !boards.is_empty() {
+            projects.push(json!({ "id": project.id, "name": project.name, "boards": boards }));
+        }
+        if projects.len() == 50 {
+            break;
+        }
+    }
+    Ok(json!({ "projects": projects }))
+}
+
 async fn circuit_set(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
     let p: CircuitSetParams = parse_params(params)?;
     check_ids(&p.project, &p.board)?;
@@ -2621,6 +2771,31 @@ async fn sim_record(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value,
         .await
         .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?
         .map_err(|e| RpcError::new(code::FAILED, e))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RunForParams {
+    subscription: u64,
+    ms: u32,
+}
+
+/// sim.runFor: run (resuming a paused simulation) for `ms` of simulated time, then
+/// pause; sim.paused says where.
+async fn sim_run_for(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: RunForParams = parse_params(params)?;
+    if !(1..=60_000).contains(&p.ms) {
+        return Err(RpcError::invalid_params("ms is 1 to 60000"));
+    }
+    let (done, result) = tokio::sync::oneshot::channel();
+    sim_sender(&state, &ctx, p.subscription)?
+        .send(SimCmd::RunFor(p.ms, done))
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?;
+    result
+        .await
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?
+        .map_err(|e| RpcError::new(code::FAILED, e))?;
+    Ok(json!({}))
 }
 
 #[derive(Deserialize)]
@@ -2871,8 +3046,20 @@ fn board_job(
             let event = match r {
                 Ok(mut done) => {
                     if let (Some(port), Some(chip)) = (&adapter, done["info"]["chip"].as_str()) {
-                        // Best effort: not being able to remember it fails nothing.
-                        let _ = state.known_boards.remember(port, chip);
+                        // Best effort: not being able to remember it fails nothing. With
+                        // what was found, for the Devices dock to show.
+                        let info = &done["info"];
+                        let inspected = esp32bench_device::Inspected {
+                            flash_bytes: info["flashBytes"].as_u64(),
+                            mac: info["mac"].as_str().map(str::to_owned),
+                            revision: info["revision"].as_str().map(str::to_owned),
+                            at: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map_or(0, |d| d.as_secs()),
+                        };
+                        let _ = state
+                            .known_boards
+                            .remember_inspected(port, chip, Some(inspected));
                     }
                     done["ok"] = json!(true);
                     done

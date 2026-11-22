@@ -1,0 +1,45 @@
+{
+  "method": "sim.runFor",
+  "description": "Since protocol 0.38: run for ms milliseconds of simulated time (resuming a paused simulation), then pause there; sim.paused says when, with the simulated time. Needs lcgamboa's QEMU, which reads the simulated clock; not for a debug run.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "ms"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "ms": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 60000
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [],
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "ms": 100
+      },
+      "result": {}
+    }
+  ]
+}

@@ -24,6 +24,7 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QToolButton>
+#include <QMenu>
 #include <QTest>
 
 #include <cmath>
@@ -67,7 +68,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.37.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.38.0"_s}});
             return;
         }
         calls << m;
@@ -116,6 +117,10 @@ private:
         } else if (m == u"sim.write") {
             written << QByteArray::fromBase64(p.value(u"data"_s).toString().toLatin1());
             reply(id, QJsonObject{});
+        } else if (m == u"sim.runFor") {
+            reply(id, QJsonObject{});
+            send({{u"jsonrpc"_s, u"2.0"_s}, {u"method"_s, u"sim.paused"_s},
+                  {u"params"_s, QJsonObject{{u"subscription"_s, 5}, {u"paused"_s, true}, {u"ns"_s, 1'234'500'000}}}});
         } else if (m == u"sim.sendFile") {
             sentFiles << p;
             reply(id, QJsonObject{{u"lines"_s, 3}, {u"bytes"_s, 21}});
@@ -292,6 +297,15 @@ private slots:
         QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
         core.startSim(u"blink"_s, u"esp32"_s);
         QTRY_VERIFY(core.isSimRunning());
+
+        // Run for a time: paused where it ended, which the dock says.
+        QVERIFY(panel.runForButton()->isEnabled());
+        QCOMPARE(panel.runForButton()->menu()->actions().size(), 3);
+        panel.runForButton()->menu()->actions().at(1)->trigger(); // 100 ms
+        QTRY_VERIFY2(panel.statusText().startsWith(u"Paused at %1 s"_s.arg(QLocale().toString(1.2345, 'f', 3))),
+                     qPrintable(panel.statusText()));
+        QVERIFY(core.isSimPaused());
+        core.pauseSim(false);
 
         core.sendSimFile(u"/tmp/x/commands.txt"_s, u"\r\n"_s, 100);
         QTRY_COMPARE(fake.sentFiles.size(), 1);

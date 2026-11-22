@@ -39,6 +39,12 @@ public:
     QString pinName(int gpio) const;
     void addEdges(const QJsonArray &edges);
     void clear();
+    // Keep this run's edges as the last run's, to draw faintly under the next one
+    // (setShowPrevious), and clear.
+    void keepAsPrevious();
+    bool hasPrevious() const { return !m_previous.isEmpty(); }
+    void setShowPrevious(bool on);
+    QList<Edge> previousEdges(int gpio) const { return m_previous.value(gpio); }
     // How much simulated time the width shows, in ns.
     void setSpan(qint64 ns);
     // Stop following new edges (the picture stays put).
@@ -113,6 +119,8 @@ private:
     QList<int> m_pins;
     QSet<int> m_hidden;
     QHash<int, QList<Edge>> m_edges;
+    QHash<int, QList<Edge>> m_previous; // the last run's
+    bool m_showPrevious = false;
     qint64 m_now = 0;
     qint64 m_end = 0; // right edge of the picture
     qint64 m_span = 10'000'000;
@@ -130,6 +138,7 @@ public:
     QPushButton *saveButton() const { return m_save; }
     QComboBox *spanBox() const { return m_span; }
     QString measureText() const;
+    QCheckBox *previousBox() const { return m_previous; }
 
     // Ask the core to write the trace to `path` (the Save button asks for one).
     void saveTo(const QString &path);
@@ -144,6 +153,7 @@ private:
     QLabel *m_measure;
     QComboBox *m_span;
     QCheckBox *m_hold;
+    QCheckBox *m_previous;
     QPushButton *m_save;
     TraceView *m_view;
 };

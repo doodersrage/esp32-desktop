@@ -1,5 +1,5 @@
 {
-  "protocol": "0.37.0",
+  "protocol": "0.38.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
     "backtrace.decode",
@@ -10,6 +10,7 @@
     "breakpoints.set",
     "build.start",
     "build.status",
+    "circuit.examples",
     "circuit.get",
     "circuit.models",
     "circuit.set",
@@ -19,7 +20,9 @@
     "console.save",
     "core.hello",
     "core.unsubscribe",
+    "debug.assign",
     "debug.break",
+    "debug.children",
     "debug.control",
     "debug.delete",
     "debug.evaluate",
@@ -52,6 +55,7 @@
     "sim.pulsePin",
     "sim.record",
     "sim.reset",
+    "sim.runFor",
     "sim.sendFile",
     "sim.setPin",
     "sim.start",

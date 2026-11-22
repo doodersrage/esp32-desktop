@@ -91,6 +91,9 @@ public:
     void showLocation(const QJsonObject &at);
     // Project → Decode a crash backtrace…, against the project and board shown.
     void showBacktraceDialog();
+    // View → Layout: the panels for writing code, debugging, or a real board.
+    enum class Layout { Coding, Debugging, Hardware };
+    void showLayout(Layout layout);
     // Help → Keyboard shortcuts' text (rich text), and its dialog.
     QString shortcutsText() const;
     void showShortcuts();

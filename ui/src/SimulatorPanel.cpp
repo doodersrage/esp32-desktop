@@ -18,6 +18,8 @@
 #include <QLocale>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QToolButton>
+#include <QMenu>
 #include <QVBoxLayout>
 
 using namespace Qt::StringLiterals;
@@ -85,8 +87,10 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
             m_core->pauseSim(!m_core->isSimPaused());
     });
     connect(m_pause, &QPushButton::clicked, m_pauseAction, &QAction::trigger);
-    connect(m_core, &CoreConnection::simPaused, this, [this](bool paused) {
-        if (paused) {
+    connect(m_core, &CoreConnection::simPaused, this, [this](bool paused, qint64 ns) {
+        if (paused && ns >= 0) {
+            m_status->setText(tr("Paused at %1 s of simulated time.").arg(QLocale().toString(double(ns) / 1e9, 'f', 3)));
+        } else if (paused) {
             m_status->setText(tr("Paused: the simulated time, pins and trace stand still."));
         } else if (!m_runningText.isEmpty()) {
             m_status->setText(m_runningText);
@@ -94,6 +98,18 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
         updatePause();
     });
     connect(m_core, &CoreConnection::debugStarted, this, &SimulatorPanel::updatePause);
+    m_runFor = new QToolButton(this);
+    m_runFor->setText(tr("Run for"));
+    m_runFor->setIcon(QIcon::fromTheme(u"media-playback-start"_s));
+    m_runFor->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_runFor->setPopupMode(QToolButton::InstantPopup);
+    m_runFor->setToolTip(tr("Run for a stretch of simulated time, then pause: to step through a blink or a "
+                            "debounce. Needs lcgamboa's QEMU, which reads the simulated clock."));
+    auto *runForMenu = new QMenu(m_runFor);
+    for (const int ms : {10, 100, 1000})
+        runForMenu->addAction(ms < 1000 ? tr("%1 ms").arg(ms) : tr("%1 s").arg(ms / 1000), this,
+                              [this, ms] { m_core->runSimFor(ms); });
+    m_runFor->setMenu(runForMenu);
     connect(m_stop, &QPushButton::clicked, m_core, &CoreConnection::stopSim);
     m_again->setToolTip(tr("Run the same build again, without rebuilding"));
     connect(m_again, &QPushButton::clicked, this, [this] {
@@ -144,6 +160,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     top->addWidget(m_status, 1);
     top->addWidget(m_clock);
     top->addWidget(m_pause);
+    top->addWidget(m_runFor);
     top->addWidget(m_reset);
     top->addWidget(m_stop);
     top->addWidget(m_again);
@@ -284,6 +301,8 @@ void SimulatorPanel::updatePause()
                                      : tr("Stop the firmware where it is, to look at its pins and trace (%1)")
                                            .arg(m_pauseAction->shortcut().toString(QKeySequence::NativeText)));
     m_pause->setEnabled(can);
+    m_runFor->setEnabled(can);
+    m_runFor->setVisible(!m_core->isDebugging());
     m_pause->setIcon(icon);
     m_pause->setText(paused ? tr("Resume") : tr("Pause"));
     m_pause->setToolTip(m_pauseAction->toolTip());

@@ -802,7 +802,7 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
     }
     if (method == u"sim.paused") {
         m_simPaused = params.value(u"paused"_s).toBool();
-        emit simPaused(m_simPaused);
+        emit simPaused(m_simPaused, params.contains(u"ns"_s) ? params.value(u"ns"_s).toInteger() : -1);
         return;
     }
     if (method == u"sim.recorded") {
@@ -1066,6 +1066,56 @@ void CoreConnection::debugWatch(const QString &expression)
                        const QJsonObject w = r.result.toObject().value(u"watchpoint"_s).toObject();
                        emit watchpointSet(w.value(u"number"_s).toInt(), w.value(u"expression"_s).toString());
                    });
+}
+
+void CoreConnection::debugChildren(const QString &expression)
+{
+    if (!isDebugging())
+        return;
+    m_client->call(u"debug.children"_s, {{u"subscription"_s, m_simSub}, {u"expression"_s, expression}}, this,
+                   [this, expression](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"debug.children"_s, r.errorMessage);
+                           return;
+                       }
+                       emit childrenListed(expression, r.result.toObject().value(u"children"_s).toArray());
+                   });
+}
+
+void CoreConnection::debugAssign(const QString &expression, const QString &value)
+{
+    if (!isDebugging())
+        return;
+    m_client->call(u"debug.assign"_s,
+                   {{u"subscription"_s, m_simSub}, {u"expression"_s, expression}, {u"value"_s, value}}, this,
+                   [this, expression](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"debug.assign"_s, r.errorMessage);
+                           return;
+                       }
+                       emit assigned(expression, r.result.toObject().value(u"value"_s).toString());
+                   });
+}
+
+void CoreConnection::runSimFor(int ms)
+{
+    if (m_simSub <= 0 || m_debugging)
+        return;
+    m_client->call(u"sim.runFor"_s, {{u"subscription"_s, m_simSub}, {u"ms"_s, ms}}, this, [this](const RpcReply &r) {
+        if (!r.ok)
+            emit requestFailed(u"sim.runFor"_s, r.errorMessage);
+    });
+}
+
+void CoreConnection::circuitExamples(const QString &kind)
+{
+    m_client->call(u"circuit.examples"_s, {{u"kind"_s, kind}}, this, [this, kind](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"circuit.examples"_s, r.errorMessage);
+            return;
+        }
+        emit examplesListed(kind, r.result.toObject().value(u"projects"_s).toArray());
+    });
 }
 
 void CoreConnection::debugMemory(const QString &address, int length)

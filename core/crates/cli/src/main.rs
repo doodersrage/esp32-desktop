@@ -408,6 +408,9 @@ enum CircuitCmd {
         #[arg(long)]
         apply: bool,
     },
+    /// The library projects whose wiring has a part of this kind (as `circuit models`
+    /// lists kinds), with the boards it is wired on: something to try the part with.
+    Examples { kind: String },
     /// Remove a part.
     Remove {
         project: String,
@@ -459,6 +462,34 @@ async fn circuit_command(cmd: CircuitCmd) -> Result<()> {
                     what.push(format!("controls {}", c.join(",")));
                 }
                 println!("{:<10} {:<16} {}", m.id, m.name, what.join("; "));
+            }
+        }
+        CircuitCmd::Examples { kind } => {
+            let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+            let Some(m) = cache.load().await? else {
+                bail!("no project library cached yet; run `esp32bench library refresh`");
+            };
+            for p in &m.projects {
+                let hints: Vec<&str> = p.parts.iter().map(|x| x.name.as_str()).collect();
+                let boards: Vec<&str> = p
+                    .builds
+                    .iter()
+                    .filter(|b| {
+                        let wiring: Vec<esp32bench_circuit::suggest::Wire> = b
+                            .wiring
+                            .iter()
+                            .map(|w| esp32bench_circuit::suggest::Wire {
+                                from: &w.from,
+                                to: &w.to,
+                            })
+                            .collect();
+                        esp32bench_circuit::suggest::uses_kind(&wiring, &hints, &kind)
+                    })
+                    .map(|b| b.board.as_str())
+                    .collect();
+                if !boards.is_empty() {
+                    println!("{}  {}  ({})", p.id, p.name, boards.join(", "));
+                }
             }
         }
         CircuitCmd::Suggest {
@@ -1431,6 +1462,10 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                             eprintln!("[{id} error: {message}]");
                         }
                         Some(esp32bench_sim::gpio::PinEvent::Clock { .. }) => {}
+                        Some(esp32bench_sim::gpio::PinEvent::Reached { ns }) => {
+                            s.pause().await?;
+                            eprintln!("[paused at {:.3} s of simulated time]", ns as f64 / 1e9);
+                        }
                         Some(esp32bench_sim::gpio::PinEvent::Picture { id, width, height, pixels }) => {
                             let lit = pixels.iter().filter(|p| **p != 0).count();
                             match &frames {
@@ -1522,6 +1557,17 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         Some(l) if l == ":pause" || l == ":resume" => {
                             if l == ":pause" { s.pause().await? } else { s.resume().await? }
                             eprintln!("[{}]", if l == ":pause" { "paused" } else { "running" });
+                        }
+                        // :runfor <ms>: that much simulated time, then paused (:resume goes on).
+                        Some(l) if l.starts_with(":runfor ") => {
+                            match (l[8..].trim().parse::<u32>().ok().filter(|m| (1..=60_000).contains(m)), gpio.as_mut()) {
+                                (Some(ms), Some(link)) => {
+                                    link.run_for(ms).await?;
+                                    s.resume().await?;
+                                }
+                                (_, None) => eprintln!("running for a time needs lcgamboa's QEMU"),
+                                (None, _) => eprintln!("usage: :runfor <ms, 1 to 60000>"),
+                            }
                         }
                         // :pulse <gpio> <0|1> <ms>: that level for a time, then back.
                         Some(l) if l.starts_with(":pulse ") => {
@@ -1668,7 +1714,15 @@ fn board_command(cmd: BoardCmd) -> Result<()> {
                 ps.into_iter()
                     .find(|x| std::path::Path::new(&x.path) == conn.port)
             }) {
-                let _ = known_boards()?.remember(&port, &info.chip);
+                let inspected = esp32bench_device::Inspected {
+                    flash_bytes: Some(info.flash_bytes),
+                    mac: info.mac.clone(),
+                    revision: info.revision.clone(),
+                    at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs()),
+                };
+                let _ = known_boards()?.remember_inspected(&port, &info.chip, Some(inspected));
             }
             println!(
                 "chip      {} {}",

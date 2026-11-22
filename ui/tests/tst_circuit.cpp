@@ -25,6 +25,7 @@
 #include <QGuiApplication>
 #include <QMimeData>
 #include <QImage>
+#include <QSignalSpy>
 #include <QTest>
 #include <QToolButton>
 
@@ -85,7 +86,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.37.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.38.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -125,6 +126,11 @@ private:
                     return m;
                 }(),
             }}});
+        } else if (m == u"circuit.examples") {
+            reply(id, QJsonObject{{u"projects"_s, p.value(u"kind"_s).toString() == u"led"_s
+                       ? QJsonArray{QJsonObject{{u"id"_s, u"blink"_s}, {u"name"_s, u"Blink"_s}, {u"boards"_s, QJsonArray{u"esp32"_s, u"esp32c3"_s}}},
+                                    QJsonObject{{u"id"_s, u"traffic"_s}, {u"name"_s, u"Traffic light"_s}, {u"boards"_s, QJsonArray{u"esp32s3"_s}}}}
+                       : QJsonArray{}}});
         } else if (m == u"circuit.suggest") {
             reply(id, suggestion);
         } else if (m == u"circuit.get") {
@@ -356,6 +362,23 @@ private slots:
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"5"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
         QVERIFY(!panel.copyPart()); // nothing selected
+        QVERIFY(!panel.examplesButton()->isEnabled());
+        // Examples: the library projects that use a part, on this board where they can be.
+        QMenu *examples = panel.examplesMenu(u"led"_s, QJsonArray{
+            QJsonObject{{u"id"_s, u"blink"_s}, {u"name"_s, u"Blink"_s}, {u"boards"_s, QJsonArray{u"esp32c3"_s, u"esp32"_s}}},
+            QJsonObject{{u"id"_s, u"traffic"_s}, {u"name"_s, u"Traffic light"_s}, {u"boards"_s, QJsonArray{u"esp32s3"_s}}}});
+        QCOMPARE(examples->actions().size(), 2);
+        QCOMPARE(examples->actions().at(0)->text(), u"Blink"_s);
+        QSignalSpy asked(&panel, &CircuitPanel::exampleRequested);
+        examples->actions().at(0)->trigger();
+        examples->actions().at(1)->trigger();
+        QCOMPARE(asked.at(0).at(1).toString(), u"esp32"_s); // the board shown
+        QCOMPARE(asked.at(1).at(1).toString(), u"esp32s3"_s); // its own board
+        delete examples;
+        QMenu *none = panel.examplesMenu(u"ws2812"_s, {});
+        QCOMPARE(none->actions().size(), 1);
+        QVERIFY(!none->actions().at(0)->isEnabled());
+        delete none;
         // The circuit as a picture, as Copy picture copies it.
         const QImage picture = panel.picture();
         QVERIFY(!picture.isNull());

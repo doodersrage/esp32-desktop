@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 37;
+    static constexpr int ProtocolMinor = 38;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -219,6 +219,14 @@ public:
     void debugWatch(const QString &expression);
     // debug.memory: `length` bytes from the address `address` evaluates to (memoryRead).
     void debugMemory(const QString &address, int length);
+    // debug.children: a structure's members or an array's elements (childrenListed).
+    void debugChildren(const QString &expression);
+    // debug.assign: set `expression` to `value` (assigned, or requestFailed).
+    void debugAssign(const QString &expression, const QString &value);
+    // sim.runFor: run for `ms` of simulated time, then pause.
+    void runSimFor(int ms);
+    // circuit.examples: the library projects that use a part of this kind (examplesListed).
+    void circuitExamples(const QString &kind);
 
     // Error code the core uses when consent is missing (docs/rpc.md).
     static constexpr int ConsentRequired = -32002;
@@ -343,7 +351,8 @@ signals:
     void modelsLoaded(const QJsonArray &models);
     void simStopped(const QString &reason);
     // sim.paused: the simulation was paused or resumed.
-    void simPaused(bool paused);
+    // `ns`: for a pause sim.runFor made, the simulated time it paused at, else -1.
+    void simPaused(bool paused, qint64 ns = -1);
     // sim.bootLoop / serial.bootLoop: {resets, seconds, reason?, crash?}.
     void simBootLoop(const QJsonObject &loop);
     // `source` is serial or sim.
@@ -371,6 +380,11 @@ signals:
     void debugInspected(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals = {},
                         int frame = 0);
     void watchpointSet(int number, const QString &expression);
+    // Each child is {name, expression?, type, value?, children?}.
+    void childrenListed(const QString &expression, const QJsonArray &children);
+    void assigned(const QString &expression, const QString &value);
+    // Each project is {id, name, boards}.
+    void examplesListed(const QString &kind, const QJsonArray &projects);
     // `address` as the core says it (0x…); `asked` what was typed.
     void memoryRead(const QString &asked, const QString &address, const QByteArray &bytes);
     // `error` is empty when the expression has a value.

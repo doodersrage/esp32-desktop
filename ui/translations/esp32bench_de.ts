@@ -425,6 +425,14 @@ Globale Variablen: %4 von %5</translation>
         <translation>Die ganze Schaltung zeigen (Strg+0); Strg und das Mausrad zoomen</translation>
     </message>
     <message>
+        <source>Examples</source>
+        <translation>Beispiele</translation>
+    </message>
+    <message>
+        <source>Library projects that use the selected part, to try it with</source>
+        <translation>Bibliotheksprojekte, die das ausgewählte Bauteil nutzen, um es damit auszuprobieren</translation>
+    </message>
+    <message>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
@@ -479,6 +487,10 @@ Globale Variablen: %4 von %5</translation>
     <message>
         <source>%1: GPIO %2</source>
         <translation>%1: GPIO %2</translation>
+    </message>
+    <message>
+        <source>No library project uses this part yet</source>
+        <translation>Noch kein Bibliotheksprojekt nutzt dieses Bauteil</translation>
     </message>
     <message>
         <source>Copied %1. Paste it into this or another project&apos;s circuit with %2.</source>
@@ -903,10 +915,6 @@ Globale Variablen: %4 von %5</translation>
         <translation>Typ</translation>
     </message>
     <message>
-        <source>The arguments and local variables of the function the firmware stopped in</source>
-        <translation>Die Argumente und lokalen Variablen der Funktion, in der die Firmware angehalten hat</translation>
-    </message>
-    <message>
         <source>Breakpoint location</source>
         <translation>Ort des Haltepunkts</translation>
     </message>
@@ -957,6 +965,14 @@ Globale Variablen: %4 von %5</translation>
     <message>
         <source>Value</source>
         <translation>Wert</translation>
+    </message>
+    <message>
+        <source>%1 is now %2.</source>
+        <translation>%1 ist jetzt %2.</translation>
+    </message>
+    <message>
+        <source>The arguments and local variables of the function the firmware stopped in. Open a structure or an array to see its members; double-click a value to set it.</source>
+        <translation>Die Argumente und lokalen Variablen der Funktion, in der die Firmware anhielt. Öffnen Sie eine Struktur oder ein Array, um ihre Elemente zu sehen; doppelklicken Sie auf einen Wert, um ihn zu setzen.</translation>
     </message>
     <message>
         <source>Breakpoints</source>
@@ -1059,6 +1075,18 @@ Globale Variablen: %4 von %5</translation>
         <translation>Seit dem letzten Halt geändert; vorher %1</translation>
     </message>
     <message>
+        <source>Set a value</source>
+        <translation>Wert setzen</translation>
+    </message>
+    <message>
+        <source>New value for %1 (a C expression):</source>
+        <translation>Neuer Wert für %1 (ein C-Ausdruck):</translation>
+    </message>
+    <message>
+        <source>Pause the firmware first: values can be set only while it is stopped.</source>
+        <translation>Halten Sie die Firmware zuerst an: Werte lassen sich nur setzen, während sie steht.</translation>
+    </message>
+    <message>
         <source>Breakpoint %1 stops again each time.</source>
         <translation>Haltepunkt %1 hält wieder jedes Mal an.</translation>
     </message>
@@ -1103,12 +1131,12 @@ Globale Variablen: %4 von %5</translation>
         <translation>%1 (Argument)</translation>
     </message>
     <message>
-        <source>…</source>
-        <translation>…</translation>
+        <source>A structure or an array: open it to see its members</source>
+        <translation>Eine Struktur oder ein Array: öffnen, um die Elemente zu sehen</translation>
     </message>
     <message>
-        <source>GDB shows this kind of value (a structure or an array) only in parts</source>
-        <translation>GDB zeigt diese Art von Wert (eine Struktur oder ein Array) nur in Teilen</translation>
+        <source>…</source>
+        <translation>…</translation>
     </message>
     <message>
         <source>%1:%2</source>
@@ -1224,6 +1252,26 @@ Globale Variablen: %4 von %5</translation>
     <message>
         <source>Any</source>
         <translation>Beliebig</translation>
+    </message>
+    <message>
+        <source>%1 flash</source>
+        <translation>%1 Flash</translation>
+    </message>
+    <message>
+        <source>revision %1</source>
+        <translation>Revision %1</translation>
+    </message>
+    <message>
+        <source>MAC %1</source>
+        <translation>MAC %1</translation>
+    </message>
+    <message>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <source>Found by Inspect on %1.</source>
+        <translation>Von „Untersuchen“ gefunden am %1.</translation>
     </message>
     <message>
         <source>USB ID %1</source>
@@ -1960,6 +2008,22 @@ Das Build-Fenster unten hat das ganze Protokoll.</translation>
         <translation>&amp;Suchen…</translation>
     </message>
     <message>
+        <source>&amp;Layout</source>
+        <translation>&amp;Layout</translation>
+    </message>
+    <message>
+        <source>&amp;Coding</source>
+        <translation>&amp;Programmieren</translation>
+    </message>
+    <message>
+        <source>&amp;Debugging</source>
+        <translation>&amp;Debuggen</translation>
+    </message>
+    <message>
+        <source>&amp;Hardware</source>
+        <translation>&amp;Hardware</translation>
+    </message>
+    <message>
         <source>&amp;Reset layout</source>
         <translation>Anordnung &amp;zurücksetzen</translation>
     </message>
@@ -2507,6 +2571,14 @@ Code-SHA-256: %2</translation>
     <message>
         <source>The build failed at %1, line %2: %3</source>
         <translation>Der Build ist bei %1, Zeile %2 fehlgeschlagen: %3</translation>
+    </message>
+    <message>
+        <source>Look it up on esp32bench.dev</source>
+        <translation>Auf esp32bench.dev nachschlagen</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Kopieren</translation>
     </message>
     <message>
         <source>Crashed in %1 (%2, line %3)</source>
@@ -3298,8 +3370,24 @@ Doppelklicken, um die Zeile zu sehen.</translation>
         <translation>Kein Zeilenende</translation>
     </message>
     <message>
+        <source>Paused at %1 s of simulated time.</source>
+        <translation>Angehalten bei %1 s simulierter Zeit.</translation>
+    </message>
+    <message>
         <source>Paused: the simulated time, pins and trace stand still.</source>
         <translation>Angehalten: Simulierte Zeit, Pins und Ablaufspur stehen still.</translation>
+    </message>
+    <message>
+        <source>Run for</source>
+        <translation>Laufen für</translation>
+    </message>
+    <message>
+        <source>Run for a stretch of simulated time, then pause: to step through a blink or a debounce. Needs lcgamboa&apos;s QEMU, which reads the simulated clock.</source>
+        <translation>Eine Weile simulierter Zeit laufen und dann anhalten: um ein Blinken oder Entprellen Schritt für Schritt anzusehen. Braucht lcgamboas QEMU, das die simulierte Uhr liest.</translation>
+    </message>
+    <message>
+        <source>%1 ms</source>
+        <translation>%1 ms</translation>
     </message>
     <message>
         <source>Run the same build again, without rebuilding</source>
@@ -3417,6 +3505,10 @@ Doppelklicken, um die Zeile zu sehen.</translation>
         <translation>Anhalten</translation>
     </message>
     <message>
+        <source>Last run</source>
+        <translation>Letzter Lauf</translation>
+    </message>
+    <message>
         <source>Save VCD…</source>
         <translation>VCD speichern…</translation>
     </message>
@@ -3467,6 +3559,10 @@ Doppelklicken, um die Zeile zu sehen.</translation>
     <message>
         <source>Write every recorded pin change to a VCD file, for PulseView or GTKWave</source>
         <translation>Jede aufgezeichnete Pin-Änderung in eine VCD-Datei schreiben, für PulseView oder GTKWave</translation>
+    </message>
+    <message>
+        <source>Draw the last run&apos;s trace faintly under this one, from the same start, to see what a change did to the timing</source>
+        <translation>Die Ablaufspur des letzten Laufs schwach unter dieser zeichnen, vom selben Start an, um zu sehen, was eine Änderung am Timing bewirkt hat</translation>
     </message>
     <message>
         <source>Saved %1 pin changes to %2 (the earliest %3 were no longer kept).</source>

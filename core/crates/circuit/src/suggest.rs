@@ -169,6 +169,16 @@ pub fn from_wiring(wiring: &[Wire], hints: &[&str]) -> Suggestion {
     }
 }
 
+/// Whether this wiring has a part of `kind`, as [`from_wiring`] reads it (for
+/// circuit.examples: the projects to try a part with).
+pub fn uses_kind(wiring: &[Wire], hints: &[&str], kind: &str) -> bool {
+    from_wiring(wiring, hints)
+        .circuit
+        .parts
+        .iter()
+        .any(|p| p.kind == kind)
+}
+
 /// "GPIO 16" (or "GPIO16", "IO16") to 16; anything else (3V3, GND, 5V) to None.
 /// What each GPIO is wired to, as the wiring says it ("Green LED anode",
 /// "HC-SR04 TRIG"), for naming pins in the app; rows that name no GPIO are left out,

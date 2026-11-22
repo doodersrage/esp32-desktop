@@ -14,6 +14,7 @@ class QLabel;
 class QAction;
 class QLineEdit;
 class QPushButton;
+class QToolButton;
 
 class SimulatorPanel : public QWidget {
     Q_OBJECT
@@ -39,6 +40,8 @@ public:
     // debugger pauses). For the toolbar and Project menu too.
     QAction *pauseAction() const { return m_pauseAction; }
     QPushButton *pauseButton() const { return m_pause; }
+    // Run for 10 ms, 100 ms or 1 s of simulated time, then pause (sim.runFor).
+    QToolButton *runForButton() const { return m_runFor; }
 
 private:
     void send();
@@ -53,6 +56,7 @@ private:
     QLabel *m_expect;
     QPushButton *m_reset;
     QPushButton *m_pause;
+    QToolButton *m_runFor;
     QAction *m_pauseAction;
     QString m_runningText; // the status while it runs, for after a pause
     QPushButton *m_stop;

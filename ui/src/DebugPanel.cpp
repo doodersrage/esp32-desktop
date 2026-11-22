@@ -6,6 +6,8 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QAction>
+
+#include <functional>
 #include <QFileInfo>
 #include <QInputDialog>
 #include <QKeySequence>
@@ -28,6 +30,19 @@ using namespace Qt::StringLiterals;
 namespace {
 constexpr int NumberRole = Qt::UserRole + 1;
 constexpr int LocationRole = Qt::UserRole + 2;
+// On a variable's row: an expression for it, to list its members or set it.
+constexpr int ExprRole = Qt::UserRole + 3;
+// Every row of a tree, children too.
+void eachItem(QTreeWidget *tree, const std::function<void(QTreeWidgetItem *)> &f)
+{
+    std::function<void(QTreeWidgetItem *)> walk = [&](QTreeWidgetItem *i) {
+        f(i);
+        for (int c = 0; c < i->childCount(); ++c)
+            walk(i->child(c));
+    };
+    for (int i = 0; i < tree->topLevelItemCount(); ++i)
+        walk(tree->topLevelItem(i));
+}
 }
 
 DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
@@ -89,7 +104,7 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     m_watchInput->setToolTip(tr("A C or C++ expression, read again every time the firmware stops"));
     m_watches->setAccessibleName(tr("Watched expressions"));
     m_watches->setHeaderLabels({tr("Expression"), tr("Value")});
-    m_watches->setRootIsDecorated(false);
+
     m_watches->setContextMenuPolicy(Qt::ActionsContextMenu);
     auto *forget = new QAction(QIcon::fromTheme(u"list-remove"_s), tr("Stop watching"), m_watches);
     forget->setShortcut(QKeySequence::Delete);
@@ -106,6 +121,7 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
         for (const QString &e : list) {
             auto *item = new QTreeWidgetItem(m_watches);
             item->setText(0, e);
+            item->setData(0, ExprRole, e);
         }
         if (m_mode == Mode::Paused)
             evaluateWatches();
@@ -124,6 +140,11 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
                         setValue(item, 1, value);
                     else
                         item->setText(1, error);
+                    // A structure or an array prints as {…}: it can be opened.
+                    qDeleteAll(item->takeChildren());
+                    item->setChildIndicatorPolicy(error.isEmpty() && value.startsWith(u'{')
+                                                      ? QTreeWidgetItem::ShowIndicator
+                                                      : QTreeWidgetItem::DontShowIndicator);
                     if (error.isEmpty())
                         markChanged(item, 1, expression, m_lastWatches);
                     item->setForeground(1, palette().brush(error.isEmpty() ? QPalette::Text : QPalette::PlaceholderText));
@@ -132,8 +153,19 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
             });
     m_locals->setAccessibleName(tr("Local variables"));
     m_locals->setHeaderLabels({tr("Variable"), tr("Value"), tr("Type")});
-    m_locals->setRootIsDecorated(false);
-    m_locals->setToolTip(tr("The arguments and local variables of the function the firmware stopped in"));
+    m_locals->setRootIsDecorated(true);
+    m_watches->setRootIsDecorated(true);
+    for (QTreeWidget *tree : {m_locals, m_watches}) {
+        connect(tree, &QTreeWidget::itemExpanded, this, &DebugPanel::expandItem);
+        connect(tree, &QTreeWidget::itemDoubleClicked, this, &DebugPanel::editValue);
+    }
+    connect(m_core, &CoreConnection::childrenListed, this, &DebugPanel::showChildren);
+    connect(m_core, &CoreConnection::assigned, this, [this](const QString &expression, const QString &value) {
+        m_status->setText(tr("%1 is now %2.").arg(expression, value));
+        m_core->debugInspect(m_frame); // everything that follows from it, again
+    });
+    m_locals->setToolTip(tr("The arguments and local variables of the function the firmware stopped in. Open a "
+                            "structure or an array to see its members; double-click a value to set it."));
     m_location->setAccessibleName(tr("Breakpoint location"));
     m_breakpoints->setAccessibleName(tr("Breakpoints"));
     m_stack->setAccessibleName(tr("Call stack"));
@@ -384,6 +416,7 @@ void DebugPanel::addWatch(const QString &expression)
         return;
     auto *item = new QTreeWidgetItem(m_watches);
     item->setText(0, expression);
+    item->setData(0, ExprRole, expression);
     if (m_mode == Mode::Paused)
         m_core->debugEvaluate(expression);
     else
@@ -490,6 +523,66 @@ void DebugPanel::markChanged(QTreeWidgetItem *item, int column, const QString &k
     last.insert(key, value);
 }
 
+void DebugPanel::expandItem(QTreeWidgetItem *item)
+{
+    const QString expression = item->data(0, ExprRole).toString();
+    if (item->childCount() > 0 || expression.isEmpty() || m_mode != Mode::Paused)
+        return;
+    item->setExpanded(true);
+    m_core->debugChildren(expression);
+}
+
+void DebugPanel::showChildren(const QString &expression, const QJsonArray &children)
+{
+    for (QTreeWidget *tree : {m_locals, m_watches}) {
+        eachItem(tree, [&](QTreeWidgetItem *item) {
+            if (item->data(0, ExprRole).toString() != expression || item->childCount() > 0)
+                return;
+            for (const QJsonValue &v : children) {
+                const QJsonObject c = v.toObject();
+                auto *child = new QTreeWidgetItem(item);
+                child->setText(0, c.value(u"name"_s).toString());
+                child->setData(0, ExprRole, c.value(u"expression"_s).toString());
+                if (c.contains(u"value"_s))
+                    setValue(child, 1, c.value(u"value"_s).toString());
+                else
+                    child->setText(1, tr("…"));
+                if (tree->columnCount() > 2)
+                    child->setText(2, c.value(u"type"_s).toString());
+                child->setToolTip(0, c.value(u"type"_s).toString());
+                child->setChildIndicatorPolicy(c.value(u"children"_s).toInt() > 0 ? QTreeWidgetItem::ShowIndicator
+                                                                                  : QTreeWidgetItem::DontShowIndicator);
+            }
+            if (children.isEmpty())
+                item->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
+        });
+    }
+}
+
+void DebugPanel::editValue(QTreeWidgetItem *item, int column)
+{
+    const QString expression = item->data(0, ExprRole).toString();
+    const QVariant raw = item->data(1, Qt::UserRole);
+    if (column != 1 || expression.isEmpty() || !raw.isValid() || m_mode != Mode::Paused)
+        return;
+    bool ok = false;
+    const QString value = QInputDialog::getText(this, tr("Set a value"),
+                                                tr("New value for %1 (a C expression):").arg(expression),
+                                                QLineEdit::Normal, raw.toString(), &ok);
+    if (ok && !value.trimmed().isEmpty())
+        assign(expression, value.trimmed());
+}
+
+bool DebugPanel::assign(const QString &expression, const QString &value)
+{
+    if (m_mode != Mode::Paused) {
+        m_status->setText(tr("Pause the firmware first: values can be set only while it is stopped."));
+        return false;
+    }
+    m_core->debugAssign(expression, value);
+    return true;
+}
+
 bool DebugPanel::ignoreBreakpoint(int number, int count)
 {
     if (m_mode != Mode::Paused) {
@@ -526,12 +619,11 @@ void DebugPanel::setValue(QTreeWidgetItem *item, int column, const QString &valu
 void DebugPanel::reformatValues()
 {
     for (QTreeWidget *tree : {m_locals, m_watches}) {
-        for (int i = 0; i < tree->topLevelItemCount(); ++i) {
-            QTreeWidgetItem *item = tree->topLevelItem(i);
+        eachItem(tree, [this](QTreeWidgetItem *item) {
             const QVariant raw = item->data(1, Qt::UserRole);
             if (raw.isValid())
                 item->setText(1, shownValue(raw.toString(), m_hex->isChecked()));
-        }
+        });
     }
 }
 
@@ -682,11 +774,13 @@ void DebugPanel::showInspection(const QJsonArray &frames, const QJsonArray &regi
         auto *item = new QTreeWidgetItem(m_locals);
         item->setText(0, l.value(u"arg"_s).toBool() ? tr("%1 (argument)").arg(l.value(u"name"_s).toString())
                                                     : l.value(u"name"_s).toString());
+        item->setData(0, ExprRole, l.value(u"name"_s).toString());
         if (l.contains(u"value"_s)) {
             setValue(item, 1, l.value(u"value"_s).toString());
         } else {
             item->setText(1, tr("…"));
-            item->setToolTip(1, tr("GDB shows this kind of value (a structure or an array) only in parts"));
+            item->setToolTip(1, tr("A structure or an array: open it to see its members"));
+            item->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
         }
         item->setText(2, l.value(u"type"_s).toString());
         markChanged(item, 1, l.value(u"name"_s).toString(), m_lastLocals);

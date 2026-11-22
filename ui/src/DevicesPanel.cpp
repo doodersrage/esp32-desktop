@@ -1,4 +1,6 @@
 #include "DevicesPanel.h"
+#include <QLocale>
+#include <QDateTime>
 
 #include "CoreConnection.h"
 #include "Labels.h"
@@ -208,6 +210,24 @@ void DevicesPanel::showPorts(const QJsonArray &ports)
                                              "Right-click → Identify the chip to find out."));
         else if (p.value(u"identified"_s).toBool())
             item->setToolTip(ChipsColumn, tr("Found by a board check on this adapter."));
+        // What the last Inspect found, beside the chip.
+        if (const QJsonObject in = p.value(u"inspected"_s).toObject(); !in.isEmpty()) {
+            QStringList facts;
+            if (in.contains(u"flashBytes"_s))
+                facts << tr("%1 flash").arg(QLocale().formattedDataSize(in.value(u"flashBytes"_s).toInteger(), 0,
+                                                                         QLocale::DataSizeTraditionalFormat));
+            if (in.contains(u"revision"_s))
+                facts << tr("revision %1").arg(in.value(u"revision"_s).toString());
+            if (in.contains(u"mac"_s))
+                facts << tr("MAC %1").arg(in.value(u"mac"_s).toString());
+            if (!facts.isEmpty()) {
+                item->setText(ChipsColumn, tr("%1 · %2").arg(item->text(ChipsColumn), facts.join(u", "_s)));
+                item->setToolTip(ChipsColumn,
+                                 tr("Found by Inspect on %1.")
+                                     .arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(in.value(u"at"_s).toInteger()),
+                                                             QLocale::ShortFormat)));
+            }
+        }
 
         item->setText(BridgeColumn, bridgeName(p.value(u"bridge"_s)));
         const QJsonObject usb = p.value(u"usb"_s).toObject();

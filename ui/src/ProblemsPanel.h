@@ -5,6 +5,7 @@
 #pragma once
 
 #include <QJsonArray>
+#include <QUrl>
 #include <QWidget>
 
 class CoreConnection;
@@ -19,6 +20,13 @@ public:
     static constexpr int UrlRole = Qt::UserRole + 1;
     // A crash's line, as ConsoleView::frameActivated gives it.
     static constexpr int LocationRole = Qt::UserRole + 2;
+    // What to look up on esp32bench.dev's error pages: the error's own words.
+    static constexpr int SearchRole = Qt::UserRole + 3;
+    // esp32bench.dev's search for an error's words (nothing else is sent).
+    static QUrl searchUrl(const QString &words);
+    // The words to search for: a crash's exception name (LoadProhibited), or a
+    // compiler message without the names it quotes, at most six words.
+    static QString searchTerms(const QString &text);
 
     explicit ProblemsPanel(CoreConnection *core, QWidget *parent = nullptr);
     // Add findings as outputExplained has them; `source` is sim, serial or build.

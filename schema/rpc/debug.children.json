@@ -1,0 +1,97 @@
+{
+  "method": "debug.children",
+  "description": "Since protocol 0.38: the members of a structure or the elements of an array, at most 100, in the paused frame (GDB's variable objects), each with an expression to look inside it in turn.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "expression"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "expression": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "children"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "children": {
+        "type": "array",
+        "maxItems": 100,
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The member's name, or the element's index."
+            },
+            "expression": {
+              "type": "string",
+              "description": "An expression for it, to look inside it in turn."
+            },
+            "type": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string",
+              "description": "Absent for values GDB does not print simply."
+            },
+            "children": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "How many members or elements it has in turn."
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "expression": "info"
+      },
+      "result": {
+        "children": [
+          {
+            "name": "model",
+            "expression": "info.model",
+            "type": "esp_chip_model_t",
+            "value": "CHIP_ESP32"
+          },
+          {
+            "name": "cores",
+            "expression": "info.cores",
+            "type": "uint8_t",
+            "value": "2 '\\002'"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -56,6 +56,8 @@ pub enum PinEvent {
     /// The simulation's time, in nanoseconds of QEMU's virtual clock (sent about
     /// twice a second).
     Clock { ns: u64 },
+    /// A `run_for`'s time has passed, at `ns` of simulated time.
+    Reached { ns: u64 },
 }
 
 /// Parse one line from the host; None for lines that are not pin events.
@@ -65,6 +67,11 @@ pub fn parse_line(line: &str) -> Option<PinEvent> {
         return Some(PinEvent::Part {
             id: id.to_owned(),
             state: serde_json::from_str(json).ok()?,
+        });
+    }
+    if let Some(rest) = line.strip_prefix("reached ") {
+        return Some(PinEvent::Reached {
+            ns: rest.trim().parse().ok()?,
         });
     }
     if let Some(rest) = line.strip_prefix("clock ") {
@@ -182,6 +189,14 @@ impl GpioLink {
     }
 
     /// Drive `gpio` as an input.
+    /// Say [`PinEvent::Reached`] once `ms` of simulated time has passed from now.
+    pub async fn run_for(&mut self, ms: u32) -> Result<(), Error> {
+        self.writer
+            .write_all(format!("runfor {ms}\n").as_bytes())
+            .await?;
+        Ok(())
+    }
+
     pub async fn set(&mut self, gpio: u8, level: bool) -> Result<(), Error> {
         self.writer
             .write_all(format!("set {gpio} {}\n", u8::from(level)).as_bytes())
@@ -201,6 +216,10 @@ mod tests {
             Some(PinEvent::Clock { ns: 12_400_000_000 })
         );
         assert_eq!(parse_line("clock soon"), None);
+        assert_eq!(
+            parse_line("reached 512000000"),
+            Some(PinEvent::Reached { ns: 512_000_000 })
+        );
         assert_eq!(
             parse_line("out 2 1"),
             Some(PinEvent::Level {

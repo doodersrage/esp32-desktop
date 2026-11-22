@@ -1,0 +1,60 @@
+{
+  "method": "debug.assign",
+  "description": "Since protocol 0.38: set a variable (or buf[3], or config.retries) to a value in the paused frame, as expression = value in C; the value it has then. Each one line; GDB's $_ functions and ; are refused.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "expression",
+      "value"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "expression": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "value": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "value"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "value": {
+        "type": "string"
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "expression": "count",
+        "value": "0"
+      },
+      "result": {
+        "value": "0"
+      }
+    }
+  ]
+}

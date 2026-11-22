@@ -14,6 +14,7 @@
 #include <QTemporaryDir>
 #include <QSignalSpy>
 #include <cmath>
+#include <QImage>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -66,7 +67,7 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.37.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.38.0"_s}});
         } else if (m == u"sim.start") {
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false},
                                   {u"engine"_s, u"lcgamboa"_s}, {u"pins"_s, pinsToReport}});
@@ -220,6 +221,25 @@ private slots:
         QVERIFY(view.end() - view.span() <= 2'000'000 && 2'000'000 <= view.end());
         QCOMPARE(held.size(), 1);
         QVERIFY(!view.showPin(7));
+    }
+
+    void keepsTheLastRunToCompare()
+    {
+        TraceView view;
+        view.setPins({2});
+        QVERIFY(!view.hasPrevious());
+        view.addEdges(QJsonArray{QJsonObject{{u"gpio"_s, 2}, {u"t"_s, 1'000'000}, {u"level"_s, true}}});
+        view.keepAsPrevious(); // a new run
+        QVERIFY(view.hasPrevious());
+        QVERIFY(view.edges(2).isEmpty());
+        QCOMPARE(view.previousEdges(2).size(), 1);
+        // A run with nothing traced keeps the one before.
+        view.keepAsPrevious();
+        QCOMPARE(view.previousEdges(2).size(), 1);
+        view.setShowPrevious(true);
+        view.resize(664, 120);
+        QImage shot(view.size(), QImage::Format_ARGB32);
+        view.render(&shot); // draws without the current run's edges
     }
 
     void namesPinsFromTheWiring()

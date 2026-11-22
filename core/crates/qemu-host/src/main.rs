@@ -721,9 +721,16 @@ fn start_bridge(
             pictures: HashMap::new(),
             last_tick: None,
             last_clock: None,
+            stop_at: None,
         };
         loop {
-            match rx.recv_timeout(std::time::Duration::from_millis(PICTURE_MS)) {
+            // Waiting for a runfor's time: look at the clock often.
+            let wait = if worker.stop_at.is_some() {
+                1
+            } else {
+                PICTURE_MS
+            };
+            match rx.recv_timeout(std::time::Duration::from_millis(wait)) {
                 Ok(msg) => {
                     if !worker.handle(msg) {
                         break;
@@ -735,6 +742,7 @@ fn start_bridge(
             worker.flush_pictures(false);
             worker.tick();
             worker.clock();
+            worker.reached();
         }
     });
 }
@@ -757,6 +765,8 @@ struct Worker {
     pictures: HashMap<String, PendingPicture>,
     last_tick: Option<std::time::Instant>,
     last_clock: Option<std::time::Instant>,
+    /// `runfor`: the virtual time to say `reached <ns>` at.
+    stop_at: Option<i64>,
 }
 
 /// How often the simulated time goes to the core, for the app to show.
@@ -776,6 +786,20 @@ impl Worker {
         let t = virtual_ns();
         if !t.is_empty() {
             self.send(&format!("clock{t}"));
+        }
+    }
+
+    /// Say `reached <ns>` once a runfor's virtual time has passed, for the core to
+    /// pause the chip there.
+    fn reached(&mut self) {
+        let (Some(at), Some(f)) = (self.stop_at, CLOCK.get()) else {
+            return;
+        };
+        // SAFETY: as in virtual_ns.
+        let now = unsafe { f(QEMU_CLOCK_VIRTUAL) };
+        if now >= at {
+            self.stop_at = None;
+            self.send(&format!("reached {now}"));
         }
     }
 
@@ -941,6 +965,19 @@ impl Worker {
                         match gpio.parse::<i16>() {
                             Ok(g) => self.drive(g, level != "0"),
                             Err(_) => eprintln!("esp32bench-qemu-host: ignoring `{line}`"),
+                        }
+                        true
+                    }
+                    // runfor <ms>: say `reached` when that much simulated time has passed.
+                    (Some("runfor"), Some(ms), None, None) => {
+                        match (ms.parse::<i64>(), CLOCK.get()) {
+                            (Ok(ms), Some(f)) if ms > 0 => {
+                                // SAFETY: as in virtual_ns.
+                                let now = unsafe { f(QEMU_CLOCK_VIRTUAL) };
+                                self.stop_at =
+                                    Some(now.saturating_add(ms.saturating_mul(1_000_000)));
+                            }
+                            _ => eprintln!("esp32bench-qemu-host: ignoring `{line}`"),
                         }
                         true
                     }

@@ -16,6 +16,11 @@
       },
       "paused": {
         "type": "boolean"
+      },
+      "ns": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Since protocol 0.38: for a pause sim.runFor made, the simulated time it paused at."
       }
     }
   },

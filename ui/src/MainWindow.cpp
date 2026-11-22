@@ -344,6 +344,12 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_circuitDock = new QDockWidget(tr("Circuit"), this);
     m_circuitDock->setObjectName(u"circuitDock"_s);
     m_circuit = new CircuitPanel(core, m_circuitDock);
+    // An example for a part: shown as a link would show it.
+    connect(m_circuit, &CircuitPanel::exampleRequested, this, [this](const QString &project, const QString &board) {
+        m_project->preferBoard(board);
+        m_project->showProject(project);
+        m_library->selectProject(project);
+    });
     m_circuitDock->setWidget(m_circuit);
     addDockWidget(Qt::RightDockWidgetArea, m_circuitDock);
     // One tab group on the right, so the canvas gets the full height: Circuit, Pins
@@ -900,6 +906,10 @@ void MainWindow::buildMenus()
     find->setShortcut(QKeySequence::Find);
     connect(find, &QAction::triggered, this, &MainWindow::find);
     view->addSeparator();
+    QMenu *layouts = view->addMenu(tr("&Layout"));
+    layouts->addAction(tr("&Coding"), this, [this] { showLayout(Layout::Coding); });
+    layouts->addAction(tr("&Debugging"), this, [this] { showLayout(Layout::Debugging); });
+    layouts->addAction(tr("&Hardware"), this, [this] { showLayout(Layout::Hardware); });
     QAction *reset = view->addAction(QIcon::fromTheme(u"view-restore"_s), tr("&Reset layout"));
     reset->setToolTip(tr("Put the panels back where they were at first"));
     connect(reset, &QAction::triggered, this, &MainWindow::resetLayout);
@@ -1169,6 +1179,33 @@ void MainWindow::showLocation(const QJsonObject &at)
                              "or in the ESP32 core the build uses.")
                               .arg(line)
                               .arg(file));
+}
+
+void MainWindow::showLayout(Layout layout)
+{
+    // The panels a task needs, shown and in front; the others out of the way.
+    QList<QDockWidget *> shown;
+    switch (layout) {
+    case Layout::Coding:
+        shown = {m_buildDock, m_problemsDock, m_simDock, m_circuitDock};
+        break;
+    case Layout::Debugging:
+        shown = {m_simDock, m_debugDock, m_traceDock, m_pinsDock, m_problemsDock};
+        break;
+    case Layout::Hardware:
+        shown = {m_devicesDock, m_serialDock, m_plotDock, m_buildDock};
+        break;
+    }
+    const QList<QDockWidget *> all = {m_devicesDock, m_buildDock, m_problemsDock, m_serialDock, m_simDock, m_debugDock,
+                                      m_displayDock, m_pinsDock, m_circuitDock, m_traceDock, m_plotDock};
+    for (QDockWidget *d : all) {
+        if (d)
+            d->setVisible(shown.contains(d));
+    }
+    for (QDockWidget *d : std::as_const(shown)) {
+        if (d)
+            d->raise();
+    }
 }
 
 void MainWindow::showBacktraceDialog()

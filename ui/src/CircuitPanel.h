@@ -18,6 +18,7 @@ class CoreConnection;
 class QGraphicsScene;
 class QGraphicsView;
 class QLabel;
+class QMenu;
 class QPushButton;
 class QToolButton;
 class QDoubleSpinBox;
@@ -51,6 +52,10 @@ public:
     // The circuit as a picture, on the palette's background, as Copy picture puts on
     // the clipboard: to show the wiring in a question or a README.
     QImage picture() const;
+    // Examples: the library projects that use the selected part's kind
+    // (circuit.examples), as a menu.
+    QToolButton *examplesButton() const { return m_examples; }
+    QMenu *examplesMenu(const QString &kind, const QJsonArray &projects);
     // Copy the selected part (Ctrl+C on the canvas), to paste into any project's or
     // board's circuit (Ctrl+V): the Add dialog opens with its settings, on pins of
     // this project that no part uses. False when no part is selected.
@@ -91,6 +96,10 @@ public:
     // Select a part on the canvas, as a click does.
     void selectPart(const QString &id, bool selected);
 
+signals:
+    // An example chosen from Examples: a library project that uses the selected part.
+    void exampleRequested(const QString &project, const QString &board);
+
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
@@ -125,6 +134,8 @@ private:
     void save(const QJsonObject &circuit);
     void updateUndo();
     QToolButton *m_copyPicture = nullptr;
+    QToolButton *m_examples = nullptr;
+    QString m_examplesFor; // the part kind whose examples were asked for
     void updatePaste();
     QToolButton *m_fitButton = nullptr;
     // The board's circuits before each change, newest last.

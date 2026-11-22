@@ -113,6 +113,31 @@
             "identified": {
               "type": "boolean",
               "description": "Since protocol 0.26: true when chips is the chip a board check (board.inspect) found behind this adapter before, remembered by its USB IDs and serial number. Absent otherwise."
+            },
+            "inspected": {
+              "type": "object",
+              "required": [
+                "at"
+              ],
+              "additionalProperties": false,
+              "description": "Since protocol 0.38: what board.inspect last found on this adapter's board (kept with the chip, for adapters with a serial number).",
+              "properties": {
+                "flashBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mac": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When, in seconds since 1970."
+                }
+              }
             }
           },
           "additionalProperties": false

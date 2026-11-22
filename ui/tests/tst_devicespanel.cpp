@@ -77,6 +77,18 @@ private slots:
         QVERIFY(!known->data(DevicesPanel::ChipsColumn, DevicesPanel::UnknownChipRole).toBool());
         QVERIFY(unknown->data(DevicesPanel::ChipsColumn, DevicesPanel::UnknownChipRole).toBool());
         QVERIFY(unknown->toolTip(DevicesPanel::ChipsColumn).contains(u"Identify the chip"_s));
+
+        // What the last Inspect found, beside the chip.
+        panel.showPorts(QJsonArray{QJsonObject{
+            {u"path"_s, u"/dev/ttyUSB0"_s}, {u"kind"_s, u"usb"_s}, {u"bridge"_s, u"cp210x"_s},
+            {u"chips"_s, QJsonArray{u"esp32c3"_s}}, {u"access"_s, u"ok"_s}, {u"identified"_s, true},
+            {u"inspected"_s, QJsonObject{{u"flashBytes"_s, 4194304}, {u"mac"_s, u"34:85:18:aa:bb:cc"_s},
+                                         {u"revision"_s, u"v0.4"_s}, {u"at"_s, 1795000000}}}}});
+        const QString text = panel.tree()->topLevelItem(0)->text(DevicesPanel::ChipsColumn);
+        QVERIFY2(text.startsWith(u"ESP32-C3 · "_s) && text.contains(u"MAC 34:85:18:aa:bb:cc"_s)
+                     && text.contains(u"revision v0.4"_s) && text.contains(u"4"_s),
+                 qPrintable(text));
+        QVERIFY(panel.tree()->topLevelItem(0)->toolTip(DevicesPanel::ChipsColumn).startsWith(u"Found by Inspect on"_s));
     }
 
     void explainsWhyNoBoardShows()

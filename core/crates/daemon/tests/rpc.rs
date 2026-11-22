@@ -1944,6 +1944,49 @@ async fn serial_sends_a_file_line_by_line() {
     }
 }
 
+// The library's projects that use a part, from their wiring.
+#[tokio::test]
+async fn circuit_examples_are_the_projects_that_use_a_part() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let params = json!({ "kind": "led" });
+    assert_valid(
+        &method_def("circuit.examples")["params"],
+        &params,
+        "circuit.examples params",
+    );
+    let r = c.call("circuit.examples", params).await.unwrap();
+    assert_valid(
+        &method_def("circuit.examples")["result"],
+        &r,
+        "circuit.examples result",
+    );
+    let blink = r["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == "blink")
+        .unwrap_or_else(|| panic!("{r}"))
+        .clone();
+    assert!(
+        blink["boards"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("esp32")),
+        "{r}"
+    );
+    let r = c
+        .call("circuit.examples", json!({ "kind": "no-such-part" }))
+        .await
+        .unwrap();
+    assert_eq!(r["projects"], json!([]));
+    match c.call("circuit.examples", json!({ "kind": "" })).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("an empty kind accepted: {other:?}"),
+    }
+}
+
 // Output at the wrong speed: the core says so, once, with a speed to try.
 #[cfg(unix)]
 #[tokio::test]
@@ -2619,6 +2662,52 @@ async fn sim_pauses_and_decodes_backtraces() {
     assert_eq!(e["paused"], false);
     sim_wait_for(&mut c, &sub, "esp32bench-hello echo ping 7").await;
 
+    // Run for 300 ms of simulated time, then pause there (on lcgamboa's QEMU, which
+    // reads the simulated clock).
+    let params = json!({ "subscription": sub, "ms": 300 });
+    assert_valid(
+        &method_def("sim.runFor")["params"],
+        &params,
+        "sim.runFor params",
+    );
+    if expected_engine() == "lcgamboa" {
+        let (clock, _) = sim_event(&mut c, &sub, "sim.clock").await;
+        c.call("sim.runFor", params).await.unwrap();
+        let paused = loop {
+            let (e, _) = sim_event(&mut c, &sub, "sim.paused").await;
+            if e["paused"] == true {
+                break e;
+            }
+        };
+        let ns = paused["ns"].as_u64().unwrap();
+        assert!(
+            ns >= clock["ns"].as_u64().unwrap() + 300_000_000,
+            "{paused} after {clock}"
+        );
+        // From a pause, it goes on for the time asked, then pauses again.
+        c.call("sim.runFor", json!({ "subscription": sub, "ms": 100 }))
+            .await
+            .unwrap();
+        let (going, _) = sim_event(&mut c, &sub, "sim.paused").await;
+        assert_eq!(going["paused"], false, "{going}");
+        let (again, _) = sim_event(&mut c, &sub, "sim.paused").await;
+        assert_eq!(again["paused"], true, "{again}");
+        let later = again["ns"].as_u64().unwrap();
+        assert!(
+            (ns + 100_000_000..ns + 400_000_000).contains(&later),
+            "{again} after {paused}"
+        );
+        c.call("sim.pause", json!({ "subscription": sub, "paused": false }))
+            .await
+            .unwrap();
+        sim_event(&mut c, &sub, "sim.paused").await;
+    } else {
+        match c.call("sim.runFor", params).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
+            other => panic!("runFor without the simulated clock: {other:?}"),
+        }
+    }
+
     // A file of lines sent to the console: each echoed.
     let file = d.path().join("lines.txt");
     std::fs::write(&file, "ping 8\nping 9\n").unwrap();
@@ -3229,6 +3318,67 @@ async fn sim_debugs_a_build_with_gdb() {
     {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
         other => panic!("too long a read accepted: {other:?}"),
+    }
+
+    // A structure's members, each with an expression to look inside it.
+    let r = c
+        .call(
+            "debug.children",
+            json!({ "subscription": sub, "expression": "info" }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("debug.children")["result"],
+        &r,
+        "debug.children result",
+    );
+    let names: Vec<&str> = r["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"model") && names.contains(&"cores"), "{r}");
+    let cores = r["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["name"] == "cores")
+        .unwrap()
+        .clone();
+    assert_eq!(cores["expression"], "(info).cores", "{r}");
+    // And a value set, as the firmware would see it.
+    let r = c
+        .call(
+            "debug.assign",
+            json!({ "subscription": sub, "expression": "info.cores", "value": "3" }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("debug.assign")["result"],
+        &r,
+        "debug.assign result",
+    );
+    assert!(r["value"].as_str().unwrap().starts_with('3'), "{r}");
+    let r = c
+        .call(
+            "debug.evaluate",
+            json!({ "subscription": sub, "expression": "info.cores * 2" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r["value"], "6");
+    match c
+        .call(
+            "debug.assign",
+            json!({ "subscription": sub, "expression": "info.cores", "value": "1; x" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("a value with ; accepted: {other:?}"),
     }
 
     // A watchpoint stops when FreeRTOS's tick count changes, with the old and new value.

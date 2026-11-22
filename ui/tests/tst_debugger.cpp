@@ -34,6 +34,7 @@ public:
     QJsonArray watches; // watches.get's
     int inspections = 0; // debug.inspect calls; each says pin is one more
     int hits = 0;        // times breakpoint 1 was reached
+    QList<QJsonObject> assignedTo; // debug.assign params
     void stopAtWatch()
     {
         event(u"debug.stopped"_s, {{u"reason"_s, u"watchpoint-trigger"_s}, {u"breakpoint"_s, m_next},
@@ -77,7 +78,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.37.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.38.0"_s}});
             return;
         }
         if (m == u"device.list" || m == u"device.watch") {
@@ -148,6 +149,15 @@ private:
         } else if (m == u"breakpoints.set") {
             kept = p.value(u"breakpoints"_s).toArray();
             reply(id, QJsonObject{{u"breakpoints"_s, kept}});
+        } else if (m == u"debug.children") {
+            const QString e = p.value(u"expression"_s).toString();
+            reply(id, QJsonObject{{u"children"_s, e == u"reading"_s
+                       ? QJsonArray{QJsonObject{{u"name"_s, u"celsius"_s}, {u"expression"_s, u"(reading).celsius"_s}, {u"type"_s, u"float"_s}, {u"value"_s, u"21.5"_s}},
+                                    QJsonObject{{u"name"_s, u"raw"_s}, {u"expression"_s, u"(reading).raw"_s}, {u"type"_s, u"uint8_t [4]"_s}, {u"children"_s, 4}}}
+                       : QJsonArray{}}});
+        } else if (m == u"debug.assign") {
+            assignedTo << p;
+            reply(id, QJsonObject{{u"value"_s, p.value(u"value"_s)}});
         } else if (m == u"debug.watch") {
             reply(id, QJsonObject{{u"watchpoint"_s, QJsonObject{{u"number"_s, ++m_next}, {u"expression"_s, p.value(u"expression"_s)}}}});
         } else if (m == u"debug.memory") {
@@ -498,6 +508,38 @@ private slots:
         QCOMPARE(DebugPanel::shownValue(u"3.5"_s, true), u"3.5"_s);
         QCOMPARE(DebugPanel::shownValue(u"65 'A'"_s, true), u"65 'A'"_s);
         core.stopSim();
+    }
+
+    void opensStructuresAndSetsValues()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        DebugPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        core.startSim(u"blink"_s, u"esp32"_s, true);
+        QTRY_VERIFY(core.isDebugging());
+        QTRY_COMPARE(panel.locals()->topLevelItemCount(), 2);
+        // The struct can be opened: its members come from the core.
+        QTreeWidgetItem *reading = panel.locals()->topLevelItem(1);
+        QCOMPARE(reading->childIndicatorPolicy(), QTreeWidgetItem::ShowIndicator);
+        panel.expandItem(reading);
+        QTRY_COMPARE(reading->childCount(), 2);
+        QCOMPARE(reading->child(0)->text(0), u"celsius"_s);
+        QCOMPARE(reading->child(0)->text(1), u"21.5"_s);
+        QCOMPARE(reading->child(1)->childIndicatorPolicy(), QTreeWidgetItem::ShowIndicator); // an array, in turn
+        // Setting a value: the core sets it, and the variables are read again.
+        const qsizetype inspections = fake.methods().count(u"debug.inspect"_s);
+        QVERIFY(panel.assign(u"(reading).celsius"_s, u"30"_s));
+        QTRY_COMPARE(fake.assignedTo.size(), 1);
+        QCOMPARE(fake.assignedTo.at(0).value(u"expression"_s).toString(), u"(reading).celsius"_s);
+        QCOMPARE(fake.assignedTo.at(0).value(u"value"_s).toString(), u"30"_s);
+        QTRY_VERIFY(panel.statusText().contains(u"(reading).celsius is now 30"_s));
+        QTRY_COMPARE(fake.methods().count(u"debug.inspect"_s), inspections + 1);
+        core.stopSim();
+        QTRY_VERIFY(!core.isSimRunning());
+        QVERIFY(!panel.assign(u"x"_s, u"1"_s)); // not paused
     }
 
     void dumpsMemoryAsHex()

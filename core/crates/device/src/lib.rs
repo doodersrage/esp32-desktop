@@ -31,6 +31,22 @@ pub struct Port {
     /// not a guess from USB IDs.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub identified: bool,
+    /// What board.inspect last found on this adapter's board, if it did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inspected: Option<Inspected>,
+}
+
+/// What an inspection found, kept with the chip (`Known`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct Inspected {
+    #[serde(rename = "flashBytes", skip_serializing_if = "Option::is_none")]
+    pub flash_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mac: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    /// When, in seconds since 1970.
+    pub at: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -259,6 +275,7 @@ fn from_info(path: String, ty: serialport::SerialPortType) -> Port {
         chips,
         access,
         identified: false,
+        inspected: None,
     }
 }
 
@@ -279,11 +296,17 @@ impl Known {
         Known { file }
     }
 
-    fn all(&self) -> std::collections::BTreeMap<String, String> {
+    /// Each adapter's entry: the chip's id (as the file first held them) or an
+    /// object with `chip` and what an inspection found.
+    fn all(&self) -> std::collections::BTreeMap<String, serde_json::Value> {
         std::fs::read(&self.file)
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default()
+    }
+
+    fn entry_chip(v: &serde_json::Value) -> Option<&str> {
+        v.as_str().or_else(|| v["chip"].as_str())
     }
 
     /// The key an adapter is remembered by, if it has a serial number.
@@ -295,6 +318,16 @@ impl Known {
     /// Remember that `chip` is behind the adapter at `port`. False if it cannot be
     /// remembered (no serial number, or a chip ports do not name).
     pub fn remember(&self, port: &Port, chip: &str) -> std::io::Result<bool> {
+        self.remember_inspected(port, chip, None)
+    }
+
+    /// The same, with what the inspection found, shown with the port after.
+    pub fn remember_inspected(
+        &self,
+        port: &Port,
+        chip: &str,
+        inspected: Option<Inspected>,
+    ) -> std::io::Result<bool> {
         let Some(key) = port.usb.as_ref().and_then(Known::key) else {
             return Ok(false);
         };
@@ -302,7 +335,15 @@ impl Known {
             return Ok(false);
         }
         let mut all = self.all();
-        all.insert(key, chip.to_owned());
+        let entry = match inspected {
+            Some(i) => {
+                let mut v = serde_json::to_value(i).map_err(std::io::Error::other)?;
+                v["chip"] = serde_json::Value::from(chip);
+                v
+            }
+            None => serde_json::Value::from(chip),
+        };
+        all.insert(key, entry);
         if let Some(dir) = self.file.parent() {
             std::fs::create_dir_all(dir)?;
         }
@@ -319,15 +360,20 @@ impl Known {
     pub fn apply(&self, ports: &mut [Port]) {
         let all = self.all();
         for p in ports {
-            if p.chips.len() == 1 {
-                continue;
-            }
-            let Some(chip) = p
+            let Some(entry) = p
                 .usb
                 .as_ref()
                 .and_then(Known::key)
                 .and_then(|k| all.get(&k))
-                .and_then(|c| CHIP_IDS.iter().find(|x| **x == c.as_str()))
+            else {
+                continue;
+            };
+            p.inspected = serde_json::from_value(entry.clone()).ok();
+            if p.chips.len() == 1 {
+                continue;
+            }
+            let Some(chip) =
+                Known::entry_chip(entry).and_then(|c| CHIP_IDS.iter().find(|x| **x == c))
             else {
                 continue;
             };
@@ -578,6 +624,38 @@ mod tests {
         jtag[0].usb.as_mut().unwrap().serial = Some("0001".into());
         known.apply(&mut jtag);
         assert!(!jtag[0].identified);
+    }
+
+    #[test]
+    fn keeps_what_an_inspection_found() {
+        let t = tempfile::tempdir().unwrap();
+        let file = t.path().join("boards.json");
+        let mut port = usb_port("/dev/ttyUSB0", 0x10c4, 0xea60, Access::Ok);
+        port.usb.as_mut().unwrap().serial = Some("0001".into());
+        // A file from before: the chip alone.
+        std::fs::write(&file, r#"{"10c4:ea60:0001": "esp32c3"}"#).unwrap();
+        let known = Known::new(file);
+        let mut ports = vec![port.clone()];
+        known.apply(&mut ports);
+        assert_eq!(ports[0].chips, ["esp32c3"]);
+        assert_eq!(ports[0].inspected, None);
+        let found = Inspected {
+            flash_bytes: Some(4 << 20),
+            mac: Some("34:85:18:aa:bb:cc".into()),
+            revision: Some("v0.4".into()),
+            at: 1_795_000_000,
+        };
+        assert!(
+            known
+                .remember_inspected(&port, "esp32c3", Some(found.clone()))
+                .unwrap()
+        );
+        let mut ports = vec![port];
+        known.apply(&mut ports);
+        assert_eq!(ports[0].chips, ["esp32c3"]);
+        assert_eq!(ports[0].inspected, Some(found));
+        let v = serde_json::to_value(&ports[0]).unwrap();
+        assert_eq!(v["inspected"]["flashBytes"], 4 << 20);
     }
 
     #[test]

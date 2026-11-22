@@ -69,6 +69,12 @@ public:
     // number) or as GDB printed them. Kept between starts.
     QCheckBox *hexBox() const { return m_hex; }
     static QString shownValue(const QString &value, bool hex);
+    // A structure's or array's members, under its row (debug.children); its row is
+    // expanded to ask. For tests.
+    void expandItem(QTreeWidgetItem *item);
+    // Set a variable to a value (debug.assign), while paused; the variables are read
+    // again after. Double-click a value to be asked.
+    bool assign(const QString &expression, const QString &value);
     // Stop watching it (kept for the project too).
     void removeWatch(const QString &expression);
     QStringList watchExpressions() const;
@@ -96,6 +102,8 @@ private:
     // Put a value in a cell, as the Hex switch says, keeping GDB's text.
     void setValue(QTreeWidgetItem *item, int column, const QString &value);
     void reformatValues();
+    void showChildren(const QString &expression, const QJsonArray &children);
+    void editValue(QTreeWidgetItem *item, int column);
     void markChanged(QTreeWidgetItem *item, int column, const QString &key, QHash<QString, QString> &last);
     void keep(const QStringList &locations);
     void evaluateWatches();

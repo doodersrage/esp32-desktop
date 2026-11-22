@@ -529,6 +529,62 @@ impl Gdb {
         Ok((begin, bytes))
     }
 
+    /// The members of a structure or the elements of an array (at most
+    /// [`MAX_CHILDREN`]), through a GDB variable object made for the occasion: each
+    /// with an expression that names it, to look inside it in turn.
+    pub async fn children(&mut self, expression: &str) -> Result<Vec<Member>, Error> {
+        if !valid_expression(expression) {
+            return Err(Error::Gdb(
+                "an expression is one line, without GDB's $_ functions".into(),
+            ));
+        }
+        let var = self
+            .command(&format!("-var-create - * {}", mi_quote(expression)))
+            .await?;
+        let name = var["name"].as_str().unwrap_or("").to_owned();
+        let listed = self
+            .command(&format!(
+                "-var-list-children --simple-values {name} 0 {MAX_CHILDREN}"
+            ))
+            .await;
+        let mut out = Vec::new();
+        if let Ok(list) = &listed {
+            for c in list["children"].as_array().into_iter().flatten() {
+                let child = c["name"].as_str().unwrap_or("");
+                // Access specifiers (public, private) are levels of their own in C++.
+                let exp = c["exp"].as_str().unwrap_or("").to_owned();
+                let path = self
+                    .command(&format!("-var-info-path-expression {child}"))
+                    .await
+                    .ok()
+                    .and_then(|p| p["path_expr"].as_str().map(str::to_owned));
+                out.push(Member {
+                    name: exp,
+                    expression: path,
+                    kind: c["type"].as_str().unwrap_or("").to_owned(),
+                    value: c["value"].as_str().map(str::to_owned),
+                    children: c["numchild"]
+                        .as_str()
+                        .and_then(|n| n.parse().ok())
+                        .unwrap_or(0),
+                });
+            }
+        }
+        let _ = self.command(&format!("-var-delete {name}")).await;
+        listed.map(|_| out)
+    }
+
+    /// Set `expression` (a variable, `buf[3]`) to `value` in the paused frame, as
+    /// `expression = value` in C; the value it has then.
+    pub async fn assign(&mut self, expression: &str, value: &str) -> Result<String, Error> {
+        if !valid_expression(expression) || !valid_expression(value) || value.contains(';') {
+            return Err(Error::Gdb(
+                "an expression and a value, each one line, without GDB's $_ functions".into(),
+            ));
+        }
+        self.evaluate(&format!("({expression}) = ({value})")).await
+    }
+
     pub async fn frames(&mut self) -> Result<Value, Error> {
         Ok(self.command("-stack-list-frames 0 31").await?["stack"].clone())
     }
@@ -570,6 +626,31 @@ impl Gdb {
         }
         Ok(out)
     }
+}
+
+/// The most members or elements [`Gdb::children`] lists.
+pub const MAX_CHILDREN: u32 = 100;
+
+/// A member of a structure, or an element of an array.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Member {
+    /// As GDB names it: the member's name, or the element's index.
+    pub name: String,
+    /// An expression for it, to look inside it in turn (`config.wifi.ssid`, `buf[3]`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expression: Option<String>,
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Absent for values GDB does not print simply (structs, arrays).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// How many members or elements it has in turn.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub children: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// An argument or local variable of the frame the firmware stopped in.

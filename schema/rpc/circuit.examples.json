@@ -1,0 +1,80 @@
+{
+  "method": "circuit.examples",
+  "description": "Since protocol 0.38: the library projects whose wiring has a part of this kind (a part model's kind, as circuit.suggest reads wiring), with the boards it is wired on; at most 50.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "kind"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "kind": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "projects"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "projects": {
+        "type": "array",
+        "maxItems": 50,
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "boards"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "boards": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "kind": "ssd1306"
+      },
+      "result": {
+        "projects": [
+          {
+            "id": "oled-hello",
+            "name": "OLED hello world",
+            "boards": [
+              "esp32",
+              "esp32c3"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

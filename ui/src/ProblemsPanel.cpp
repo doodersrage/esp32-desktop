@@ -1,4 +1,9 @@
 #include "ProblemsPanel.h"
+#include <QUrlQuery>
+#include <QMenu>
+#include <QRegularExpression>
+#include <QGuiApplication>
+#include <QClipboard>
 
 #include "ConsoleView.h"
 #include <QFileInfo>
@@ -53,6 +58,10 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
                                          std::pair{&CoreConnection::serialBootLoop, u"serial"_s}}) {
         connect(core, signal, this, [this, source](const QJsonObject &loop) {
             add(source, QJsonArray{QJsonObject{{u"level"_s, u"problem"_s}, {u"text"_s, ConsoleView::bootLoopText(loop)}}});
+            // The crash's own line, else the reset's reason.
+            const QString words = loop.value(u"crash"_s).toString(loop.value(u"reason"_s).toString());
+            if (QTreeWidgetItem *item = m_tree->topLevelItem(m_tree->topLevelItemCount() - 1))
+                item->setData(TextColumn, SearchRole, words);
         });
     }
     connect(core, &CoreConnection::serialBacktrace, this, [this](const QJsonArray &f) { addCrash(u"serial"_s, f); });
@@ -63,6 +72,23 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
                                             .arg(e.value(u"file"_s).toString())
                                             .arg(e.value(u"line"_s).toInt())
                                             .arg(e.value(u"message"_s).toString())}}});
+        if (QTreeWidgetItem *item = m_tree->topLevelItem(m_tree->topLevelItemCount() - 1))
+            item->setData(TextColumn, SearchRole, e.value(u"message"_s).toString());
+    });
+    // Right-click: look an error up on esp32bench.dev, by its own words only.
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tree, &QWidget::customContextMenuRequested, this, [this](const QPoint &at) {
+        QTreeWidgetItem *item = m_tree->itemAt(at);
+        if (!item)
+            return;
+        QMenu menu(this);
+        const QString words = searchTerms(item->data(TextColumn, SearchRole).toString());
+        QAction *search = menu.addAction(QIcon::fromTheme(u"internet-web-browser"_s), tr("Look it up on esp32bench.dev"),
+                                         this, [words] { QDesktopServices::openUrl(searchUrl(words)); });
+        search->setEnabled(!words.isEmpty());
+        menu.addAction(QIcon::fromTheme(u"edit-copy"_s), tr("Copy"), this,
+                       [item] { QGuiApplication::clipboard()->setText(item->text(TextColumn)); });
+        menu.exec(m_tree->viewport()->mapToGlobal(at));
     });
 
     auto *bar = new QHBoxLayout;
@@ -71,6 +97,31 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(m_tree, 1);
     layout->addLayout(bar);
+}
+
+QString ProblemsPanel::searchTerms(const QString &text)
+{
+    // "Guru Meditation Error: Core 1 panic'ed (LoadProhibited). …": the exception.
+    static const QRegularExpression exception(u"\\(([A-Za-z]+)\\)"_s);
+    if (text.contains(u"Guru Meditation"_s)) {
+        if (const auto m = exception.match(text); m.hasMatch())
+            return m.captured(1);
+    }
+    // A compiler message: without "error:" and the names it quotes.
+    QString t = text;
+    t.remove(QRegularExpression(u"^.*?\\b(?:fatal )?error:\\s*"_s));
+    t.remove(QRegularExpression(u"['‘\"][^'’\"]*['’\"]"_s));
+    t.remove(QRegularExpression(u"[^\\w\\s_-]"_s));
+    return t.split(u' ', Qt::SkipEmptyParts).mid(0, 6).join(u' ');
+}
+
+QUrl ProblemsPanel::searchUrl(const QString &words)
+{
+    QUrl url(u"https://esp32bench.dev/search/"_s);
+    QUrlQuery query;
+    query.addQueryItem(u"q"_s, searchTerms(words));
+    url.setQuery(query);
+    return url;
 }
 
 void ProblemsPanel::addCrash(const QString &source, const QJsonArray &frames)

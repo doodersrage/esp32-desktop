@@ -425,6 +425,14 @@ Variables globales : %4 sur %5</translation>
         <translation>Afficher tout le circuit (Ctrl+0) ; Ctrl et la molette zooment</translation>
     </message>
     <message>
+        <source>Examples</source>
+        <translation>Exemples</translation>
+    </message>
+    <message>
+        <source>Library projects that use the selected part, to try it with</source>
+        <translation>Projets de la bibliothèque qui utilisent le composant sélectionné, pour l’essayer</translation>
+    </message>
+    <message>
         <source>%1: %2</source>
         <translation>%1 : %2</translation>
     </message>
@@ -479,6 +487,10 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>%1: GPIO %2</source>
         <translation>%1 : GPIO %2</translation>
+    </message>
+    <message>
+        <source>No library project uses this part yet</source>
+        <translation>Aucun projet de la bibliothèque n’utilise encore ce composant</translation>
     </message>
     <message>
         <source>Copied %1. Paste it into this or another project&apos;s circuit with %2.</source>
@@ -903,10 +915,6 @@ Variables globales : %4 sur %5</translation>
         <translation>Type</translation>
     </message>
     <message>
-        <source>The arguments and local variables of the function the firmware stopped in</source>
-        <translation>Les arguments et les variables locales de la fonction où le firmware s’est arrêté</translation>
-    </message>
-    <message>
         <source>Breakpoint location</source>
         <translation>Emplacement du point d’arrêt</translation>
     </message>
@@ -957,6 +965,14 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>Value</source>
         <translation>Valeur</translation>
+    </message>
+    <message>
+        <source>%1 is now %2.</source>
+        <translation>%1 vaut maintenant %2.</translation>
+    </message>
+    <message>
+        <source>The arguments and local variables of the function the firmware stopped in. Open a structure or an array to see its members; double-click a value to set it.</source>
+        <translation>Les arguments et variables locales de la fonction où le firmware s’est arrêté. Ouvrez une structure ou un tableau pour voir ses membres ; double-cliquez sur une valeur pour la modifier.</translation>
     </message>
     <message>
         <source>Breakpoints</source>
@@ -1059,6 +1075,18 @@ Variables globales : %4 sur %5</translation>
         <translation>Changé depuis le dernier arrêt ; c’était %1</translation>
     </message>
     <message>
+        <source>Set a value</source>
+        <translation>Modifier une valeur</translation>
+    </message>
+    <message>
+        <source>New value for %1 (a C expression):</source>
+        <translation>Nouvelle valeur pour %1 (une expression C) :</translation>
+    </message>
+    <message>
+        <source>Pause the firmware first: values can be set only while it is stopped.</source>
+        <translation>Mettez d’abord le firmware en pause : les valeurs ne se modifient que lorsqu’il est arrêté.</translation>
+    </message>
+    <message>
         <source>Breakpoint %1 stops again each time.</source>
         <translation>Le point d’arrêt %1 s’arrête de nouveau à chaque fois.</translation>
     </message>
@@ -1103,12 +1131,12 @@ Variables globales : %4 sur %5</translation>
         <translation>%1 (argument)</translation>
     </message>
     <message>
-        <source>…</source>
-        <translation>…</translation>
+        <source>A structure or an array: open it to see its members</source>
+        <translation>Une structure ou un tableau : ouvrez-le pour voir ses membres</translation>
     </message>
     <message>
-        <source>GDB shows this kind of value (a structure or an array) only in parts</source>
-        <translation>GDB n’affiche ce genre de valeur (une structure ou un tableau) que par parties</translation>
+        <source>…</source>
+        <translation>…</translation>
     </message>
     <message>
         <source>%1:%2</source>
@@ -1224,6 +1252,26 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>Any</source>
         <translation>Toutes</translation>
+    </message>
+    <message>
+        <source>%1 flash</source>
+        <translation>%1 de flash</translation>
+    </message>
+    <message>
+        <source>revision %1</source>
+        <translation>révision %1</translation>
+    </message>
+    <message>
+        <source>MAC %1</source>
+        <translation>MAC %1</translation>
+    </message>
+    <message>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <source>Found by Inspect on %1.</source>
+        <translation>Trouvé par Inspecter le %1.</translation>
     </message>
     <message>
         <source>USB ID %1</source>
@@ -1960,6 +2008,22 @@ Le panneau Compilation ci-dessous contient tout le journal.</translation>
         <translation>&amp;Rechercher…</translation>
     </message>
     <message>
+        <source>&amp;Layout</source>
+        <translation>&amp;Disposition</translation>
+    </message>
+    <message>
+        <source>&amp;Coding</source>
+        <translation>&amp;Programmation</translation>
+    </message>
+    <message>
+        <source>&amp;Debugging</source>
+        <translation>&amp;Débogage</translation>
+    </message>
+    <message>
+        <source>&amp;Hardware</source>
+        <translation>&amp;Matériel</translation>
+    </message>
+    <message>
         <source>&amp;Reset layout</source>
         <translation>&amp;Réinitialiser la disposition</translation>
     </message>
@@ -2507,6 +2571,14 @@ SHA-256 du code : %2</translation>
     <message>
         <source>The build failed at %1, line %2: %3</source>
         <translation>La compilation a échoué à %1, ligne %2 : %3</translation>
+    </message>
+    <message>
+        <source>Look it up on esp32bench.dev</source>
+        <translation>Le chercher sur esp32bench.dev</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Copier</translation>
     </message>
     <message>
         <source>Crashed in %1 (%2, line %3)</source>
@@ -3298,8 +3370,24 @@ Double-cliquez pour voir la ligne.</translation>
         <translation>Aucune fin de ligne</translation>
     </message>
     <message>
+        <source>Paused at %1 s of simulated time.</source>
+        <translation>En pause à %1 s de temps simulé.</translation>
+    </message>
+    <message>
         <source>Paused: the simulated time, pins and trace stand still.</source>
         <translation>En pause : le temps simulé, les broches et le chronogramme sont figés.</translation>
+    </message>
+    <message>
+        <source>Run for</source>
+        <translation>Exécuter pendant</translation>
+    </message>
+    <message>
+        <source>Run for a stretch of simulated time, then pause: to step through a blink or a debounce. Needs lcgamboa&apos;s QEMU, which reads the simulated clock.</source>
+        <translation>Exécuter un moment de temps simulé, puis mettre en pause : pour suivre un clignotement ou un anti-rebond pas à pas. Nécessite le QEMU de lcgamboa, qui lit l’horloge simulée.</translation>
+    </message>
+    <message>
+        <source>%1 ms</source>
+        <translation>%1 ms</translation>
     </message>
     <message>
         <source>Run the same build again, without rebuilding</source>
@@ -3417,6 +3505,10 @@ Double-cliquez pour voir la ligne.</translation>
         <translation>Figer</translation>
     </message>
     <message>
+        <source>Last run</source>
+        <translation>Exécution précédente</translation>
+    </message>
+    <message>
         <source>Save VCD…</source>
         <translation>Enregistrer en VCD…</translation>
     </message>
@@ -3467,6 +3559,10 @@ Double-cliquez pour voir la ligne.</translation>
     <message>
         <source>Write every recorded pin change to a VCD file, for PulseView or GTKWave</source>
         <translation>Écrire chaque changement de broche enregistré dans un fichier VCD, pour PulseView ou GTKWave</translation>
+    </message>
+    <message>
+        <source>Draw the last run&apos;s trace faintly under this one, from the same start, to see what a change did to the timing</source>
+        <translation>Dessiner le chronogramme de l’exécution précédente en léger sous celui-ci, depuis le même départ, pour voir ce qu’un changement a fait au timing</translation>
     </message>
     <message>
         <source>Saved %1 pin changes to %2 (the earliest %3 were no longer kept).</source>

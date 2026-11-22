@@ -196,6 +196,19 @@ int TraceView::pinAt(int y) const
     return row >= 0 && row < shown.size() ? shown.at(row) : -1;
 }
 
+void TraceView::keepAsPrevious()
+{
+    if (!m_edges.isEmpty())
+        m_previous = m_edges;
+    clear();
+}
+
+void TraceView::setShowPrevious(bool on)
+{
+    m_showPrevious = on;
+    update();
+}
+
 void TraceView::clear()
 {
     m_edges.clear();
@@ -432,6 +445,29 @@ void TraceView::paintEvent(QPaintEvent *)
         p.drawText(QRect(4, top, m_labelWidth - 8, low - top), Qt::AlignLeft | Qt::AlignVCenter,
                    pinName(gpio));
 
+        // The last run's, faint and dotted, under this one's.
+        if (m_showPrevious) {
+            const QList<Edge> prev = m_previous.value(gpio);
+            auto it = std::lower_bound(prev.cbegin(), prev.cend(), start,
+                                       [](const Edge &e, qint64 t) { return e.t < t; });
+            std::optional<bool> level;
+            if (it != prev.cbegin())
+                level = (it - 1)->level;
+            p.setPen(QPen(pal.color(QPalette::PlaceholderText), 1, Qt::DotLine));
+            int x = plotLeft;
+            for (; it != prev.cend() && it->t <= m_end; ++it) {
+                const int xe = std::clamp(xFor(it->t), plotLeft, plotLeft + plotWidth);
+                if (level) {
+                    p.drawLine(x, *level ? high : low, xe, *level ? high : low);
+                    if (*level != it->level)
+                        p.drawLine(xe, high, xe, low);
+                }
+                level = it->level;
+                x = xe;
+            }
+            if (level && !prev.isEmpty())
+                p.drawLine(x, *level ? high : low, plotLeft + plotWidth, *level ? high : low);
+        }
         const QList<Edge> list = m_edges.value(gpio);
         // The level at the left edge: the last edge before it, if there is one.
         auto first = std::lower_bound(list.cbegin(), list.cend(), start,
@@ -483,6 +519,7 @@ TracePanel::TracePanel(CoreConnection *core, QWidget *parent)
     , m_status(new QLabel(this))
     , m_span(new QComboBox(this))
     , m_hold(new QCheckBox(tr("Hold"), this))
+    , m_previous(new QCheckBox(tr("Last run"), this))
     , m_save(new QPushButton(QIcon::fromTheme(u"document-save"_s), tr("Save VCD…"), this))
     , m_view(new TraceView(this))
 {
@@ -530,6 +567,7 @@ TracePanel::TracePanel(CoreConnection *core, QWidget *parent)
     bar->addWidget(m_measure);
     bar->addWidget(m_span);
     bar->addWidget(m_hold);
+    bar->addWidget(m_previous);
     bar->addWidget(m_save);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(bar);
@@ -538,6 +576,10 @@ TracePanel::TracePanel(CoreConnection *core, QWidget *parent)
     connect(m_span, &QComboBox::currentIndexChanged, this,
             [this] { m_view->setSpan(m_span->currentData().toLongLong()); });
     connect(m_hold, &QCheckBox::toggled, m_view, &TraceView::setHold);
+    m_previous->setToolTip(tr("Draw the last run's trace faintly under this one, from the same start, to see "
+                              "what a change did to the timing"));
+    m_previous->setEnabled(false);
+    connect(m_previous, &QCheckBox::toggled, m_view, &TraceView::setShowPrevious);
     connect(m_save, &QPushButton::clicked, this, &TracePanel::save);
     connect(core, &CoreConnection::simStarted, this, &TracePanel::started);
     connect(core, &CoreConnection::simStopped, this, &TracePanel::stopped);
@@ -570,7 +612,9 @@ QString TracePanel::measureText() const
 
 void TracePanel::started()
 {
-    m_view->clear();
+    // The last run's trace, to compare with this one.
+    m_view->keepAsPrevious();
+    m_previous->setEnabled(m_view->hasPrevious());
     m_view->setMarkers(-1, -1);
     m_view->setPins(m_core->simPins());
     m_save->setEnabled(m_core->canSaveTrace());

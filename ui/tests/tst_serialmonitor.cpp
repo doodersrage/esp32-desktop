@@ -93,7 +93,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.37.0"_s}});
+                                  {u"protocol"_s, u"0.38.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
@@ -431,6 +431,18 @@ private slots:
             titled |= d->windowTitle() == u"Problems (1)"_s;
         QVERIFY(titled);
         QCOMPARE(window.problems()->tree()->topLevelItem(0)->text(ProblemsPanel::TextColumn), u"The board browned out."_s);
+        // Looking an error up on the site sends its own words only.
+        QCOMPARE(ProblemsPanel::searchTerms(u"Guru Meditation Error: Core  1 panic'ed (LoadProhibited). Exception was unhandled."_s),
+                 u"LoadProhibited"_s);
+        QCOMPARE(ProblemsPanel::searchTerms(u"error: 'foo' was not declared in this scope"_s), u"was not declared in this scope"_s);
+        QCOMPARE(ProblemsPanel::searchUrl(u"SW_CPU_RESET"_s).toString(), u"https://esp32bench.dev/search/?q=SW_CPU_RESET"_s);
+        // The layouts: the panels each task needs.
+        window.showLayout(MainWindow::Layout::Hardware);
+        QVERIFY(window.findChild<QDockWidget *>(u"serialDock"_s)->isVisibleTo(&window));
+        QVERIFY(!window.findChild<QDockWidget *>(u"debugDock"_s)->isVisibleTo(&window));
+        window.showLayout(MainWindow::Layout::Debugging);
+        QVERIFY(window.findChild<QDockWidget *>(u"debugDock"_s)->isVisibleTo(&window));
+        QVERIFY(!window.findChild<QDockWidget *>(u"serialDock"_s)->isVisibleTo(&window));
         // A decoded crash: where it was, the sketch's own line first; double-click shows it.
         emit core.simBacktrace(QJsonArray{QJsonObject{{u"addr"_s, u"0x40001234"_s}, {u"func"_s, u"abort"_s}},
                                           QJsonObject{{u"addr"_s, u"0x400d2a5e"_s}, {u"func"_s, u"loop()"_s},

@@ -417,6 +417,8 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     connect(m_scene, &QGraphicsScene::selectionChanged, m_remove, [this] {
         m_remove->setEnabled(!m_scene->selectedItems().isEmpty());
         m_duplicate->setEnabled(!selectedPartId().isEmpty());
+        if (m_examples)
+            m_examples->setEnabled(!selectedPartId().isEmpty());
         rebuildControls();
     });
 
@@ -467,6 +469,29 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     connect(m_fitButton, &QToolButton::clicked, this, &CircuitPanel::fitView);
     tools->addWidget(m_fitButton);
     tools->addWidget(m_copyPicture);
+    m_examples = new QToolButton(this);
+    m_examples->setText(tr("Examples"));
+    m_examples->setIcon(QIcon::fromTheme(u"folder-open"_s));
+    m_examples->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_examples->setToolTip(tr("Library projects that use the selected part, to try it with"));
+    m_examples->setEnabled(false);
+    connect(m_examples, &QToolButton::clicked, this, [this] {
+        const QString id = selectedPartId();
+        for (const QJsonValue &v : parts()) {
+            if (v.toObject().value(u"id"_s).toString() == id) {
+                m_examplesFor = v.toObject().value(u"kind"_s).toString();
+                m_core->circuitExamples(m_examplesFor);
+            }
+        }
+    });
+    connect(core, &CoreConnection::examplesListed, this, [this](const QString &kind, const QJsonArray &projects) {
+        if (kind != std::exchange(m_examplesFor, {}))
+            return;
+        QMenu *menu = examplesMenu(kind, projects);
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        menu->popup(m_examples->mapToGlobal(QPoint(0, m_examples->height())));
+    });
+    tools->addWidget(m_examples);
     const auto key = [this](const QKeySequence &seq, auto slot) {
         auto *s = new QShortcut(seq, m_view, slot);
         s->setContext(Qt::WidgetWithChildrenShortcut);
@@ -961,6 +986,27 @@ void CircuitPanel::redo()
         next = QJsonObject{{u"schemaVersion"_s, u"1.3.0"_s}, {u"parts"_s, QJsonArray{}}};
     m_undo.append(m_circuit);
     save(next);
+}
+
+QMenu *CircuitPanel::examplesMenu(const QString &, const QJsonArray &projects)
+{
+    auto *menu = new QMenu(this);
+    if (projects.isEmpty()) {
+        menu->addAction(tr("No library project uses this part yet"))->setEnabled(false);
+        return menu;
+    }
+    for (const QJsonValue &v : projects) {
+        const QJsonObject p = v.toObject();
+        const QJsonArray boards = p.value(u"boards"_s).toArray();
+        // On this board if the project is wired for it, else on its first.
+        QString board = boards.first().toString();
+        for (const QJsonValue &b : boards)
+            if (b.toString() == m_board)
+                board = m_board;
+        const QString id = p.value(u"id"_s).toString();
+        menu->addAction(p.value(u"name"_s).toString(id), this, [this, id, board] { emit exampleRequested(id, board); });
+    }
+    return menu;
 }
 
 QImage CircuitPanel::picture() const
