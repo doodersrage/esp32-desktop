@@ -127,6 +127,29 @@
                   "description": "When, in seconds since 1970."
                 }
               }
+            },
+            "flashed": {
+              "type": "object",
+              "required": [
+                "project",
+                "board",
+                "at"
+              ],
+              "additionalProperties": false,
+              "description": "Since protocol 0.41: the build last flashed from the app to this adapter's board (adapters with a serial number).",
+              "properties": {
+                "project": {
+                  "type": "string"
+                },
+                "board": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When, in seconds since 1970."
+                }
+              }
             }
           },
           "additionalProperties": false

@@ -13,6 +13,7 @@
 #include "SimulatorPanel.h"
 #include "DebugPanel.h"
 #include "BacktraceDialog.h"
+#include "DiskSpaceDialog.h"
 #include "CodeView.h"
 #include "DisplayPanel.h"
 #include "PinsPanel.h"
@@ -864,6 +865,8 @@ void MainWindow::updateToolBar()
     m_stopSim->setEnabled(m_core->isSimRunning());
     if (m_restartSim)
         m_restartSim->setEnabled(m_core->isSimRunning() && m_core->canRestartSim());
+    if (m_rebuild)
+        m_rebuild->setEnabled(m_project->buildAction()->isEnabled());
     if (m_decodeAction)
         m_decodeAction->setEnabled(!m_project->currentProjectId().isEmpty() && !m_project->currentBuildBoard().isEmpty());
     m_boardMenu->setEnabled(m_buildPanel->portPicker()->currentIndex() >= 0
@@ -995,6 +998,22 @@ void MainWindow::buildMenus()
     project->addSeparator();
     m_decodeAction = project->addAction(tr("&Decode a crash backtrace…"), this, &MainWindow::showBacktraceDialog);
     m_decodeAction->setToolTip(tr("Turn a backtrace from a saved log or a forum post into lines of the project shown"));
+    // Rebuild from scratch: the project's build for this board removed, then built.
+    m_rebuild = project->addAction(tr("Re&build from scratch"), this, [this] {
+        const QString id = m_project->currentProjectId(), board = m_project->currentBuildBoard();
+        if (id.isEmpty() || board.isEmpty())
+            return;
+        m_rebuildPending = id + u'/' + board;
+        m_core->cleanCache(id, board);
+    });
+    m_rebuild->setToolTip(tr("Remove this project's build for the board shown, and build it again from nothing: "
+                             "for a build that behaves oddly"));
+    connect(m_core, &CoreConnection::cacheCleaned, this, [this](const QString &project, const QString &board) {
+        if (project + u'/' + board != std::exchange(m_rebuildPending, {}))
+            return;
+        if (m_project->buildAction()->isEnabled())
+            m_project->buildAction()->trigger();
+    });
     project->addAction(m_buildPanel->nextProblemAction());
     project->addAction(m_buildPanel->previousProblemAction());
     project->addSeparator();
@@ -1044,6 +1063,13 @@ void MainWindow::buildMenus()
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
     QAction *setup = tools->addAction(QIcon::fromTheme(u"configure"_s), tr("&Toolchain setup…"));
     connect(setup, &QAction::triggered, this, &MainWindow::showSetup);
+    tools->addAction(tr("&Disk space…"), this, [this] {
+                         if (!m_diskSpace)
+                             m_diskSpace = new DiskSpaceDialog(m_core, this);
+                         m_diskSpace->refresh();
+                         m_diskSpace->show();
+                         m_diskSpace->raise();
+                     });
     QAction *prefs = tools->addAction(QIcon::fromTheme(u"preferences-system"_s), tr("&Preferences…"));
     prefs->setShortcut(QKeySequence::Preferences);
     prefs->setMenuRole(QAction::PreferencesRole); // in the app menu on macOS

@@ -1,0 +1,51 @@
+{
+  "method": "cache.clean",
+  "description": "Since protocol 0.41: remove builds: all of them, a project's, or a project's for one board (its next build starts from scratch). Waits for a build that is running. How many bytes it freed.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "board": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "freed"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "freed": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink",
+        "board": "esp32"
+      },
+      "result": {
+        "freed": 52428800
+      }
+    }
+  ]
+}

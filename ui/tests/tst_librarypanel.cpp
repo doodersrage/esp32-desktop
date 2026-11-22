@@ -272,6 +272,13 @@ private slots:
         panel.showLibrary(lib);
         panel.tree()->sortByColumn(LibraryPanel::TimeColumn, Qt::AscendingOrder);
         QCOMPARE(panel.tree()->topLevelItem(2)->text(LibraryPanel::TimeColumn), u"120 min"_s);
+        // The order is kept for the next start.
+        panel.tree()->sortByColumn(LibraryPanel::TimeColumn, Qt::DescendingOrder);
+        LibraryPanel again(&core);
+        again.showLibrary(lib);
+        QCOMPARE(again.tree()->header()->sortIndicatorSection(), int(LibraryPanel::TimeColumn));
+        QCOMPARE(again.tree()->header()->sortIndicatorOrder(), Qt::DescendingOrder);
+        QCOMPARE(again.tree()->topLevelItem(0)->text(LibraryPanel::TimeColumn), u"120 min"_s);
     }
 
     void filtersOnNameSummaryTagsAndChips()

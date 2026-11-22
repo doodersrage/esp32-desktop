@@ -113,7 +113,18 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     m_tree->setRootIsDecorated(false);
     m_tree->setUniformRowHeights(true);
     m_tree->setSortingEnabled(true);
-    m_tree->sortByColumn(-1, Qt::AscendingOrder); // keep the site's order until the user sorts
+    // The order chosen last time (a click on a column's header), else the site's.
+    {
+        QSettings settings;
+        m_tree->sortByColumn(settings.value(u"library/sortColumn"_s, -1).toInt(),
+                             settings.value(u"library/sortDescending"_s, false).toBool() ? Qt::DescendingOrder
+                                                                                         : Qt::AscendingOrder);
+    }
+    connect(m_tree->header(), &QHeaderView::sortIndicatorChanged, this, [](int column, Qt::SortOrder order) {
+        QSettings settings;
+        settings.setValue(u"library/sortColumn"_s, column);
+        settings.setValue(u"library/sortDescending"_s, order == Qt::DescendingOrder);
+    });
     // Every column can be dragged wider or narrower; the last one shown takes what is
     // left. The name column starts as wide as the longest name (fitColumns).
     m_tree->header()->setSectionResizeMode(QHeaderView::Interactive);

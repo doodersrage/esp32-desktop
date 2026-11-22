@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QDateTime>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -89,6 +90,17 @@ private slots:
                      && text.contains(u"revision v0.4"_s) && text.contains(u"4"_s),
                  qPrintable(text));
         QVERIFY(panel.tree()->topLevelItem(0)->toolTip(DevicesPanel::ChipsColumn).startsWith(u"Found by Inspect on"_s));
+        // And what it runs, the build last flashed there; the port's own text stays its path.
+        panel.showPorts(QJsonArray{QJsonObject{
+            {u"path"_s, u"/dev/ttyUSB0"_s}, {u"kind"_s, u"usb"_s}, {u"bridge"_s, u"cp210x"_s},
+            {u"chips"_s, QJsonArray{u"esp32"_s}}, {u"access"_s, u"ok"_s},
+            {u"flashed"_s, QJsonObject{{u"project"_s, u"blink"_s}, {u"board"_s, u"esp32"_s},
+                                       {u"at"_s, QDateTime::currentSecsSinceEpoch() - 180}}}}});
+        QTreeWidgetItem *runs = panel.tree()->topLevelItem(0);
+        QCOMPARE(runs->text(DevicesPanel::PortColumn), u"/dev/ttyUSB0"_s);
+        QCOMPARE(runs->text(DevicesPanel::ChipsColumn), u"ESP32 · runs blink"_s);
+        QVERIFY2(runs->toolTip(DevicesPanel::ChipsColumn).contains(u"blink for esp32 was flashed here 3 min ago."_s),
+                 qPrintable(runs->toolTip(DevicesPanel::ChipsColumn)));
     }
 
     void explainsWhyNoBoardShows()

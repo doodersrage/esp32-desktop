@@ -229,6 +229,16 @@ void DevicesPanel::showPorts(const QJsonArray &ports)
             }
         }
 
+        // What it runs: the build last flashed from here, after the chip.
+        if (const QJsonObject f = p.value(u"flashed"_s).toObject(); !f.isEmpty()) {
+            const QDateTime at = QDateTime::fromSecsSinceEpoch(f.value(u"at"_s).toInteger());
+            item->setText(ChipsColumn, tr("%1 · runs %2").arg(item->text(ChipsColumn), f.value(u"project"_s).toString()));
+            item->setToolTip(ChipsColumn, tr("%1\n%2 for %3 was flashed here %4.")
+                                              .arg(item->toolTip(ChipsColumn), f.value(u"project"_s).toString(),
+                                                   f.value(u"board"_s).toString(),
+                                                   Labels::ago(at, QDateTime::currentDateTime()))
+                                              .trimmed());
+        }
         item->setText(BridgeColumn, bridgeName(p.value(u"bridge"_s)));
         const QJsonObject usb = p.value(u"usb"_s).toObject();
         if (!usb.isEmpty()) {

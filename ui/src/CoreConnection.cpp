@@ -1162,6 +1162,34 @@ void CoreConnection::setNotes(const QString &project, const QString &text)
     });
 }
 
+void CoreConnection::cacheUsage()
+{
+    m_client->call(u"cache.usage"_s, QJsonObject{}, this, [this](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"cache.usage"_s, r.errorMessage);
+            return;
+        }
+        const QJsonObject o = r.result.toObject();
+        emit cacheUsageListed(o.value(u"categories"_s).toArray(), o.value(u"builds"_s).toArray());
+    });
+}
+
+void CoreConnection::cleanCache(const QString &project, const QString &board)
+{
+    QJsonObject params;
+    if (!project.isEmpty())
+        params.insert(u"project"_s, project);
+    if (!project.isEmpty() && !board.isEmpty())
+        params.insert(u"board"_s, board);
+    m_client->call(u"cache.clean"_s, params, this, [this, project, board](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"cache.clean"_s, r.errorMessage);
+            return;
+        }
+        emit cacheCleaned(project, board, r.result.toObject().value(u"freed"_s).toInteger());
+    });
+}
+
 void CoreConnection::exportSettings(const QString &path)
 {
     m_client->call(u"data.export"_s, {{u"path"_s, path}}, this, [this](const RpcReply &r) {

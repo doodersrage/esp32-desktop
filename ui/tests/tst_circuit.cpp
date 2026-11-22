@@ -87,7 +87,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.40.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.41.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -395,6 +395,9 @@ private slots:
         QTRY_VERIFY(panel.pinNote(12).contains(u"strapping pin"_s));
         QVERIFY(panel.pinNote(34).contains(u"input only"_s));
         QVERIFY(panel.pinNote(4).isEmpty());
+        // Hovering a board pin: its GPIO, the parts on it, its note.
+        QTRY_VERIFY(panel.pinTip(2).contains(u"Wired to led-1"_s));
+        QVERIFY(panel.pinTip(5).contains(u"No part on it"_s));
         // A circuit file: out, and in in place of the parts, which Undo puts back.
         panel.exportTo(u"/tmp/x/c.json"_s);
         QTRY_VERIFY(panel.statusText().contains(u"Exported the circuit to /tmp/x/c.json"_s));

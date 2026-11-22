@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.40.0";
+pub const PROTOCOL: &str = "0.41.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -71,6 +71,8 @@ pub struct State {
     pub watches: esp32bench_library::commands::Commands,
     /// The user's notes per project (notes.get/notes.set).
     pub notes: esp32bench_library::notes::Notes,
+    /// Where the simulator is installed (for cache.usage).
+    pub sim_data: PathBuf,
     /// ESP-IDF to use instead of detecting one (tests).
     pub idf_path: Option<PathBuf>,
 }
@@ -179,6 +181,9 @@ impl State {
                     .map(|d| d.join("watches.json"))
                     .unwrap_or_else(|_| PathBuf::from("esp32bench-watches.json")),
             ),
+            sim_data: esp32bench_sim::install::data_dir()
+                .map(|d| d.join("qemu"))
+                .unwrap_or_else(|_| PathBuf::from("esp32bench-qemu")),
             notes: esp32bench_library::notes::Notes::new(
                 esp32bench_sim::install::data_dir()
                     .map(|d| d.join("notes.json"))
@@ -477,6 +482,20 @@ pub fn router(state: Arc<State>) -> Router {
             move |p, _| {
                 let s = s.clone();
                 async move { backtrace_decode(p, s).await }
+            }
+        })
+        .method("cache.usage", {
+            let s = stars.clone();
+            move |_p, _| {
+                let s = s.clone();
+                async move { cache_usage(s).await }
+            }
+        })
+        .method("cache.clean", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { cache_clean(p, s).await }
             }
         })
         .method("data.export", {
@@ -1032,6 +1051,81 @@ async fn breakpoints(params: Value, state: Arc<State>, set: bool) -> Result<Valu
         state.breakpoints.get(&p.project)
     };
     Ok(json!({ "breakpoints": kept }))
+}
+
+/// cache.usage: how much the app keeps on disk: builds (each project's, which
+/// cache.clean can remove), the simulator, and the Arduino tools (shared with the
+/// Arduino IDE, so not removed here).
+async fn cache_usage(state: Arc<State>) -> Result<Value, RpcError> {
+    let (builds, sim, arduino) = (
+        state.builds_root.clone(),
+        state.sim_data.clone(),
+        state.arduino_data.clone(),
+    );
+    tokio::task::spawn_blocking(move || {
+        let mut projects: Vec<Value> = std::fs::read_dir(&builds)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .filter_map(|e| {
+                let name = e.file_name().to_str()?.to_owned();
+                Some(json!({ "project": name, "bytes": esp32bench_distro::dirs::dir_bytes(&e.path()) }))
+            })
+            .collect();
+        projects.sort_by_key(|p| std::cmp::Reverse(p["bytes"].as_u64().unwrap_or(0)));
+        json!({
+            "categories": [
+                { "kind": "builds", "path": builds, "bytes": esp32bench_distro::dirs::dir_bytes(&builds) },
+                { "kind": "simulator", "path": sim, "bytes": esp32bench_distro::dirs::dir_bytes(&sim) },
+                { "kind": "arduino", "path": arduino, "bytes": esp32bench_distro::dirs::dir_bytes(&arduino) },
+            ],
+            "builds": projects,
+        })
+    })
+    .await
+    .map_err(|e| RpcError::internal(e.to_string()))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CacheCleanParams {
+    #[serde(default)]
+    project: Option<String>,
+    #[serde(default)]
+    board: Option<String>,
+}
+
+/// cache.clean: remove builds, all of them, a project's, or one project's for one
+/// board (the next build starts from scratch). Waits for a build that is running.
+async fn cache_clean(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: CacheCleanParams = parse_params(params)?;
+    let dir = match (&p.project, &p.board) {
+        (None, None) => state.builds_root.clone(),
+        (Some(project), None) => {
+            esp32bench_build::safe_id(project)
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            state.builds_root.join(project)
+        }
+        (Some(project), Some(board)) => {
+            check_ids(project, board)?;
+            state.builds_root.join(project).join(board)
+        }
+        (None, Some(_)) => return Err(RpcError::invalid_params("a board needs its project")),
+    };
+    let _one_at_a_time = state.build_lock.lock().await;
+    let freed = tokio::task::spawn_blocking(move || {
+        let bytes = esp32bench_distro::dirs::dir_bytes(&dir);
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => Ok(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(0),
+            Err(e) => Err(e),
+        }
+    })
+    .await
+    .map_err(|e| RpcError::internal(e.to_string()))?
+    .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    Ok(json!({ "freed": freed }))
 }
 
 /// What a settings backup (data.export) holds, by name.
@@ -1796,17 +1890,14 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
         .map_err(|e| RpcError::new(code::UNAVAILABLE, e.to_string()))?;
     let engine = launch.engine;
     // QEMU's GDB stub listens on loopback only; any free port will do.
-    let gdb_port = if p.debug {
+    let free_port = || -> Result<u16, RpcError> {
         let l = std::net::TcpListener::bind("127.0.0.1:0")
             .map_err(|e| RpcError::internal(e.to_string()))?;
-        Some(
-            l.local_addr()
-                .map_err(|e| RpcError::internal(e.to_string()))?
-                .port(),
-        )
-    } else {
-        None
+        Ok(l.local_addr()
+            .map_err(|e| RpcError::internal(e.to_string()))?
+            .port())
     };
+    let mut gdb_port = if p.debug { Some(free_port()?) } else { None };
     // The GPIOs the project uses, from the library (never from the caller), bridged
     // when the engine has the fork's hooks (lcgamboa's library).
     // And the pins of the parts placed on this board in the app.
@@ -1877,12 +1968,27 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
         p.project.clone(),
         p.board.clone(),
     );
-    config.gdb_port = gdb_port;
     // Debugging starts paused at the first instruction, for breakpoints in setup.
     config.start_paused = p.debug;
-    let mut session = esp32bench_sim::Session::start(config)
-        .await
-        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    // The GDB port was free when picked, but another program can take it before QEMU
+    // binds it: then pick another and start again.
+    let mut attempt = 0;
+    let mut session = loop {
+        let mut c = config.clone();
+        c.gdb_port = gdb_port;
+        match esp32bench_sim::Session::start(c).await {
+            Ok(s) => break s,
+            Err(e)
+                if gdb_port.is_some()
+                    && attempt < 3
+                    && e.to_string().contains("Address already in use") =>
+            {
+                attempt += 1;
+                gdb_port = Some(free_port()?);
+            }
+            Err(e) => return Err(RpcError::new(code::FAILED, e.to_string())),
+        }
+    };
     let mut debugger = match gdb_port {
         Some(port) => Some(start_debugger(&state, &chip_id, &elf, port).await?),
         None => None,
@@ -3354,6 +3460,7 @@ fn board_job(
     opts: esp32bench_flash::Options,
     op: BoardOp,
     adapter: Option<esp32bench_device::Port>,
+    flashed: Option<(String, String)>,
 ) -> u64 {
     ctx.subscribe(move |sub| {
         let sub = Arc::new(sub);
@@ -3385,6 +3492,15 @@ fn board_job(
                         let _ = state
                             .known_boards
                             .remember_inspected(port, chip, Some(inspected));
+                    }
+                    // A flash: what the board runs now, for the Devices dock.
+                    if let (Some(port), Some((project, board))) = (&adapter, &flashed) {
+                        let at = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map_or(0, |d| d.as_secs());
+                        let _ = state
+                            .known_boards
+                            .remember_flashed(port, project, board, at);
                     }
                     done["ok"] = json!(true);
                     done
@@ -3478,7 +3594,14 @@ async fn board_inspect(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Val
         .await
         .ok()
         .and_then(|ports| ports.into_iter().find(|x| Path::new(&x.path) == p.port));
-    let job = board_job(&ctx, state, opts, BoardOp::Inspect { scratch }, adapter);
+    let job = board_job(
+        &ctx,
+        state,
+        opts,
+        BoardOp::Inspect { scratch },
+        adapter,
+        None,
+    );
     Ok(json!({ "job": job }))
 }
 
@@ -3489,7 +3612,7 @@ async fn board_erase(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
     }
     check_port(&state, &p.port).await?;
     let opts = board_options(&p.port, p.reset, p.stub);
-    let job = board_job(&ctx, state, opts, BoardOp::Erase, None);
+    let job = board_job(&ctx, state, opts, BoardOp::Erase, None, None);
     Ok(json!({ "job": job }))
 }
 
@@ -3562,7 +3685,19 @@ async fn board_flash(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         .with_data(json!({ "token": token, "plan": plan })));
     }
     let opts = board_options(&p.port, p.reset, p.stub);
-    let job = board_job(&ctx, state, opts, BoardOp::Flash { image, chip }, None);
+    let adapter = list_ports(true)
+        .await
+        .ok()
+        .and_then(|ports| ports.into_iter().find(|x| Path::new(&x.path) == p.port));
+    let flashed = Some((p.project.clone(), p.board.clone()));
+    let job = board_job(
+        &ctx,
+        state,
+        opts,
+        BoardOp::Flash { image, chip },
+        adapter,
+        flashed,
+    );
     Ok(json!({ "job": job }))
 }
 

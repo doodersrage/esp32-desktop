@@ -1,5 +1,5 @@
 {
-  "protocol": "0.40.0",
+  "protocol": "0.41.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
     "backtrace.decode",
@@ -10,6 +10,8 @@
     "breakpoints.set",
     "build.start",
     "build.status",
+    "cache.clean",
+    "cache.usage",
     "circuit.examples",
     "circuit.export",
     "circuit.get",

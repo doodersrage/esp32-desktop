@@ -43,6 +43,13 @@ public:
     enum LevelFilter { AllLines, Problems, ErrorsOnly };
     void setLevelFilter(LevelFilter filter);
     void setTagFilter(const QString &tag);
+    // Only lines with this text (case does not matter), unless it is empty.
+    void setTextFilter(const QString &text);
+    // Hold the view still: what comes meanwhile is kept, and shown on going on.
+    void setPaused(bool paused);
+    bool paused() const { return m_paused; }
+    // Chunks waiting while paused, for tests.
+    int heldChunks() const { return int(m_held.size()); }
     LevelFilter levelFilter() const { return m_levelFilter; }
     // The tags seen so far, in the order they first came.
     QStringList tags() const { return m_tags; }
@@ -113,6 +120,17 @@ protected:
 
 private:
     QList<QJsonObject> m_frameLinks; // backtrace links, by their index in the href
+    QString m_textFilter;
+    bool m_paused = false;
+    // While paused: what came, in order (a notice when `notice`).
+    struct Held {
+        bool notice = false;
+        QString text;
+        QByteArray bytes;
+        QJsonValue shown;
+        QJsonArray lines;
+    };
+    QList<Held> m_held;
     // Mark the lines from block `from` on that have a highlighted word, unmark others.
     void highlightFrom(int from);
     // After adding text: follow it when the view was at the end, else offer to.
@@ -163,6 +181,8 @@ public:
     QString forumText() const;
     QToolButton *forumButton() const { return m_forum; }
     QToolButton *highlightButton() const { return m_highlight; }
+    QLineEdit *onlyField() const { return m_only; }
+    QCheckBox *pauseBox() const { return m_pause; }
     // Ask which text file to send line by line, and how long to wait after each line
     // (kept as `setting`); false if the user cancelled.
     static bool askSendFile(QWidget *parent, const QString &setting, QString *path, int *lineDelay);
@@ -181,6 +201,8 @@ private:
     QCheckBox *m_deltas;
     QToolButton *m_forum;
     QToolButton *m_highlight;
+    QLineEdit *m_only;
+    QCheckBox *m_pause;
     QString m_context;
     QToolButton *m_save;
 };

@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 40;
+    static constexpr int ProtocolMinor = 41;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -240,6 +240,10 @@ public:
     // data.export / data.import: your settings in one file (settingsExported,
     // settingsImported, or requestFailed).
     void exportSettings(const QString &path);
+    // cache.usage / cache.clean: what the app keeps on disk, and removing builds (all,
+    // a project's, or a project's for one board).
+    void cacheUsage();
+    void cleanCache(const QString &project = {}, const QString &board = {});
     void importSettings(const QString &path);
 
     // Error code the core uses when consent is missing (docs/rpc.md).
@@ -408,6 +412,9 @@ signals:
     // `counts`: how many breakpoints, watches, commands, starred, notes, circuits.
     void settingsExported(const QString &path, const QJsonObject &counts);
     void settingsImported(const QJsonObject &counts, int skipped);
+    // categories: {kind, path, bytes}; builds: {project, bytes}.
+    void cacheUsageListed(const QJsonArray &categories, const QJsonArray &builds);
+    void cacheCleaned(const QString &project, const QString &board, qint64 freed);
     // `address` as the core says it (0x…); `asked` what was typed.
     void memoryRead(const QString &asked, const QString &address, const QByteArray &bytes);
     // `error` is empty when the expression has a value.

@@ -1,0 +1,103 @@
+{
+  "method": "cache.usage",
+  "description": "Since protocol 0.41: how much the app keeps on disk: its builds (each project's, which cache.clean removes), the simulator, and the Arduino tools (shared with the Arduino IDE, so not removed by the app).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [],
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "categories",
+      "builds"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "categories": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "kind",
+            "path",
+            "bytes"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "builds",
+                "simulator",
+                "arduino"
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "builds": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "project",
+            "bytes"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "project": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32603
+  ],
+  "examples": [
+    {
+      "params": {},
+      "result": {
+        "categories": [
+          {
+            "kind": "builds",
+            "path": "/home/me/.cache/esp32bench/builds",
+            "bytes": 524288000
+          },
+          {
+            "kind": "simulator",
+            "path": "/home/me/.local/share/esp32bench/qemu",
+            "bytes": 209715200
+          },
+          {
+            "kind": "arduino",
+            "path": "/home/me/.arduino15",
+            "bytes": 3221225472
+          }
+        ],
+        "builds": [
+          {
+            "project": "blink",
+            "bytes": 104857600
+          }
+        ]
+      }
+    }
+  ]
+}

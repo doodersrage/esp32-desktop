@@ -615,6 +615,7 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
                 m_pinNotes.clear();
                 for (const QJsonValue &v : notes)
                     m_pinNotes.insert(v.toObject().value(u"gpio"_s).toInt(), v.toObject().value(u"kind"_s).toString());
+                rebuildScene(); // for the pins' tooltips
             });
     connect(core, &CoreConnection::circuitSaved, this, [this] {
         m_saving = std::max(0, m_saving - 1);
@@ -756,6 +757,23 @@ void CircuitPanel::importFrom(const QString &path)
     m_core->importCircuit(m_project, m_board, path);
 }
 
+static QHash<QString, int> connections(const QJsonObject &part, const QJsonObject &model);
+
+QString CircuitPanel::pinTip(int gpio) const
+{
+    QStringList lines{tr("GPIO %1").arg(gpio)};
+    QStringList users;
+    for (const QJsonValue &v : parts()) {
+        const QJsonObject part = v.toObject();
+        if (connections(part, m_models.value(part.value(u"kind"_s).toString())).values().contains(gpio))
+            users << part.value(u"label"_s).toString(part.value(u"id"_s).toString());
+    }
+    lines << (users.isEmpty() ? tr("No part on it") : tr("Wired to %1").arg(users.join(u", "_s)));
+    if (const QString note = pinNote(gpio); !note.isEmpty())
+        lines << note;
+    return lines.join(u'\n');
+}
+
 QString CircuitPanel::pinNote(int gpio) const
 {
     return Labels::pinNoteText(m_pinNotes.value(gpio), gpio);
@@ -873,7 +891,12 @@ void CircuitPanel::rebuildScene()
         auto *label = m_scene->addSimpleText(tr("GPIO %1").arg(gpio));
         label->setBrush(pal.color(QPalette::Text));
         label->setPos(BoardWidth - 62, y - 9);
-        m_scene->addEllipse(BoardWidth - 6, y - 4, 8, 8, QPen(pal.color(QPalette::Text)), QBrush(pal.color(QPalette::Text)));
+        auto *dot = m_scene->addEllipse(BoardWidth - 6, y - 4, 8, 8, QPen(pal.color(QPalette::Text)),
+                                        QBrush(pal.color(QPalette::Text)));
+        // Hovering a pin: what is on it, and what to be careful of.
+        const QString tip = pinTip(gpio);
+        label->setToolTip(tip);
+        dot->setToolTip(tip);
     }
     QHash<int, int> partsOnRow; // to stack several parts on one row
     qreal busY = height + 30;   // I2C parts go below the board, one under another

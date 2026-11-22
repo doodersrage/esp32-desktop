@@ -68,7 +68,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.40.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.41.0"_s}});
             return;
         }
         calls << m;
@@ -285,6 +285,34 @@ private slots:
         QCOMPARE(Labels::forumPost({}, u"a ``` b"_s), u"ESP32 Bench 9.9.9\n~~~~text\na ``` b\n~~~~\n"_s);
         panel.consoleBar()->forumButton()->click();
         QCOMPARE(QGuiApplication::clipboard()->text(), panel.consoleBar()->forumText());
+    }
+
+    void pausesAndFiltersTheConsole()
+    {
+        ConsoleView view;
+        ConsoleBar bar(&view, nullptr, u"test/stamps"_s);
+        view.appendOutput("boot\nWiFi connected\n", u"boot\nWiFi connected\n"_s, {});
+        // Only lines with a text, case aside; new ones too.
+        bar.onlyField()->setText(u"wifi"_s);
+        QCOMPARE(view.visibleLines().filter(u"boot"_s).size(), 0);
+        QVERIFY(view.visibleLines().contains(u"WiFi connected"_s));
+        view.appendOutput("tick 1\nwifi lost\n", u"tick 1\nwifi lost\n"_s, {});
+        QVERIFY(view.visibleLines().contains(u"wifi lost"_s));
+        QVERIFY(!view.visibleLines().contains(u"tick 1"_s));
+        bar.onlyField()->clear();
+        QVERIFY(view.visibleLines().contains(u"tick 1"_s));
+        // Paused: held, then shown in order on going on.
+        bar.pauseBox()->setChecked(true);
+        view.appendOutput("one\n", u"one\n"_s, {});
+        view.appendNotice(u"a note"_s);
+        view.appendOutput("two\n", u"two\n"_s, {});
+        QCOMPARE(view.heldChunks(), 3);
+        QVERIFY(!view.visibleLines().contains(u"one"_s));
+        bar.pauseBox()->setChecked(false);
+        QCOMPARE(view.heldChunks(), 0);
+        const QStringList lines = view.visibleLines();
+        QVERIFY(lines.indexOf(u"one"_s) < lines.indexOf(u"-- a note"_s));
+        QVERIFY(lines.indexOf(u"-- a note"_s) < lines.indexOf(u"two"_s));
     }
 
     void sendsFilesRestartsAndHighlights()

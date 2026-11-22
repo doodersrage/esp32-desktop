@@ -5,6 +5,7 @@
 #include "BuildPanel.h"
 #include "CoreConnection.h"
 #include "DebugPanel.h"
+#include "DiskSpaceDialog.h"
 #include "MainWindow.h"
 
 #include <QJsonArray>
@@ -35,6 +36,8 @@ public:
     int inspections = 0; // debug.inspect calls; each says pin is one more
     int hits = 0;        // times breakpoint 1 was reached
     QList<QJsonObject> assignedTo; // debug.assign params
+    bool cleaned = false;
+    QJsonObject cleanedWith; // cache.clean params
     void stopAtWatch()
     {
         event(u"debug.stopped"_s, {{u"reason"_s, u"watchpoint-trigger"_s}, {u"breakpoint"_s, m_next},
@@ -78,7 +81,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.40.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.41.0"_s}});
             return;
         }
         if (m == u"device.list" || m == u"device.watch") {
@@ -149,6 +152,14 @@ private:
         } else if (m == u"breakpoints.set") {
             kept = p.value(u"breakpoints"_s).toArray();
             reply(id, QJsonObject{{u"breakpoints"_s, kept}});
+        } else if (m == u"cache.usage") {
+            reply(id, QJsonObject{{u"categories"_s, QJsonArray{QJsonObject{{u"kind"_s, u"builds"_s}, {u"path"_s, u"/c/builds"_s}, {u"bytes"_s, cleaned ? 0 : 3000000}},
+                                                               QJsonObject{{u"kind"_s, u"arduino"_s}, {u"path"_s, u"/a"_s}, {u"bytes"_s, 900000000}}}},
+                                  {u"builds"_s, cleaned ? QJsonArray{} : QJsonArray{QJsonObject{{u"project"_s, u"blink"_s}, {u"bytes"_s, 3000000}}}}});
+        } else if (m == u"cache.clean") {
+            cleaned = true;
+            cleanedWith = p;
+            reply(id, QJsonObject{{u"freed"_s, 3000000}});
         } else if (m == u"debug.children") {
             const QString e = p.value(u"expression"_s).toString();
             reply(id, QJsonObject{{u"children"_s, e == u"reading"_s
@@ -540,6 +551,31 @@ private slots:
         core.stopSim();
         QTRY_VERIFY(!core.isSimRunning());
         QVERIFY(!panel.assign(u"x"_s, u"1"_s)); // not paused
+    }
+
+    void saysTheDiskSpaceAndRemovesBuilds()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        DiskSpaceDialog dialog(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        dialog.refresh();
+        QTRY_COMPARE(dialog.tree()->topLevelItemCount(), 2);
+        QTreeWidgetItem *builds = dialog.tree()->topLevelItem(0);
+        QCOMPARE(builds->text(0), u"Builds"_s);
+        QCOMPARE(builds->childCount(), 1);
+        QCOMPARE(builds->child(0)->text(0), u"blink"_s);
+        QVERIFY(!dialog.removeButton()->isEnabled());
+        dialog.tree()->setCurrentItem(builds->child(0));
+        QVERIFY(dialog.removeButton()->isEnabled());
+        dialog.removeButton()->click();
+        QTRY_VERIFY(fake.cleaned);
+        QCOMPARE(fake.cleanedWith.value(u"project"_s).toString(), u"blink"_s);
+        QTRY_VERIFY(dialog.statusText().startsWith(u"Freed"_s));
+        QTRY_COMPARE(dialog.tree()->topLevelItem(0)->childCount(), 0); // read again
+        QVERIFY(!dialog.removeAllButton()->isEnabled());
     }
 
     void dumpsMemoryAsHex()

@@ -55,6 +55,7 @@ fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
     s.breakpoints = esp32bench_library::commands::Commands::new(dir.join("breakpoints.json"));
     s.watches = esp32bench_library::commands::Commands::new(dir.join("watches.json"));
     s.notes = esp32bench_library::notes::Notes::new(dir.join("notes.json"));
+    s.sim_data = dir.join("qemu");
     Arc::new(s)
 }
 
@@ -2267,6 +2268,80 @@ async fn notes_and_settings_travel_in_one_file() {
     match c2.call("data.import", json!({ "path": file })).await {
         Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
         other => panic!("imported something else: {other:?}"),
+    }
+}
+
+// What is kept on disk, and builds removed: one board's, a project's, all.
+#[tokio::test]
+async fn cache_says_its_size_and_cleans_builds() {
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    for (project, board, size) in [
+        ("blink", "esp32", 3000),
+        ("blink", "esp32c3", 2000),
+        ("oled", "esp32", 1000),
+    ] {
+        let out = d
+            .path()
+            .join("builds")
+            .join(project)
+            .join(board)
+            .join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("x.bin"), vec![0u8; size]).unwrap();
+    }
+    let r = c.call("cache.usage", json!({})).await.unwrap();
+    assert_valid(
+        &method_def("cache.usage")["result"],
+        &r,
+        "cache.usage result",
+    );
+    assert_eq!(
+        r["categories"][0],
+        json!({ "kind": "builds", "path": d.path().join("builds"), "bytes": 6000 })
+    );
+    assert_eq!(r["builds"][0], json!({ "project": "blink", "bytes": 5000 }));
+    let clean = |p: Value| {
+        assert_valid(
+            &method_def("cache.clean")["params"],
+            &p,
+            "cache.clean params",
+        );
+        p
+    };
+    let r = c
+        .call(
+            "cache.clean",
+            clean(json!({ "project": "blink", "board": "esp32" })),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("cache.clean")["result"],
+        &r,
+        "cache.clean result",
+    );
+    assert_eq!(r["freed"], 3000);
+    assert!(d.path().join("builds/blink/esp32c3").is_dir());
+    assert_eq!(
+        c.call("cache.clean", clean(json!({ "project": "blink" })))
+            .await
+            .unwrap()["freed"],
+        2000
+    );
+    assert_eq!(
+        c.call("cache.clean", clean(json!({}))).await.unwrap()["freed"],
+        1000
+    );
+    assert_eq!(
+        c.call("cache.clean", clean(json!({}))).await.unwrap()["freed"],
+        0
+    ); // nothing left
+    for bad in [json!({ "board": "esp32" }), json!({ "project": "../x" })] {
+        match c.call("cache.clean", bad).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+            other => panic!("expected invalid params, got {other:?}"),
+        }
     }
 }
 

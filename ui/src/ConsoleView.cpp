@@ -279,8 +279,35 @@ QString tag(const QTextBlock &block)
 
 } // namespace OutputLines
 
+void ConsoleView::setPaused(bool paused)
+{
+    m_paused = paused;
+    if (paused)
+        return;
+    // What came meanwhile, in order.
+    const QList<Held> held = std::exchange(m_held, {});
+    for (const Held &h : held) {
+        if (h.notice)
+            appendNotice(h.text);
+        else
+            appendOutput(h.bytes, h.shown, h.lines);
+    }
+}
+
+void ConsoleView::setTextFilter(const QString &text)
+{
+    m_textFilter = text.trimmed();
+    refilter();
+}
+
 void ConsoleView::appendOutput(const QByteArray &bytes, const QJsonValue &shown, const QJsonArray &lines)
 {
+    if (m_paused) {
+        // At most the console's own length waits.
+        if (m_held.size() < 20000)
+            m_held.append({false, {}, bytes, shown, lines});
+        return;
+    }
     if (m_hex || !shown.isString()) {
         appendBytes(bytes);
         return;
@@ -328,6 +355,8 @@ bool ConsoleView::shows(const QTextBlock &block) const
     if (m_levelFilter == Problems && s != OutputLines::Error && s != OutputLines::Warning)
         return false;
     if (m_levelFilter == ErrorsOnly && s != OutputLines::Error)
+        return false;
+    if (!m_textFilter.isEmpty() && !block.text().contains(m_textFilter, Qt::CaseInsensitive))
         return false;
     return m_tagFilter.isEmpty() || OutputLines::tag(block) == m_tagFilter;
 }
@@ -423,11 +452,24 @@ void ConsoleView::appendText(QString text)
     c.insertText(text);
     if (!highlightWords().isEmpty())
         highlightFrom(from);
+    // Showing only some lines: the new ones that do not have the text are hidden.
+    if (!m_textFilter.isEmpty()) {
+        for (QTextBlock b = document()->findBlockByNumber(from); b.isValid() && b != document()->lastBlock(); b = b.next()) {
+            if (!shows(b)) {
+                b.setVisible(false);
+                document()->markContentsDirty(b.position(), b.length());
+            }
+        }
+    }
     followOrOffer(atEnd);
 }
 
 void ConsoleView::appendNotice(const QString &text)
 {
+    if (m_paused) {
+        m_held.append({true, text, {}, {}, {}});
+        return;
+    }
     QScrollBar *bar = verticalScrollBar();
     const bool atEnd = bar->value() == bar->maximum();
     QTextCursor c(document());
@@ -613,6 +655,8 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     , m_deltas(new QCheckBox(tr("Time between lines"), this))
     , m_forum(new QToolButton(this))
     , m_highlight(new QToolButton(this))
+    , m_only(new QLineEdit(this))
+    , m_pause(new QCheckBox(tr("Pause"), this))
     , m_save(new QToolButton(this))
 {
     m_find->setPlaceholderText(tr("Find in the output"));
@@ -669,6 +713,14 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
         QSettings().setValue(setting + u"Between"_s, on);
         m_view->setDeltas(on);
     });
+    m_only->setPlaceholderText(tr("Only lines with…"));
+    m_only->setAccessibleName(tr("Only lines with this text"));
+    m_only->setToolTip(tr("Show only the lines that have this text (case does not matter)"));
+    m_only->setClearButtonEnabled(true);
+    m_only->setMaximumWidth(160);
+    connect(m_only, &QLineEdit::textChanged, m_view, &ConsoleView::setTextFilter);
+    m_pause->setToolTip(tr("Hold the output still to read it; what comes meanwhile is kept, and shown when you go on"));
+    connect(m_pause, &QCheckBox::toggled, m_view, &ConsoleView::setPaused);
     m_highlight->setText(tr("Highlight…"));
     m_highlight->setToolTip(tr("Words to mark the lines of, in every console: ERROR, WiFi connected, your own markers"));
     connect(m_highlight, &QToolButton::clicked, this, [this] {
@@ -709,6 +761,8 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     layout->addWidget(m_next);
     layout->addWidget(m_levels);
     layout->addWidget(m_tags);
+    layout->addWidget(m_only);
+    layout->addWidget(m_pause);
     layout->addWidget(m_stamps);
     layout->addWidget(m_deltas);
     layout->addWidget(m_highlight);

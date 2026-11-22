@@ -34,6 +34,18 @@ pub struct Port {
     /// What board.inspect last found on this adapter's board, if it did.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inspected: Option<Inspected>,
+    /// What was last flashed to this adapter's board from the app.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flashed: Option<Flashed>,
+}
+
+/// A build flashed to a board, kept with its adapter (`Known`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct Flashed {
+    pub project: String,
+    pub board: String,
+    /// When, in seconds since 1970.
+    pub at: u64,
 }
 
 /// What an inspection found, kept with the chip (`Known`).
@@ -276,6 +288,7 @@ fn from_info(path: String, ty: serialport::SerialPortType) -> Port {
         access,
         identified: false,
         inspected: None,
+        flashed: None,
     }
 }
 
@@ -335,7 +348,8 @@ impl Known {
             return Ok(false);
         }
         let mut all = self.all();
-        let entry = match inspected {
+        let flashed = all.get(&key).and_then(|e| e.get("flashed")).cloned();
+        let mut entry = match inspected {
             Some(i) => {
                 let mut v = serde_json::to_value(i).map_err(std::io::Error::other)?;
                 v["chip"] = serde_json::Value::from(chip);
@@ -343,6 +357,53 @@ impl Known {
             }
             None => serde_json::Value::from(chip),
         };
+        // What was flashed there stays known.
+        if let Some(f) = flashed {
+            entry = Known::as_object(entry);
+            entry["flashed"] = f;
+        }
+        all.insert(key, entry);
+        if let Some(dir) = self.file.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let tmp = self.file.with_extension("tmp");
+        std::fs::write(
+            &tmp,
+            serde_json::to_vec_pretty(&all).map_err(std::io::Error::other)?,
+        )?;
+        std::fs::rename(tmp, &self.file)?;
+        Ok(true)
+    }
+
+    /// An entry as an object: an old one (the chip's id alone) as `{"chip": …}`.
+    fn as_object(entry: serde_json::Value) -> serde_json::Value {
+        match entry {
+            serde_json::Value::String(chip) => serde_json::json!({ "chip": chip }),
+            v if v.is_object() => v,
+            _ => serde_json::json!({}),
+        }
+    }
+
+    /// Remember that `project`'s build for `board` was flashed to the board behind the
+    /// adapter at `port`. False if the adapter cannot be told apart from others.
+    pub fn remember_flashed(
+        &self,
+        port: &Port,
+        project: &str,
+        board: &str,
+        at: u64,
+    ) -> std::io::Result<bool> {
+        let Some(key) = port.usb.as_ref().and_then(Known::key) else {
+            return Ok(false);
+        };
+        let mut all = self.all();
+        let mut entry = Known::as_object(all.remove(&key).unwrap_or_else(|| serde_json::json!({})));
+        entry["flashed"] = serde_json::to_value(Flashed {
+            project: project.to_owned(),
+            board: board.to_owned(),
+            at,
+        })
+        .map_err(std::io::Error::other)?;
         all.insert(key, entry);
         if let Some(dir) = self.file.parent() {
             std::fs::create_dir_all(dir)?;
@@ -369,6 +430,9 @@ impl Known {
                 continue;
             };
             p.inspected = serde_json::from_value(entry.clone()).ok();
+            p.flashed = entry
+                .get("flashed")
+                .and_then(|f| serde_json::from_value(f.clone()).ok());
             if p.chips.len() == 1 {
                 continue;
             }
@@ -656,6 +720,26 @@ mod tests {
         assert_eq!(ports[0].inspected, Some(found));
         let v = serde_json::to_value(&ports[0]).unwrap();
         assert_eq!(v["inspected"]["flashBytes"], 4 << 20);
+
+        // What was flashed is kept beside it, and stays through a new inspection.
+        let port = ports[0].clone();
+        assert!(
+            known
+                .remember_flashed(&port, "blink", "esp32c3", 1_795_000_100)
+                .unwrap()
+        );
+        assert!(known.remember_inspected(&port, "esp32c3", None).unwrap());
+        let mut ports = vec![port];
+        known.apply(&mut ports);
+        assert_eq!(
+            ports[0].flashed,
+            Some(Flashed {
+                project: "blink".into(),
+                board: "esp32c3".into(),
+                at: 1_795_000_100
+            })
+        );
+        assert_eq!(ports[0].chips, ["esp32c3"]);
     }
 
     #[test]

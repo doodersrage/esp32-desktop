@@ -19,6 +19,7 @@ class QSplitter;
 class SerialMonitor;
 class SetupDialog;
 class BacktraceDialog;
+class DiskSpaceDialog;
 class SimulatorPanel;
 class DebugPanel;
 class DisplayPanel;
@@ -208,6 +209,9 @@ private:
     QString m_problemsFor;
     QAction *m_decodeAction = nullptr;
     QAction *m_restartSim = nullptr;
+    QAction *m_rebuild = nullptr;
+    QString m_rebuildPending; // project/board being cleaned for Rebuild from scratch
+    DiskSpaceDialog *m_diskSpace = nullptr;
     BacktraceDialog *m_backtraces = nullptr;
     QPoint m_hoverAt;
     // Try Blink was pressed: run it once it is shown and can be.

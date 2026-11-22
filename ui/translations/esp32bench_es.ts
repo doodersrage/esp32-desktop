@@ -493,6 +493,14 @@ Variables globales: %4 de %5</translation>
         <translation>Selecciona un proyecto para colocar piezas virtuales en su placa.</translation>
     </message>
     <message>
+        <source>No part on it</source>
+        <translation>Ningún componente en él</translation>
+    </message>
+    <message>
+        <source>Wired to %1</source>
+        <translation>Conectado a %1</translation>
+    </message>
+    <message>
         <source>Not simulated: %1.</source>
         <translation>Sin simular: %1.</translation>
     </message>
@@ -674,6 +682,10 @@ Variables globales: %4 de %5</translation>
         <translation>Tiempo entre líneas</translation>
     </message>
     <message>
+        <source>Pause</source>
+        <translation>Pausa</translation>
+    </message>
+    <message>
         <source>Find in the output</source>
         <translation>Buscar en la salida</translation>
     </message>
@@ -736,6 +748,22 @@ Variables globales: %4 de %5</translation>
     <message>
         <source>Start each new line with the time since the line before it began (+12 ms), to time loops and delays. In the simulator it is this computer&apos;s time.</source>
         <translation>Empezar cada línea nueva con el tiempo desde que empezó la anterior (+12 ms), para medir bucles y esperas. En el simulador es el tiempo de este ordenador.</translation>
+    </message>
+    <message>
+        <source>Only lines with…</source>
+        <translation>Solo líneas con…</translation>
+    </message>
+    <message>
+        <source>Only lines with this text</source>
+        <translation>Solo líneas con este texto</translation>
+    </message>
+    <message>
+        <source>Show only the lines that have this text (case does not matter)</source>
+        <translation>Mostrar solo las líneas que tengan este texto (da igual mayúsculas o minúsculas)</translation>
+    </message>
+    <message>
+        <source>Hold the output still to read it; what comes meanwhile is kept, and shown when you go on</source>
+        <translation>Detener la salida para leerla; lo que llegue mientras se guarda y se muestra al seguir</translation>
     </message>
     <message>
         <source>Highlight…</source>
@@ -1326,6 +1354,16 @@ Variables globales: %4 de %5</translation>
         <translation>Encontrado por Inspeccionar el %1.</translation>
     </message>
     <message>
+        <source>%1 · runs %2</source>
+        <translation>%1 · ejecuta %2</translation>
+    </message>
+    <message>
+        <source>%1
+%2 for %3 was flashed here %4.</source>
+        <translation>%1
+Se grabó aquí %2 para %3 %4.</translation>
+    </message>
+    <message>
         <source>USB ID %1</source>
         <translation>ID USB %1</translation>
     </message>
@@ -1356,6 +1394,53 @@ Variables globales: %4 de %5</translation>
     <message>
         <source>Boards found: %1.</source>
         <translation>Placas encontradas: %1.</translation>
+    </message>
+</context>
+<context>
+    <name>DiskSpaceDialog</name>
+    <message>
+        <source>Remove this project&apos;s builds</source>
+        <translation>Quitar las compilaciones de este proyecto</translation>
+    </message>
+    <message>
+        <source>Remove all builds</source>
+        <translation>Quitar todas las compilaciones</translation>
+    </message>
+    <message>
+        <source>Disk space</source>
+        <translation>Espacio en disco</translation>
+    </message>
+    <message>
+        <source>What</source>
+        <translation>Qué</translation>
+    </message>
+    <message>
+        <source>Size</source>
+        <translation>Tamaño</translation>
+    </message>
+    <message>
+        <source>Where</source>
+        <translation>Dónde</translation>
+    </message>
+    <message>
+        <source>Builds are made again when they are needed. The simulator and the Arduino tools are installed from the toolchain setup; the Arduino tools are shared with the Arduino IDE, so they are not removed here.</source>
+        <translation>Las compilaciones se rehacen cuando hacen falta. El simulador y las herramientas de Arduino se instalan desde la configuración de herramientas; las de Arduino se comparten con el Arduino IDE, así que aquí no se quitan.</translation>
+    </message>
+    <message>
+        <source>Freed %1.</source>
+        <translation>Liberados %1.</translation>
+    </message>
+    <message>
+        <source>Builds</source>
+        <translation>Compilaciones</translation>
+    </message>
+    <message>
+        <source>Simulator</source>
+        <translation>Simulador</translation>
+    </message>
+    <message>
+        <source>Arduino tools</source>
+        <translation>Herramientas de Arduino</translation>
     </message>
 </context>
 <context>
@@ -2124,6 +2209,14 @@ El panel Compilación de abajo tiene el registro completo.</translation>
         <translation>Convertir una traza de un registro guardado o de un foro en líneas del proyecto mostrado</translation>
     </message>
     <message>
+        <source>Re&amp;build from scratch</source>
+        <translation>Re&amp;compilar desde cero</translation>
+    </message>
+    <message>
+        <source>Remove this project&apos;s build for the board shown, and build it again from nothing: for a build that behaves oddly</source>
+        <translation>Quitar la compilación de este proyecto para la placa mostrada y compilarla de nuevo desde cero: para una compilación que se comporta raro</translation>
+    </message>
+    <message>
         <source>&amp;View</source>
         <translation>&amp;Ver</translation>
     </message>
@@ -2174,6 +2267,10 @@ El panel Compilación de abajo tiene el registro completo.</translation>
     <message>
         <source>&amp;Toolchain setup…</source>
         <translation>&amp;Configurar herramientas…</translation>
+    </message>
+    <message>
+        <source>&amp;Disk space…</source>
+        <translation>&amp;Espacio en disco…</translation>
     </message>
     <message>
         <source>&amp;Preferences…</source>

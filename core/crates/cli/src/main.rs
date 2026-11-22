@@ -51,6 +51,9 @@ enum Cmd {
     /// work wherever a library project's does (build, the app's simulator, flashing).
     #[command(subcommand)]
     Local(LocalCmd),
+    /// What the app keeps on disk, and removing builds.
+    #[command(subcommand)]
+    Cache(CacheCmd),
     /// Show your note for a project, or keep this text as it (as `notes.get` /
     /// `notes.set`).
     Notes {
@@ -730,6 +733,18 @@ async fn circuit_command(cmd: CircuitCmd) -> Result<()> {
 }
 
 #[derive(Subcommand)]
+enum CacheCmd {
+    /// The builds (each project's), the simulator and the Arduino tools, in megabytes.
+    Usage,
+    /// Remove builds: all, a project's, or a project's for one board.
+    Clean {
+        project: Option<String>,
+        #[arg(long, requires = "project")]
+        board: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 enum SimCmd {
     /// Show the breakpoints kept for a project's debug runs, or keep these instead
     /// (as `breakpoints.get` / `breakpoints.set`): function names or file:line, each
@@ -1206,6 +1221,51 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             };
             for e in kept {
                 println!("{e}");
+            }
+        }
+        Cmd::Cache(CacheCmd::Usage) => {
+            let builds = esp32bench_library::cache_dir()?.join("builds");
+            let mb = |b: u64| b as f64 / 1_048_576.0;
+            for (name, dir) in [
+                ("builds", builds.clone()),
+                (
+                    "simulator",
+                    esp32bench_sim::install::data_dir()?.join("qemu"),
+                ),
+                (
+                    "arduino",
+                    esp32bench_toolchain::Env::default_arduino_data().unwrap_or_default(),
+                ),
+            ] {
+                println!(
+                    "{name:<10} {:>9.1} MB  {}",
+                    mb(esp32bench_distro::dirs::dir_bytes(&dir)),
+                    dir.display()
+                );
+            }
+            for e in std::fs::read_dir(&builds).into_iter().flatten().flatten() {
+                println!(
+                    "  {:<24} {:>9.1} MB",
+                    e.file_name().to_string_lossy(),
+                    mb(esp32bench_distro::dirs::dir_bytes(&e.path()))
+                );
+            }
+        }
+        Cmd::Cache(CacheCmd::Clean { project, board }) => {
+            let mut dir = esp32bench_library::cache_dir()?.join("builds");
+            if let Some(p) = &project {
+                esp32bench_build::safe_id(p)?;
+                dir = dir.join(p);
+            }
+            if let Some(b) = &board {
+                esp32bench_build::safe_id(b)?;
+                dir = dir.join(b);
+            }
+            let bytes = esp32bench_distro::dirs::dir_bytes(&dir);
+            match std::fs::remove_dir_all(&dir) {
+                Ok(()) => println!("freed {:.1} MB", bytes as f64 / 1_048_576.0),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => println!("nothing to remove"),
+                Err(e) => return Err(e.into()),
             }
         }
         Cmd::Notes {

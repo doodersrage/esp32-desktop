@@ -59,6 +59,8 @@ public:
     // What the board's chip says of a pin (circuit.pinNotes), or empty. The Add
     // dialog shows it under a pin's box.
     QString pinNote(int gpio) const;
+    // A board pin's tooltip on the canvas: its GPIO, the parts wired to it, its note.
+    QString pinTip(int gpio) const;
     // Export circuit… / Import circuit… (circuit.export, circuit.import); an import
     // replaces the board's parts, and Undo puts them back.
     void exportTo(const QString &path);

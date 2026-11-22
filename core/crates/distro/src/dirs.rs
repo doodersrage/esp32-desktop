@@ -73,3 +73,19 @@ pub fn arduino_data() -> Option<PathBuf> {
         home().map(|h| h.join(".arduino15"))
     }
 }
+
+/// The bytes of the files under `dir` (links are not followed); 0 if it is missing.
+pub fn dir_bytes(dir: &std::path::Path) -> u64 {
+    let mut total = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => stack.push(entry.path()),
+                Ok(t) if t.is_file() => total += entry.metadata().map_or(0, |m| m.len()),
+                _ => {}
+            }
+        }
+    }
+    total
+}
