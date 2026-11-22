@@ -19,6 +19,7 @@
 #include <QPushButton>
 #include <QAction>
 #include <QKeySequence>
+#include <QLineEdit>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -68,7 +69,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.39.0"_s}}}});
+                                               {u"protocol"_s, u"0.40.0"_s}}}});
         } else if (method == u"build.start") {
             const QString consent = params.value(u"consent"_s).toString();
             buildRequests << (consent.isEmpty() ? u"-"_s : consent);
@@ -237,6 +238,11 @@ private slots:
         QCOMPARE(shown.size(), 1);
         QCOMPARE(shown.at(0).at(0).toJsonObject(), at);
         QVERIFY(!panel.activateLine(2));
+        // Find in the log, round from the end.
+        QVERIFY(panel.findText(u"oops"_s));
+        QVERIFY(panel.findText(u"Compiling"_s, true));
+        QVERIFY(!panel.findText(u"no such words"_s));
+        QCOMPARE(panel.findField()->toolTip(), u"Not found"_s);
         // F8 and Shift+F8: the next and previous located problem, round from the end.
         QVERIFY(panel.nextProblemAction()->isEnabled());
         QCOMPARE(panel.nextProblemAction()->shortcut(), QKeySequence(Qt::Key_F8));

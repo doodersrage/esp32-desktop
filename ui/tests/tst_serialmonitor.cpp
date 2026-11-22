@@ -38,6 +38,8 @@
 #include <QTemporaryDir>
 #include <QStandardPaths>
 #include <QRegularExpression>
+#include <QMenuBar>
+#include <QLocale>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -93,7 +95,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.39.0"_s}});
+                                  {u"protocol"_s, u"0.40.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
@@ -451,6 +453,16 @@ private slots:
                  u"LoadProhibited"_s);
         QCOMPARE(ProblemsPanel::searchTerms(u"error: 'foo' was not declared in this scope"_s), u"was not declared in this scope"_s);
         QCOMPARE(ProblemsPanel::searchUrl(u"SW_CPU_RESET"_s).toString(), u"https://esp32bench.dev/search/?q=SW_CPU_RESET"_s);
+        // Alt+1 to Alt+9 go to the panels; the speed of a simulation, in words.
+        QStringList goTo;
+        for (QMenu *menu : window.menuBar()->findChildren<QMenu *>())
+            for (QAction *a : menu->actions())
+                if (a->shortcut() == QKeySequence(Qt::ALT | Qt::Key_3))
+                    goTo << a->text();
+        QCOMPARE(goTo, QStringList{u"Simulator"_s});
+        window.goToPanel(window.findChild<QDockWidget *>(u"traceDock"_s));
+        QVERIFY(window.findChild<QDockWidget *>(u"traceDock"_s)->isVisibleTo(&window));
+        QCOMPARE(MainWindow::speedText(0.87), u"%1× real time"_s.arg(QLocale().toString(0.9, 'f', 1)));
         // The layouts: the panels each task needs.
         window.showLayout(MainWindow::Layout::Hardware);
         QVERIFY(window.findChild<QDockWidget *>(u"serialDock"_s)->isVisibleTo(&window));

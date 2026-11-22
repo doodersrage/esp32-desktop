@@ -54,6 +54,7 @@ fn state(dir: &Path, source: &Path) -> Arc<esp32bench_daemon::State> {
     // Never the user's own data directory.
     s.breakpoints = esp32bench_library::commands::Commands::new(dir.join("breakpoints.json"));
     s.watches = esp32bench_library::commands::Commands::new(dir.join("watches.json"));
+    s.notes = esp32bench_library::notes::Notes::new(dir.join("notes.json"));
     Arc::new(s)
 }
 
@@ -2141,6 +2142,131 @@ async fn circuits_go_to_files_and_pins_have_notes() {
             Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS, "{text}"),
             other => panic!("imported {text}: {other:?}"),
         }
+    }
+}
+
+// The user's notes, and every setting to a file and back on another computer.
+#[tokio::test]
+async fn notes_and_settings_travel_in_one_file() {
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let r = c
+        .call("notes.get", json!({ "project": "blink" }))
+        .await
+        .unwrap();
+    assert_valid(&method_def("notes.get")["result"], &r, "notes.get result");
+    assert_eq!(r["text"], "");
+    let r = c
+        .call(
+            "notes.set",
+            json!({ "project": "blink", "text": "LED moved to GPIO 4." }),
+        )
+        .await
+        .unwrap();
+    assert_valid(&method_def("notes.set")["result"], &r, "notes.set result");
+    assert_eq!(
+        c.call("notes.get", json!({ "project": "blink" }))
+            .await
+            .unwrap()["text"],
+        "LED moved to GPIO 4."
+    );
+
+    c.call(
+        "breakpoints.set",
+        json!({ "project": "blink", "breakpoints": ["setup", "blink.ino:12 if i == 3"] }),
+    )
+    .await
+    .unwrap();
+    c.call(
+        "watches.set",
+        json!({ "project": "blink", "watches": ["count"] }),
+    )
+    .await
+    .unwrap();
+    c.call(
+        "commands.set",
+        json!({ "project": "blink", "commands": ["status"] }),
+    )
+    .await
+    .unwrap();
+    c.call("library.star", json!({ "id": "blink", "starred": true }))
+        .await
+        .unwrap();
+    c.call(
+        "circuit.set",
+        json!({ "project": "blink", "board": "esp32", "circuit": { "schemaVersion": "1.3.0",
+            "parts": [{ "id": "led-1", "kind": "led", "pins": { "anode": 2 } }] } }),
+    )
+    .await
+    .unwrap();
+    let file = d.path().join("settings.json");
+    let r = c
+        .call("data.export", json!({ "path": file }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("data.export")["result"],
+        &r,
+        "data.export result",
+    );
+    assert_eq!(
+        r["counts"],
+        json!({ "breakpoints": 1, "watches": 1, "commands": 1, "starred": 1, "notes": 1, "circuits": 1 })
+    );
+
+    // Another computer: a fresh daemon, with nothing kept yet.
+    let (_d2, sock2, _lock2) = daemon().await;
+    let mut c2 = Client::connect(&sock2).await.unwrap();
+    let r = c2
+        .call("data.import", json!({ "path": file }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("data.import")["result"],
+        &r,
+        "data.import result",
+    );
+    assert_eq!(r["skipped"], 0);
+    assert_eq!(
+        c2.call("breakpoints.get", json!({ "project": "blink" }))
+            .await
+            .unwrap()["breakpoints"],
+        json!(["setup", "blink.ino:12 if i == 3"])
+    );
+    assert_eq!(
+        c2.call("notes.get", json!({ "project": "blink" }))
+            .await
+            .unwrap()["text"],
+        "LED moved to GPIO 4."
+    );
+    assert_eq!(
+        c2.call(
+            "circuit.get",
+            json!({ "project": "blink", "board": "esp32" })
+        )
+        .await
+        .unwrap()["circuit"]["parts"][0]["id"],
+        "led-1"
+    );
+    // A bad entry is left out and counted; a file that is not one is refused.
+    let mut b: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    b["watches"]["oled"] = json!(["$_shell(\"x\")"]);
+    std::fs::write(&file, serde_json::to_vec(&b).unwrap()).unwrap();
+    let r = c2
+        .call("data.import", json!({ "path": file }))
+        .await
+        .unwrap();
+    assert_eq!(r["skipped"], 1);
+    assert_eq!(
+        c2.call("watches.get", json!({ "project": "oled" }))
+            .await
+            .unwrap()["watches"],
+        json!([])
+    );
+    std::fs::write(&file, r#"{"format":"something else"}"#).unwrap();
+    match c2.call("data.import", json!({ "path": file })).await {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("imported something else: {other:?}"),
     }
 }
 

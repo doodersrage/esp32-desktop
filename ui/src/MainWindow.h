@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QUrl>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QMainWindow>
 
@@ -54,6 +55,8 @@ public:
     // For tests: the status bar's simulation and serial port.
     QString simStateText() const;
     QString portStateText() const;
+    // "0.9× real time": how fast a simulation runs against this computer's clock.
+    static QString speedText(double ratio);
     DebugPanel *debugger() const { return m_debugger; }
     DisplayPanel *display() const { return m_display; }
     PinsPanel *pins() const { return m_pins; }
@@ -98,6 +101,9 @@ public:
     // View → Layout: the panels for writing code, debugging, or a real board.
     enum class Layout { Coding, Debugging, Hardware };
     void showLayout(Layout layout);
+    // View → Go to (Alt+1 to Alt+9): a panel shown and given the keyboard, or the
+    // library for none.
+    void goToPanel(QWidget *dock);
     // Help → Keyboard shortcuts' text (rich text), and its dialog.
     QString shortcutsText() const;
     void showShortcuts();
@@ -193,6 +199,10 @@ private:
     QLabel *m_simState = nullptr;
     QLabel *m_portState = nullptr;
     QString m_simTime;
+    // The simulated clock's last tick, when it came, and how fast it runs.
+    qint64 m_lastClockNs = -1;
+    QElapsedTimer m_clockWall;
+    QString m_simSpeed;
     // The last build's errors and warnings in the sketch shown, by line.
     QHash<int, QPair<QString, QString>> m_codeProblems;
     QString m_problemsFor;

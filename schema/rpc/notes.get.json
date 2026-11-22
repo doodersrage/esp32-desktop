@@ -1,0 +1,45 @@
+{
+  "method": "notes.get",
+  "description": "Since protocol 0.40: the user's own note for a project, kept in the data directory's notes.json; empty if none.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    }
+  },
+  "errors": [
+    -32602
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink"
+      },
+      "result": {
+        "text": "LED moved to GPIO 4."
+      }
+    }
+  ]
+}

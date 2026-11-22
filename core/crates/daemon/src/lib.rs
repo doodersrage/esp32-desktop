@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.39.0";
+pub const PROTOCOL: &str = "0.40.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -69,6 +69,8 @@ pub struct State {
     pub breakpoints: esp32bench_library::commands::Commands,
     /// Expressions the debugger watches, per project (watches.get/watches.set).
     pub watches: esp32bench_library::commands::Commands,
+    /// The user's notes per project (notes.get/notes.set).
+    pub notes: esp32bench_library::notes::Notes,
     /// ESP-IDF to use instead of detecting one (tests).
     pub idf_path: Option<PathBuf>,
 }
@@ -176,6 +178,11 @@ impl State {
                 esp32bench_sim::install::data_dir()
                     .map(|d| d.join("watches.json"))
                     .unwrap_or_else(|_| PathBuf::from("esp32bench-watches.json")),
+            ),
+            notes: esp32bench_library::notes::Notes::new(
+                esp32bench_sim::install::data_dir()
+                    .map(|d| d.join("notes.json"))
+                    .unwrap_or_else(|_| PathBuf::from("esp32bench-notes.json")),
             ),
             idf_path: None,
         }
@@ -470,6 +477,34 @@ pub fn router(state: Arc<State>) -> Router {
             move |p, _| {
                 let s = s.clone();
                 async move { backtrace_decode(p, s).await }
+            }
+        })
+        .method("data.export", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { data_export(p, s).await }
+            }
+        })
+        .method("data.import", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { data_import(p, s).await }
+            }
+        })
+        .method("notes.get", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { notes(p, s, false).await }
+            }
+        })
+        .method("notes.set", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { notes(p, s, true).await }
             }
         })
         .method("watches.get", {
@@ -997,6 +1032,193 @@ async fn breakpoints(params: Value, state: Arc<State>, set: bool) -> Result<Valu
         state.breakpoints.get(&p.project)
     };
     Ok(json!({ "breakpoints": kept }))
+}
+
+/// What a settings backup (data.export) holds, by name.
+const BACKUP_FORMAT: &str = "esp32bench-settings";
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BackupParams {
+    path: PathBuf,
+}
+
+/// data.export: the user's own settings in one file, to move to another computer:
+/// breakpoints, watches, quick-send lines, stars, notes and circuits.
+async fn data_export(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: BackupParams = parse_params(params)?;
+    if !p.path.is_absolute() {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    let mut circuits = serde_json::Map::new();
+    for (project, board) in esp32bench_circuit::list(&state.circuits_root) {
+        if let Ok(c) = esp32bench_circuit::load(&state.circuits_root, &project, &board) {
+            circuits.insert(format!("{project}/{board}"), json!(c));
+        }
+    }
+    let backup = json!({
+        "format": BACKUP_FORMAT,
+        "version": 1,
+        "breakpoints": state.breakpoints.all(),
+        "watches": state.watches.all(),
+        "commands": state.commands.all(),
+        "starred": state.starred.list(),
+        "notes": state.notes.all(),
+        "circuits": circuits,
+    });
+    let counts = backup_counts(&backup);
+    let mut text =
+        serde_json::to_vec_pretty(&backup).map_err(|e| RpcError::internal(e.to_string()))?;
+    text.push(b'\n');
+    tokio::fs::write(&p.path, &text)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("writing {}: {e}", p.path.display())))?;
+    Ok(json!({ "path": p.path, "counts": counts }))
+}
+
+/// How many of each a backup holds.
+fn backup_counts(b: &Value) -> Value {
+    let n = |k: &str| {
+        b[k].as_object()
+            .map_or_else(|| b[k].as_array().map_or(0, Vec::len), serde_json::Map::len)
+    };
+    json!({
+        "breakpoints": n("breakpoints"),
+        "watches": n("watches"),
+        "commands": n("commands"),
+        "starred": n("starred"),
+        "notes": n("notes"),
+        "circuits": n("circuits"),
+    })
+}
+
+/// data.import: a settings backup merged in, each entry checked as the method that
+/// keeps it checks it; what the file has replaces what is here for the same project
+/// (and board). Entries that do not pass are left out and counted.
+async fn data_import(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: BackupParams = parse_params(params)?;
+    if !p.path.is_absolute() {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    let data = tokio::fs::read(&p.path)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("reading {}: {e}", p.path.display())))?;
+    if data.len() > 4 * 1024 * 1024 {
+        return Err(RpcError::invalid_params("the file is larger than 4 MiB"));
+    }
+    let b: Value = serde_json::from_slice(&data)
+        .map_err(|e| RpcError::invalid_params(format!("not a settings file: {e}")))?;
+    if b["format"] != BACKUP_FORMAT || b["version"] != 1 {
+        return Err(RpcError::invalid_params(
+            "not an esp32bench settings file (version 1)",
+        ));
+    }
+    let io = |e: std::io::Error| RpcError::new(code::FAILED, e.to_string());
+    let ok_id = |id: &str| !id.is_empty() && id.len() <= 200;
+    let strings = |v: &Value| -> Vec<String> {
+        v.as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|x| x.as_str().map(str::to_owned))
+            .collect()
+    };
+    let mut skipped = 0usize;
+    for (project, list) in b["breakpoints"].as_object().into_iter().flatten() {
+        let list = strings(list);
+        if ok_id(project)
+            && list.iter().all(|l| {
+                l.chars().count() <= 200 && esp32bench_debug::split_breakpoint(l).is_some()
+            })
+        {
+            state.breakpoints.set(project, list).map_err(io)?;
+        } else {
+            skipped += 1;
+        }
+    }
+    for (project, list) in b["watches"].as_object().into_iter().flatten() {
+        let list = strings(list);
+        if ok_id(project)
+            && list
+                .iter()
+                .all(|e| e.chars().count() <= 200 && esp32bench_debug::valid_expression(e))
+        {
+            state.watches.set(project, list).map_err(io)?;
+        } else {
+            skipped += 1;
+        }
+    }
+    for (project, list) in b["commands"].as_object().into_iter().flatten() {
+        if ok_id(project) {
+            state.commands.set(project, strings(list)).map_err(io)?;
+        } else {
+            skipped += 1;
+        }
+    }
+    for id in strings(&b["starred"]) {
+        if esp32bench_build::safe_id(&id).is_ok() {
+            state.starred.set(&id, true).map_err(io)?;
+        } else {
+            skipped += 1;
+        }
+    }
+    for (project, text) in b["notes"].as_object().into_iter().flatten() {
+        match text.as_str() {
+            Some(t) if ok_id(project) => {
+                state.notes.set(project, t).map_err(io)?;
+            }
+            _ => skipped += 1,
+        }
+    }
+    for (key, circuit) in b["circuits"].as_object().into_iter().flatten() {
+        let parsed = key
+            .split_once('/')
+            .filter(|(p, bd)| check_ids(p, bd).is_ok())
+            .and_then(|(p, bd)| {
+                serde_json::from_value::<esp32bench_circuit::Circuit>(circuit.clone())
+                    .ok()
+                    .filter(|c| c.validate().is_ok())
+                    .map(|c| (p, bd, c))
+            });
+        match parsed {
+            Some((project, board, c)) => {
+                esp32bench_circuit::save(&state.circuits_root, project, board, &c)
+                    .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+            }
+            None => skipped += 1,
+        }
+    }
+    Ok(json!({ "counts": backup_counts(&b), "skipped": skipped }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NotesParams {
+    project: String,
+    #[serde(default)]
+    text: Option<String>,
+}
+
+/// notes.get and notes.set: the user's own note for a project.
+async fn notes(params: Value, state: Arc<State>, set: bool) -> Result<Value, RpcError> {
+    let p: NotesParams = parse_params(params)?;
+    if p.project.is_empty() || p.project.len() > 200 {
+        return Err(RpcError::invalid_params("bad project id"));
+    }
+    let text = if set {
+        let text = p
+            .text
+            .ok_or_else(|| RpcError::invalid_params("notes.set needs text"))?;
+        state
+            .notes
+            .set(&p.project, &text)
+            .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+    } else {
+        if p.text.is_some() {
+            return Err(RpcError::invalid_params("notes.get takes no text"));
+        }
+        state.notes.get(&p.project)
+    };
+    Ok(json!({ "text": text }))
 }
 
 #[derive(Deserialize)]

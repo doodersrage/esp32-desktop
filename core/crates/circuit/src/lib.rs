@@ -446,6 +446,30 @@ pub fn path(root: &Path, project: &str, board: &str) -> PathBuf {
     root.join(project).join(format!("{board}.json"))
 }
 
+/// The projects and boards with a saved circuit under `root`.
+pub fn list(root: &Path) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for project in std::fs::read_dir(root).into_iter().flatten().flatten() {
+        let Some(name) = project.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        for file in std::fs::read_dir(project.path())
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let path = file.path();
+            if path.extension().is_some_and(|e| e == "json")
+                && let Some(board) = path.file_stem().and_then(|s| s.to_str())
+            {
+                out.push((name.clone(), board.to_owned()));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 /// The saved circuit, or an empty one if there is none.
 pub fn load(root: &Path, project: &str, board: &str) -> Result<Circuit, Error> {
     match std::fs::read(path(root, project, board)) {

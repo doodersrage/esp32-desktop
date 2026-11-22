@@ -1,5 +1,6 @@
 #include "BuildPanel.h"
 
+#include <QLineEdit>
 #include <QTextDocument>
 #include <QToolButton>
 
@@ -135,6 +136,15 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
                            "for a forum post or an issue, with the app's version, the project and the board"));
     connect(m_forum, &QToolButton::clicked, this, [this] { QGuiApplication::clipboard()->setText(forumText()); });
     top->addWidget(m_forum);
+    // Find in the log (Ctrl+F in this dock): Enter for the next, Shift+Enter the last.
+    m_find = new QLineEdit(this);
+    m_find->setPlaceholderText(tr("Find in the log"));
+    m_find->setAccessibleName(tr("Find in the log"));
+    m_find->setClearButtonEnabled(true);
+    m_find->setMaximumWidth(220);
+    connect(m_find, &QLineEdit::returnPressed, this,
+            [this] { findText(m_find->text(), QGuiApplication::keyboardModifiers() & Qt::ShiftModifier); });
+    top->addWidget(m_find);
     top->addWidget(m_cancel);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
@@ -252,6 +262,29 @@ bool BuildPanel::activateLine(int blockNumber)
         return false;
     emit locationActivated(d->location);
     return true;
+}
+
+bool BuildPanel::findText(const QString &text, bool backward)
+{
+    if (text.isEmpty())
+        return false;
+    const QTextDocument::FindFlags flags = backward ? QTextDocument::FindBackward : QTextDocument::FindFlags();
+    bool found = m_log->find(text, flags);
+    if (!found) {
+        // Round from the other end.
+        QTextCursor c(m_log->document());
+        c.movePosition(backward ? QTextCursor::End : QTextCursor::Start);
+        m_log->setTextCursor(c);
+        found = m_log->find(text, flags);
+    }
+    m_find->setToolTip(found ? QString() : tr("Not found"));
+    return found;
+}
+
+void BuildPanel::focusFind()
+{
+    m_find->setFocus(Qt::ShortcutFocusReason);
+    m_find->selectAll();
 }
 
 bool BuildPanel::goToProblem(bool forward)

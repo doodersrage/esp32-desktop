@@ -70,7 +70,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         const QJsonArray ports{QJsonObject{{u"path"_s, u"/dev/ttyACM0"_s}}};
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.39.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.40.0"_s}});
             return;
         }
         if (m == u"device.watch") {
@@ -265,7 +265,11 @@ private slots:
         QVERIFY2(fake.boardCalls().isEmpty(), qPrintable(fake.calls.join(u", "_s)));
         window.eraseAnswer = true;
         emit window.devicesPanel()->eraseRequested(u"/dev/ttyACM0"_s);
-        QTRY_COMPARE(fake.boardCalls(), QStringList{u"board.erase confirm=true"_s});
+        // Said on failure: what the core was asked, and whether a board job held it.
+        QTRY_VERIFY2(fake.boardCalls() == QStringList{u"board.erase confirm=true"_s},
+                     qPrintable(u"calls: %1; board busy: %2; erase asked %3 times"_s.arg(fake.calls.join(u", "_s))
+                                    .arg(core.isBoardBusy())
+                                    .arg(window.eraseAsked)));
 
         // The toolbar's Board menu does the same for the port chosen there.
         QTRY_VERIFY(window.boardMenuButton()->isEnabled());

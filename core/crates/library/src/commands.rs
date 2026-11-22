@@ -20,7 +20,8 @@ impl Commands {
         Commands { file }
     }
 
-    fn all(&self) -> BTreeMap<String, Vec<String>> {
+    /// Every project's lines.
+    pub fn all(&self) -> BTreeMap<String, Vec<String>> {
         std::fs::read(&self.file)
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())

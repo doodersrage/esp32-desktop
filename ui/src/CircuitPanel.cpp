@@ -327,6 +327,11 @@ protected:
     }
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override
     {
+        // Dragged with the mouse: onto a 10-pixel grid, so parts line up.
+        if (change == ItemPositionChange && m_dragging) {
+            const QPointF p = value.toPointF();
+            return QPointF(std::round(p.x() / 10) * 10, std::round(p.y() / 10) * 10);
+        }
         if (change == ItemPositionHasChanged && moving)
             moving(value.toPointF());
         return QGraphicsItem::itemChange(change, value);
@@ -334,6 +339,7 @@ protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override
     {
         m_pressedAt = pos();
+        m_dragging = true;
         QGraphicsItem::mousePressEvent(event);
         if (!m_momentary.isEmpty())
             m_control(m_momentary, true);
@@ -343,6 +349,7 @@ protected:
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override
     {
         QGraphicsItem::mouseReleaseEvent(event);
+        m_dragging = false;
         if (moved && (pos() - m_pressedAt).manhattanLength() > 4)
             moved(pos());
         if (!m_momentary.isEmpty())
@@ -352,6 +359,7 @@ protected:
 private:
     QPointF m_pressedAt;
     bool m_keyMoving = false;
+    bool m_dragging = false;
     QString m_id;
     QString m_look;
     QString m_label;
@@ -497,6 +505,13 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
         menu->popup(m_examples->mapToGlobal(QPoint(0, m_examples->height())));
     });
     tools->addWidget(m_examples);
+    m_tidy = new QToolButton(this);
+    m_tidy->setText(tr("Tidy"));
+    m_tidy->setIcon(QIcon::fromTheme(u"view-restore"_s));
+    m_tidy->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_tidy->setToolTip(tr("Put every part back in its place beside the board (Undo puts them where they were)"));
+    connect(m_tidy, &QToolButton::clicked, this, &CircuitPanel::tidy);
+    tools->addWidget(m_tidy);
     // The parts to a file and back, to share a wiring setup.
     m_file = new QToolButton(this);
     m_file->setText(tr("File"));
@@ -702,6 +717,26 @@ void CircuitPanel::showBoard(const QString &project, const QString &board, const
     m_add->setEnabled(!m_models.isEmpty());
     if (m_core->state() == CoreConnection::State::Connected)
         m_core->loadCircuit(project, board);
+}
+
+bool CircuitPanel::tidy()
+{
+    QJsonArray list = parts();
+    bool moved = false;
+    for (qsizetype n = 0; n < list.size(); ++n) {
+        QJsonObject part = list.at(n).toObject();
+        if (part.contains(u"at"_s)) {
+            part.remove(u"at"_s);
+            moved = true;
+        }
+        list.replace(n, part);
+    }
+    if (!moved || m_project.isEmpty())
+        return false;
+    QJsonObject c = m_circuit;
+    c.insert(u"parts"_s, list);
+    edit(c);
+    return true;
 }
 
 void CircuitPanel::exportTo(const QString &path)
@@ -1001,11 +1036,15 @@ void CircuitPanel::removePart(const QString &id)
 void CircuitPanel::movePart(const QString &id, QPointF to)
 {
     QJsonArray list = parts();
+    const QJsonObject at{{u"x"_s, qRound(to.x())}, {u"y"_s, qRound(to.y())}};
     for (qsizetype n = 0; n < list.size(); ++n) {
         QJsonObject part = list.at(n).toObject();
         if (part.value(u"id"_s).toString() != id)
             continue;
-        part.insert(u"at"_s, QJsonObject{{u"x"_s, qRound(to.x())}, {u"y"_s, qRound(to.y())}});
+        // Where it already is (a release reported twice): nothing to save or undo.
+        if (part.value(u"at"_s).toObject() == at)
+            return;
+        part.insert(u"at"_s, at);
         list.replace(n, part);
     }
     QJsonObject c = m_circuit;

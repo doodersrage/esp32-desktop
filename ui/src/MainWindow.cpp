@@ -37,6 +37,7 @@
 #include <QLineEdit>
 #include <QMimeData>
 #include <QSysInfo>
+#include <QFileDialog>
 #include <QToolTip>
 #include <QUrl>
 #include <QUrlQuery>
@@ -539,6 +540,8 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     };
     connect(m_core, &CoreConnection::simStarted, this, [this, simState] {
         m_simTime.clear();
+        m_lastClockNs = -1;
+        m_simSpeed.clear();
         simState();
     });
     connect(m_core, &CoreConnection::simStopped, this, simState);
@@ -547,6 +550,16 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     connect(m_core, &CoreConnection::simPaused, this, simState);
     connect(m_core, &CoreConnection::simClock, this, [this, simState](qint64 ns) {
         m_simTime = tr("%1 s simulated").arg(QLocale().toString(double(ns) / 1e9, 'f', 1));
+        // How fast it runs: simulated time over this computer's, since the last tick.
+        if (m_lastClockNs >= 0 && m_clockWall.isValid() && !m_core->isSimPaused()) {
+            const qint64 wall = m_clockWall.nsecsElapsed();
+            if (wall > 0)
+                m_simSpeed = speedText(double(ns - m_lastClockNs) / double(wall));
+        }
+        m_lastClockNs = ns;
+        m_clockWall.start();
+        if (!m_simSpeed.isEmpty())
+            m_simTime = tr("%1 · %2").arg(m_simTime, m_simSpeed);
         simState();
     });
     connect(m_core, &CoreConnection::serialOpened, this, [this](const QString &path, int baud) {
@@ -930,6 +943,43 @@ void MainWindow::buildMenus()
             recent->addAction(tr("None yet"))->setEnabled(false);
     });
     file->addSeparator();
+    // Your settings in one file, to move to another computer.
+    file->addSeparator();
+    file->addAction(tr("&Export settings…"), this, [this] {
+        const QString path = QFileDialog::getSaveFileName(
+            this, tr("Export your settings"),
+            QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath(u"esp32bench-settings.json"_s),
+            tr("Settings files (*.json)"));
+        if (!path.isEmpty())
+            m_core->exportSettings(path);
+    });
+    file->addAction(tr("&Import settings…"), this, [this] {
+        const QString path = QFileDialog::getOpenFileName(
+            this, tr("Import settings"), QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+            tr("Settings files (*.json)"));
+        if (!path.isEmpty())
+            m_core->importSettings(path);
+    });
+    connect(m_core, &CoreConnection::settingsExported, this, [this](const QString &path, const QJsonObject &) {
+        statusBar()->showMessage(tr("Your settings were saved to %1.").arg(path), 10000);
+    });
+    connect(m_core, &CoreConnection::settingsImported, this, [this](const QJsonObject &, int skipped) {
+        statusBar()->showMessage(skipped > 0 ? tr("Settings imported; some entries did not fit this version and were left out.")
+                                             : tr("Settings imported."),
+                                 10000);
+        // What they change, read again: stars, and the project shown.
+        m_core->listLibrary();
+        const QString id = m_project->currentProjectId();
+        if (!id.isEmpty()) {
+            m_debugger->setProject({});
+            m_debugger->setProject(id);
+            m_project->showProject(id);
+        }
+    });
+    connect(m_core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
+        if (method == u"data.export" || method == u"data.import")
+            m_messages->showError(tr("Settings: %1").arg(message));
+    });
     QAction *quit = file->addAction(QIcon::fromTheme(u"application-exit"_s), tr("&Quit"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
@@ -972,6 +1022,17 @@ void MainWindow::buildMenus()
     find->setShortcut(QKeySequence::Find);
     connect(find, &QAction::triggered, this, &MainWindow::find);
     view->addSeparator();
+    // Alt+1 to Alt+9: straight to a panel, shown if it was closed.
+    QMenu *goTo = view->addMenu(tr("&Go to"));
+    const QList<std::pair<QString, QWidget *>> places = {
+        {tr("Library"), nullptr},           {tr("Build"), m_buildDock},       {tr("Simulator"), m_simDock},
+        {tr("Serial monitor"), m_serialDock}, {tr("Debugger"), m_debugDock},  {tr("Circuit"), m_circuitDock},
+        {tr("Trace"), m_traceDock},         {tr("Pins"), m_pinsDock},         {tr("Problems"), m_problemsDock}};
+    for (int i = 0; i < places.size(); ++i) {
+        QWidget *place = places.at(i).second;
+        QAction *a = goTo->addAction(places.at(i).first, this, [this, place] { goToPanel(place); });
+        a->setShortcut(QKeySequence(Qt::ALT | Qt::Key(Qt::Key_1 + i)));
+    }
     QMenu *layouts = view->addMenu(tr("&Layout"));
     layouts->addAction(tr("&Coding"), this, [this] { showLayout(Layout::Coding); });
     layouts->addAction(tr("&Debugging"), this, [this] { showLayout(Layout::Debugging); });
@@ -1247,6 +1308,11 @@ void MainWindow::showLocation(const QJsonObject &at)
                               .arg(file));
 }
 
+QString MainWindow::speedText(double ratio)
+{
+    return tr("%1× real time").arg(QLocale().toString(std::clamp(ratio, 0.0, 99.0), 'f', 1));
+}
+
 QString MainWindow::simStateText() const
 {
     return m_simState->isHidden() ? QString() : m_simState->text();
@@ -1255,6 +1321,25 @@ QString MainWindow::simStateText() const
 QString MainWindow::portStateText() const
 {
     return m_portState->isHidden() ? QString() : m_portState->text();
+}
+
+void MainWindow::goToPanel(QWidget *place)
+{
+    auto *dock = qobject_cast<QDockWidget *>(place);
+    if (!dock) {
+        // The library, in the middle.
+        m_library->filter()->setFocus(Qt::ShortcutFocusReason);
+        return;
+    }
+    dock->show();
+    dock->raise();
+    if (QWidget *w = dock->widget()) {
+        // The first thing there that takes the keyboard.
+        if (QWidget *first = w->focusPolicy() != Qt::NoFocus ? w : w->nextInFocusChain(); first && w->isAncestorOf(first))
+            first->setFocus(Qt::ShortcutFocusReason);
+        else
+            w->setFocus(Qt::ShortcutFocusReason);
+    }
 }
 
 void MainWindow::showLayout(Layout layout)
@@ -1303,6 +1388,13 @@ void MainWindow::find()
     if (m_project->codeHasFocus()) {
         m_project->findInCode();
         return;
+    }
+    // In the Build dock: find in the log.
+    for (QWidget *w = QApplication::focusWidget(); w; w = w->parentWidget()) {
+        if (w == m_buildPanel) {
+            m_buildPanel->focusFind();
+            return;
+        }
     }
     // The console the focus is in, if it is in one.
     for (QWidget *w = QApplication::focusWidget(); w; w = w->parentWidget()) {

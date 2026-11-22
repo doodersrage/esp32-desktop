@@ -268,6 +268,22 @@ private slots:
         delete menu;
     }
 
+    void hasMyNotesAndThePinout()
+    {
+        CoreConnection core;
+        ProjectView view(&core);
+        view.showResult(example());
+        QCOMPARE(view.tabs()->widget(ProjectView::MyNotesTab), view.myNotes());
+        QVERIFY(!view.pinoutButton()->isHidden());
+        QCOMPARE(ProjectView::pinoutUrl(u"esp32c3-supermini"_s).toString(),
+                 u"https://esp32bench.dev/boards/esp32c3-supermini/"_s);
+        // Typing is kept: the core is asked to save it (here there is no core, so
+        // saving does nothing, and the text stays).
+        view.myNotes()->setPlainText(u"LED on GPIO 4"_s);
+        view.saveNotes();
+        QCOMPARE(view.myNotes()->toPlainText(), u"LED on GPIO 4"_s);
+    }
+
     void saysWhenThingsHappened()
     {
         const QDateTime now(QDate(2026, 11, 22), QTime(15, 0));

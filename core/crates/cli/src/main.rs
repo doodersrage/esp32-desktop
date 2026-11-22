@@ -51,6 +51,15 @@ enum Cmd {
     /// work wherever a library project's does (build, the app's simulator, flashing).
     #[command(subcommand)]
     Local(LocalCmd),
+    /// Show your note for a project, or keep this text as it (as `notes.get` /
+    /// `notes.set`).
+    Notes {
+        project: String,
+        text: Option<String>,
+        /// Forget the note.
+        #[arg(long)]
+        clear: bool,
+    },
     /// Decode the crash backtraces in a saved log or pasted text (a file, or stdin)
     /// from the firmware's ELF, as the app does for a run's.
     Decode {
@@ -1197,6 +1206,23 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             };
             for e in kept {
                 println!("{e}");
+            }
+        }
+        Cmd::Notes {
+            project,
+            text,
+            clear,
+        } => {
+            let store = esp32bench_library::notes::Notes::new(
+                esp32bench_sim::install::data_dir()?.join("notes.json"),
+            );
+            let kept = match (text, clear) {
+                (_, true) => store.set(&project, "")?,
+                (Some(t), false) => store.set(&project, &t)?,
+                (None, false) => store.get(&project),
+            };
+            if !kept.is_empty() {
+                println!("{kept}");
             }
         }
         Cmd::Decode { elf, chip, file } => {

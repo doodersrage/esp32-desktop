@@ -42,6 +42,7 @@ static QJsonObject model(const QString &id, const QString &name, const QString &
 class FakeCore : public QObject {
     Q_OBJECT
 public:
+    QStringList saves; // each circuit.set, in order: where its first part is
     QJsonObject saved{{u"schemaVersion"_s, u"1.1.0"_s},
                       {u"parts"_s, QJsonArray{QJsonObject{{u"id"_s, u"led-1"_s}, {u"kind"_s, u"led"_s}, {u"pin"_s, 2}}}}};
     QList<QJsonObject> controls;
@@ -86,7 +87,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.39.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.40.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -158,6 +159,11 @@ private:
                 return;
             }
             saved = p.value(u"circuit"_s).toObject();
+            // Each save, for a failure to say what came in: its first part's place.
+            const QJsonObject first = saved.value(u"parts"_s).toArray().at(0).toObject();
+            saves << (first.contains(u"at"_s) ? u"at %1,%2"_s.arg(first.value(u"at"_s).toObject().value(u"x"_s).toInt())
+                                                     .arg(first.value(u"at"_s).toObject().value(u"y"_s).toInt())
+                                              : u"laid out"_s);
             reply(id, QJsonObject{});
         } else if (m == u"sim.start") {
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false},
@@ -282,7 +288,7 @@ private slots:
 
         // Undo puts it back where it was laid out.
         panel.undoButton()->click();
-        QTRY_VERIFY(!partsOf(fake.saved, 0).contains(u"at"_s));
+        QTRY_VERIFY2(!partsOf(fake.saved, 0).contains(u"at"_s), qPrintable(fake.saves.join(u" | "_s)));
         QVERIFY(!panel.undoButton()->isEnabled());
 
         // From the keyboard: Tab reaches the LED, the arrows move it, and the place is
@@ -295,7 +301,15 @@ private slots:
         QTest::keyClick(view, Qt::Key_Right);
         QTRY_VERIFY(partsOf(fake.saved, 0).contains(u"at"_s));
         panel.undoButton()->click();
-        QTRY_VERIFY(!partsOf(fake.saved, 0).contains(u"at"_s));
+        QTRY_VERIFY2(!partsOf(fake.saved, 0).contains(u"at"_s), qPrintable(fake.saves.join(u" | "_s)));
+        // Tidy: nothing to do when no part was moved; after a move, all back in place.
+        QVERIFY(!panel.tidy());
+        view->setFocus();
+        QTest::keyClick(view, Qt::Key_Tab); // the canvas was laid out again: reach the LED
+        QTest::keyClick(view, Qt::Key_Right);
+        QTRY_VERIFY(partsOf(fake.saved, 0).contains(u"at"_s));
+        QTRY_VERIFY(panel.tidy());
+        QTRY_VERIFY2(!partsOf(fake.saved, 0).contains(u"at"_s), qPrintable(fake.saves.join(u" | "_s)));
 
         // An added part can be undone too.
         panel.addPart(u"button"_s, 4, true, u"Go"_s);

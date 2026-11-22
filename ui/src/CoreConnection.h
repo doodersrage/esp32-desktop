@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 39;
+    static constexpr int ProtocolMinor = 40;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -234,6 +234,13 @@ public:
     void importCircuit(const QString &project, const QString &board, const QString &path);
     // serial.findBaud on a port the monitor does not have open (baudFound).
     void findBaud(const QString &path);
+    // notes.get / notes.set: your note for a project (notesListed).
+    void getNotes(const QString &project);
+    void setNotes(const QString &project, const QString &text);
+    // data.export / data.import: your settings in one file (settingsExported,
+    // settingsImported, or requestFailed).
+    void exportSettings(const QString &path);
+    void importSettings(const QString &path);
 
     // Error code the core uses when consent is missing (docs/rpc.md).
     static constexpr int ConsentRequired = -32002;
@@ -397,6 +404,10 @@ signals:
     void circuitExported(const QString &path, int parts);
     // `baud` 0 when no speed read as text; `tried` as serial.findBaud says.
     void baudFound(const QString &path, int baud, const QJsonArray &tried);
+    void notesListed(const QString &project, const QString &text);
+    // `counts`: how many breakpoints, watches, commands, starred, notes, circuits.
+    void settingsExported(const QString &path, const QJsonObject &counts);
+    void settingsImported(const QJsonObject &counts, int skipped);
     // `address` as the core says it (0x…); `asked` what was typed.
     void memoryRead(const QString &asked, const QString &address, const QByteArray &bytes);
     // `error` is empty when the expression has a value.

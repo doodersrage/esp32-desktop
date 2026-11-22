@@ -262,6 +262,10 @@
         <translation>Copier les erreurs et avertissements de la compilation (ou les 200 dernières lignes du journal) comme bloc de code pour un forum ou un ticket, avec la version de l’application, le projet et la carte</translation>
     </message>
     <message>
+        <source>Find in the log</source>
+        <translation>Rechercher dans le journal</translation>
+    </message>
+    <message>
         <source>Flashing %1 to %2…</source>
         <translation>Flash de %1 sur %2…</translation>
     </message>
@@ -284,6 +288,10 @@
     <message>
         <source>Building %1 for %2…</source>
         <translation>Compilation de %1 pour %2…</translation>
+    </message>
+    <message>
+        <source>Not found</source>
+        <translation>Introuvable</translation>
     </message>
     <message>
         <source>building %1 for %2</source>
@@ -431,6 +439,14 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>Library projects that use the selected part, to try it with</source>
         <translation>Projets de la bibliothèque qui utilisent le composant sélectionné, pour l’essayer</translation>
+    </message>
+    <message>
+        <source>Tidy</source>
+        <translation>Ranger</translation>
+    </message>
+    <message>
+        <source>Put every part back in its place beside the board (Undo puts them where they were)</source>
+        <translation>Remettre chaque composant à sa place à côté de la carte (Annuler les remet où ils étaient)</translation>
     </message>
     <message>
         <source>File</source>
@@ -2056,6 +2072,42 @@ Le panneau Compilation ci-dessous contient tout le journal.</translation>
         <translation>Aucun pour l’instant</translation>
     </message>
     <message>
+        <source>&amp;Export settings…</source>
+        <translation>&amp;Exporter les réglages…</translation>
+    </message>
+    <message>
+        <source>Export your settings</source>
+        <translation>Exporter vos réglages</translation>
+    </message>
+    <message>
+        <source>Settings files (*.json)</source>
+        <translation>Fichiers de réglages (*.json)</translation>
+    </message>
+    <message>
+        <source>&amp;Import settings…</source>
+        <translation>&amp;Importer des réglages…</translation>
+    </message>
+    <message>
+        <source>Import settings</source>
+        <translation>Importer des réglages</translation>
+    </message>
+    <message>
+        <source>Your settings were saved to %1.</source>
+        <translation>Vos réglages ont été enregistrés dans %1.</translation>
+    </message>
+    <message>
+        <source>Settings imported; some entries did not fit this version and were left out.</source>
+        <translation>Réglages importés ; certaines entrées ne convenaient pas à cette version et ont été laissées de côté.</translation>
+    </message>
+    <message>
+        <source>Settings imported.</source>
+        <translation>Réglages importés.</translation>
+    </message>
+    <message>
+        <source>Settings: %1</source>
+        <translation>Réglages : %1</translation>
+    </message>
+    <message>
         <source>&amp;Quit</source>
         <translation>&amp;Quitter</translation>
     </message>
@@ -2082,6 +2134,14 @@ Le panneau Compilation ci-dessous contient tout le journal.</translation>
     <message>
         <source>&amp;Find…</source>
         <translation>&amp;Rechercher…</translation>
+    </message>
+    <message>
+        <source>&amp;Go to</source>
+        <translation>&amp;Aller à</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>Bibliothèque</translation>
     </message>
     <message>
         <source>&amp;Layout</source>
@@ -2238,6 +2298,10 @@ SHA-256 du code : %2</translation>
     <message>
         <source>See what&apos;s new</source>
         <translation>Voir les nouveautés</translation>
+    </message>
+    <message>
+        <source>%1× real time</source>
+        <translation>%1× le temps réel</translation>
     </message>
     <message>
         <source>Bigger or smaller text in the console (also Ctrl and the mouse wheel)</source>
@@ -2742,6 +2806,14 @@ Double-cliquez pour voir la ligne.</translation>
         <translation>Câblage</translation>
     </message>
     <message>
+        <source>Pinout</source>
+        <translation>Brochage</translation>
+    </message>
+    <message>
+        <source>The board&apos;s pinout on esp32bench.dev</source>
+        <translation>Le brochage de la carte sur esp32bench.dev</translation>
+    </message>
+    <message>
         <source>Copy link</source>
         <translation>Copier le lien</translation>
     </message>
@@ -2824,6 +2896,14 @@ Double-cliquez pour voir la ligne.</translation>
     <message>
         <source>Notes</source>
         <translation>Remarques</translation>
+    </message>
+    <message>
+        <source>My notes</source>
+        <translation>Mes notes</translation>
+    </message>
+    <message>
+        <source>Your notes for this project: wiring changes, what worked, what to try next. Kept on this computer.</source>
+        <translation>Vos notes pour ce projet : changements de câblage, ce qui a marché, quoi essayer ensuite. Gardées sur cet ordinateur.</translation>
     </message>
     <message>
         <source>Board:</source>

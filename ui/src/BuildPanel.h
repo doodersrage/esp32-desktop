@@ -15,6 +15,7 @@ class QPlainTextEdit;
 class QComboBox;
 class QProgressBar;
 class QAction;
+class QLineEdit;
 class QPushButton;
 class QToolButton;
 
@@ -36,6 +37,11 @@ public:
     QAction *nextProblemAction() const { return m_nextProblem; }
     QAction *previousProblemAction() const { return m_previousProblem; }
     bool goToProblem(bool forward);
+    // Find in the log: the next (or previous) match after the cursor, round from the
+    // other end; false if there is none. Ctrl+F in this dock goes to its field.
+    bool findText(const QString &text, bool backward = false);
+    void focusFind();
+    QLineEdit *findField() const { return m_find; }
     // The last build that succeeded.
     QString builtProject() const { return m_builtProject; }
     // From build.status: this project's build for this board is ready to use.
@@ -97,6 +103,7 @@ private:
     QPushButton *m_cancel;
     QPlainTextEdit *m_log;
     QToolButton *m_forum = nullptr;
+    QLineEdit *m_find = nullptr;
     QPushButton *m_copyProblems = nullptr;
     QLabel *m_problems;
     QCheckBox *m_problemsOnly;

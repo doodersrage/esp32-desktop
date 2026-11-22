@@ -11,6 +11,7 @@ pub mod link;
 pub mod commands;
 pub mod expect;
 pub mod explain;
+pub mod notes;
 pub mod starred;
 use std::path::{Path, PathBuf};
 

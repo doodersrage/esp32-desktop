@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QHash>
+#include <QUrl>
 #include <QWidget>
 
 #include <utility>
@@ -21,6 +22,7 @@ class QToolButton;
 class QStackedWidget;
 class CodeView;
 class QLineEdit;
+class QTimer;
 class QTabWidget;
 class QTreeWidget;
 
@@ -28,7 +30,7 @@ class ProjectView : public QWidget {
     Q_OBJECT
 
 public:
-    enum Tab { PartsTab, WiringTab, CodeTab, OutputTab, NotesTab };
+    enum Tab { PartsTab, WiringTab, CodeTab, OutputTab, NotesTab, MyNotesTab };
 
     explicit ProjectView(CoreConnection *core, QWidget *parent = nullptr);
 
@@ -88,6 +90,13 @@ public:
     QString currentBoardName() const;
     QPushButton *openButton() const { return m_openSite; }
     QPushButton *copyLinkButton() const { return m_copyLink; }
+    QPushButton *pinoutButton() const { return m_pinout; }
+    // The board's pinout page on esp32bench.dev.
+    static QUrl pinoutUrl(const QString &board);
+    // Your notes for the project shown (My notes), saved a moment after typing.
+    QPlainTextEdit *myNotes() const { return m_myNotes; }
+    // Save what was typed now, not after the pause (for tests, and on switching).
+    void saveNotes();
     // A local project's source files, to open in the user's editor.
     QToolButton *editButton() const { return m_edit; }
     QString summaryText() const;
@@ -179,6 +188,12 @@ private:
     QLabel *m_pins;
     CodeView *m_code;
     QPushButton *m_copyCode;
+    QPushButton *m_pinout = nullptr;
+    QPlainTextEdit *m_myNotes = nullptr;
+    QTimer *m_notesTimer = nullptr;
+    QString m_notesFor; // the project My notes is for
+    bool m_notesDirty = false;
+    void startNotes(const QString &project);
     // When the build shown was made, and how that was said, for the minute's update.
     QDateTime m_builtAt;
     QString m_builtWhen;

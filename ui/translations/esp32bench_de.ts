@@ -262,6 +262,10 @@
         <translation>Die Fehler und Warnungen des Builds (oder die letzten 200 Zeilen des Logs) als Codeblock für einen Forenbeitrag oder ein Issue kopieren, mit der Version der App, dem Projekt und dem Board</translation>
     </message>
     <message>
+        <source>Find in the log</source>
+        <translation>Im Log suchen</translation>
+    </message>
+    <message>
         <source>Flashing %1 to %2…</source>
         <translation>Flashe %1 auf %2…</translation>
     </message>
@@ -284,6 +288,10 @@
     <message>
         <source>Building %1 for %2…</source>
         <translation>Kompiliere %1 für %2…</translation>
+    </message>
+    <message>
+        <source>Not found</source>
+        <translation>Nicht gefunden</translation>
     </message>
     <message>
         <source>building %1 for %2</source>
@@ -431,6 +439,14 @@ Globale Variablen: %4 von %5</translation>
     <message>
         <source>Library projects that use the selected part, to try it with</source>
         <translation>Bibliotheksprojekte, die das ausgewählte Bauteil nutzen, um es damit auszuprobieren</translation>
+    </message>
+    <message>
+        <source>Tidy</source>
+        <translation>Aufräumen</translation>
+    </message>
+    <message>
+        <source>Put every part back in its place beside the board (Undo puts them where they were)</source>
+        <translation>Alle Bauteile wieder an ihren Platz neben dem Board setzen (Rückgängig stellt sie zurück)</translation>
     </message>
     <message>
         <source>File</source>
@@ -2056,6 +2072,42 @@ Das Build-Fenster unten hat das ganze Protokoll.</translation>
         <translation>Noch keine</translation>
     </message>
     <message>
+        <source>&amp;Export settings…</source>
+        <translation>Einstellungen &amp;exportieren…</translation>
+    </message>
+    <message>
+        <source>Export your settings</source>
+        <translation>Ihre Einstellungen exportieren</translation>
+    </message>
+    <message>
+        <source>Settings files (*.json)</source>
+        <translation>Einstellungsdateien (*.json)</translation>
+    </message>
+    <message>
+        <source>&amp;Import settings…</source>
+        <translation>Einstellungen &amp;importieren…</translation>
+    </message>
+    <message>
+        <source>Import settings</source>
+        <translation>Einstellungen importieren</translation>
+    </message>
+    <message>
+        <source>Your settings were saved to %1.</source>
+        <translation>Ihre Einstellungen wurden unter %1 gespeichert.</translation>
+    </message>
+    <message>
+        <source>Settings imported; some entries did not fit this version and were left out.</source>
+        <translation>Einstellungen importiert; einige Einträge passten nicht zu dieser Version und wurden ausgelassen.</translation>
+    </message>
+    <message>
+        <source>Settings imported.</source>
+        <translation>Einstellungen importiert.</translation>
+    </message>
+    <message>
+        <source>Settings: %1</source>
+        <translation>Einstellungen: %1</translation>
+    </message>
+    <message>
         <source>&amp;Quit</source>
         <translation>&amp;Beenden</translation>
     </message>
@@ -2082,6 +2134,14 @@ Das Build-Fenster unten hat das ganze Protokoll.</translation>
     <message>
         <source>&amp;Find…</source>
         <translation>&amp;Suchen…</translation>
+    </message>
+    <message>
+        <source>&amp;Go to</source>
+        <translation>&amp;Gehe zu</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>Bibliothek</translation>
     </message>
     <message>
         <source>&amp;Layout</source>
@@ -2238,6 +2298,10 @@ Code-SHA-256: %2</translation>
     <message>
         <source>See what&apos;s new</source>
         <translation>Neuerungen ansehen</translation>
+    </message>
+    <message>
+        <source>%1× real time</source>
+        <translation>%1× Echtzeit</translation>
     </message>
     <message>
         <source>Bigger or smaller text in the console (also Ctrl and the mouse wheel)</source>
@@ -2742,6 +2806,14 @@ Doppelklicken, um die Zeile zu sehen.</translation>
         <translation>Verdrahtung</translation>
     </message>
     <message>
+        <source>Pinout</source>
+        <translation>Pinbelegung</translation>
+    </message>
+    <message>
+        <source>The board&apos;s pinout on esp32bench.dev</source>
+        <translation>Die Pinbelegung des Boards auf esp32bench.dev</translation>
+    </message>
+    <message>
         <source>Copy link</source>
         <translation>Link kopieren</translation>
     </message>
@@ -2824,6 +2896,14 @@ Doppelklicken, um die Zeile zu sehen.</translation>
     <message>
         <source>Notes</source>
         <translation>Notizen</translation>
+    </message>
+    <message>
+        <source>My notes</source>
+        <translation>Meine Notizen</translation>
+    </message>
+    <message>
+        <source>Your notes for this project: wiring changes, what worked, what to try next. Kept on this computer.</source>
+        <translation>Ihre Notizen zu diesem Projekt: geänderte Verdrahtung, was funktioniert hat, was als Nächstes zu probieren ist. Auf diesem Computer gespeichert.</translation>
     </message>
     <message>
         <source>Board:</source>

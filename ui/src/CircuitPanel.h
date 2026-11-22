@@ -63,6 +63,9 @@ public:
     // replaces the board's parts, and Undo puts them back.
     void exportTo(const QString &path);
     void importFrom(const QString &path);
+    // Tidy: every part back where the dock lays it out (no `at`), as one change;
+    // false if none had been moved.
+    bool tidy();
     QToolButton *fileButton() const { return m_file; }
     // Copy the selected part (Ctrl+C on the canvas), to paste into any project's or
     // board's circuit (Ctrl+V): the Add dialog opens with its settings, on pins of
@@ -145,6 +148,7 @@ private:
     QToolButton *m_copyPicture = nullptr;
     QToolButton *m_examples = nullptr;
     QToolButton *m_file = nullptr;
+    QToolButton *m_tidy = nullptr;
     QString m_examplesFor; // the part kind whose examples were asked for
     void updatePaste();
     QToolButton *m_fitButton = nullptr;

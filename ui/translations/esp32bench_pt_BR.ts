@@ -262,6 +262,10 @@
         <translation>Copiar os erros e avisos do build (ou as últimas 200 linhas do log) como bloco de código para um fórum ou uma issue, com a versão do app, o projeto e a placa</translation>
     </message>
     <message>
+        <source>Find in the log</source>
+        <translation>Localizar no log</translation>
+    </message>
+    <message>
         <source>Flashing %1 to %2…</source>
         <translation>Gravando %1 em %2…</translation>
     </message>
@@ -284,6 +288,10 @@
     <message>
         <source>Building %1 for %2…</source>
         <translation>Compilando %1 para %2…</translation>
+    </message>
+    <message>
+        <source>Not found</source>
+        <translation>Não encontrado</translation>
     </message>
     <message>
         <source>building %1 for %2</source>
@@ -431,6 +439,14 @@ Variáveis globais: %4 de %5</translation>
     <message>
         <source>Library projects that use the selected part, to try it with</source>
         <translation>Projetos da biblioteca que usam a peça selecionada, para experimentá-la</translation>
+    </message>
+    <message>
+        <source>Tidy</source>
+        <translation>Organizar</translation>
+    </message>
+    <message>
+        <source>Put every part back in its place beside the board (Undo puts them where they were)</source>
+        <translation>Pôr cada peça de volta no seu lugar ao lado da placa (Desfazer as devolve para onde estavam)</translation>
     </message>
     <message>
         <source>File</source>
@@ -2056,6 +2072,42 @@ O painel Compilação abaixo tem o log completo.</translation>
         <translation>Nenhum ainda</translation>
     </message>
     <message>
+        <source>&amp;Export settings…</source>
+        <translation>&amp;Exportar as configurações…</translation>
+    </message>
+    <message>
+        <source>Export your settings</source>
+        <translation>Exportar suas configurações</translation>
+    </message>
+    <message>
+        <source>Settings files (*.json)</source>
+        <translation>Arquivos de configurações (*.json)</translation>
+    </message>
+    <message>
+        <source>&amp;Import settings…</source>
+        <translation>&amp;Importar configurações…</translation>
+    </message>
+    <message>
+        <source>Import settings</source>
+        <translation>Importar configurações</translation>
+    </message>
+    <message>
+        <source>Your settings were saved to %1.</source>
+        <translation>Suas configurações foram salvas em %1.</translation>
+    </message>
+    <message>
+        <source>Settings imported; some entries did not fit this version and were left out.</source>
+        <translation>Configurações importadas; algumas entradas não serviam para esta versão e foram deixadas de fora.</translation>
+    </message>
+    <message>
+        <source>Settings imported.</source>
+        <translation>Configurações importadas.</translation>
+    </message>
+    <message>
+        <source>Settings: %1</source>
+        <translation>Configurações: %1</translation>
+    </message>
+    <message>
         <source>&amp;Quit</source>
         <translation>&amp;Sair</translation>
     </message>
@@ -2082,6 +2134,14 @@ O painel Compilação abaixo tem o log completo.</translation>
     <message>
         <source>&amp;Find…</source>
         <translation>&amp;Localizar…</translation>
+    </message>
+    <message>
+        <source>&amp;Go to</source>
+        <translation>&amp;Ir para</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>Biblioteca</translation>
     </message>
     <message>
         <source>&amp;Layout</source>
@@ -2238,6 +2298,10 @@ SHA-256 do código: %2</translation>
     <message>
         <source>See what&apos;s new</source>
         <translation>Ver as novidades</translation>
+    </message>
+    <message>
+        <source>%1× real time</source>
+        <translation>%1× o tempo real</translation>
     </message>
     <message>
         <source>Bigger or smaller text in the console (also Ctrl and the mouse wheel)</source>
@@ -2742,6 +2806,14 @@ Clique duas vezes para ver a linha.</translation>
         <translation>Ligações</translation>
     </message>
     <message>
+        <source>Pinout</source>
+        <translation>Pinagem</translation>
+    </message>
+    <message>
+        <source>The board&apos;s pinout on esp32bench.dev</source>
+        <translation>A pinagem da placa em esp32bench.dev</translation>
+    </message>
+    <message>
         <source>Copy link</source>
         <translation>Copiar link</translation>
     </message>
@@ -2824,6 +2896,14 @@ Clique duas vezes para ver a linha.</translation>
     <message>
         <source>Notes</source>
         <translation>Notas</translation>
+    </message>
+    <message>
+        <source>My notes</source>
+        <translation>Minhas notas</translation>
+    </message>
+    <message>
+        <source>Your notes for this project: wiring changes, what worked, what to try next. Kept on this computer.</source>
+        <translation>Suas notas para este projeto: mudanças de fiação, o que funcionou, o que tentar a seguir. Guardadas neste computador.</translation>
     </message>
     <message>
         <source>Board:</source>

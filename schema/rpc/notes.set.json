@@ -1,0 +1,51 @@
+{
+  "method": "notes.set",
+  "description": "Since protocol 0.40: keep a note for a project (at most 20000 characters; longer is cut); blank text forgets it. The note kept.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "text"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "text": {
+        "type": "string"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink",
+        "text": "LED moved to GPIO 4."
+      },
+      "result": {
+        "text": "LED moved to GPIO 4."
+      }
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "method": "data.export",
+  "description": "Since protocol 0.40: the user's own settings in one file (absolute path), to move to another computer: breakpoints, watches and quick-send lines per project, starred projects, notes, and every board's circuit. The file is JSON with format esp32bench-settings, version 1.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "counts"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "counts": {
+        "type": "object",
+        "required": [
+          "breakpoints",
+          "watches",
+          "commands",
+          "starred",
+          "notes",
+          "circuits"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "breakpoints": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "watches": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "commands": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "starred": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "circuits": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "path": "/home/me/esp32bench-settings.json"
+      },
+      "result": {
+        "path": "/home/me/esp32bench-settings.json",
+        "counts": {
+          "breakpoints": 2,
+          "watches": 1,
+          "commands": 3,
+          "starred": 5,
+          "notes": 2,
+          "circuits": 4
+        }
+      }
+    }
+  ]
+}

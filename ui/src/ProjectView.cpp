@@ -115,6 +115,13 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     m_edit->setMenu(new QMenu(m_edit));
     m_edit->setToolTip(tr("Open one of the project's source files in your editor"));
     m_edit->hide();
+    // The board's pinout on esp32bench.dev.
+    m_pinout = new QPushButton(QIcon::fromTheme(u"internet-web-browser"_s), tr("Pinout"), page);
+    m_pinout->setToolTip(tr("The board's pinout on esp32bench.dev"));
+    connect(m_pinout, &QPushButton::clicked, this, [this] {
+        if (const QString board = currentBuildBoard(); !board.isEmpty())
+            QDesktopServices::openUrl(pinoutUrl(board));
+    });
     m_copyLink = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), tr("Copy link"), page);
     m_copyLink->setToolTip(tr("Copy a link that opens this project on this board in ESP32 Bench, to send to "
                               "someone (it asks them before building anything)"));
@@ -297,6 +304,26 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     m_notes->setTextInteractionFlags(Qt::TextSelectableByMouse);
     notesScroll->setWidget(m_notes);
     m_tabs->addTab(notesScroll, tr("Notes"));
+    // Your own notes for the project, kept by the core (notes.set) a moment after typing.
+    m_myNotes = new QPlainTextEdit(m_tabs);
+    m_myNotes->setAccessibleName(tr("My notes"));
+    m_myNotes->setPlaceholderText(tr("Your notes for this project: wiring changes, what worked, what to try next. "
+                                     "Kept on this computer."));
+    m_notesTimer = new QTimer(this);
+    m_notesTimer->setSingleShot(true);
+    m_notesTimer->setInterval(800);
+    connect(m_myNotes, &QPlainTextEdit::textChanged, this, [this] {
+        m_notesDirty = true;
+        m_notesTimer->start();
+    });
+    connect(m_notesTimer, &QTimer::timeout, this, &ProjectView::saveNotes);
+    connect(m_core, &CoreConnection::notesListed, this, [this](const QString &project, const QString &text) {
+        if (project != m_notesFor || m_notesDirty)
+            return; // another project now, or typed in meanwhile
+        const QSignalBlocker block(m_myNotes);
+        m_myNotes->setPlainText(text);
+    });
+    m_tabs->addTab(m_myNotes, tr("My notes"));
 
     auto *head = new QHBoxLayout;
     auto *headText = new QVBoxLayout;
@@ -306,6 +333,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     head->addWidget(m_build, 0, Qt::AlignTop);
     head->addWidget(m_edit, 0, Qt::AlignTop);
     head->addWidget(m_copyLink, 0, Qt::AlignTop);
+    head->addWidget(m_pinout, 0, Qt::AlignTop);
     head->addWidget(m_openSite, 0, Qt::AlignTop);
     auto *boardRow = new QFormLayout;
     m_boardLabel = new QLabel(tr("Board:"), page);
@@ -455,6 +483,31 @@ void ProjectView::goToLine()
     }
 }
 
+QUrl ProjectView::pinoutUrl(const QString &board)
+{
+    return QUrl(u"https://esp32bench.dev/boards/%1/"_s.arg(board));
+}
+
+void ProjectView::startNotes(const QString &project)
+{
+    if (project == m_notesFor)
+        return;
+    saveNotes(); // what was typed for the last one
+    m_notesFor = project;
+    const QSignalBlocker block(m_myNotes);
+    m_myNotes->clear();
+    m_core->getNotes(project);
+}
+
+void ProjectView::saveNotes()
+{
+    if (!m_notesDirty)
+        return;
+    m_notesDirty = false;
+    m_notesTimer->stop();
+    m_core->setNotes(m_notesFor, m_myNotes->toPlainText());
+}
+
 void ProjectView::showPausedLine(int line)
 {
     m_code->setPausedLine(line);
@@ -567,6 +620,8 @@ void ProjectView::showLocal(const QJsonObject &result)
     m_openSite->setText(tr("Open folder"));
     m_openSite->setIcon(QIcon::fromTheme(u"folder-open"_s));
     m_copyLink->hide(); // a folder on this computer: nothing to send
+    m_pinout->hide();
+    startNotes(result.value(u"project"_s).toObject().value(u"id"_s).toString());
     m_edit->menu()->clear();
     for (const QJsonValue &v : result.value(u"sources"_s).toArray()) {
         const QString rel = v.toString();
@@ -614,6 +669,8 @@ void ProjectView::showResult(const QJsonObject &result)
     m_openSite->setText(tr("Open on esp32bench.dev"));
     m_openSite->setIcon(QIcon::fromTheme(u"internet-web-browser"_s));
     m_copyLink->show();
+    m_pinout->show();
+    startNotes(p.value(u"id"_s).toString());
     m_edit->hide();
     setBuildToolTip(tr("Build this project for the selected board with arduino-cli"));
     m_tabs->show();

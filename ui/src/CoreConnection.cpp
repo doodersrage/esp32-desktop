@@ -1142,6 +1142,50 @@ void CoreConnection::importCircuit(const QString &project, const QString &board,
                    });
 }
 
+void CoreConnection::getNotes(const QString &project)
+{
+    if (project.isEmpty())
+        return;
+    m_client->call(u"notes.get"_s, {{u"project"_s, project}}, this, [this, project](const RpcReply &r) {
+        if (r.ok)
+            emit notesListed(project, r.result.toObject().value(u"text"_s).toString());
+    });
+}
+
+void CoreConnection::setNotes(const QString &project, const QString &text)
+{
+    if (project.isEmpty())
+        return;
+    m_client->call(u"notes.set"_s, {{u"project"_s, project}, {u"text"_s, text}}, this, [this](const RpcReply &r) {
+        if (!r.ok)
+            emit requestFailed(u"notes.set"_s, r.errorMessage);
+    });
+}
+
+void CoreConnection::exportSettings(const QString &path)
+{
+    m_client->call(u"data.export"_s, {{u"path"_s, path}}, this, [this](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"data.export"_s, r.errorMessage);
+            return;
+        }
+        const QJsonObject o = r.result.toObject();
+        emit settingsExported(o.value(u"path"_s).toString(), o.value(u"counts"_s).toObject());
+    });
+}
+
+void CoreConnection::importSettings(const QString &path)
+{
+    m_client->call(u"data.import"_s, {{u"path"_s, path}}, this, [this](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"data.import"_s, r.errorMessage);
+            return;
+        }
+        const QJsonObject o = r.result.toObject();
+        emit settingsImported(o.value(u"counts"_s).toObject(), o.value(u"skipped"_s).toInt());
+    });
+}
+
 void CoreConnection::findBaud(const QString &path)
 {
     m_client->call(u"serial.findBaud"_s, {{u"path"_s, path}}, this, [this, path](const RpcReply &r) {
