@@ -5,8 +5,10 @@
 #include "CoreConnection.h"
 #include "MainWindow.h"
 #include "MessageBar.h"
+#include "ProjectView.h"
 
 #include <QComboBox>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLocalServer>
@@ -31,6 +33,7 @@ class FakeCore : public QObject {
     Q_OBJECT
 public:
     QStringList buildRequests; // the consent value of each build.start, or "-"
+    QStringList statusRequests; // each build.status, as project/board
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -70,6 +73,10 @@ private:
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
                                                {u"protocol"_s, u"0.41.0"_s}}}});
+        } else if (method == u"build.status") {
+            statusRequests << params.value(u"project"_s).toString() + u"/"_s + params.value(u"board"_s).toString();
+            send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
+                     {u"result"_s, QJsonObject{{u"built"_s, true}, {u"builtAt"_s, 1795000000}, {u"current"_s, true}}}});
         } else if (method == u"build.start") {
             const QString consent = params.value(u"consent"_s).toString();
             buildRequests << (consent.isEmpty() ? u"-"_s : consent);
@@ -125,6 +132,31 @@ private:
     QString path() const { return m_dir.filePath(u"core.sock"_s); }
 
 private slots:
+    // A project opened on the board the picker already shows still asks whether it is
+    // built, so Run uses the build from before instead of asking to build it again.
+    void asksWhetherAShownProjectIsBuilt()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        ProjectView view(&core);
+        QSignalSpy current(&view, &ProjectView::buildCurrent);
+        QFile f(QStringLiteral(ESP32BENCH_SOURCE_DIR "/../schema/rpc/library.get.json"));
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QJsonObject result = QJsonDocument::fromJson(f.readAll())
+                                       .object().value(u"examples"_s).toArray().at(0).toObject()
+                                       .value(u"result"_s).toObject();
+        view.showResult(result);
+        const QString id = result.value(u"project"_s).toObject().value(u"id"_s).toString();
+        QTRY_COMPARE(fake.statusRequests.size(), 1);
+        QVERIFY(fake.statusRequests.at(0).startsWith(id + u"/"_s));
+        QTRY_VERIFY(!current.isEmpty() && current.last().at(2).toBool());
+        QVERIFY(view.buildStateText().contains(u"ready to run"_s));
+        QVERIFY(fake.buildRequests.isEmpty());
+    }
+
     // Keep QSettings away from the real configuration.
     void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
 

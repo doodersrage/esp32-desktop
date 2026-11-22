@@ -339,7 +339,8 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     m_boardLabel = new QLabel(tr("Board:"), page);
     boardRow->addRow(m_boardLabel, m_board);
     m_buildState = new QLabel(page);
-    m_buildState->setWordWrap(true);
+    // One short sentence, on one line: wrapped, a form (Breeze's) narrows it to the
+    // board picker's width.
     // "Built 3 min ago" stays true: the time is said again each minute.
     auto *minute = new QTimer(this);
     minute->start(60'000);
@@ -658,6 +659,7 @@ void ProjectView::showLocal(const QJsonObject &result)
     showBuild(start);
     m_stack->setCurrentIndex(1);
     updateBuildButton();
+    requestBuildState(); // its signals were blocked while the picker was filled
 }
 
 void ProjectView::showResult(const QJsonObject &result)
@@ -754,6 +756,10 @@ void ProjectView::showResult(const QJsonObject &result)
     showBuild(start);
     m_stack->setCurrentIndex(1);
     updateBuildButton();
+    // The board picker's signals were blocked while it was filled: ask here whether
+    // this project is built for the board shown, so Run uses a current build instead
+    // of asking to build it again.
+    requestBuildState();
 }
 
 QString ProjectView::chipOf(const QJsonObject &result, const QString &board)

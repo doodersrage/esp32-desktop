@@ -129,6 +129,15 @@ qt_add_resources(esp32bench_ui "fallback_icons"
         icons/esp32bench-fallback/scalable/zoom-fit-best.svg
 )
 
+# Pictures of the app for the README and the site (ui/tools/screenshots.sh); not
+# built by default.
+option(ESP32BENCH_SCREENSHOTS "Build esp32bench-screenshots" OFF)
+if(ESP32BENCH_SCREENSHOTS)
+    qt_add_executable(esp32bench-screenshots tools/screenshots.cpp)
+    target_include_directories(esp32bench-screenshots PRIVATE src)
+    target_link_libraries(esp32bench-screenshots PRIVATE esp32bench_ui)
+endif()
+
 qt_add_executable(esp32bench-gui src/main.cpp)
 # A GUI program on Windows (no console window); the macOS bundle is assembled by
 # packaging/macos/build.sh.

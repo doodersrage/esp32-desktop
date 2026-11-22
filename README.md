@@ -4,6 +4,8 @@ A native Linux desktop workbench and simulator for ESP32 boards, for Arch, Debia
 
 **Status:** version 0.1.11 is out, with packages for Arch, Debian 13, Ubuntu 24.04 and 26.04, Fedora 44 and 45, macOS (Apple silicon) and Windows (x86-64), each built and tested on its system by CI; real boards have been checked on Arch only so far. It browses and builds the esp32bench.dev library and your own ESP-IDF projects, flashes, inspects and monitors real boards, and runs builds in a simulator. The automatic reset of boards with a USB-UART bridge (CP210x, CH340) is still untested on hardware.
 
+![The project library beside a project's parts, wiring and code, with its circuit](docs/images/library.png)
+
 ## What it does
 
 - Browse the esp32bench.dev project library and build projects with `arduino-cli`, asking before anything downloaded is built or flashed. Links on esp32bench.dev open a project in the app.
@@ -14,6 +16,12 @@ A native Linux desktop workbench and simulator for ESP32 boards, for Arch, Debia
 - Trace the simulated pins like a logic analyzer, in simulated time, and save the trace as a VCD file for PulseView or GTKWave.
 - Give simulated sketches (ESP32, S3 and C3) a Wi-Fi network that reaches nothing outside: they get an address, and their web pages open on your computer. Library sketches are joined to it for you.
 - In English, Spanish, German, French and Brazilian Portuguese, following the desktop's language.
+
+![The SSD1306 OLED project running in the simulator: the OLED part draws what the firmware draws, and the output check passes](docs/images/simulator.png)
+
+![The debugger stopped at a breakpoint in Blink's loop: the line marked in the code, the call stack, a watched expression and the registers](docs/images/debugger.png)
+
+These pictures are the real app, taken by `ui/tools/screenshots.sh`.
 
 The simulator is firmware-level: no Bluetooth and no encrypted Wi-Fi networks. Analog inputs read the voltage of a potentiometer part placed on them. Light and deep sleep wake on a timer only.
 

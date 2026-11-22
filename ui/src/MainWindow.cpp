@@ -1398,6 +1398,11 @@ void MainWindow::showLayout(Layout layout)
         if (d)
             d->raise();
     }
+    // Debugging: the debugger's breakpoints, stack, variables, registers and memory
+    // need the room more than the console beside it.
+    if (layout == Layout::Debugging && m_simDock && m_debugDock && !m_simDock->isFloating()
+        && !m_debugDock->isFloating())
+        resizeDocks({m_simDock, m_debugDock}, {width() * 2 / 5, width() * 3 / 5}, Qt::Horizontal);
 }
 
 void MainWindow::showBacktraceDialog()
