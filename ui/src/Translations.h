@@ -14,4 +14,6 @@ QStringList languages();
 // Install the translators for `locale` on `app`. True if the app's own strings are
 // translated for it (false for English and for languages it has no translation of).
 bool install(QCoreApplication &app, const QLocale &locale = QLocale());
+// Whether install() put the app's own strings in another language (false: English).
+bool translated();
 }

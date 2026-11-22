@@ -1,6 +1,6 @@
 {
   "method": "circuit.pinNotes",
-  "description": "Since protocol 0.39: a board's chip and its pins to be careful with, from Espressif's datasheets (esp32bench_circuit::pins): strapping pins, input-only pins, pins wired to the flash, the chip's USB pins and the console's UART0.",
+  "description": "Since protocol 0.39: a board's chip and its pins to be careful with: strapping pins, input-only pins, pins wired to the flash, the chip's USB pins, the console's UART0, and (since 0.43) pins with another job on the board. Since 0.43 they come from the site's data for the board when the library has it (manifest 1.3, source board, each with why), with the board's layout for drawing; else from Espressif's datasheets per chip (esp32bench_circuit::pins, source chip).",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -49,9 +49,91 @@
                 "inputOnly",
                 "flash",
                 "usb",
-                "console"
+                "console",
+                "caution"
               ]
+            },
+            "why": {
+              "type": "string",
+              "description": "Why, in English, for notes from the site's board data."
             }
+          }
+        }
+      },
+      "source": {
+        "enum": [
+          "board",
+          "chip"
+        ],
+        "description": "Where the notes come from: the site's data for this board (manifest 1.3), or the chip's datasheet table for boards without it."
+      },
+      "layout": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "The board's pins for drawing it (with source board): its header's pads down each side (USB at the bottom) or, undocumented, just its pads; GPIOs of named pads; silkscreen names; its I2C pins; the pins safe to use, in the order to offer them.",
+        "required": [
+          "left",
+          "right",
+          "pads",
+          "gpioOf",
+          "silk",
+          "safe"
+        ],
+        "properties": {
+          "left": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "right": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pads": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gpioOf": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "silk": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "i2c": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sda",
+              "scl"
+            ],
+            "properties": {
+              "sda": {
+                "type": "integer"
+              },
+              "scl": {
+                "type": "integer"
+              }
+            }
+          },
+          "safe": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "source": {
+            "type": "string"
           }
         }
       }
@@ -82,6 +164,56 @@
             "kind": "inputOnly"
           }
         ]
+      }
+    },
+    {
+      "params": {
+        "board": "esp32"
+      },
+      "result": {
+        "chip": "esp32",
+        "notes": [
+          {
+            "gpio": 0,
+            "kind": "strapping",
+            "why": "a strapping pin and the BOOT button."
+          },
+          {
+            "gpio": 34,
+            "kind": "inputOnly",
+            "why": "GPIO 34 can only read."
+          }
+        ],
+        "source": "board",
+        "layout": {
+          "left": [
+            "3V3",
+            "EN",
+            "VP",
+            "34"
+          ],
+          "right": [
+            "GND",
+            "23",
+            "22",
+            "21"
+          ],
+          "pads": [],
+          "gpioOf": {
+            "VP": 36
+          },
+          "silk": {},
+          "i2c": {
+            "sda": 21,
+            "scl": 22
+          },
+          "safe": [
+            4,
+            16,
+            17
+          ],
+          "source": "https://docs.espressif.com/"
+        }
       }
     }
   ]

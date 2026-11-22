@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 42;
+    static constexpr int ProtocolMinor = 43;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -405,6 +405,10 @@ signals:
     void examplesListed(const QString &kind, const QJsonArray &projects);
     // Each note is {gpio, kind}.
     void pinNotesListed(const QString &board, const QString &chip, const QJsonArray &notes);
+    // A board's pins for drawing it (circuit.pinNotes' layout): its header's pads down
+    // each side, GPIOs of named pads, silkscreen names, I2C and safe pins; empty when
+    // the library has no data for the board.
+    void boardLayoutListed(const QString &board, const QJsonObject &layout);
     void circuitExported(const QString &path, int parts);
     // `baud` 0 when no speed read as text; `tried` as serial.findBaud says.
     void baudFound(const QString &path, int baud, const QJsonArray &tried);

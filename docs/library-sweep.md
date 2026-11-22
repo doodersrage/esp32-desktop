@@ -8,6 +8,8 @@ The v1 check in `PLAN.md`: every esp32bench.dev library project builds for every
 python3 tests/library/sweep.py --cli core/target/debug/esp32bench --expect expect.json --out sweep/
 ```
 
+esp32bench.dev's project pages say which boards a project was checked on in the desktop app's simulator, from `src/data/desktop-sim.json`, which `tests/library/site_runs.py <report.json> --date <day>` writes from a sweep's report: only passes, so a project added since says nothing.
+
 ## First sweep (2026-11-18)
 
 Library: 55 projects from esp32bench.dev, 255 project × board builds. Arduino core 3.3.12, lcgamboa's fork at 885a6e7061 (recipe 4).

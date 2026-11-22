@@ -60,6 +60,9 @@ pub struct Manifest {
     /// one is out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub desktop: Option<Desktop>,
+    /// The part catalogue projects' `needs` name (manifest 1.3).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<CatalogPart>,
 }
 
 /// The desktop app's latest release, as the site lists it.
@@ -110,6 +113,111 @@ pub struct Board {
     pub variant_of: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub build_as: Option<String>,
+    /// Its pins (manifest 1.3): the header, I2C pins, safe pins and those to be
+    /// careful with, from the site's board data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pins: Option<BoardPins>,
+}
+
+/// A board's pins, as the site documents them (manifest 1.3). Pad labels that are
+/// numbers are GPIO numbers; others are named in `gpio_of`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardPins {
+    /// The header's pads down the left side, USB connector at the bottom.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub left: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub right: Vec<String>,
+    /// The pads, for a board whose order is not documented.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pads: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub gpio_of: std::collections::BTreeMap<String, u8>,
+    /// Silkscreen names of pads labelled by GPIO number ("2": "D0").
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub silk: std::collections::BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub i2c: Option<I2cPins>,
+    /// GPIOs with no boot, flash or USB duties, in the order to hand them out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub safe: Vec<u8>,
+    /// Pads that are not plain GPIOs or need care, by pad label.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub special: std::collections::BTreeMap<String, PadRule>,
+    /// Fixed jobs some GPIOs have on this board (camera lines, an SD card).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wired: Vec<WiredPin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+impl BoardPins {
+    /// The GPIO a pad label names: its number, or the board's name for it (VP: 36);
+    /// `None` for a supply, ground or other pad.
+    pub fn gpio(&self, label: &str) -> Option<u8> {
+        label
+            .parse()
+            .ok()
+            .or_else(|| self.gpio_of.get(label).copied())
+    }
+
+    /// Each GPIO that needs care: `(gpio, site kind, why)`, from `special` (pads that
+    /// are GPIOs) and `wired` (as `caution`, its job the reason).
+    pub fn rules(&self) -> Vec<(u8, &str, &str)> {
+        let mut out: Vec<(u8, &str, &str)> = self
+            .special
+            .iter()
+            .filter_map(|(label, r)| Some((self.gpio(label)?, r.kind.as_str(), r.why.as_str())))
+            .collect();
+        out.extend(
+            self.wired
+                .iter()
+                .map(|w| (w.gpio, "caution", w.job.as_str())),
+        );
+        out
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub struct I2cPins {
+    pub sda: u8,
+    pub scl: u8,
+}
+
+/// Why a pad needs care: its kind (`strap`, `input-only`, `flash`, `usb`, `uart`,
+/// `caution`, or a supply, ground, reset or unconnected pad) and the reason, in English.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct PadRule {
+    pub kind: String,
+    pub why: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct WiredPin {
+    pub gpio: u8,
+    pub job: String,
+}
+
+/// A part in the site's catalogue (manifest 1.3): what projects' `needs` name.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct CatalogPart {
+    pub id: String,
+    /// As projects list it.
+    pub name: String,
+    /// Its pins in wiring order, where the site has them.
+    #[serde(default)]
+    pub pins: Vec<CatalogPin>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct CatalogPin {
+    pub name: String,
+    /// power3, power5, gnd, in, out or bidir.
+    pub kind: String,
+    /// How to wire it, in English.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

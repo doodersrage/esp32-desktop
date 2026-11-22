@@ -19,7 +19,7 @@ QString ago(const QDateTime &when, const QDateTime &now);
 QString forumPost(const QString &context, const QString &text);
 // What circuit.pinNotes' kind means for a pin, in a sentence: a part on GPIO 12, a
 // strapping pin, can stop the board starting.
-QString pinNoteText(const QString &kind, int gpio);
+QString pinNoteText(const QString &kind, int gpio, const QString &why = {});
 // How long something took: "12.3 s", or "2 min 05 s".
 QString duration(double seconds);
 }

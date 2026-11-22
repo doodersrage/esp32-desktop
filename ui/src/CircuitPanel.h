@@ -14,6 +14,8 @@
 #include <QPointF>
 #include <QWidget>
 
+#include <functional>
+
 class CoreConnection;
 class QGraphicsScene;
 class QGraphicsView;
@@ -108,6 +110,11 @@ public:
     QPointF pinPoint(const QString &id, const QString &pin) const;
     // Where a part is drawn, label included, in scene coordinates.
     QRectF partRect(const QString &id) const;
+    // The site's notes on wiring a model's part (circuit.models' wiringNotes), one per
+    // line; empty in a translated app, as they are in English.
+    static QString wiringNotes(const QJsonObject &model);
+    // Whether the board is drawn from its header (the site's data, every pin in use on it).
+    bool headerDrawn() const { return m_headerDrawn; }
     QToolButton *addPartButton() const { return m_add; }
     // Shown when the board has no parts and the project's wiring names some the
     // simulator has (circuit.suggest): places them all.
@@ -130,6 +137,12 @@ private:
                           const QStringList &unmatched);
     void modelsLoaded(const QJsonArray &models);
     void rebuildScene();
+    // A board drawn from its header (m_layout), and the parts beside it.
+    void drawHeaderBoard(const QList<int> &used, const QJsonArray &left, const QJsonArray &right,
+                         const std::function<int(const QString &)> &gpioOfPad);
+    void buildHeaderParts(const std::function<QPointF(int)> &padAt, const std::function<int(int)> &sideOf,
+                          const std::function<bool(int)> &onHeader, const QJsonObject &i2cPins,
+                          const QStringList &selected);
     void resetStates();
     // `from`: a part to copy (Duplicate): its settings and label, with pins and an
     // I2C address no other part uses where there is one.
@@ -153,6 +166,10 @@ private:
     // Saves (circuit.set) asked for and not yet answered; Undo and Redo wait for them.
     int m_saving = 0;
     QHash<int, QString> m_pinNotes; // gpio -> its note's kind, for the board shown
+    QHash<int, QString> m_pinWhy; // gpio -> the site's reason (English), for the board shown
+    QString m_chipId; // the board's chip
+    QJsonObject m_layout; // the board's header and pins (circuit.pinNotes' layout), or empty
+    bool m_headerDrawn = false;
     void save(const QJsonObject &circuit);
     void updateUndo();
     QToolButton *m_copyPicture = nullptr;

@@ -406,6 +406,146 @@
             "buildAs": {
               "type": "string",
               "description": "Board id whose firmware this board runs."
+            },
+            "pins": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The board's pins (since 1.3), from the site's board data: its header, its I2C pins, the pins safe to use and those to be careful with. Pad labels that are numbers are GPIO numbers.",
+              "properties": {
+                "left": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8
+                  },
+                  "description": "Header pad labels down the left side, USB connector at the bottom. Absent when the order is not documented."
+                },
+                "right": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8
+                  },
+                  "description": "Header pad labels down the right side."
+                },
+                "pads": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8
+                  },
+                  "description": "Header pad labels, for a board whose pad order is not documented (no left and right)."
+                },
+                "gpioOf": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 63
+                  },
+                  "description": "GPIO numbers of pads with a name instead of a number, e.g. VP: 36."
+                },
+                "silk": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 8
+                  },
+                  "description": "Silkscreen names of pads labelled by GPIO number, e.g. \"2\": \"D0\"."
+                },
+                "i2c": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sda",
+                    "scl"
+                  ],
+                  "properties": {
+                    "sda": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 63
+                    },
+                    "scl": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 63
+                    }
+                  },
+                  "description": "The I2C pins to prefer."
+                },
+                "safe": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 63
+                  },
+                  "description": "GPIOs with no boot, flash or USB duties, in the order to hand them out."
+                },
+                "special": {
+                  "type": "object",
+                  "description": "Pads that are not plain GPIOs or need care, by pad label.",
+                  "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "why"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "3v3",
+                          "5v",
+                          "gnd",
+                          "reset",
+                          "flash",
+                          "input-only",
+                          "strap",
+                          "usb",
+                          "uart",
+                          "caution",
+                          "nc"
+                        ]
+                      },
+                      "why": {
+                        "type": "string",
+                        "description": "Why, in English."
+                      }
+                    }
+                  }
+                },
+                "wired": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "gpio",
+                      "job"
+                    ],
+                    "properties": {
+                      "gpio": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 63
+                      },
+                      "job": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "description": "Fixed jobs some GPIOs have on this board, e.g. camera lines."
+                },
+                "source": {
+                  "type": "string",
+                  "description": "Where the header layout comes from (a URL)."
+                }
+              }
             }
           }
         }

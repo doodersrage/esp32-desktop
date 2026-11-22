@@ -40,6 +40,49 @@ const COLOURS: &[&str] = &["red", "green", "yellow", "blue", "white", "orange"];
 
 /// `hints` are the project's parts list, for what the wiring leaves vague: an "RTC" is
 /// placed as a DS3231 only when the parts list names one.
+/// The model that simulates a part of the site's catalogue (manifest 1.3), by its id.
+/// `i2c` ("BME280, SHT31, AHT20 or another I2C module") is the BME280 only when the
+/// wiring placed one: see [`not_simulated`].
+pub fn model_for(catalog_id: &str) -> Option<&'static str> {
+    Some(match catalog_id {
+        "led" => "led",
+        "button" => "button",
+        "rgbled" => "rgb-led",
+        "pot" => "potentiometer",
+        "neopixel" => "ws2812",
+        "oled" => "ssd1306",
+        "mpu6050" => "mpu6050",
+        "ds3231" => "ds3231",
+        _ => return None,
+    })
+}
+
+/// The parts a project needs (its `needs`: each a set of alternatives, by catalogue id)
+/// that no model simulates, named by `name` ("DHT22", "DS18B20 probe or DHT22"). A set
+/// is simulated when any of its parts is; the generic I2C module when `circuit` has a
+/// BME280 in it.
+pub fn not_simulated<'a>(
+    needs: &[Vec<String>],
+    name: impl Fn(&str) -> Option<&'a str>,
+    circuit: &Circuit,
+) -> Vec<String> {
+    let has_bme280 = circuit.parts.iter().any(|p| p.kind == "bme280");
+    needs
+        .iter()
+        .filter(|set| {
+            !set.iter()
+                .any(|id| model_for(id).is_some() || (id == "i2c" && has_bme280))
+        })
+        .map(|set| {
+            set.iter()
+                .map(|id| name(id).unwrap_or(id).to_owned())
+                .collect::<Vec<_>>()
+                .join(" or ")
+        })
+        .filter(|n| !n.is_empty())
+        .collect()
+}
+
 pub fn from_wiring(wiring: &[Wire], hints: &[&str]) -> Suggestion {
     let ds3231_hint = hints.iter().any(|h| h.to_lowercase().contains("ds3231"));
     let mut parts: Vec<Part> = Vec::new();
@@ -487,6 +530,42 @@ fn note_unmatched(unmatched: &mut Vec<String>, parts: &[Part], name: &str, words
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn names_what_the_project_needs_and_nothing_simulates() {
+        let names = |id: &str| match id {
+            "dht22" => Some("DHT22"),
+            "ds18b20" => Some("DS18B20 probe"),
+            "i2c" => Some("BME280, SHT31, AHT20 or another I2C module"),
+            "buzzer" => Some("Passive buzzer"),
+            _ => None,
+        };
+        let needs = |sets: &[&[&str]]| -> Vec<Vec<String>> {
+            sets.iter()
+                .map(|s| s.iter().map(|x| x.to_string()).collect())
+                .collect()
+        };
+        let empty = from_wiring(&[], &[]).circuit;
+        let got = not_simulated(
+            &needs(&[&["led"], &["ds18b20", "dht22"], &["buzzer"]]),
+            names,
+            &empty,
+        );
+        assert_eq!(got, ["DS18B20 probe or DHT22", "Passive buzzer"]);
+        // An alternative that is simulated covers its set.
+        assert!(not_simulated(&needs(&[&["dht22", "oled"]]), names, &empty).is_empty());
+        // The generic I2C module: simulated when the wiring placed a BME280.
+        assert_eq!(not_simulated(&needs(&[&["i2c"]]), names, &empty).len(), 1);
+        let bme = from_wiring(
+            &[Wire {
+                from: "BME280 SDA",
+                to: "GPIO 21",
+            }],
+            &[],
+        )
+        .circuit;
+        assert!(not_simulated(&needs(&[&["i2c"]]), names, &bme).is_empty());
+    }
+
     use super::*;
 
     fn wires(rows: &[(&'static str, &'static str)]) -> Vec<Wire<'static>> {

@@ -48,6 +48,8 @@ public:
                       {u"parts"_s, QJsonArray{QJsonObject{{u"id"_s, u"led-1"_s}, {u"kind"_s, u"led"_s}, {u"pin"_s, 2}}}}};
     QList<QJsonObject> controls;
     bool rejectNext = false;
+    // circuit.pinNotes' layout: the board's header (empty: none, as with no site data).
+    QJsonObject layout;
     // What circuit.suggest answers.
     QJsonObject suggestion{{u"circuit"_s, QJsonObject{{u"schemaVersion"_s, u"1.2.0"_s}, {u"parts"_s, QJsonArray{}}}},
                            {u"unmatched"_s, QJsonArray{}}};
@@ -88,7 +90,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.42.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.43.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -119,6 +121,7 @@ private:
                                           QJsonObject{{u"leds"_s, QJsonArray{}}});
                     m.insert(u"props"_s, QJsonObject{{u"count"_s, QJsonObject{{u"type"_s, u"int"_s}, {u"default"_s, 8},
                                                                                 {u"label"_s, u"LEDs"_s}}}});
+                    m.insert(u"wiringNotes"_s, QJsonArray{u"DIN: 300 to 500 Ω in series."_s});
                     // Drawn as the strip it is: its pads at one end, DIN wired.
                     m.insert(u"drawing"_s, QJsonObject{{u"board"_s, u"#1e1e1e"_s},
                                                        {u"header"_s, QJsonArray{
@@ -135,9 +138,14 @@ private:
                 }(),
             }}});
         } else if (m == u"circuit.pinNotes") {
-            reply(id, QJsonObject{{u"chip"_s, u"esp32"_s},
-                                  {u"notes"_s, QJsonArray{QJsonObject{{u"gpio"_s, 12}, {u"kind"_s, u"strapping"_s}},
-                                                          QJsonObject{{u"gpio"_s, 34}, {u"kind"_s, u"inputOnly"_s}}}}});
+            QJsonObject notes{{u"chip"_s, u"esp32"_s},
+                              {u"notes"_s, QJsonArray{QJsonObject{{u"gpio"_s, 12}, {u"kind"_s, u"strapping"_s}},
+                                                      QJsonObject{{u"gpio"_s, 34}, {u"kind"_s, u"inputOnly"_s}}}}};
+            if (!layout.isEmpty()) {
+                notes.insert(u"source"_s, u"board"_s);
+                notes.insert(u"layout"_s, layout);
+            }
+            reply(id, notes);
         } else if (m == u"circuit.export") {
             reply(id, QJsonObject{{u"path"_s, p.value(u"path"_s)}, {u"parts"_s, 1}});
         } else if (m == u"circuit.import") {
@@ -301,6 +309,8 @@ private slots:
         QVERIFY(panel.drawnAsModule(u"ws2812-1"_s));
         QVERIFY(!panel.drawnAsModule(u"led-1"_s)); // no drawing in its model
         QVERIFY(panel.partToolTip(u"ws2812-1"_s).contains(u"5V DIN GND"_s));
+        // The site's note on wiring it (the app is in English here).
+        QVERIFY(panel.partToolTip(u"ws2812-1"_s).contains(u"DIN: 300 to 500 Ω in series."_s));
         // The wire to GPIO 5 ends on DIN, and runs level.
         const QPointF din = panel.pinPoint(u"ws2812-1"_s, u"din"_s);
         bool wired = false;
@@ -317,6 +327,63 @@ private slots:
         const QRectF led = panel.partRect(u"led-1"_s);
         const QRectF strip = panel.partRect(u"ws2812-1"_s);
         QVERIFY2(!led.intersects(strip), "parts on neighbouring rows overlap");
+    }
+
+    // With the board's header from the site, the board is drawn as made: parts beside
+    // the pads they are wired to, on that side, I2C modules wired to the I2C pads.
+    void drawsTheBoardFromItsHeader()
+    {
+        FakeCore fake(path());
+        fake.layout = QJsonObject{{u"left"_s, QJsonArray{u"3V3"_s, u"2"_s, u"5"_s, u"GND"_s}},
+                                  {u"right"_s, QJsonArray{u"GND"_s, u"21"_s, u"22"_s, u"4"_s}},
+                                  {u"pads"_s, QJsonArray{}}, {u"gpioOf"_s, QJsonObject{}}, {u"silk"_s, QJsonObject{}},
+                                  {u"i2c"_s, QJsonObject{{u"sda"_s, 21}, {u"scl"_s, 22}}},
+                                  {u"safe"_s, QJsonArray{4, 5}}};
+        CoreConnection core;
+        core.setSocketPath(path());
+        CircuitPanel panel(&core);
+        panel.resize(900, 600);
+        panel.show();
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QTRY_VERIFY(!panel.modelIds().isEmpty());
+        panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s});
+        QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(panel.headerDrawn());
+        panel.addPart(u"bme280"_s, {}, {}, {}, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 0x76}});
+        QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving());
+        QTRY_VERIFY(panel.item(u"bme280-1"_s));
+        // The LED, on a left-side pad, sits left of the board; the BME280 right of it.
+        QVERIFY(panel.partRect(u"led-1"_s).right() < 0);
+        QVERIFY(panel.partRect(u"bme280-1"_s).left() > 0);
+        // Two wires end on the BME280: SDA and SCL, from the board's I2C pads.
+        int ends = 0;
+        for (QGraphicsItem *i : panel.view()->scene()->items()) {
+            if (auto *line = dynamic_cast<QGraphicsLineItem *>(i))
+                ends += panel.partRect(u"bme280-1"_s).contains(line->line().p2()) ? 1 : 0;
+        }
+        QCOMPARE(ends, 2);
+        QVERIFY(!panel.partRect(u"led-1"_s).intersects(panel.partRect(u"bme280-1"_s)));
+        // Another LED: the project's pin is taken, so it is offered the board's first safe pin.
+        panel.selectPart(u"led-1"_s, true);
+        QTRY_COMPARE(panel.selectedPartId(), u"led-1"_s);
+        int offered = -1;
+        QTimer::singleShot(0, this, [&offered] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            const auto boxes = dialog->findChildren<QSpinBox *>();
+            QVERIFY(!boxes.isEmpty());
+            offered = boxes.first()->value();
+            dialog->reject();
+        });
+        QTest::keyClick(panel.view(), Qt::Key_D, Qt::ControlModifier);
+        QCOMPARE(offered, 4);
+        // A pin off the header (GPIO 33) falls back to the plain drawing.
+        panel.addPart(u"led"_s, 33, false, {});
+        QTRY_COMPARE(panel.parts().size(), 3);
+        QTRY_VERIFY(!panel.isSaving());
+        QTRY_VERIFY(!panel.headerDrawn());
     }
 
     void dragsPartsAndUndoes()

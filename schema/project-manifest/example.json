@@ -1,547 +1,1767 @@
 {
- "format": "esp32bench-project-manifest",
- "version": "1.2.0",
- "generated": "2026-11-16T12:00:00.000Z",
- "site": "https://esp32bench.dev",
- "licence": {
-  "code": "MIT",
-  "content": "CC-BY-4.0"
- },
- "boards": [
-  {
-   "id": "esp32",
-   "name": "ESP32-DevKitC V4, 38 pin",
-   "short": "ESP32",
-   "chip": "esp32",
-   "arduinoBoard": "ESP32 Dev Module"
+  "format": "esp32bench-project-manifest",
+  "version": "1.3.0",
+  "generated": "2026-11-16T12:00:00.000Z",
+  "site": "https://esp32bench.dev",
+  "licence": {
+    "code": "MIT",
+    "content": "CC-BY-4.0"
   },
-  {
-   "id": "esp32-doit",
-   "name": "ESP32 DevKit V1 (DOIT), 30 pin",
-   "short": "DOIT 30",
-   "chip": "esp32",
-   "arduinoBoard": "DOIT ESP32 DEVKIT V1 (or ESP32 Dev Module)",
-   "variantOf": "esp32",
-   "buildAs": "esp32"
-  },
-  {
-   "id": "esp32s3",
-   "name": "ESP32-S3-DevKitC-1, 44 pin",
-   "short": "S3",
-   "chip": "esp32s3",
-   "arduinoBoard": "ESP32S3 Dev Module"
-  },
-  {
-   "id": "esp32c3",
-   "name": "ESP32-C3-DevKitM-1, 30 pin",
-   "short": "C3",
-   "chip": "esp32c3",
-   "arduinoBoard": "ESP32C3 Dev Module"
-  },
-  {
-   "id": "esp32c3-supermini",
-   "name": "ESP32-C3 SuperMini",
-   "short": "C3 Mini",
-   "chip": "esp32c3",
-   "arduinoBoard": "Nologo ESP32C3 SuperMini (or ESP32C3 Dev Module with USB CDC On Boot enabled)",
-   "variantOf": "esp32c3"
-  },
-  {
-   "id": "esp32s2",
-   "name": "ESP32-S2-DevKitC-1, 44 pin",
-   "short": "S2",
-   "chip": "esp32s2",
-   "arduinoBoard": "ESP32S2 Dev Module"
-  },
-  {
-   "id": "esp32c6",
-   "name": "ESP32-C6-DevKitC-1, 32 pin",
-   "short": "C6",
-   "chip": "esp32c6",
-   "arduinoBoard": "ESP32C6 Dev Module"
-  },
-  {
-   "id": "xiao-esp32c3",
-   "name": "Seeed Studio XIAO ESP32C3",
-   "short": "XIAO C3",
-   "chip": "esp32c3",
-   "arduinoBoard": "XIAO_ESP32C3"
-  },
-  {
-   "id": "xiao-esp32s3",
-   "name": "Seeed Studio XIAO ESP32S3",
-   "short": "XIAO S3",
-   "chip": "esp32s3",
-   "arduinoBoard": "XIAO_ESP32S3"
-  },
-  {
-   "id": "esp32-cam",
-   "name": "AI-Thinker ESP32-CAM",
-   "short": "CAM",
-   "chip": "esp32",
-   "arduinoBoard": "AI Thinker ESP32-CAM"
-  }
- ],
- "desktop": {
-  "version": "0.1.8",
-  "url": "https://esp32bench.dev/desktop/"
- },
- "explain": [
-  {
-   "key": "panic-load",
-   "pattern": "Guru Meditation Error: Core\\s+\\d panic'ed \\((?:LoadProhibited|Load access fault)",
-   "text": "The code read from an address it may not touch. Usually a null or dangling pointer, or an object used before it was set up.",
-   "level": "problem",
-   "url": "https://esp32bench.dev/errors/guru-meditation-loadprohibited/"
-  },
-  {
-   "key": "rst-POWERON_RESET",
-   "pattern": "rst:0x[0-9a-fA-F]+ \\(POWERON_RESET\\)",
-   "text": "POWERON_RESET: Normal start after power-up or the EN button.",
-   "level": "info"
-  }
- ],
- "projects": [
-  {
-   "id": "blink",
-   "name": "Blink and heartbeat",
-   "url": "https://esp32bench.dev/projects/blink",
-   "level": "Starter",
-   "minutes": 5,
-   "tags": [
-    "no-parts"
-   ],
-   "summary": "Toggle the LED on GPIO 2 and print a tick every second. The first thing to flash on any new board.",
-   "firmware": "sketch",
-   "libraries": [
-    "Adafruit NeoPixel"
-   ],
-   "install": [
+  "boards": [
     {
-     "library": "Adafruit NeoPixel",
-     "registry": "adafruit/Adafruit NeoPixel"
-    }
-   ],
-   "baud": 115200,
-   "needs": [],
-   "parts": [
-    {
-     "quantity": 1,
-     "name": "ESP32 dev board",
-     "link": "https://www.amazon.com/dp/B08D5ZD528"
-    },
-    {
-     "quantity": 1,
-     "name": "LED and 220 \u03a9 resistor, only if your board has no LED on GPIO 2"
-    }
-   ],
-   "expect": {
-    "patterns": [
-     "tick \\d+ ms"
-    ],
-    "seconds": 8,
-    "needs": "none"
-   },
-   "builds": [
-    {
-     "board": "esp32",
-     "pins": [
-      "2"
-     ],
-     "wiring": [
-      {
-       "from": "LED anode, through 220 \u03a9",
-       "to": "GPIO 2",
-       "note": "Skip if your board has an onboard LED"
-      },
-      {
-       "from": "LED cathode",
-       "to": "GND",
-       "note": ""
+      "id": "esp32",
+      "name": "ESP32-DevKitC V4, 38 pin",
+      "short": "ESP32",
+      "chip": "esp32",
+      "arduinoBoard": "ESP32 Dev Module",
+      "pins": {
+        "left": [
+          "3V3",
+          "EN",
+          "VP",
+          "VN",
+          "34",
+          "35",
+          "32",
+          "33",
+          "25",
+          "26",
+          "27",
+          "14",
+          "12",
+          "GND",
+          "13",
+          "D2",
+          "D3",
+          "CMD",
+          "5V"
+        ],
+        "right": [
+          "GND",
+          "23",
+          "22",
+          "TX",
+          "RX",
+          "21",
+          "GND",
+          "19",
+          "18",
+          "5",
+          "17",
+          "16",
+          "4",
+          "0",
+          "2",
+          "15",
+          "D1",
+          "D0",
+          "CLK"
+        ],
+        "gpioOf": {
+          "VP": 36,
+          "VN": 39,
+          "TX": 1,
+          "RX": 3,
+          "CLK": 6,
+          "D0": 7,
+          "D1": 8,
+          "D2": 9,
+          "D3": 10,
+          "CMD": 11
+        },
+        "i2c": {
+          "sda": 21,
+          "scl": 22
+        },
+        "safe": [
+          4,
+          16,
+          17,
+          18,
+          19,
+          23,
+          25,
+          26,
+          27,
+          32,
+          33,
+          13,
+          14,
+          5
+        ],
+        "special": {
+          "0": {
+            "kind": "strap",
+            "why": "a strapping pin and the BOOT button. Held low at reset, the chip enters download mode."
+          },
+          "2": {
+            "kind": "strap",
+            "why": "a strapping pin. It must be low or floating at reset for flashing to work."
+          },
+          "12": {
+            "kind": "strap",
+            "why": "a strapping pin that sets the flash voltage. Pulled high at reset, the board may not boot."
+          },
+          "15": {
+            "kind": "strap",
+            "why": "a strapping pin. It changes boot messages when low at reset."
+          },
+          "34": {
+            "kind": "input-only",
+            "why": "GPIO 34 can only read. It has no output driver and no pull-ups."
+          },
+          "35": {
+            "kind": "input-only",
+            "why": "GPIO 35 can only read. It has no output driver and no pull-ups."
+          },
+          "3V3": {
+            "kind": "3v3",
+            "why": "the 3.3 V supply."
+          },
+          "5V": {
+            "kind": "5v",
+            "why": "the 5 V supply from USB."
+          },
+          "GND": {
+            "kind": "gnd",
+            "why": "ground."
+          },
+          "EN": {
+            "kind": "reset",
+            "why": "the reset pin."
+          },
+          "VP": {
+            "kind": "input-only",
+            "why": "GPIO 36 can only read. It has no output driver and no pull-ups."
+          },
+          "VN": {
+            "kind": "input-only",
+            "why": "GPIO 39 can only read. It has no output driver and no pull-ups."
+          },
+          "D0": {
+            "kind": "flash",
+            "why": "wired to the flash chip."
+          },
+          "D1": {
+            "kind": "flash",
+            "why": "wired to the flash chip."
+          },
+          "D2": {
+            "kind": "flash",
+            "why": "wired to the flash chip."
+          },
+          "D3": {
+            "kind": "flash",
+            "why": "wired to the flash chip."
+          },
+          "CMD": {
+            "kind": "flash",
+            "why": "wired to the flash chip."
+          },
+          "CLK": {
+            "kind": "flash",
+            "why": "wired to the flash chip."
+          },
+          "TX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          },
+          "RX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          }
+        },
+        "source": "https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html"
       }
-     ],
-     "code": "// Arduino sketch for esp32, with this board's pins filled in.\nvoid setup() {}\nvoid loop() {}\n",
-     "sample": [
-      "ets Jul 29 2019 12:21:46",
-      "rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)",
-      "tick 1000 ms",
-      "tick 2000 ms",
-      "tick 3000 ms",
-      "tick 4000 ms"
-     ]
     },
     {
-     "board": "esp32-doit",
-     "pins": [
-      "2"
-     ],
-     "wiring": [
-      {
-       "from": "LED anode, through 220 \u03a9",
-       "to": "GPIO 2",
-       "note": "Skip if your board has an onboard LED"
-      },
-      {
-       "from": "LED cathode",
-       "to": "GND",
-       "note": ""
+      "id": "esp32-doit",
+      "name": "ESP32 DevKit V1 (DOIT), 30 pin",
+      "short": "DOIT 30",
+      "chip": "esp32",
+      "arduinoBoard": "DOIT ESP32 DEVKIT V1 (or ESP32 Dev Module)",
+      "variantOf": "esp32",
+      "buildAs": "esp32",
+      "pins": {
+        "left": [
+          "EN",
+          "VP",
+          "VN",
+          "34",
+          "35",
+          "32",
+          "33",
+          "25",
+          "26",
+          "27",
+          "14",
+          "12",
+          "13",
+          "GND",
+          "5V"
+        ],
+        "right": [
+          "23",
+          "22",
+          "TX",
+          "RX",
+          "21",
+          "19",
+          "18",
+          "5",
+          "17",
+          "16",
+          "4",
+          "2",
+          "15",
+          "GND",
+          "3V3"
+        ],
+        "gpioOf": {
+          "VP": 36,
+          "VN": 39,
+          "TX": 1,
+          "RX": 3
+        },
+        "silk": {
+          "16": "RX2",
+          "17": "TX2",
+          "5V": "VIN",
+          "TX": "TX0",
+          "RX": "RX0"
+        },
+        "i2c": {
+          "sda": 21,
+          "scl": 22
+        },
+        "safe": [
+          4,
+          16,
+          17,
+          18,
+          19,
+          23,
+          25,
+          26,
+          27,
+          32,
+          33,
+          13,
+          14,
+          5
+        ],
+        "special": {
+          "2": {
+            "kind": "strap",
+            "why": "a strapping pin and the blue LED. It must be low or floating at reset for flashing to work."
+          },
+          "12": {
+            "kind": "strap",
+            "why": "a strapping pin that sets the flash voltage. Pulled high at reset, the board may not boot."
+          },
+          "15": {
+            "kind": "strap",
+            "why": "a strapping pin. It changes boot messages when low at reset."
+          },
+          "34": {
+            "kind": "input-only",
+            "why": "GPIO 34 can only read. It has no output driver and no pull-ups."
+          },
+          "35": {
+            "kind": "input-only",
+            "why": "GPIO 35 can only read. It has no output driver and no pull-ups."
+          },
+          "3V3": {
+            "kind": "3v3",
+            "why": "the 3.3 V supply."
+          },
+          "5V": {
+            "kind": "5v",
+            "why": "printed VIN: the 5 V from USB, or a 5 V input when USB is unplugged."
+          },
+          "GND": {
+            "kind": "gnd",
+            "why": "ground."
+          },
+          "EN": {
+            "kind": "reset",
+            "why": "the reset pin."
+          },
+          "VP": {
+            "kind": "input-only",
+            "why": "GPIO 36 can only read. It has no output driver and no pull-ups."
+          },
+          "VN": {
+            "kind": "input-only",
+            "why": "GPIO 39 can only read. It has no output driver and no pull-ups."
+          },
+          "TX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          },
+          "RX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          }
+        },
+        "source": "https://mischianti.org/doit-esp32-dev-kit-v1-high-resolution-pinout-and-specs/"
       }
-     ],
-     "code": "// Arduino sketch for esp32-doit, with this board's pins filled in.\nvoid setup() {}\nvoid loop() {}\n",
-     "sample": [
-      "ets Jul 29 2019 12:21:46",
-      "rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)",
-      "tick 1000 ms",
-      "tick 2000 ms",
-      "tick 3000 ms",
-      "tick 4000 ms"
-     ]
+    },
+    {
+      "id": "esp32s3",
+      "name": "ESP32-S3-DevKitC-1, 44 pin",
+      "short": "S3",
+      "chip": "esp32s3",
+      "arduinoBoard": "ESP32S3 Dev Module",
+      "pins": {
+        "left": [
+          "3V3",
+          "3V3",
+          "RST",
+          "4",
+          "5",
+          "6",
+          "7",
+          "15",
+          "16",
+          "17",
+          "18",
+          "8",
+          "3",
+          "46",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "5V",
+          "GND"
+        ],
+        "right": [
+          "GND",
+          "TX",
+          "RX",
+          "1",
+          "2",
+          "42",
+          "41",
+          "40",
+          "39",
+          "38",
+          "37",
+          "36",
+          "35",
+          "0",
+          "45",
+          "48",
+          "47",
+          "21",
+          "20",
+          "19",
+          "GND",
+          "GND"
+        ],
+        "gpioOf": {
+          "TX": 43,
+          "RX": 44
+        },
+        "i2c": {
+          "sda": 8,
+          "scl": 9
+        },
+        "safe": [
+          4,
+          5,
+          6,
+          7,
+          15,
+          16,
+          17,
+          18,
+          10,
+          11,
+          12,
+          13,
+          14,
+          21,
+          1,
+          2
+        ],
+        "special": {
+          "0": {
+            "kind": "strap",
+            "why": "a strapping pin and the BOOT button."
+          },
+          "3": {
+            "kind": "strap",
+            "why": "a strapping pin that selects the JTAG source."
+          },
+          "19": {
+            "kind": "usb",
+            "why": "the native USB D- line."
+          },
+          "20": {
+            "kind": "usb",
+            "why": "the native USB D+ line."
+          },
+          "35": {
+            "kind": "caution",
+            "why": "used for flash or PSRAM on modules with octal memory."
+          },
+          "36": {
+            "kind": "caution",
+            "why": "used for flash or PSRAM on modules with octal memory."
+          },
+          "37": {
+            "kind": "caution",
+            "why": "used for flash or PSRAM on modules with octal memory."
+          },
+          "38": {
+            "kind": "caution",
+            "why": "drives the RGB LED on v1.1 boards."
+          },
+          "45": {
+            "kind": "strap",
+            "why": "a strapping pin that sets the flash voltage."
+          },
+          "46": {
+            "kind": "strap",
+            "why": "a strapping pin. It must be low at reset to boot normally."
+          },
+          "48": {
+            "kind": "caution",
+            "why": "drives the RGB LED on the first board revision."
+          },
+          "3V3": {
+            "kind": "3v3",
+            "why": "the 3.3 V supply."
+          },
+          "5V": {
+            "kind": "5v",
+            "why": "the 5 V supply from USB."
+          },
+          "GND": {
+            "kind": "gnd",
+            "why": "ground."
+          },
+          "RST": {
+            "kind": "reset",
+            "why": "the reset pin."
+          },
+          "TX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          },
+          "RX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          }
+        },
+        "source": "https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s3/esp32-s3-devkitc-1/user_guide_v1.1.html"
+      }
+    },
+    {
+      "id": "esp32c3",
+      "name": "ESP32-C3-DevKitM-1, 30 pin",
+      "short": "C3",
+      "chip": "esp32c3",
+      "arduinoBoard": "ESP32C3 Dev Module",
+      "pins": {
+        "left": [
+          "GND",
+          "3V3",
+          "3V3",
+          "2",
+          "3",
+          "GND",
+          "RST",
+          "GND",
+          "0",
+          "1",
+          "10",
+          "GND",
+          "5V",
+          "5V",
+          "GND"
+        ],
+        "right": [
+          "GND",
+          "TX",
+          "RX",
+          "GND",
+          "9",
+          "8",
+          "GND",
+          "7",
+          "6",
+          "5",
+          "4",
+          "GND",
+          "18",
+          "19",
+          "GND"
+        ],
+        "gpioOf": {
+          "TX": 21,
+          "RX": 20
+        },
+        "i2c": {
+          "sda": 6,
+          "scl": 7
+        },
+        "safe": [
+          4,
+          5,
+          10,
+          0,
+          1,
+          3
+        ],
+        "special": {
+          "2": {
+            "kind": "strap",
+            "why": "a strapping pin. It must be high at reset."
+          },
+          "8": {
+            "kind": "strap",
+            "why": "a strapping pin and the RGB LED."
+          },
+          "9": {
+            "kind": "strap",
+            "why": "a strapping pin and the BOOT button."
+          },
+          "18": {
+            "kind": "usb",
+            "why": "the native USB D- line."
+          },
+          "19": {
+            "kind": "usb",
+            "why": "the native USB D+ line."
+          },
+          "3V3": {
+            "kind": "3v3",
+            "why": "the 3.3 V supply."
+          },
+          "5V": {
+            "kind": "5v",
+            "why": "the 5 V supply from USB."
+          },
+          "GND": {
+            "kind": "gnd",
+            "why": "ground."
+          },
+          "RST": {
+            "kind": "reset",
+            "why": "the reset pin."
+          },
+          "TX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          },
+          "RX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          }
+        },
+        "source": "https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c3/esp32-c3-devkitm-1/user_guide.html"
+      }
+    },
+    {
+      "id": "esp32c3-supermini",
+      "name": "ESP32-C3 SuperMini",
+      "short": "C3 Mini",
+      "chip": "esp32c3",
+      "arduinoBoard": "Nologo ESP32C3 SuperMini (or ESP32C3 Dev Module with USB CDC On Boot enabled)",
+      "variantOf": "esp32c3",
+      "pins": {
+        "pads": [
+          "5V",
+          "GND",
+          "3V3",
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "20",
+          "21"
+        ],
+        "i2c": {
+          "sda": 8,
+          "scl": 9
+        },
+        "safe": [
+          4,
+          5,
+          6,
+          7,
+          10,
+          0,
+          1,
+          3
+        ],
+        "special": {
+          "2": {
+            "kind": "strap",
+            "why": "a strapping pin. It must be high at reset."
+          },
+          "8": {
+            "kind": "strap",
+            "why": "a strapping pin and the blue LED, which lights when the pin is low."
+          },
+          "9": {
+            "kind": "strap",
+            "why": "a strapping pin and the BOOT button."
+          },
+          "20": {
+            "kind": "uart",
+            "why": "UART0 RX."
+          },
+          "21": {
+            "kind": "uart",
+            "why": "UART0 TX. The ROM boot messages come out here."
+          },
+          "3V3": {
+            "kind": "3v3",
+            "why": "the 3.3 V supply."
+          },
+          "5V": {
+            "kind": "5v",
+            "why": "the 5 V supply from USB."
+          },
+          "GND": {
+            "kind": "gnd",
+            "why": "ground."
+          }
+        },
+        "source": "https://github.com/espressif/arduino-esp32/blob/master/variants/nologo_esp32c3_super_mini/pins_arduino.h"
+      }
+    },
+    {
+      "id": "esp32s2",
+      "name": "ESP32-S2-DevKitC-1, 44 pin",
+      "short": "S2",
+      "chip": "esp32s2",
+      "arduinoBoard": "ESP32S2 Dev Module",
+      "pins": {
+        "left": [
+          "3V3",
+          "3V3",
+          "RST",
+          "4",
+          "5",
+          "6",
+          "7",
+          "15",
+          "16",
+          "17",
+          "18",
+          "8",
+          "3",
+          "46",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "5V",
+          "GND"
+        ],
+        "right": [
+          "GND",
+          "TX",
+          "RX",
+          "1",
+          "2",
+          "42",
+          "41",
+          "40",
+          "39",
+          "38",
+          "37",
+          "36",
+          "35",
+          "0",
+          "45",
+          "34",
+          "33",
+          "21",
+          "20",
+          "19",
+          "GND",
+          "GND"
+        ],
+        "gpioOf": {
+          "TX": 43,
+          "RX": 44
+        },
+        "i2c": {
+          "sda": 8,
+          "scl": 9
+        },
+        "safe": [
+          4,
+          5,
+          6,
+          7,
+          15,
+          16,
+          17,
+          10,
+          11,
+          12,
+          13,
+          14,
+          21,
+          1,
+          2
+        ],
+        "special": {
+          "0": {
+            "kind": "strap",
+            "why": "a strapping pin. Held low at reset, the chip enters download mode."
+          },
+          "18": {
+            "kind": "caution",
+            "why": "drives the board's RGB LED."
+          },
+          "19": {
+            "kind": "usb",
+            "why": "the native USB D- line."
+          },
+          "20": {
+            "kind": "usb",
+            "why": "the native USB D+ line."
+          },
+          "33": {
+            "kind": "caution",
+            "why": "used for octal flash or PSRAM on modules that have it."
+          },
+          "34": {
+            "kind": "caution",
+            "why": "used for octal flash or PSRAM on modules that have it."
+          },
+          "35": {
+            "kind": "caution",
+            "why": "used for octal flash or PSRAM on modules that have it."
+          },
+          "36": {
+            "kind": "caution",
+            "why": "used for octal flash or PSRAM on modules that have it."
+          },
+          "37": {
+            "kind": "caution",
+            "why": "used for octal flash or PSRAM on modules that have it."
+          },
+          "45": {
+            "kind": "strap",
+            "why": "a strapping pin that sets the flash voltage."
+          },
+          "46": {
+            "kind": "input-only",
+            "why": "GPIO 46 can only read, and it is a strapping pin that must be low to enter download mode."
+          },
+          "3V3": {
+            "kind": "3v3",
+            "why": "the 3.3 V supply."
+          },
+          "5V": {
+            "kind": "5v",
+            "why": "the 5 V supply from USB."
+          },
+          "GND": {
+            "kind": "gnd",
+            "why": "ground."
+          },
+          "RST": {
+            "kind": "reset",
+            "why": "the reset pin."
+          },
+          "TX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          },
+          "RX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          }
+        },
+        "source": "https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s2/esp32-s2-devkitc-1/user_guide.html"
+      }
+    },
+    {
+      "id": "esp32c6",
+      "name": "ESP32-C6-DevKitC-1, 32 pin",
+      "short": "C6",
+      "chip": "esp32c6",
+      "arduinoBoard": "ESP32C6 Dev Module",
+      "pins": {
+        "left": [
+          "3V3",
+          "RST",
+          "4",
+          "5",
+          "6",
+          "7",
+          "0",
+          "1",
+          "8",
+          "10",
+          "11",
+          "2",
+          "3",
+          "5V",
+          "GND",
+          "NC"
+        ],
+        "right": [
+          "GND",
+          "TX",
+          "RX",
+          "15",
+          "23",
+          "22",
+          "21",
+          "20",
+          "19",
+          "18",
+          "9",
+          "GND",
+          "13",
+          "12",
+          "GND",
+          "NC"
+        ],
+        "gpioOf": {
+          "TX": 16,
+          "RX": 17
+        },
+        "i2c": {
+          "sda": 23,
+          "scl": 22
+        },
+        "safe": [
+          0,
+          1,
+          2,
+          3,
+          6,
+          7,
+          10,
+          11,
+          18,
+          19,
+          20,
+          21
+        ],
+        "special": {
+          "4": {
+            "kind": "strap",
+            "why": "a strapping pin (MTMS). It only changes SDIO timing, so it is safe for most projects once the board has booted."
+          },
+          "5": {
+            "kind": "strap",
+            "why": "a strapping pin (MTDI). It only changes SDIO timing, so it is safe for most projects once the board has booted."
+          },
+          "8": {
+            "kind": "strap",
+            "why": "a strapping pin and the RGB LED. It must be high to enter download mode."
+          },
+          "9": {
+            "kind": "strap",
+            "why": "a strapping pin. Held low at reset, the chip enters download mode."
+          },
+          "12": {
+            "kind": "usb",
+            "why": "the native USB D- line."
+          },
+          "13": {
+            "kind": "usb",
+            "why": "the native USB D+ line."
+          },
+          "15": {
+            "kind": "strap",
+            "why": "a strapping pin that selects the JTAG source."
+          },
+          "3V3": {
+            "kind": "3v3",
+            "why": "the 3.3 V supply."
+          },
+          "5V": {
+            "kind": "5v",
+            "why": "the 5 V supply from USB."
+          },
+          "GND": {
+            "kind": "gnd",
+            "why": "ground."
+          },
+          "RST": {
+            "kind": "reset",
+            "why": "the reset pin."
+          },
+          "NC": {
+            "kind": "nc",
+            "why": "not connected to anything."
+          },
+          "TX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          },
+          "RX": {
+            "kind": "uart",
+            "why": "carries the serial console. Anything wired here fights with flashing and the bench."
+          }
+        },
+        "source": "https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c6/esp32-c6-devkitc-1/user_guide.html"
+      }
+    },
+    {
+      "id": "xiao-esp32c3",
+      "name": "Seeed Studio XIAO ESP32C3",
+      "short": "XIAO C3",
+      "chip": "esp32c3",
+      "arduinoBoard": "XIAO_ESP32C3",
+      "pins": {
+        "left": [
+          "20",
+          "8",
+          "9",
+          "10",
+          "3V3",
+          "GND",
+          "5V"
+        ],
+        "right": [
+          "21",
+          "7",
+          "6",
+          "5",
+          "4",
+          "3",
+          "2"
+        ],
+        "silk": {
+          "2": "D0",
+          "3": "D1",
+          "4": "D2",
+          "5": "D3",
+          "6": "D4",
+          "7": "D5",
+          "8": "D8",
+          "9": "D9",
+          "10": "D10",
+          "20": "D7",
+          "21": "D6"
+        },
+        "i2c": {
+          "sda": 6,
+          "scl": 7
+        },
+        "safe": [
+          3,
+          4,
+          5,
+          10
+        ],
+        "special": {
+          "2": {
+            "kind": "strap",
+            "why": "a strapping pin. It must be high at reset."
+          },
+          "8": {
+            "kind": "strap",
+            "why": "a strapping pin. It must be high to enter download mode."
+          },
+          "9": {
+            "kind": "strap",
+            "why": "a strapping pin and the BOOT button."
+          },
+          "20": {
+            "kind": "uart",
+            "why": "UART0 RX."
+          },
+          "21": {
+            "kind": "uart",
+            "why": "UART0 TX. The ROM boot messages come out here."
+          },
+          "3V3": {
+            "kind": "3v3",
+            "why": "the 3.3 V output."
+          },
+          "5V": {
+            "kind": "5v",
+            "why": "the 5 V supply from USB."
+          },
+          "GND": {
+            "kind": "gnd",
+            "why": "ground."
+          }
+        },
+        "source": "https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/"
+      }
+    },
+    {
+      "id": "xiao-esp32s3",
+      "name": "Seeed Studio XIAO ESP32S3",
+      "short": "XIAO S3",
+      "chip": "esp32s3",
+      "arduinoBoard": "XIAO_ESP32S3",
+      "pins": {
+        "left": [
+          "44",
+          "7",
+          "8",
+          "9",
+          "3V3",
+          "GND",
+          "5V"
+        ],
+        "right": [
+          "43",
+          "6",
+          "5",
+          "4",
+          "3",
+          "2",
+          "1"
+        ],
+        "silk": {
+          "1": "D0",
+          "2": "D1",
+          "3": "D2",
+          "4": "D3",
+          "5": "D4",
+          "6": "D5",
+          "7": "D8",
+          "8": "D9",
+          "9": "D10",
+          "43": "D6",
+          "44": "D7"
+        },
+        "i2c": {
+          "sda": 5,
+          "scl": 6
+        },
+        "safe": [
+          1,
+          2,
+          4,
+          7,
+          8,
+          9,
+          3
+        ],
+        "special": {
+          "3": {
+            "kind": "strap",
+            "why": "a strapping pin that selects the JTAG source. Safe for most projects."
+          },
+          "43": {
+            "kind": "uart",
+            "why": "UART0 TX. The ROM boot messages come out here."
+          },
+          "44": {
+            "kind": "uart",
+            "why": "UART0 RX."
+          },
+          "3V3": {
+            "kind": "3v3",
+            "why": "the 3.3 V output."
+          },
+          "5V": {
+            "kind": "5v",
+            "why": "the 5 V supply from USB."
+          },
+          "GND": {
+            "kind": "gnd",
+            "why": "ground."
+          }
+        },
+        "source": "https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/"
+      }
+    },
+    {
+      "id": "esp32-cam",
+      "name": "AI-Thinker ESP32-CAM",
+      "short": "CAM",
+      "chip": "esp32",
+      "arduinoBoard": "AI Thinker ESP32-CAM",
+      "pins": {
+        "i2c": {
+          "sda": 14,
+          "scl": 15
+        },
+        "safe": [],
+        "special": {},
+        "wired": [
+          {
+            "gpio": 0,
+            "job": "Camera XCLK. Also the boot pin: tie it to GND while flashing"
+          },
+          {
+            "gpio": 5,
+            "job": "Camera data Y2"
+          },
+          {
+            "gpio": 18,
+            "job": "Camera data Y3"
+          },
+          {
+            "gpio": 19,
+            "job": "Camera data Y4"
+          },
+          {
+            "gpio": 21,
+            "job": "Camera data Y5"
+          },
+          {
+            "gpio": 36,
+            "job": "Camera data Y6"
+          },
+          {
+            "gpio": 39,
+            "job": "Camera data Y7"
+          },
+          {
+            "gpio": 34,
+            "job": "Camera data Y8"
+          },
+          {
+            "gpio": 35,
+            "job": "Camera data Y9"
+          },
+          {
+            "gpio": 25,
+            "job": "Camera VSYNC"
+          },
+          {
+            "gpio": 23,
+            "job": "Camera HREF"
+          },
+          {
+            "gpio": 22,
+            "job": "Camera PCLK"
+          },
+          {
+            "gpio": 26,
+            "job": "Camera SCCB data (SIOD)"
+          },
+          {
+            "gpio": 27,
+            "job": "Camera SCCB clock (SIOC)"
+          },
+          {
+            "gpio": 32,
+            "job": "Camera power-down (PWDN)"
+          },
+          {
+            "gpio": 4,
+            "job": "White flash LED, and SD card D1"
+          },
+          {
+            "gpio": 33,
+            "job": "Small red status LED"
+          },
+          {
+            "gpio": 14,
+            "job": "SD card CLK"
+          },
+          {
+            "gpio": 15,
+            "job": "SD card CMD"
+          },
+          {
+            "gpio": 2,
+            "job": "SD card D0"
+          },
+          {
+            "gpio": 12,
+            "job": "SD card D2"
+          },
+          {
+            "gpio": 13,
+            "job": "SD card D3"
+          },
+          {
+            "gpio": 1,
+            "job": "UART0 TX, used for flashing and the serial console"
+          },
+          {
+            "gpio": 3,
+            "job": "UART0 RX, used for flashing and the serial console"
+          }
+        ],
+        "source": "https://github.com/espressif/arduino-esp32/blob/master/libraries/ESP32/examples/Camera/CameraWebServer/camera_pins.h"
+      }
     }
-   ]
+  ],
+  "desktop": {
+    "version": "0.1.8",
+    "url": "https://esp32bench.dev/desktop/"
   },
-  {
-   "id": "probeharbor-probe",
-   "name": "ProbeHarbor probe",
-   "url": "https://esp32bench.dev/projects/probeharbor-probe",
-   "level": "Starter",
-   "minutes": 15,
-   "tags": [
-    "probeharbor",
-    "sensors",
-    "wireless"
-   ],
-   "summary": "Prebuilt sensor firmware from the ProbeHarbor project. Flash it from this page, then it finds a temperature sensor by itself and posts a reading every minute.",
-   "firmware": "prebuilt",
-   "sourceUrl": "https://github.com/doodersrage/probeharbor/tree/main/firmware/probeharbor-probe",
-   "libraries": [],
-   "baud": 115200,
-   "needs": [
-    [
-     "ds18b20",
-     "dht22",
-     "i2c"
-    ]
-   ],
-   "parts": [
+  "explain": [
     {
-     "quantity": 1,
-     "name": "ESP32 dev board",
-     "link": "https://www.amazon.com/dp/B08D5ZD528"
+      "key": "panic-load",
+      "pattern": "Guru Meditation Error: Core\\s+\\d panic'ed \\((?:LoadProhibited|Load access fault)",
+      "text": "The code read from an address it may not touch. Usually a null or dangling pointer, or an object used before it was set up.",
+      "level": "problem",
+      "url": "https://esp32bench.dev/errors/guru-meditation-loadprohibited/"
     },
     {
-     "quantity": 1,
-     "name": "or ESP32-S3-DevKitC-1",
-     "link": "https://www.adafruit.com/product/5336"
-    },
-    {
-     "quantity": 1,
-     "name": "or ESP32-C3-DevKitM-1",
-     "link": "https://www.adafruit.com/product/5337"
-    },
-    {
-     "quantity": 1,
-     "name": "DS18B20 waterproof probe, or a DHT22",
-     "link": "https://www.adafruit.com/product/381"
-    },
-    {
-     "quantity": 1,
-     "name": "4.7 k\u03a9 resistor, pull-up for the probe data line",
-     "link": "https://www.amazon.com/dp/B08QRZRRGB"
-    },
-    {
-     "quantity": 1,
-     "name": "Optional I2C sensor: SHT31",
-     "link": "https://www.adafruit.com/product/2857"
-    },
-    {
-     "quantity": 1,
-     "name": "Optional I2C sensor: BME280",
-     "link": "https://www.adafruit.com/product/2652"
-    },
-    {
-     "quantity": 1,
-     "name": "Optional I2C sensor: AHT20",
-     "link": "https://www.adafruit.com/product/4566"
-    },
-    {
-     "quantity": 1,
-     "name": "Optional door reed switch",
-     "link": "https://www.adafruit.com/product/375"
-    },
-    {
-     "quantity": 2,
-     "name": "Optional 100 k\u03a9 resistors, battery divider",
-     "link": "https://www.adafruit.com/product/2787"
+      "key": "rst-POWERON_RESET",
+      "pattern": "rst:0x[0-9a-fA-F]+ \\(POWERON_RESET\\)",
+      "text": "POWERON_RESET: Normal start after power-up or the EN button.",
+      "level": "info"
     }
-   ],
-   "notes": [
-    "Flashing writes a merged image at offset 0, which also erases saved Wi-Fi and the device key. Send settings again after every flash.",
-    "From firmware 1.5.0 the probe updates itself from ProbeHarbor, installing only updates signed with ProbeHarbor's key, and goes back to the old version if the new one cannot post. You only need to flash it once.",
-    "It also checks ProbeHarbor's certificate. If the check fails it prints TT tls: certificate not verified, keeps posting, and tries again a day later; ProbeHarbor's device page shows a warning meanwhile.",
-    "Firmware before 1.5.1 could crash when settings arrived twice, which the form below does if the probe is slow to answer. A crash report naming WiFiManager::shutdownConfigPortal() is this; 1.5.1 and later are fixed.",
-    "From firmware 1.5.1 a probe that crashed reports it once with its next reading, and ProbeHarbor's device page shows it under Last crash.",
-    "The ESP32-C3 SuperMini often cannot join Wi-Fi at full transmit power. From 1.5.1 the probe retries at low power and keeps using it on that board; place it near the access point.",
-    "TT post -5 means the reply was lost, not the reading. In testing the server had stored both readings that printed -5.",
-    "An I2C sensor that is found at boot but then prints TT sensor problem usually has a loose power or ground wire. That was the cause when it happened on the S3.",
-    "Hold BOOT for five seconds to erase Wi-Fi and the key. Feather boards have no button on GPIO 0, so resend settings instead.",
-    "On a Feather, probe data on GPIO 4 is the pad marked A5 and the door input on GPIO 26 is A0."
-   ],
-   "open": [
-    "Leak and battery inputs on any board",
-    "Setup portal and the five-second BOOT reset on the ESP32 and S3",
-    "DS18B20 on the S3 and C3, and any I2C sensor on the C3",
-    "UART port on the S3 and on a C3 DevKitM-1",
-    "A long unattended run on the S3"
-   ],
-   "verified": [
+  ],
+  "projects": [
     {
-     "board": "esp32",
-     "what": "Browser flash, USB settings, Wi-Fi and first reading with a DS18B20",
-     "when": "firmware 1.0.1"
+      "id": "blink",
+      "name": "Blink and heartbeat",
+      "url": "https://esp32bench.dev/projects/blink",
+      "level": "Starter",
+      "minutes": 5,
+      "tags": [
+        "no-parts"
+      ],
+      "summary": "Toggle the LED on GPIO 2 and print a tick every second. The first thing to flash on any new board.",
+      "firmware": "sketch",
+      "libraries": [
+        "Adafruit NeoPixel"
+      ],
+      "install": [
+        {
+          "library": "Adafruit NeoPixel",
+          "registry": "adafruit/Adafruit NeoPixel"
+        }
+      ],
+      "baud": 115200,
+      "needs": [],
+      "parts": [
+        {
+          "quantity": 1,
+          "name": "ESP32 dev board",
+          "link": "https://www.amazon.com/dp/B08D5ZD528"
+        },
+        {
+          "quantity": 1,
+          "name": "LED and 220 Ω resistor, only if your board has no LED on GPIO 2"
+        }
+      ],
+      "expect": {
+        "patterns": [
+          "tick \\d+ ms"
+        ],
+        "seconds": 8,
+        "needs": "none"
+      },
+      "builds": [
+        {
+          "board": "esp32",
+          "pins": [
+            "2"
+          ],
+          "wiring": [
+            {
+              "from": "LED anode, through 220 Ω",
+              "to": "GPIO 2",
+              "note": "Skip if your board has an onboard LED"
+            },
+            {
+              "from": "LED cathode",
+              "to": "GND",
+              "note": ""
+            }
+          ],
+          "code": "// Arduino sketch for esp32, with this board's pins filled in.\nvoid setup() {}\nvoid loop() {}\n",
+          "sample": [
+            "ets Jul 29 2019 12:21:46",
+            "rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)",
+            "tick 1000 ms",
+            "tick 2000 ms",
+            "tick 3000 ms",
+            "tick 4000 ms"
+          ]
+        },
+        {
+          "board": "esp32-doit",
+          "pins": [
+            "2"
+          ],
+          "wiring": [
+            {
+              "from": "LED anode, through 220 Ω",
+              "to": "GPIO 2",
+              "note": "Skip if your board has an onboard LED"
+            },
+            {
+              "from": "LED cathode",
+              "to": "GND",
+              "note": ""
+            }
+          ],
+          "code": "// Arduino sketch for esp32-doit, with this board's pins filled in.\nvoid setup() {}\nvoid loop() {}\n",
+          "sample": [
+            "ets Jul 29 2019 12:21:46",
+            "rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)",
+            "tick 1000 ms",
+            "tick 2000 ms",
+            "tick 3000 ms",
+            "tick 4000 ms"
+          ]
+        }
+      ]
     },
     {
-     "board": "esp32",
-     "what": "DHT22 on GPIO 4",
-     "when": "firmware 1.1.1"
-    },
-    {
-     "board": "esp32",
-     "what": "BME280 on I2C: temperature, humidity and pressure",
-     "when": "firmware 1.2.2"
-    },
-    {
-     "board": "esp32",
-     "what": "SHT31 on I2C",
-     "when": "firmware 1.2.3"
-    },
-    {
-     "board": "esp32",
-     "what": "Door reed switch, with a post on every change",
-     "when": "firmware 1.2.3, 2026-10-29"
-    },
-    {
-     "board": "esp32",
-     "what": "AHT20 on SDA 21 / SCL 22",
-     "when": "firmware 1.2.6, 2026-11-11"
-    },
-    {
-     "board": "esp32s3",
-     "what": "Flash, settings and Wi-Fi over the native USB port",
-     "when": "firmware 1.2.4, 2026-11-05"
-    },
-    {
-     "board": "esp32s3",
-     "what": "AHT20 on SDA 8 / SCL 9",
-     "when": "firmware 1.2.6, 2026-11-11"
-    },
-    {
-     "board": "esp32c3",
-     "what": "Native USB port, settings and Wi-Fi, DHT22 on GPIO 4",
-     "when": "firmware 1.2.5, 2026-11-06"
-    },
-    {
-     "board": "esp32",
-     "what": "Signed over-the-air update (a bad signature refused), watchdog, readings kept through a dropped connection, and the server certificate checked",
-     "when": "firmware 1.5.0, 2026-11-13"
-    },
-    {
-     "board": "esp32s3",
-     "what": "Signed over-the-air update with rollback, and the server certificate checked",
-     "when": "firmware 1.5.0, 2026-11-13"
-    },
-    {
-     "board": "esp32c3",
-     "what": "SuperMini: signed over-the-air update with rollback, watchdog, readings kept through dropped connections, crash reports, the server certificate checked, and the setup portal from a phone after the BOOT reset",
-     "when": "firmware 1.5.1, 2026-11-14"
-    },
-    {
-     "board": "esp32",
-     "what": "Crash reports, and settings sent twice no longer crash it; updated itself to 1.5.2 over the air",
-     "when": "firmware 1.5.2, 2026-11-15"
+      "id": "probeharbor-probe",
+      "name": "ProbeHarbor probe",
+      "url": "https://esp32bench.dev/projects/probeharbor-probe",
+      "level": "Starter",
+      "minutes": 15,
+      "tags": [
+        "probeharbor",
+        "sensors",
+        "wireless"
+      ],
+      "summary": "Prebuilt sensor firmware from the ProbeHarbor project. Flash it from this page, then it finds a temperature sensor by itself and posts a reading every minute.",
+      "firmware": "prebuilt",
+      "sourceUrl": "https://github.com/doodersrage/probeharbor/tree/main/firmware/probeharbor-probe",
+      "libraries": [],
+      "baud": 115200,
+      "needs": [
+        [
+          "ds18b20",
+          "dht22",
+          "i2c"
+        ]
+      ],
+      "parts": [
+        {
+          "quantity": 1,
+          "name": "ESP32 dev board",
+          "link": "https://www.amazon.com/dp/B08D5ZD528"
+        },
+        {
+          "quantity": 1,
+          "name": "or ESP32-S3-DevKitC-1",
+          "link": "https://www.adafruit.com/product/5336"
+        },
+        {
+          "quantity": 1,
+          "name": "or ESP32-C3-DevKitM-1",
+          "link": "https://www.adafruit.com/product/5337"
+        },
+        {
+          "quantity": 1,
+          "name": "DS18B20 waterproof probe, or a DHT22",
+          "link": "https://www.adafruit.com/product/381"
+        },
+        {
+          "quantity": 1,
+          "name": "4.7 kΩ resistor, pull-up for the probe data line",
+          "link": "https://www.amazon.com/dp/B08QRZRRGB"
+        },
+        {
+          "quantity": 1,
+          "name": "Optional I2C sensor: SHT31",
+          "link": "https://www.adafruit.com/product/2857"
+        },
+        {
+          "quantity": 1,
+          "name": "Optional I2C sensor: BME280",
+          "link": "https://www.adafruit.com/product/2652"
+        },
+        {
+          "quantity": 1,
+          "name": "Optional I2C sensor: AHT20",
+          "link": "https://www.adafruit.com/product/4566"
+        },
+        {
+          "quantity": 1,
+          "name": "Optional door reed switch",
+          "link": "https://www.adafruit.com/product/375"
+        },
+        {
+          "quantity": 2,
+          "name": "Optional 100 kΩ resistors, battery divider",
+          "link": "https://www.adafruit.com/product/2787"
+        }
+      ],
+      "notes": [
+        "Flashing writes a merged image at offset 0, which also erases saved Wi-Fi and the device key. Send settings again after every flash.",
+        "From firmware 1.5.0 the probe updates itself from ProbeHarbor, installing only updates signed with ProbeHarbor's key, and goes back to the old version if the new one cannot post. You only need to flash it once.",
+        "It also checks ProbeHarbor's certificate. If the check fails it prints TT tls: certificate not verified, keeps posting, and tries again a day later; ProbeHarbor's device page shows a warning meanwhile.",
+        "Firmware before 1.5.1 could crash when settings arrived twice, which the form below does if the probe is slow to answer. A crash report naming WiFiManager::shutdownConfigPortal() is this; 1.5.1 and later are fixed.",
+        "From firmware 1.5.1 a probe that crashed reports it once with its next reading, and ProbeHarbor's device page shows it under Last crash.",
+        "The ESP32-C3 SuperMini often cannot join Wi-Fi at full transmit power. From 1.5.1 the probe retries at low power and keeps using it on that board; place it near the access point.",
+        "TT post -5 means the reply was lost, not the reading. In testing the server had stored both readings that printed -5.",
+        "An I2C sensor that is found at boot but then prints TT sensor problem usually has a loose power or ground wire. That was the cause when it happened on the S3.",
+        "Hold BOOT for five seconds to erase Wi-Fi and the key. Feather boards have no button on GPIO 0, so resend settings instead.",
+        "On a Feather, probe data on GPIO 4 is the pad marked A5 and the door input on GPIO 26 is A0."
+      ],
+      "open": [
+        "Leak and battery inputs on any board",
+        "Setup portal and the five-second BOOT reset on the ESP32 and S3",
+        "DS18B20 on the S3 and C3, and any I2C sensor on the C3",
+        "UART port on the S3 and on a C3 DevKitM-1",
+        "A long unattended run on the S3"
+      ],
+      "verified": [
+        {
+          "board": "esp32",
+          "what": "Browser flash, USB settings, Wi-Fi and first reading with a DS18B20",
+          "when": "firmware 1.0.1"
+        },
+        {
+          "board": "esp32",
+          "what": "DHT22 on GPIO 4",
+          "when": "firmware 1.1.1"
+        },
+        {
+          "board": "esp32",
+          "what": "BME280 on I2C: temperature, humidity and pressure",
+          "when": "firmware 1.2.2"
+        },
+        {
+          "board": "esp32",
+          "what": "SHT31 on I2C",
+          "when": "firmware 1.2.3"
+        },
+        {
+          "board": "esp32",
+          "what": "Door reed switch, with a post on every change",
+          "when": "firmware 1.2.3, 2026-10-29"
+        },
+        {
+          "board": "esp32",
+          "what": "AHT20 on SDA 21 / SCL 22",
+          "when": "firmware 1.2.6, 2026-11-11"
+        },
+        {
+          "board": "esp32s3",
+          "what": "Flash, settings and Wi-Fi over the native USB port",
+          "when": "firmware 1.2.4, 2026-11-05"
+        },
+        {
+          "board": "esp32s3",
+          "what": "AHT20 on SDA 8 / SCL 9",
+          "when": "firmware 1.2.6, 2026-11-11"
+        },
+        {
+          "board": "esp32c3",
+          "what": "Native USB port, settings and Wi-Fi, DHT22 on GPIO 4",
+          "when": "firmware 1.2.5, 2026-11-06"
+        },
+        {
+          "board": "esp32",
+          "what": "Signed over-the-air update (a bad signature refused), watchdog, readings kept through a dropped connection, and the server certificate checked",
+          "when": "firmware 1.5.0, 2026-11-13"
+        },
+        {
+          "board": "esp32s3",
+          "what": "Signed over-the-air update with rollback, and the server certificate checked",
+          "when": "firmware 1.5.0, 2026-11-13"
+        },
+        {
+          "board": "esp32c3",
+          "what": "SuperMini: signed over-the-air update with rollback, watchdog, readings kept through dropped connections, crash reports, the server certificate checked, and the setup portal from a phone after the BOOT reset",
+          "when": "firmware 1.5.1, 2026-11-14"
+        },
+        {
+          "board": "esp32",
+          "what": "Crash reports, and settings sent twice no longer crash it; updated itself to 1.5.2 over the air",
+          "when": "firmware 1.5.2, 2026-11-15"
+        }
+      ],
+      "builds": [
+        {
+          "board": "esp32",
+          "pins": [
+            "3V3",
+            "GND",
+            "4",
+            "21",
+            "22",
+            "27",
+            "26",
+            "35"
+          ],
+          "wiring": [
+            {
+              "from": "Sensor VCC",
+              "to": "3V3",
+              "note": ""
+            },
+            {
+              "from": "Sensor GND",
+              "to": "GND",
+              "note": ""
+            },
+            {
+              "from": "DS18B20 or DHT22 data",
+              "to": "GPIO 4",
+              "note": "Up to four DS18B20s share the line"
+            },
+            {
+              "from": "4.7 kΩ pull-up resistor",
+              "to": "GPIO 4 to 3V3",
+              "note": "Holds the data line high"
+            },
+            {
+              "from": "I2C sensor SDA",
+              "to": "GPIO 21",
+              "note": "SHT31, BME280 or AHT20, found at boot"
+            },
+            {
+              "from": "I2C sensor SCL",
+              "to": "GPIO 22",
+              "note": ""
+            },
+            {
+              "from": "Optional: leak contact, wire A",
+              "to": "GPIO 27",
+              "note": "Only read when enabled in setup"
+            },
+            {
+              "from": "Optional: leak contact, wire B",
+              "to": "GND",
+              "note": ""
+            },
+            {
+              "from": "Optional: door reed switch, wire A",
+              "to": "GPIO 26",
+              "note": "Only read when enabled in setup"
+            },
+            {
+              "from": "Optional: door reed switch, wire B",
+              "to": "GND",
+              "note": ""
+            },
+            {
+              "from": "Optional: battery + through 100 kΩ",
+              "to": "GPIO 35",
+              "note": "1:1 divider from a single Li-ion cell. Only read when enabled"
+            },
+            {
+              "from": "Optional: 100 kΩ from GPIO 35",
+              "to": "GND",
+              "note": "Divider bottom: the pin sees half the battery voltage"
+            }
+          ],
+          "sample": [
+            "TT firmware 1.5.2",
+            "TT setup: send settings over USB, or join the ProbeHarbor-Setup Wi-Fi network",
+            "TT key saved",
+            "TT wifi joining",
+            "TT sensor: AHT20 on I2C (SDA 21, SCL 22)",
+            "TT wifi ok",
+            "TT tls: server certificate verified",
+            "TT post 200 probes=1"
+          ],
+          "image": {
+            "url": "https://esp32bench.dev/firmware/probeharbor-probe/probeharbor-probe-esp32.bin",
+            "sha256": "d5f1abf9be34425ef43ad0ced7ddd0b08b1ca12c215d257958bd681d7ce44eeb",
+            "size": 1183424
+          }
+        },
+        {
+          "board": "esp32-doit",
+          "pins": [
+            "3V3",
+            "GND",
+            "4",
+            "21",
+            "22",
+            "27",
+            "26",
+            "35"
+          ],
+          "wiring": [
+            {
+              "from": "Sensor VCC",
+              "to": "3V3",
+              "note": ""
+            },
+            {
+              "from": "Sensor GND",
+              "to": "GND",
+              "note": ""
+            },
+            {
+              "from": "DS18B20 or DHT22 data",
+              "to": "GPIO 4",
+              "note": "Up to four DS18B20s share the line"
+            },
+            {
+              "from": "4.7 kΩ pull-up resistor",
+              "to": "GPIO 4 to 3V3",
+              "note": "Holds the data line high"
+            },
+            {
+              "from": "I2C sensor SDA",
+              "to": "GPIO 21",
+              "note": "SHT31, BME280 or AHT20, found at boot"
+            },
+            {
+              "from": "I2C sensor SCL",
+              "to": "GPIO 22",
+              "note": ""
+            },
+            {
+              "from": "Optional: leak contact, wire A",
+              "to": "GPIO 27",
+              "note": "Only read when enabled in setup"
+            },
+            {
+              "from": "Optional: leak contact, wire B",
+              "to": "GND",
+              "note": ""
+            },
+            {
+              "from": "Optional: door reed switch, wire A",
+              "to": "GPIO 26",
+              "note": "Only read when enabled in setup"
+            },
+            {
+              "from": "Optional: door reed switch, wire B",
+              "to": "GND",
+              "note": ""
+            },
+            {
+              "from": "Optional: battery + through 100 kΩ",
+              "to": "GPIO 35",
+              "note": "1:1 divider from a single Li-ion cell. Only read when enabled"
+            },
+            {
+              "from": "Optional: 100 kΩ from GPIO 35",
+              "to": "GND",
+              "note": "Divider bottom: the pin sees half the battery voltage"
+            }
+          ],
+          "sample": [
+            "TT firmware 1.5.2",
+            "TT setup: send settings over USB, or join the ProbeHarbor-Setup Wi-Fi network",
+            "TT key saved",
+            "TT wifi joining",
+            "TT sensor: AHT20 on I2C (SDA 21, SCL 22)",
+            "TT wifi ok",
+            "TT tls: server certificate verified",
+            "TT post 200 probes=1"
+          ],
+          "image": {
+            "url": "https://esp32bench.dev/firmware/probeharbor-probe/probeharbor-probe-esp32.bin",
+            "sha256": "d5f1abf9be34425ef43ad0ced7ddd0b08b1ca12c215d257958bd681d7ce44eeb",
+            "size": 1183424
+          }
+        }
+      ]
     }
-   ],
-   "builds": [
+  ],
+  "parts": [
     {
-     "board": "esp32",
-     "pins": [
-      "3V3",
-      "GND",
-      "4",
-      "21",
-      "22",
-      "27",
-      "26",
-      "35"
-     ],
-     "wiring": [
-      {
-       "from": "Sensor VCC",
-       "to": "3V3",
-       "note": ""
-      },
-      {
-       "from": "Sensor GND",
-       "to": "GND",
-       "note": ""
-      },
-      {
-       "from": "DS18B20 or DHT22 data",
-       "to": "GPIO 4",
-       "note": "Up to four DS18B20s share the line"
-      },
-      {
-       "from": "4.7 k\u03a9 pull-up resistor",
-       "to": "GPIO 4 to 3V3",
-       "note": "Holds the data line high"
-      },
-      {
-       "from": "I2C sensor SDA",
-       "to": "GPIO 21",
-       "note": "SHT31, BME280 or AHT20, found at boot"
-      },
-      {
-       "from": "I2C sensor SCL",
-       "to": "GPIO 22",
-       "note": ""
-      },
-      {
-       "from": "Optional: leak contact, wire A",
-       "to": "GPIO 27",
-       "note": "Only read when enabled in setup"
-      },
-      {
-       "from": "Optional: leak contact, wire B",
-       "to": "GND",
-       "note": ""
-      },
-      {
-       "from": "Optional: door reed switch, wire A",
-       "to": "GPIO 26",
-       "note": "Only read when enabled in setup"
-      },
-      {
-       "from": "Optional: door reed switch, wire B",
-       "to": "GND",
-       "note": ""
-      },
-      {
-       "from": "Optional: battery + through 100 k\u03a9",
-       "to": "GPIO 35",
-       "note": "1:1 divider from a single Li-ion cell. Only read when enabled"
-      },
-      {
-       "from": "Optional: 100 k\u03a9 from GPIO 35",
-       "to": "GND",
-       "note": "Divider bottom: the pin sees half the battery voltage"
-      }
-     ],
-     "sample": [
-      "TT firmware 1.5.2",
-      "TT setup: send settings over USB, or join the ProbeHarbor-Setup Wi-Fi network",
-      "TT key saved",
-      "TT wifi joining",
-      "TT sensor: AHT20 on I2C (SDA 21, SCL 22)",
-      "TT wifi ok",
-      "TT tls: server certificate verified",
-      "TT post 200 probes=1"
-     ],
-     "image": {
-      "url": "https://esp32bench.dev/firmware/probeharbor-probe/probeharbor-probe-esp32.bin",
-      "sha256": "d5f1abf9be34425ef43ad0ced7ddd0b08b1ca12c215d257958bd681d7ce44eeb",
-      "size": 1183424
-     }
+      "id": "dht22",
+      "name": "DHT22",
+      "pins": [
+        {
+          "name": "VCC",
+          "kind": "power3"
+        },
+        {
+          "name": "DATA",
+          "kind": "bidir",
+          "note": "10 kΩ pull-up to 3V3 on a bare sensor. Breakout boards include it."
+        },
+        {
+          "name": "GND",
+          "kind": "gnd"
+        }
+      ]
     },
     {
-     "board": "esp32-doit",
-     "pins": [
-      "3V3",
-      "GND",
-      "4",
-      "21",
-      "22",
-      "27",
-      "26",
-      "35"
-     ],
-     "wiring": [
-      {
-       "from": "Sensor VCC",
-       "to": "3V3",
-       "note": ""
-      },
-      {
-       "from": "Sensor GND",
-       "to": "GND",
-       "note": ""
-      },
-      {
-       "from": "DS18B20 or DHT22 data",
-       "to": "GPIO 4",
-       "note": "Up to four DS18B20s share the line"
-      },
-      {
-       "from": "4.7 k\u03a9 pull-up resistor",
-       "to": "GPIO 4 to 3V3",
-       "note": "Holds the data line high"
-      },
-      {
-       "from": "I2C sensor SDA",
-       "to": "GPIO 21",
-       "note": "SHT31, BME280 or AHT20, found at boot"
-      },
-      {
-       "from": "I2C sensor SCL",
-       "to": "GPIO 22",
-       "note": ""
-      },
-      {
-       "from": "Optional: leak contact, wire A",
-       "to": "GPIO 27",
-       "note": "Only read when enabled in setup"
-      },
-      {
-       "from": "Optional: leak contact, wire B",
-       "to": "GND",
-       "note": ""
-      },
-      {
-       "from": "Optional: door reed switch, wire A",
-       "to": "GPIO 26",
-       "note": "Only read when enabled in setup"
-      },
-      {
-       "from": "Optional: door reed switch, wire B",
-       "to": "GND",
-       "note": ""
-      },
-      {
-       "from": "Optional: battery + through 100 k\u03a9",
-       "to": "GPIO 35",
-       "note": "1:1 divider from a single Li-ion cell. Only read when enabled"
-      },
-      {
-       "from": "Optional: 100 k\u03a9 from GPIO 35",
-       "to": "GND",
-       "note": "Divider bottom: the pin sees half the battery voltage"
-      }
-     ],
-     "sample": [
-      "TT firmware 1.5.2",
-      "TT setup: send settings over USB, or join the ProbeHarbor-Setup Wi-Fi network",
-      "TT key saved",
-      "TT wifi joining",
-      "TT sensor: AHT20 on I2C (SDA 21, SCL 22)",
-      "TT wifi ok",
-      "TT tls: server certificate verified",
-      "TT post 200 probes=1"
-     ],
-     "image": {
-      "url": "https://esp32bench.dev/firmware/probeharbor-probe/probeharbor-probe-esp32.bin",
-      "sha256": "d5f1abf9be34425ef43ad0ced7ddd0b08b1ca12c215d257958bd681d7ce44eeb",
-      "size": 1183424
-     }
+      "id": "ds18b20",
+      "name": "DS18B20 probe",
+      "pins": [
+        {
+          "name": "VDD",
+          "kind": "power3"
+        },
+        {
+          "name": "DATA",
+          "kind": "bidir",
+          "note": "4.7 kΩ pull-up from DATA to 3V3."
+        },
+        {
+          "name": "GND",
+          "kind": "gnd"
+        }
+      ]
+    },
+    {
+      "id": "i2c",
+      "name": "BME280, SHT31, AHT20 or another I2C module",
+      "pins": [
+        {
+          "name": "VIN",
+          "kind": "power3"
+        },
+        {
+          "name": "GND",
+          "kind": "gnd"
+        },
+        {
+          "name": "SDA",
+          "kind": "bidir"
+        },
+        {
+          "name": "SCL",
+          "kind": "in"
+        }
+      ]
+    },
+    {
+      "id": "oled",
+      "name": "SSD1306 OLED",
+      "pins": [
+        {
+          "name": "VCC",
+          "kind": "power3"
+        },
+        {
+          "name": "GND",
+          "kind": "gnd"
+        },
+        {
+          "name": "SDA",
+          "kind": "bidir"
+        },
+        {
+          "name": "SCL",
+          "kind": "in"
+        }
+      ]
+    },
+    {
+      "id": "led",
+      "name": "LEDs and 220 Ω resistors",
+      "pins": [
+        {
+          "name": "ANODE",
+          "kind": "in",
+          "note": "220 Ω resistor in series."
+        },
+        {
+          "name": "CATHODE",
+          "kind": "gnd"
+        }
+      ]
     }
-   ]
-  }
- ]
+  ]
 }

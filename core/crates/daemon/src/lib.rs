@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.42.0";
+pub const PROTOCOL: &str = "0.43.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -316,10 +316,13 @@ pub fn router(state: Arc<State>) -> Router {
             let s = c4.clone();
             async move { sim_trace_save(p, ctx, s).await }
         })
-        .method(
-            "circuit.models",
-            move |_p, _ctx| async move { circuit_models() },
-        )
+        .method("circuit.models", {
+            let s = stars.clone();
+            move |_p, _ctx| {
+                let s = s.clone();
+                async move { circuit_models(s).await }
+            }
+        })
         .method("circuit.get", move |p, _ctx| {
             let s = c2.clone();
             async move { circuit_get(p, s).await }
@@ -2918,10 +2921,35 @@ fn check_ids(project: &str, board: &str) -> Result<(), RpcError> {
 }
 
 /// The kinds of part the app can place (schema/part-model), without their scripts.
-fn circuit_models() -> Result<Value, RpcError> {
-    let models: Vec<esp32bench_circuit::Model> = esp32bench_circuit::models()
+/// circuit.models: the built-in part models, each with the site's notes on wiring
+/// its part (manifest 1.3's catalogue, `wiringNotes`, in English) when the library has
+/// them.
+async fn circuit_models(state: Arc<State>) -> Result<Value, RpcError> {
+    let catalogue = match state.library.load().await {
+        Ok(Some(m)) => m.parts,
+        _ => Vec::new(),
+    };
+    let models: Vec<Value> = esp32bench_circuit::models()
         .into_iter()
-        .map(|m| m.model)
+        .map(|m| {
+            let mut v = json!(m.model);
+            let notes: Vec<String> = catalogue
+                .iter()
+                .find(|c| {
+                    esp32bench_circuit::suggest::model_for(&c.id) == Some(m.model.id.as_str())
+                })
+                .map(|c| {
+                    c.pins
+                        .iter()
+                        .filter_map(|p| p.note.as_ref().map(|n| format!("{}: {n}", p.name)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !notes.is_empty() {
+                v["wiringNotes"] = json!(notes);
+            }
+            v
+        })
         .collect();
     Ok(json!({ "models": models }))
 }
@@ -2978,7 +3006,19 @@ async fn circuit_suggest(params: Value, state: Arc<State>) -> Result<Value, RpcE
         })
         .unwrap_or_default();
     let s = esp32bench_circuit::suggest::from_wiring(&wiring, &hints);
-    Ok(json!({ "circuit": s.circuit, "unmatched": s.unmatched }))
+    // With the site's catalogue (manifest 1.3), what is not simulated comes from the
+    // project's needs, named as projects list them, rather than read from the wiring.
+    let unmatched = match (project, manifest.as_ref()) {
+        (Some(proj), Some(m)) if !m.parts.is_empty() && !proj.needs.is_empty() => {
+            esp32bench_circuit::suggest::not_simulated(
+                &proj.needs,
+                |id| m.parts.iter().find(|c| c.id == id).map(|c| c.name.as_str()),
+                &s.circuit,
+            )
+        }
+        _ => s.unmatched,
+    };
+    Ok(json!({ "circuit": s.circuit, "unmatched": unmatched }))
 }
 
 #[derive(Deserialize)]
@@ -3104,7 +3144,49 @@ async fn circuit_pin_notes(params: Value, state: Arc<State>) -> Result<Value, Rp
             format!("no board `{}` in the library", p.board),
         )
     })?;
-    Ok(json!({ "chip": chip, "notes": esp32bench_circuit::pins::notes(&chip) }))
+    // The site's data about this board's pins (manifest 1.3), when the library has it:
+    // its notes per board, and its header, I2C and safe pins for drawing it.
+    let pins = match state.library.load().await {
+        Ok(Some(m)) => m
+            .boards
+            .into_iter()
+            .find(|b| b.id == p.board)
+            .and_then(|b| b.pins),
+        _ => None,
+    };
+    Ok(match pins {
+        Some(pins) => json!({
+            "chip": chip,
+            "notes": esp32bench_circuit::pins::from_site(pins.rules()),
+            "source": "board",
+            "layout": board_layout(&pins),
+        }),
+        None => json!({
+            "chip": chip,
+            "notes": esp32bench_circuit::pins::notes(&chip),
+            "source": "chip",
+        }),
+    })
+}
+
+/// What the app needs to draw a board: its header's pads, the GPIOs of named pads,
+/// silkscreen names, its I2C pins and the pins safe to use.
+fn board_layout(pins: &esp32bench_library::BoardPins) -> Value {
+    let mut layout = json!({
+        "left": pins.left,
+        "right": pins.right,
+        "pads": pins.pads,
+        "gpioOf": pins.gpio_of,
+        "silk": pins.silk,
+        "safe": pins.safe,
+    });
+    if let Some(i2c) = pins.i2c {
+        layout["i2c"] = json!({ "sda": i2c.sda, "scl": i2c.scl });
+    }
+    if let Some(source) = &pins.source {
+        layout["source"] = json!(source);
+    }
+    layout
 }
 
 async fn circuit_set(params: Value, state: Arc<State>) -> Result<Value, RpcError> {

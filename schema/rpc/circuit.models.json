@@ -18,7 +18,6 @@
       "models": {
         "type": "array",
         "items": {
-          "description": "One kind of virtual part: a description plus a Rhai script (docs/parts.md). Version 1.x.",
           "type": "object",
           "required": [
             "schemaVersion",
@@ -48,7 +47,8 @@
                 "switch",
                 "rgb-led",
                 "display",
-                "box"
+                "box",
+                "strip"
               ],
               "description": "How the app draws it."
             },
@@ -178,6 +178,14 @@
               "type": "string",
               "pattern": "^[a-z0-9-]+\\.rhai$"
             },
+            "optionalPins": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true,
+              "description": "Pins from `pins` that may be left unconnected."
+            },
             "drawing": {
               "type": "object",
               "additionalProperties": false,
@@ -224,8 +232,16 @@
                   }
                 }
               }
+            },
+            "wiringNotes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Since protocol 0.43: the site's notes on wiring this part (manifest 1.3's part catalogue), each `PIN: note`, in English; absent when the library has none."
             }
-          }
+          },
+          "description": "One kind of virtual part: a description plus a Rhai script (docs/parts.md). Version 1.x."
         }
       }
     }

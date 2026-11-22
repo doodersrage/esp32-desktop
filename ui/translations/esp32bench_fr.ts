@@ -603,6 +603,10 @@ Les broches du module : %2. L’alimentation et la masse ne sont pas simulées.<
         <translation>Libellé :</translation>
     </message>
     <message>
+        <source>On the bench: %1</source>
+        <translation>Sur l’établi : %1</translation>
+    </message>
+    <message>
         <source>Controls for %1</source>
         <translation>Commandes de %1</translation>
     </message>
@@ -1599,6 +1603,10 @@ Les broches du module : %2. L’alimentation et la masse ne sont pas simulées.<
         <translation>%1 · %2</translation>
     </message>
     <message>
+        <source>%1 On this board: %2</source>
+        <translation>%1 Sur cette carte : %2</translation>
+    </message>
+    <message>
         <source>GPIO %1 is a strapping pin: a part that pulls it high or low at power-on can stop the board starting, or start it in another mode.</source>
         <translation>GPIO %1 est une broche de démarrage (strapping) : un composant qui la tire à l’état haut ou bas à la mise sous tension peut empêcher la carte de démarrer, ou la faire démarrer dans un autre mode.</translation>
     </message>
@@ -1617,6 +1625,10 @@ Les broches du module : %2. L’alimentation et la masse ne sont pas simulées.<
     <message>
         <source>GPIO %1 is the console&apos;s UART: what it prints and flashing use it.</source>
         <translation>GPIO %1 est l’UART de la console : ce qu’elle affiche et le flashage passent par elle.</translation>
+    </message>
+    <message>
+        <source>GPIO %1 has another job on this board; its page on esp32bench.dev says which.</source>
+        <translation>GPIO %1 a un autre rôle sur cette carte ; sa page sur esp32bench.dev dit lequel.</translation>
     </message>
 </context>
 <context>

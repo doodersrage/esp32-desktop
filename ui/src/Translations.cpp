@@ -15,6 +15,15 @@ QStringList languages()
     return {u"es"_s, u"de"_s, u"fr"_s, u"pt_BR"_s};
 }
 
+namespace {
+bool s_translated = false; // set by install()
+}
+
+bool translated()
+{
+    return s_translated;
+}
+
 bool install(QCoreApplication &app, const QLocale &locale)
 {
     // Qt's own strings (standard buttons, file dialogs), where the system has them.
@@ -31,6 +40,7 @@ bool install(QCoreApplication &app, const QLocale &locale)
     if (!own->load(locale, u"esp32bench"_s, u"_"_s, u":/i18n"_s))
         return false;
     add(std::move(own));
+    s_translated = true;
     return true;
 }
 

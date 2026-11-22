@@ -443,10 +443,13 @@ enum CircuitCmd {
         board: String,
         file: PathBuf,
     },
-    /// A chip's pins to be careful with: strapping, input-only, flash, USB, console.
+    /// A board's pins to be careful with (strapping, input-only, flash, USB, console,
+    /// another job on the board), from the site's data for the board when the cached
+    /// library has it, with its I2C and safe pins; else a chip's, from its datasheet.
     Pins {
-        /// esp32, esp32s3 or esp32c3.
-        chip: String,
+        /// A board id from the library (esp32, esp32c3-supermini), or a chip: esp32,
+        /// esp32s3 or esp32c3.
+        board: String,
     },
     /// Remove a part.
     Remove {
@@ -524,17 +527,46 @@ async fn circuit_command(cmd: CircuitCmd) -> Result<()> {
             esp32bench_circuit::save(&circuits_root()?, &project, &board, &c)?;
             println!("{} parts placed on {project} for {board}", c.parts.len());
         }
-        CircuitCmd::Pins { chip } => {
-            let notes = esp32bench_circuit::pins::notes(&chip);
-            if notes.is_empty() {
-                bail!("no pin notes for `{chip}`: esp32, esp32s3 and esp32c3 have them");
-            }
-            for n in notes {
-                println!(
-                    "GPIO {:>2}  {}",
-                    n.gpio,
-                    serde_json::to_value(n.kind)?.as_str().unwrap_or("")
+        CircuitCmd::Pins { board } => {
+            let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
+            let entry = cache
+                .load()
+                .await?
+                .and_then(|m| m.boards.into_iter().find(|b| b.id == board));
+            let (notes, pins) = match &entry {
+                Some(b) => match &b.pins {
+                    Some(pins) => (
+                        esp32bench_circuit::pins::from_site(pins.rules()),
+                        Some(pins),
+                    ),
+                    None => (esp32bench_circuit::pins::notes(&b.chip), None),
+                },
+                None => (esp32bench_circuit::pins::notes(&board), None),
+            };
+            if notes.is_empty() && pins.is_none() {
+                bail!(
+                    "no pin notes for `{board}`: give a board from the library, or esp32, esp32s3 or esp32c3"
                 );
+            }
+            for n in &notes {
+                let kind = serde_json::to_value(n.kind)?;
+                match &n.why {
+                    Some(why) => println!(
+                        "GPIO {:>2}  {:<10}  {why}",
+                        n.gpio,
+                        kind.as_str().unwrap_or("")
+                    ),
+                    None => println!("GPIO {:>2}  {}", n.gpio, kind.as_str().unwrap_or("")),
+                }
+            }
+            if let Some(pins) = pins {
+                if let Some(i2c) = pins.i2c {
+                    println!("I2C: SDA {} / SCL {}", i2c.sda, i2c.scl);
+                }
+                if !pins.safe.is_empty() {
+                    let safe: Vec<String> = pins.safe.iter().map(u8::to_string).collect();
+                    println!("Safe to use: {}", safe.join(", "));
+                }
             }
         }
         CircuitCmd::Examples { kind } => {

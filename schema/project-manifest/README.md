@@ -16,6 +16,7 @@ The file carries `format` and `version`. Readers check that `format` is `esp32be
 
 - 1.1 (2026-11-20): a build of prebuilt firmware may carry `image` (an https URL, its SHA-256 and size), the merged image the browser flasher also uses. The app downloads it, after asking, checks it, and runs it in the simulator or flashes it. The manifest may also carry `explain`: the site's explanations of crash, reset and upload lines, which the app applies to output.
 - 1.2 (2026-11-21): the manifest may carry `desktop`, the desktop app's latest release (`version` and an https `url`), so an older app can say a newer one is out.
+- 1.3 (2026-11-22): a board may carry `pins`, the site's data about its pins: the header's pads in order, the GPIO numbers of named pads and silkscreen names, its I2C pins, the pins safe to use and those to be careful with (and why, in English), and fixed jobs some GPIOs have. The manifest may carry `parts`, the site's part catalogue that projects' `needs` name: each part's pins in wiring order, with the site's wiring notes. The app draws the board's header, wires I2C modules to its I2C pins, warns of pins per board and offers safe pins.
 
 ## Tests
 

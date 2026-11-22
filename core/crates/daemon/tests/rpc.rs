@@ -2065,12 +2065,42 @@ async fn circuits_go_to_files_and_pins_have_notes() {
         "circuit.pinNotes result",
     );
     assert_eq!(r["chip"], "esp32");
+    // From the site's data for this board (manifest 1.3): kinds, why, and its layout.
+    assert_eq!(r["source"], "board", "{r}");
+    let strap = r["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["gpio"] == 12)
+        .unwrap_or_else(|| panic!("no note for GPIO 12: {r}"));
+    assert_eq!(strap["kind"], "strapping");
+    assert!(strap["why"].as_str().is_some_and(|w| !w.is_empty()), "{r}");
+    assert_eq!(r["layout"]["i2c"], json!({ "sda": 21, "scl": 22 }), "{r}");
     assert!(
-        r["notes"]
+        r["layout"]["left"]
             .as_array()
-            .unwrap()
-            .contains(&json!({ "gpio": 12, "kind": "strapping" })),
+            .is_some_and(|l| !l.is_empty()),
         "{r}"
+    );
+    assert_eq!(r["layout"]["safe"][0], 4, "{r}");
+    // The models, with the site's wiring notes from the part catalogue (manifest 1.3).
+    let r = c.call("circuit.models", json!({})).await.unwrap();
+    assert_valid(
+        &method_def("circuit.models")["result"],
+        &r,
+        "circuit.models result",
+    );
+    let led = r["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == "led")
+        .unwrap_or_else(|| panic!("no LED model: {r}"));
+    assert!(
+        led["wiringNotes"][0]
+            .as_str()
+            .is_some_and(|n| n.starts_with("ANODE: ")),
+        "{led}"
     );
     match c
         .call("circuit.pinNotes", json!({ "board": "no-such-board" }))

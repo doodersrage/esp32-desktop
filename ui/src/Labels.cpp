@@ -1,4 +1,5 @@
 #include "Labels.h"
+#include "Translations.h"
 
 #include <QCoreApplication>
 #include <QLocale>
@@ -61,25 +62,36 @@ QString Labels::forumPost(const QString &context, const QString &text)
     return QStringLiteral("%1\n%2text\n%3\n%2\n").arg(about, fence, body);
 }
 
-QString Labels::pinNoteText(const QString &kind, int gpio)
+QString Labels::pinNoteText(const QString &kind, int gpio, const QString &why)
 {
+    // The site's reason for this board (in English), after the app's own words: in an
+    // English app only, so a translated one stays in its language.
+    const auto withWhy = [&](const QString &text) {
+        return why.isEmpty() || Translations::translated()
+                   ? text
+                   : QCoreApplication::translate("Labels", "%1 On this board: %2").arg(text, why);
+    };
     if (kind == u"strapping")
-        return QCoreApplication::translate("Labels", "GPIO %1 is a strapping pin: a part that pulls it high or low at "
+        return withWhy(QCoreApplication::translate("Labels", "GPIO %1 is a strapping pin: a part that pulls it high or low at "
                                                      "power-on can stop the board starting, or start it in another mode.")
-            .arg(gpio);
+            .arg(gpio));
     if (kind == u"inputOnly")
-        return QCoreApplication::translate("Labels", "GPIO %1 is input only: it cannot drive a part, and has no "
+        return withWhy(QCoreApplication::translate("Labels", "GPIO %1 is input only: it cannot drive a part, and has no "
                                                      "internal pull-up or pull-down.")
-            .arg(gpio);
+            .arg(gpio));
     if (kind == u"flash")
-        return QCoreApplication::translate("Labels", "GPIO %1 is wired to the module's flash: using it crashes the chip.")
-            .arg(gpio);
+        return withWhy(QCoreApplication::translate("Labels", "GPIO %1 is wired to the module's flash: using it crashes the chip.")
+            .arg(gpio));
     if (kind == u"usb")
-        return QCoreApplication::translate("Labels", "GPIO %1 is one of the chip's USB pins: a board that talks over "
+        return withWhy(QCoreApplication::translate("Labels", "GPIO %1 is one of the chip's USB pins: a board that talks over "
                                                      "USB needs it.")
-            .arg(gpio);
+            .arg(gpio));
     if (kind == u"console")
-        return QCoreApplication::translate("Labels", "GPIO %1 is the console's UART: what it prints and flashing use it.")
-            .arg(gpio);
+        return withWhy(QCoreApplication::translate("Labels", "GPIO %1 is the console's UART: what it prints and flashing use it.")
+            .arg(gpio));
+    if (kind == u"caution")
+        return withWhy(QCoreApplication::translate("Labels", "GPIO %1 has another job on this board; its page on "
+                                                             "esp32bench.dev says which.")
+            .arg(gpio));
     return {};
 }

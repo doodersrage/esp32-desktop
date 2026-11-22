@@ -603,6 +603,10 @@ Los pines del módulo: %2. La alimentación y la masa no se simulan.</translatio
         <translation>Etiqueta:</translation>
     </message>
     <message>
+        <source>On the bench: %1</source>
+        <translation>En el banco: %1</translation>
+    </message>
+    <message>
         <source>Controls for %1</source>
         <translation>Controles de %1</translation>
     </message>
@@ -1599,6 +1603,10 @@ Se grabó aquí %2 para %3 %4.</translation>
         <translation>%1 · %2</translation>
     </message>
     <message>
+        <source>%1 On this board: %2</source>
+        <translation>%1 En esta placa: %2</translation>
+    </message>
+    <message>
         <source>GPIO %1 is a strapping pin: a part that pulls it high or low at power-on can stop the board starting, or start it in another mode.</source>
         <translation>GPIO %1 es un pin de arranque (strapping): un componente que lo lleve a alto o bajo al encender puede impedir que la placa arranque, o hacerla arrancar en otro modo.</translation>
     </message>
@@ -1617,6 +1625,10 @@ Se grabó aquí %2 para %3 %4.</translation>
     <message>
         <source>GPIO %1 is the console&apos;s UART: what it prints and flashing use it.</source>
         <translation>GPIO %1 es la UART de la consola: lo que imprime y la grabación la usan.</translation>
+    </message>
+    <message>
+        <source>GPIO %1 has another job on this board; its page on esp32bench.dev says which.</source>
+        <translation>GPIO %1 tiene otra función en esta placa; su página en esp32bench.dev dice cuál.</translation>
     </message>
 </context>
 <context>

@@ -1114,6 +1114,8 @@ void CoreConnection::getPinNotes(const QString &board)
             return; // a board the table does not know: nothing to say
         const QJsonObject o = r.result.toObject();
         emit pinNotesListed(board, o.value(u"chip"_s).toString(), o.value(u"notes"_s).toArray());
+        // The board's header, I2C and safe pins (protocol 0.43), or none.
+        emit boardLayoutListed(board, o.value(u"layout"_s).toObject());
     });
 }
 

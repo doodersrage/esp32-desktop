@@ -71,7 +71,8 @@ PinsPanel::PinsPanel(CoreConnection *core, QWidget *parent)
             const int gpio = v.toObject().value(u"gpio"_s).toInt();
             if (QTreeWidgetItem *item = row(gpio)) {
                 item->setIcon(GpioColumn, QIcon::fromTheme(u"dialog-warning"_s));
-                item->setToolTip(GpioColumn, Labels::pinNoteText(v.toObject().value(u"kind"_s).toString(), gpio));
+                item->setToolTip(GpioColumn, Labels::pinNoteText(v.toObject().value(u"kind"_s).toString(), gpio,
+                                                                 v.toObject().value(u"why"_s).toString()));
             }
         }
     });

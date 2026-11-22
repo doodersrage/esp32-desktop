@@ -1,6 +1,7 @@
 #include "CircuitPanel.h"
 
 #include "Labels.h"
+#include "Translations.h"
 
 #include <QKeyEvent>
 #include <QWheelEvent>
@@ -58,6 +59,12 @@ constexpr qreal PadPitch = 18;
 constexpr qreal HeaderWidth = 62;
 constexpr qreal HeaderStrip = 30;
 constexpr qreal StripCap = 52;
+// A board drawn from its header (circuit.pinNotes' layout): its width, the distance
+// between pads, and the room above the pads (the module) and below (the USB socket).
+constexpr qreal HeaderBoardWidth = 190;
+constexpr qreal HeaderPitch = 20;
+constexpr qreal HeaderTop = 56;
+constexpr qreal HeaderBottom = 40;
 }
 
 // One part on the canvas, drawn by its model's look from the state the core reports.
@@ -176,17 +183,29 @@ public:
             const int n = m_header.size();
             return {30 + (n > 1 ? span * i / (n - 1) : span / 2), 9};
         }
-        return {10, 4 + PadPitch * i + PadPitch / 2};
+        return {m_mirrored ? moduleRect().width() - 10 : 10, 4 + PadPitch * i + PadPitch / 2};
+    }
+    // Drawn facing left (a part to the left of the board): its pins on its right edge,
+    // towards the board, and a simple part's label on its left.
+    void setMirrored(bool mirrored)
+    {
+        if (mirrored == m_mirrored)
+            return;
+        prepareGeometryChange();
+        m_mirrored = mirrored;
+        update();
     }
     // Where a wire to the part's pin `name` ends: on its header pin, or for a part
     // drawn without one, the middle of its left side.
-    QPointF anchor(const QString &name) const
+    QPointF anchor(const QString &name) const { return anchorFor(u"pin:"_s + name); }
+    // Where a wire to a header pin that is `connect` ("pin:din", "i2c-sda") ends.
+    QPointF anchorFor(const QString &connect) const
     {
         for (int i = 0; i < m_header.size(); ++i) {
-            if (m_header.at(i).second == u"pin:"_s + name)
+            if (m_header.at(i).second == connect)
                 return padCentre(i);
         }
-        return {0, PartSize / 2};
+        return {m_mirrored ? PartSize : 0, PartSize / 2};
     }
     // The header pins' labels, for the part's tooltip.
     QString headerText() const
@@ -207,6 +226,8 @@ public:
             return QRectF(-2, -2, 234, 30 + 18 * m_sliders.size());
         if (isStrip())
             return QRectF(-2, -2, StripCell * stripLength() + 4, PartSize + 22);
+        if (m_mirrored)
+            return {-162, -2, PartSize + 164, PartSize + 4};
         return {-2, -2, PartSize + 160, PartSize + 4};
     }
 
@@ -336,7 +357,10 @@ public:
             p->drawRect(body.adjusted(-2, -2, 2, 2));
         }
         p->setPen(pal.color(QPalette::Text));
-        p->drawText(QRectF(PartSize + 8, 0, 150, PartSize), Qt::AlignVCenter | Qt::AlignLeft, m_label);
+        if (m_mirrored)
+            p->drawText(QRectF(-158, 0, 150, PartSize), Qt::AlignVCenter | Qt::AlignRight, m_label);
+        else
+            p->drawText(QRectF(PartSize + 8, 0, 150, PartSize), Qt::AlignVCenter | Qt::AlignLeft, m_label);
     }
 
     void paintModule(QPainter *p, const QStyleOptionGraphicsItem *option, const QPalette &pal)
@@ -361,6 +385,8 @@ public:
             p->setPen(silk);
             if (isDisplay())
                 p->drawText(QRectF(c.x() - 20, c.y() + 5, 40, 12), Qt::AlignCenter, m_header.at(i).first);
+            else if (m_mirrored)
+                p->drawText(QRectF(c.x() - 48, c.y() - 8, 40, 16), Qt::AlignRight | Qt::AlignVCenter, m_header.at(i).first);
             else
                 p->drawText(QRectF(c.x() + 8, c.y() - 8, 40, 16), Qt::AlignLeft | Qt::AlignVCenter, m_header.at(i).first);
         }
@@ -390,14 +416,15 @@ public:
                     return int(std::lround(255 * std::sqrt(v)));
                 };
                 const bool lit = rgb.size() == 3 && (rgb.at(0).toInt() || rgb.at(1).toInt() || rgb.at(2).toInt());
-                const QRectF cell(StripCap + StripCell * i, board.center().y() - StripCell / 2, StripCell, StripCell);
+                const QRectF cell((m_mirrored ? 4 : StripCap) + StripCell * i, board.center().y() - StripCell / 2, StripCell,
+                                  StripCell);
                 p->setBrush(QColor(0xf4, 0xf4, 0xf0)); // the LED's white package
                 p->drawRect(cell.adjusted(1.5, 1.5, -1.5, -1.5));
                 p->setBrush(lit ? QColor(level(0), level(1), level(2)) : QColor(0x55, 0x55, 0x55));
                 p->drawEllipse(cell.adjusted(4, 4, -4, -4));
             }
         } else {
-            const qreal x = HeaderWidth;
+            const qreal x = m_mirrored ? 8 : HeaderWidth;
             if (!m_chip.isEmpty()) {
                 // The chip, with its name.
                 p->setPen(QPen(QColor(0x10, 0x10, 0x10), 1));
@@ -422,7 +449,7 @@ public:
             for (const QJsonObject &c : m_sliders) {
                 const QString name = c.value(u"name"_s).toString();
                 const double v = m_state.value(name).toDouble(c.value(u"default"_s).toDouble());
-                p->drawText(QRectF(x, 44 + 16 * line++, board.width() - x - 6, 16), Qt::AlignLeft | Qt::AlignVCenter,
+                p->drawText(QRectF(x, 44 + 16 * line++, board.width() - HeaderWidth - 6, 16), Qt::AlignLeft | Qt::AlignVCenter,
                             QCoreApplication::translate("PartItem", "%1: %2 %3")
                                 .arg(c.value(u"label"_s).toString())
                                 .arg(v, 0, 'f', 2)
@@ -531,6 +558,7 @@ private:
     QSize m_display;
     QImage m_picture;
     QColor m_board; // a module's board (invalid: drawn without one)
+    bool m_mirrored = false;
     QString m_chip;
     QList<std::pair<QString, QString>> m_header; // label, connect
     QList<QJsonObject> m_sliders;
@@ -788,14 +816,27 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
         }
     });
     connect(core, &CoreConnection::pinNotesListed, this,
-            [this](const QString &board, const QString &, const QJsonArray &notes) {
+            [this](const QString &board, const QString &chip, const QJsonArray &notes) {
                 if (board != m_board)
                     return;
+                m_chipId = chip;
                 m_pinNotes.clear();
-                for (const QJsonValue &v : notes)
-                    m_pinNotes.insert(v.toObject().value(u"gpio"_s).toInt(), v.toObject().value(u"kind"_s).toString());
+                m_pinWhy.clear();
+                for (const QJsonValue &v : notes) {
+                    const QJsonObject n = v.toObject();
+                    m_pinNotes.insert(n.value(u"gpio"_s).toInt(), n.value(u"kind"_s).toString());
+                    if (n.contains(u"why"_s))
+                        m_pinWhy.insert(n.value(u"gpio"_s).toInt(), n.value(u"why"_s).toString());
+                }
                 rebuildScene(); // for the pins' tooltips
             });
+    // The board's header, from the site's data: drawn as made, when there is one.
+    connect(core, &CoreConnection::boardLayoutListed, this, [this](const QString &board, const QJsonObject &layout) {
+        if (board != m_board || layout == m_layout)
+            return;
+        m_layout = layout;
+        rebuildScene();
+    });
     connect(core, &CoreConnection::circuitSaved, this, [this] {
         m_saving = std::max(0, m_saving - 1);
         updateUndo();
@@ -853,6 +894,17 @@ QPointF CircuitPanel::partCentre(const QString &id) const
     return i ? i->mapToScene(QPointF(PartSize / 2, PartSize / 2)) : QPointF();
 }
 
+QString CircuitPanel::wiringNotes(const QJsonObject &model)
+{
+    // The site's notes are in English: an app in another language keeps to its own.
+    if (Translations::translated())
+        return {};
+    QStringList notes;
+    for (const QJsonValue &n : model.value(u"wiringNotes"_s).toArray())
+        notes << n.toString();
+    return notes.join(u"\n"_s);
+}
+
 QRectF CircuitPanel::partRect(const QString &id) const
 {
     const PartItem *i = m_items.value(id);
@@ -908,6 +960,8 @@ void CircuitPanel::showBoard(const QString &project, const QString &board, const
     m_redo.clear();
     m_saving = 0;
     m_pinNotes.clear();
+    m_pinWhy.clear();
+    m_layout = {};
     if (!board.isEmpty())
         m_core->getPinNotes(board);
     updateUndo();
@@ -974,7 +1028,7 @@ QString CircuitPanel::pinTip(int gpio) const
 
 QString CircuitPanel::pinNote(int gpio) const
 {
-    return Labels::pinNoteText(m_pinNotes.value(gpio), gpio);
+    return Labels::pinNoteText(m_pinNotes.value(gpio), gpio, m_pinWhy.value(gpio));
 }
 
 void CircuitPanel::circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit)
@@ -1078,6 +1132,41 @@ void CircuitPanel::rebuildScene()
     }
     std::sort(pins.begin(), pins.end());
     const QPalette pal = palette();
+    // The board's header, when the site documents it and every pin in use is on it:
+    // each pad where it is, on its side.
+    struct Pad {
+        QPointF at;
+        int side; // -1 left, 1 right
+    };
+    QHash<int, Pad> padOfGpio;
+    const QJsonArray leftPads = m_layout.value(u"left"_s).toArray();
+    const QJsonArray rightPads = m_layout.value(u"right"_s).toArray();
+    const QJsonObject gpioOf = m_layout.value(u"gpioOf"_s).toObject();
+    const auto gpioOfPad = [&](const QString &label) {
+        bool ok = false;
+        const int n = label.toInt(&ok);
+        return ok ? n : gpioOf.value(label).toInt(-1);
+    };
+    for (int side : {-1, 1}) {
+        const QJsonArray column = side < 0 ? leftPads : rightPads;
+        for (qsizetype i = 0; i < column.size(); ++i) {
+            const int gpio = gpioOfPad(column.at(i).toString());
+            if (gpio >= 0 && !padOfGpio.contains(gpio))
+                padOfGpio.insert(gpio, {{side < 0 ? 12.0 : HeaderBoardWidth - 12, HeaderTop + i * HeaderPitch + HeaderPitch / 2},
+                                        side});
+        }
+    }
+    const QJsonObject i2cPins = m_layout.value(u"i2c"_s).toObject();
+    const bool headerMode = !padOfGpio.isEmpty()
+                            && std::all_of(pins.begin(), pins.end(), [&](int g) { return padOfGpio.contains(g); });
+    m_headerDrawn = headerMode;
+    if (headerMode) {
+        drawHeaderBoard(pins, leftPads, rightPads, gpioOfPad);
+        buildHeaderParts([&](int gpio) { return padOfGpio.value(gpio).at; },
+                         [&](int gpio) { return padOfGpio.value(gpio).side; },
+                         [&](int gpio) { return padOfGpio.contains(gpio); }, i2cPins, selected);
+        return;
+    }
     // The pin a part sits level with: its first connected pin, in model order.
     const auto anchorOf = [](const QJsonObject &model, const QHash<QString, int> &conn) -> QString {
         for (const QJsonValue &n : model.value(u"pins"_s).toArray()) {
@@ -1156,6 +1245,10 @@ void CircuitPanel::rebuildScene()
                                       .arg(where, item->headerText())
                                 : where;
     };
+    const auto withNotes = [this](const QString &tip, const QJsonObject &model) {
+        const QString notes = wiringNotes(model);
+        return notes.isEmpty() ? tip : tip + u"\n"_s + notes;
+    };
     QHash<int, qreal> rowEnd; // where the next part on a row goes, after those there
     qreal busY = height + 30;   // I2C parts go below the board, one under another
     for (const QJsonValue &v : parts()) {
@@ -1191,7 +1284,7 @@ void CircuitPanel::rebuildScene()
                 place = QPointF(x, rowY(gpio) - item->anchor(pin).y());
             }
             item->setPos(place);
-            item->setToolTip(moduleTip(item, where));
+            item->setToolTip(withNotes(moduleTip(item, where), model));
             m_scene->addItem(item);
             wireUp(item, conn);
             if (at.isEmpty() && pin.isEmpty())
@@ -1235,7 +1328,7 @@ void CircuitPanel::rebuildScene()
         for (auto it = conn.begin(); it != conn.end(); ++it)
             where << (conn.size() == 1 ? tr("GPIO %1").arg(it.value()) : tr("%1: GPIO %2").arg(it.key()).arg(it.value()));
         item->moved = [this, id](QPointF to) { movePart(id, to); };
-        item->setToolTip(moduleTip(item, where.join(u", "_s)));
+        item->setToolTip(withNotes(moduleTip(item, where.join(u", "_s)), model));
         m_items.insert(id, item);
     }
     for (const QJsonValue &v : parts()) {
@@ -1245,6 +1338,210 @@ void CircuitPanel::rebuildScene()
     }
     m_scene->setSceneRect(m_scene->itemsBoundingRect().adjusted(-10, -10, 10, 10));
     for (const QString &id : std::as_const(selected))
+        selectPart(id, true);
+}
+
+// The board as made: its module and USB socket, and its header's pads down each side
+// in order, labelled as printed; the pads in use stand out, and a pad to be careful
+// with has a mark. Canvas colours: a board looks the same in a light or dark theme.
+void CircuitPanel::drawHeaderBoard(const QList<int> &used, const QJsonArray &left, const QJsonArray &right,
+                                   const std::function<int(const QString &)> &gpioOfPad)
+{
+    const QPalette pal = palette();
+    const qsizetype rows = std::max(left.size(), right.size());
+    const qreal w = HeaderBoardWidth;
+    const qreal h = HeaderTop + rows * HeaderPitch + HeaderBottom;
+    QPainterPath outline;
+    outline.addRoundedRect(QRectF(0, 0, w, h), 6, 6);
+    m_scene->addPath(outline, QPen(QColor(0x11, 0x13, 0x15), 1.5), QBrush(QColor(0x23, 0x27, 0x2a)));
+    // The module, with the chip's name, and the USB socket at the bottom.
+    m_scene->addRect(w / 2 - 48, 8, 96, 38, QPen(QColor(0x8a, 0x8f, 0x94)), QBrush(QColor(0xc8, 0xcc, 0xd0)));
+    auto *chip = m_scene->addSimpleText(Labels::chipName(m_chipId));
+    chip->setBrush(QColor(0x30, 0x30, 0x30));
+    chip->setPos(w / 2 - chip->boundingRect().width() / 2, 27 - chip->boundingRect().height() / 2);
+    m_scene->addRect(w / 2 - 22, h - 16, 44, 18, QPen(QColor(0x80, 0x80, 0x80)), QBrush(QColor(0xb8, 0xb8, 0xb8)));
+    auto *title = m_scene->addSimpleText(m_board);
+    title->setBrush(pal.color(QPalette::Text));
+    title->setPos(8, -24);
+    const QJsonObject silk = m_layout.value(u"silk"_s).toObject();
+    QFont small = font();
+    small.setPointSizeF(std::max(6.0, small.pointSizeF() * 0.85));
+    for (int side : {-1, 1}) {
+        const QJsonArray column = side < 0 ? left : right;
+        for (qsizetype i = 0; i < column.size(); ++i) {
+            const QString label = column.at(i).toString();
+            const int gpio = gpioOfPad(label);
+            const bool inUse = gpio >= 0 && used.contains(gpio);
+            const qreal y = HeaderTop + i * HeaderPitch + HeaderPitch / 2;
+            const qreal x = side < 0 ? 12 : w - 12;
+            const QColor gold = inUse ? QColor(0xe8, 0xb9, 0x3a) : QColor(0x8c, 0x74, 0x2c);
+            auto *pad = m_scene->addRect(x - 5, y - 5, 10, 10, QPen(gold.darker(150)), QBrush(gold));
+            auto *text = m_scene->addSimpleText(silk.value(label).toString(label), small);
+            QFont f = small;
+            f.setBold(inUse);
+            text->setFont(f);
+            text->setBrush(inUse ? QColor(0xff, 0xff, 0xff) : QColor(0xa0, 0xa6, 0xab));
+            const qreal tw = text->boundingRect().width();
+            text->setPos(side < 0 ? x + 10 : x - 10 - tw, y - text->boundingRect().height() / 2);
+            if (gpio >= 0 && m_pinNotes.contains(gpio)) {
+                // To be careful with: a mark beside the pad, and the reason on hover.
+                const qreal mx = side < 0 ? x + 14 + tw : x - 18 - tw;
+                m_scene->addEllipse(mx, y - 3, 6, 6, Qt::NoPen, QBrush(QColor(0xf0, 0x8c, 0x1a)));
+            }
+            const QString tip = gpio >= 0 ? pinTip(gpio) : label;
+            pad->setToolTip(tip);
+            text->setToolTip(tip);
+        }
+    }
+}
+
+// Parts beside a board drawn from its header: each on the side of the pad it is wired
+// to, stacked in the order of those pads so none overlap, its wires from the pads to
+// its own pins (an I2C module's SDA and SCL to the board's I2C pads).
+void CircuitPanel::buildHeaderParts(const std::function<QPointF(int)> &padAt, const std::function<int(int)> &sideOf,
+                                    const std::function<bool(int)> &onHeader, const QJsonObject &i2cPins,
+                                    const QStringList &selected)
+{
+    const QPalette pal = palette();
+    const int sda = i2cPins.value(u"sda"_s).toInt(-1);
+    const int scl = i2cPins.value(u"scl"_s).toInt(-1);
+    const bool i2cWired = sda >= 0 && scl >= 0 && onHeader(sda) && onHeader(scl);
+    const qreal boardBottom = m_scene->itemsBoundingRect().bottom();
+    struct Placed {
+        PartItem *item;
+        QList<std::pair<int, QString>> wires; // board GPIO, the part's header connect
+        int side = 1;
+        qreal want = 0; // the y its first wire's pad is at
+        bool atSaved = false;
+    };
+    QList<Placed> placed;
+    QList<PartItem *> loose; // nothing to wire to: under the board
+    for (const QJsonValue &v : parts()) {
+        const QJsonObject o = v.toObject();
+        const QString id = o.value(u"id"_s).toString();
+        const QJsonObject model = m_models.value(o.value(u"kind"_s).toString());
+        const QHash<QString, int> conn = connections(o, model);
+        QString where;
+        if (o.contains(u"i2c"_s)) {
+            const QJsonObject i2c = o.value(u"i2c"_s).toObject();
+            where = tr("I2C bus %1, address 0x%2")
+                        .arg(i2c.value(u"bus"_s).toInt())
+                        .arg(i2c.value(u"address"_s).toInt(), 2, 16, QLatin1Char('0'));
+            for (const QJsonValue &n : model.value(u"pins"_s).toArray()) {
+                if (conn.contains(n.toString()))
+                    where = tr("%1, %2 on GPIO %3").arg(where, n.toString().toUpper()).arg(conn.value(n.toString()));
+            }
+        } else {
+            QStringList list;
+            for (auto it = conn.begin(); it != conn.end(); ++it)
+                list << (conn.size() == 1 ? tr("GPIO %1").arg(it.value()) : tr("%1: GPIO %2").arg(it.key()).arg(it.value()));
+            where = list.join(u", "_s);
+        }
+        QString label = o.value(u"label"_s).toString();
+        if (o.contains(u"i2c"_s))
+            label = label.isEmpty() ? tr("%1, %2").arg(id, where) : tr("%1, %2").arg(label, where);
+        else if (label.isEmpty())
+            label = id;
+        auto *item = new PartItem(id, model, label, [this, id](const QString &control, const QJsonValue &value) {
+            m_core->controlPart(id, control, value);
+        });
+        if (item->isStrip()) {
+            const QJsonObject countProp = model.value(u"props"_s).toObject().value(u"count"_s).toObject();
+            item->setCount(o.value(u"props"_s).toObject().value(u"count"_s).toInt(countProp.value(u"default"_s).toInt(8)));
+        }
+        const QString tip = item->isModule() ? tr("%1\nThe module's pins: %2. Power and ground are not simulated.")
+                                                   .arg(where, item->headerText())
+                                             : where;
+        const QString notes = wiringNotes(model);
+        item->setToolTip(notes.isEmpty() ? tip : tip + u"\n"_s + notes);
+        m_scene->addItem(item);
+        item->moved = [this, id](QPointF to) { movePart(id, to); };
+        m_items.insert(id, item);
+        // Its wires, the first (model order) the one it sits level with.
+        Placed p{item, {}};
+        for (const QJsonValue &n : model.value(u"pins"_s).toArray()) {
+            if (conn.contains(n.toString()))
+                p.wires.append({conn.value(n.toString()), u"pin:"_s + n.toString()});
+        }
+        // An I2C part's SDA and SCL, to the board's I2C pads (to its edge when it has no
+        // drawing).
+        if (o.contains(u"i2c"_s) && i2cWired) {
+            p.wires.append({sda, u"i2c-sda"_s});
+            p.wires.append({scl, u"i2c-scl"_s});
+        }
+        const QJsonObject at = o.value(u"at"_s).toObject();
+        if (!at.isEmpty()) {
+            item->setPos(at.value(u"x"_s).toDouble(), at.value(u"y"_s).toDouble());
+            p.atSaved = true;
+        }
+        if (p.wires.isEmpty()) {
+            if (!p.atSaved)
+                loose << item;
+            continue;
+        }
+        // On the side most of its wires are, its pins towards the board.
+        int sides = 0;
+        for (const auto &w : std::as_const(p.wires))
+            sides += sideOf(w.first);
+        p.side = sides != 0 ? (sides > 0 ? 1 : -1) : sideOf(p.wires.first().first);
+        item->setMirrored(p.side < 0);
+        p.want = padAt(p.wires.first().first).y() - item->anchorFor(p.wires.first().second).y();
+        placed.append(p);
+    }
+    // Down each side in pad order. A part that would land well below its pad starts a
+    // column further out, so wires stay short.
+    std::stable_sort(placed.begin(), placed.end(), [](const Placed &a, const Placed &b) { return a.want < b.want; });
+    struct Column {
+        qreal offset; // from the board's edge
+        qreal width = 0;
+        qreal nextY = -1e9;
+    };
+    QHash<int, QList<Column>> columns;
+    for (Placed &p : placed) {
+        if (!p.atSaved) {
+            const QRectF br = p.item->boundingRect();
+            QList<Column> &cols = columns[p.side];
+            qsizetype c = 0;
+            while (c < cols.size() && cols.at(c).nextY > p.want + 60)
+                ++c;
+            if (c == cols.size())
+                cols.append(Column{cols.isEmpty() ? 0.0 : cols.last().offset + cols.last().width + 60});
+            Column &col = cols[c];
+            const qreal y = std::max(p.want, col.nextY);
+            const qreal x = p.side > 0 ? HeaderBoardWidth + 80 + col.offset - br.left() : -80 - col.offset - br.right();
+            p.item->setPos(x, y);
+            col.nextY = y + br.height() + 14;
+            col.width = std::max(col.width, br.width());
+        }
+        // Wires under the parts, from the pad's outer edge to the part's own pin.
+        QList<std::pair<QGraphicsLineItem *, QPointF>> lines;
+        for (const auto &[gpio, connect] : std::as_const(p.wires)) {
+            const QPointF pad = padAt(gpio) + QPointF(sideOf(gpio) * 6, 0);
+            const QPointF a = p.item->anchorFor(connect);
+            auto *line = m_scene->addLine(QLineF(pad, p.item->pos() + a), QPen(pal.color(QPalette::Mid), 2));
+            line->setZValue(-1);
+            lines.append({line, a});
+        }
+        p.item->moving = [lines](QPointF to) {
+            for (const auto &[w, a] : lines) {
+                QLineF l = w->line();
+                l.setP2(to + a);
+                w->setLine(l);
+            }
+        };
+    }
+    qreal y = boardBottom + 30;
+    for (PartItem *item : std::as_const(loose)) {
+        item->setPos(0, y);
+        y += item->boundingRect().height() + 16;
+    }
+    for (const QJsonValue &v : parts()) {
+        const QJsonObject o = v.toObject();
+        if (PartItem *i = m_items.value(o.value(u"id"_s).toString()))
+            i->setSaved(o.value(u"controls"_s).toObject());
+    }
+    m_scene->setSceneRect(m_scene->itemsBoundingRect().adjusted(-10, -10, 10, 10));
+    for (const QString &id : selected)
         selectPart(id, true);
 }
 
@@ -1495,10 +1792,17 @@ void CircuitPanel::addDialog(const QString &kind, const QJsonObject &from)
             usedAddresses << qMakePair(i.value(u"bus"_s).toInt(), i.value(u"address"_s).toInt());
         }
     }
+    // Pins to offer: the project's own that no part uses, then the pins the site says
+    // are safe on this board, in its order.
     QList<int> freePins;
     for (int gpio : std::as_const(m_projectPins))
         if (!used.contains(gpio))
             freePins << gpio;
+    for (const QJsonValue &v : m_layout.value(u"safe"_s).toArray()) {
+        const int gpio = v.toInt(-1);
+        if (gpio >= 0 && !used.contains(gpio) && !freePins.contains(gpio))
+            freePins << gpio;
+    }
     const QHash<QString, int> fromPins = connections(from, model);
     const QJsonObject fromProps = from.value(u"props"_s).toObject();
     const QJsonArray optional = model.value(u"optionalPins"_s).toArray();
@@ -1515,6 +1819,8 @@ void CircuitPanel::addDialog(const QString &kind, const QJsonObject &from)
             if (!from.isEmpty()) {
                 if (fromPins.contains(v.toString()))
                     box->setValue(next < freePins.size() ? freePins.at(next++) : fromPins.value(v.toString()));
+            } else if (next < freePins.size()) {
+                box->setValue(freePins.at(next++));
             } else if (next < m_projectPins.size()) {
                 box->setValue(m_projectPins.at(next++));
             }
@@ -1527,7 +1833,7 @@ void CircuitPanel::addDialog(const QString &kind, const QJsonObject &from)
         note->setWordWrap(true);
         note->setForegroundRole(QPalette::PlaceholderText);
         const auto describe = [this, note](int gpio) {
-            const QString text = Labels::pinNoteText(m_pinNotes.value(gpio), gpio);
+            const QString text = Labels::pinNoteText(m_pinNotes.value(gpio), gpio, m_pinWhy.value(gpio));
             note->setText(text.isEmpty() ? QString() : u"⚠ "_s + text);
             note->setVisible(!text.isEmpty());
         };
@@ -1589,6 +1895,13 @@ void CircuitPanel::addDialog(const QString &kind, const QJsonObject &from)
     labelEdit->setPlaceholderText(tr("Optional, e.g. Status LED"));
     labelEdit->setText(from.value(u"label"_s).toString());
     form->addRow(tr("Label:"), labelEdit);
+    // How to wire the real part, from the site.
+    if (const QString notes = wiringNotes(model); !notes.isEmpty()) {
+        auto *wiring = new QLabel(tr("On the bench: %1").arg(notes), &dialog);
+        wiring->setWordWrap(true);
+        wiring->setForegroundRole(QPalette::PlaceholderText);
+        form->addRow(QString(), wiring);
+    }
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
