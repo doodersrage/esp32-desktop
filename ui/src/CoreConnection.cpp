@@ -1416,6 +1416,7 @@ void CoreConnection::saveCircuit(const QString &project, const QString &board, c
                            emit requestFailed(u"circuit.set"_s, r.errorMessage);
                            return;
                        }
+                       emit circuitSaved(project, board);
                        emit circuitLoaded(project, board, circuit);
                    });
 }

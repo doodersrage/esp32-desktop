@@ -524,6 +524,14 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
         if (method.startsWith(u"circuit."))
             m_status->setText(tr("Could not save the parts: %1").arg(message));
+        if (method == u"circuit.set") {
+            m_saving = std::max(0, m_saving - 1);
+            updateUndo();
+        }
+    });
+    connect(core, &CoreConnection::circuitSaved, this, [this] {
+        m_saving = std::max(0, m_saving - 1);
+        updateUndo();
     });
     connect(core, &CoreConnection::stateChanged, this, [this] {
         if (m_core->state() != CoreConnection::State::Connected)
@@ -612,8 +620,8 @@ void CircuitPanel::showBoard(const QString &project, const QString &board, const
     m_unmatched.clear();
     m_undo.clear();
     m_redo.clear();
-    m_undoButton->setEnabled(false);
-    m_redoButton->setEnabled(false);
+    m_saving = 0;
+    updateUndo();
     m_addSuggested->setVisible(false);
     rebuildScene();
     m_add->setEnabled(!m_models.isEmpty());
@@ -838,7 +846,7 @@ void CircuitPanel::saveControl(const QString &id, const QString &name, double va
     QJsonObject c = m_circuit;
     c.insert(u"schemaVersion"_s, u"1.3.0"_s);
     c.insert(u"parts"_s, list);
-    m_core->saveCircuit(m_project, m_board, c);
+    save(c);
 }
 
 QString CircuitPanel::freeId(const QString &kind) const
@@ -915,36 +923,44 @@ void CircuitPanel::edit(const QJsonObject &circuit)
     m_undo.append(m_circuit);
     if (m_undo.size() > 30)
         m_undo.removeFirst();
-    m_undoButton->setEnabled(true);
     m_redo.clear();
-    m_redoButton->setEnabled(false);
+    save(circuit);
+}
+
+void CircuitPanel::updateUndo()
+{
+    // Not while a change is being saved: Undo goes back from the circuit as saved.
+    m_undoButton->setEnabled(!m_undo.isEmpty() && m_saving == 0);
+    m_redoButton->setEnabled(!m_redo.isEmpty() && m_saving == 0);
+}
+
+void CircuitPanel::save(const QJsonObject &circuit)
+{
+    ++m_saving;
+    updateUndo();
     m_core->saveCircuit(m_project, m_board, circuit);
 }
 
 void CircuitPanel::undo()
 {
-    if (m_undo.isEmpty() || m_project.isEmpty())
+    if (m_undo.isEmpty() || m_project.isEmpty() || m_saving > 0)
         return;
     QJsonObject previous = m_undo.takeLast();
     if (previous.isEmpty())
         previous = QJsonObject{{u"schemaVersion"_s, u"1.3.0"_s}, {u"parts"_s, QJsonArray{}}};
-    m_undoButton->setEnabled(!m_undo.isEmpty());
     m_redo.append(m_circuit);
-    m_redoButton->setEnabled(true);
-    m_core->saveCircuit(m_project, m_board, previous);
+    save(previous);
 }
 
 void CircuitPanel::redo()
 {
-    if (m_redo.isEmpty() || m_project.isEmpty())
+    if (m_redo.isEmpty() || m_project.isEmpty() || m_saving > 0)
         return;
     QJsonObject next = m_redo.takeLast();
     if (next.isEmpty())
         next = QJsonObject{{u"schemaVersion"_s, u"1.3.0"_s}, {u"parts"_s, QJsonArray{}}};
-    m_redoButton->setEnabled(!m_redo.isEmpty());
     m_undo.append(m_circuit);
-    m_undoButton->setEnabled(true);
-    m_core->saveCircuit(m_project, m_board, next);
+    save(next);
 }
 
 QImage CircuitPanel::picture() const

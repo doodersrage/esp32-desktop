@@ -120,6 +120,10 @@ private:
     QPushButton *m_redoButton = nullptr;
     QPushButton *m_duplicate = nullptr;
     QPushButton *m_paste = nullptr;
+    // Saves (circuit.set) asked for and not yet answered; Undo and Redo wait for them.
+    int m_saving = 0;
+    void save(const QJsonObject &circuit);
+    void updateUndo();
     QToolButton *m_copyPicture = nullptr;
     void updatePaste();
     QToolButton *m_fitButton = nullptr;

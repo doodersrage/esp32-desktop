@@ -307,6 +307,8 @@ signals:
     // sim.partPicture: a display part's picture, lit pixels white on black.
     void partPicture(const QString &id, const QImage &image);
     void circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit);
+    // circuit.set succeeded (circuitLoaded follows with what was saved).
+    void circuitSaved(const QString &project, const QString &board);
     void consoleSaved(const QString &path);
     void plotSaved(const QString &path, qint64 rows);
     void commandsListed(const QString &project, const QStringList &commands);
