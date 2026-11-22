@@ -7,8 +7,9 @@
 //! mapped back to the user's files and written next to the build ([`map_sketch`]).
 //!
 //! Checked with clangd 23 and `--query-driver` set to the cross-compilers: the
-//! sketches of the ESP32 (Xtensa) and the C3 (RISC-V) check with no errors. clangd
-//! ignores the GCC-only options below and warns about them; `.clangd` removes them.
+//! sketches of the ESP32 (Xtensa) and the C3 (RISC-V), and an ESP-IDF 6 project for
+//! the C3, check with no errors. clangd ignores most GCC-only options below with a
+//! warning; ESP-IDF 6's `-mtune=esp-base` it refuses, so `.clangd` must remove it.
 
 use std::path::{Path, PathBuf};
 
@@ -24,6 +25,12 @@ pub const REMOVE: &[&str] = &[
     "-mtext-section-literals",
     "-fstrict-volatile-bitfields",
     "-fno-tree-switch-conversion",
+    // ESP-IDF 6 (GCC 15): clang refuses the CPU name outright, so this one is needed;
+    // the rest it would only warn about.
+    "-mtune=*",
+    "-fno-shrink-wrap",
+    "-fzero-init-padding-bits=*",
+    "-fno-malloc-dce",
 ];
 
 /// The first line of a `.clangd` this program wrote, so it may replace its own and

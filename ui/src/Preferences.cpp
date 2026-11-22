@@ -136,8 +136,8 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     form->addRow(size, m_textSize);
     // The editor a problem's file opens in, at its line.
     m_editor->addItem(tr("The system's default"), QString());
-    m_editor->addItem(u"Kate"_s, u"kate"_s);
     m_editor->addItem(u"Visual Studio Code"_s, u"code"_s);
+    m_editor->addItem(u"Kate"_s, u"kate"_s);
     m_editor->addItem(tr("Another, with this command"), u"custom"_s);
     m_editor->setToolTip(tr("Where a build problem's file opens, at its line. The system's default opens the "
                             "file without going to the line."));

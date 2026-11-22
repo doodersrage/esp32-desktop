@@ -10,8 +10,8 @@ use std::process::{Command, Stdio};
 
 /// Editors with a known command, by id: what Preferences offers before a custom one.
 pub const PRESETS: &[(&str, &str)] = &[
-    ("kate", "kate -l {line} -c {col} {file}"),
     ("code", "code -g {file}:{line}:{col}"),
+    ("kate", "kate -l {line} -c {col} {file}"),
 ];
 
 /// A preset's template, or `template` itself when it is not a preset's id.

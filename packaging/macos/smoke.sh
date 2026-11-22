@@ -108,6 +108,19 @@ ls "$work/ESP32 Bench.app/Contents/PlugIns/iconengines/"*qsvgicon* > /dev/null 2
   || fail "the app has no SVG icon engine (Contents/PlugIns/iconengines)"
 echo "smoke: SVG icon engine bundled"
 
+# The edit loop's editor launch (phase 7): editor.open, as the app's Problems list
+# calls it, splits a command template and starts it without a shell. Here the "editor"
+# only leaves a marker beside the file.
+echo "int x;" > "$work/opened-test.c"
+python3 - "$work/opened-test.c" <<'PY' > "$work/open.json"
+import json, sys
+print(json.dumps({"path": sys.argv[1], "line": 3, "column": 1, "editor": "touch {file}.opened"}))
+PY
+"$bin/esp32bench" rpc editor.open "$(cat "$work/open.json")" > /dev/null || fail "editor.open refused the template"
+for _ in $(seq 50); do [ -e "$work/opened-test.c.opened" ] && break; sleep 0.2; done
+[ -e "$work/opened-test.c.opened" ] || fail "editor.open did not start the editor's command"
+echo "smoke: editor.open started the editor's command"
+
 # The UI starts and stays up headless.
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui" --version
 QT_QPA_PLATFORM=offscreen "$bin/esp32bench-gui" > "$work/gui.log" 2>&1 &

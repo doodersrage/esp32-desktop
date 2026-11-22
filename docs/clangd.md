@@ -14,6 +14,17 @@ clangd must be allowed to ask the ESP32 cross-compilers for their target and hea
 - Arduino sketches: `--query-driver=/home/<you>/.arduino15/packages/esp32/tools/**/bin/*`
 - ESP-IDF projects: `--query-driver=/home/<you>/.espressif/tools/**/bin/*`
 
+### VS Code
+
+Install the clangd extension (`llvm-vs-code-extensions.vscode-clangd`); when it offers to turn off Microsoft's C/C++ IntelliSense, accept. Then in `settings.json`:
+
+```json
+{
+  "clangd.arguments": ["--query-driver=/home/<you>/.arduino15/packages/esp32/tools/**/bin/*"],
+  "files.associations": { "*.ino": "cpp" }
+}
+```
+
 ### Kate
 
 Settings → Configure Kate → LSP Client → User Server Settings, then add `--query-driver` to clangd's command for C and C++:
@@ -33,17 +44,11 @@ Settings → Configure Kate → LSP Client → User Server Settings, then add `-
 
 For an ESP-IDF project, use its query driver instead, or list both separated by a comma. Kate opens `.ino` files as C++ once their highlighting mode is C++ (Tools → Mode).
 
-### VS Code
-
-Install the clangd extension (`llvm-vs-code-extensions.vscode-clangd`); when it offers to turn off Microsoft's C/C++ IntelliSense, accept. Then in `settings.json`:
-
-```json
-{
-  "clangd.arguments": ["--query-driver=/home/<you>/.arduino15/packages/esp32/tools/**/bin/*"],
-  "files.associations": { "*.ino": "cpp" }
-}
-```
-
 ## Checked
 
-With clangd 23 (2026-11-22), `clangd --check` on a sketch's own `.ino`, run in its folder with only the `.clangd` and `--query-driver`, completes with no errors for the ESP32-C3 (RISC-V). On the ESP32 (Xtensa) the sketch itself checks clean; indexing picolibc's `limits.h` on its own reports one error (`__GLIBC_USE` used before picolibc defines it for clang), which does not affect your code. clangd still logs that it ignores the GCC-only options: it reads them before applying `.clangd`.
+With clangd 23 (2026-11-22), run in the project's folder with only the `.clangd` and `--query-driver`:
+
+- A sketch's own `.ino` for the ESP32-C3 (RISC-V): no errors. For the ESP32 (Xtensa) the sketch itself checks clean; indexing picolibc's `limits.h` on its own reports one error (`__GLIBC_USE` used before picolibc defines it for clang), which does not affect your code.
+- A fresh ESP-IDF 6.0 project for the ESP32-C3 (`tests/firmware/hello`): `main/hello.c`, which calls `uart_driver_install`, `uart_read_bytes` and `esp_timer_get_time`, checks with no compile errors, and completion offers ESP-IDF's declarations (up to 486 results). ESP-IDF 6's compiler adds `-mtune=esp-base`, which clang refuses outright ("unknown target CPU"); `.clangd` removes it, so set clangd up again in projects set up before 2026-11-22.
+
+clangd still logs that it ignores the GCC-only options: it reads them before applying `.clangd`.
