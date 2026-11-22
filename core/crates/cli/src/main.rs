@@ -1121,6 +1121,49 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             let lp = registry
                 .get(&project)
                 .ok_or_else(|| esp32bench_build::Error::NoLocalProject(project.clone()))?;
+            if lp.kind == idf::LocalKind::Arduino {
+                // The user's own Arduino sketch, built in place for a library board.
+                use esp32bench_build::sketch;
+                let manifest = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?)
+                    .load()
+                    .await?;
+                let target = manifest
+                    .as_ref()
+                    .and_then(|m| m.boards.iter().find(|b| b.id == board))
+                    .and_then(|b| b.build_as.clone())
+                    .unwrap_or_else(|| board.clone());
+                let plan = sketch::plan(&lp.id, &lp.path, &board, &target)?;
+                let tools = esp32bench_build::Toolchain::detect(
+                    esp32bench_build::default_sketchbook()
+                        .context("no data directory: set XDG_DATA_HOME or HOME")?,
+                )?;
+                eprintln!(
+                    "Build {} ({}) for {board} ({})",
+                    lp.name,
+                    lp.path.display(),
+                    plan.fqbn
+                );
+                let dirs =
+                    sketch::Dirs::new(&esp32bench_library::cache_dir()?.join("builds"), &plan);
+                let mut all = esp32bench_build::diagnostics::Collector::new(Some(&plan.path));
+                let r = sketch::run(&plan, &tools, &dirs, |stream, line| {
+                    all.line(&line);
+                    match stream {
+                        esp32bench_build::Stream::Stdout => println!("{line}"),
+                        esp32bench_build::Stream::Stderr => eprintln!("{line}"),
+                    }
+                })
+                .await;
+                print_diagnostics(all.diagnostics());
+                let out = r?;
+                esp32bench_build::write_stamp(&dirs.out, &plan);
+                eprintln!(
+                    "\nimage {}\nelf   {}",
+                    out.image.display(),
+                    out.elf.display()
+                );
+                return Ok(ExitCode::SUCCESS);
+            }
             let install = idf::detect().ok_or(esp32bench_build::Error::NoIdf)?;
             let plan = idf::plan(&lp, &board, &install)?;
             eprintln!(

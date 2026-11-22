@@ -38,6 +38,13 @@
             "path": {
               "type": "string",
               "description": "The project folder (canonical)."
+            },
+            "kind": {
+              "enum": [
+                "idf",
+                "arduino"
+              ],
+              "description": "Since protocol 0.45: what builds it: idf.py for a chip (absent in older cores: idf), or arduino-cli for a library board (the user's own Arduino sketch, a folder with <folder>.ino)."
             }
           }
         }

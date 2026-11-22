@@ -508,6 +508,27 @@ private slots:
         view.boardPicker()->setCurrentIndex(2);
         QCOMPARE(selected.last(), (QStringList{u"local-3f9a0c21b4de"_s, u"esp32c3"_s}));
 
+        // An Arduino sketch of the user's: built for a board, with no ESP-IDF needed, its
+        // files opening in the user's editor.
+        QJsonObject sketch = result;
+        QJsonObject sp = sketch.value(u"project"_s).toObject();
+        sp.insert(u"kind"_s, u"arduino"_s);
+        sp.insert(u"name"_s, u"Blinky"_s);
+        sketch.insert(u"project"_s, sp);
+        sketch.insert(u"idf"_s, QJsonValue::Null);
+        sketch.insert(u"boards"_s, QJsonArray{QJsonObject{{u"id"_s, u"esp32"_s}, {u"name"_s, u"ESP32-DevKitC V4"_s}, {u"chip"_s, u"esp32"_s}},
+                                             QJsonObject{{u"id"_s, u"esp32c3-supermini"_s}, {u"name"_s, u"ESP32-C3 SuperMini"_s},
+                                                         {u"chip"_s, u"esp32c3"_s}}});
+        sketch.insert(u"sources"_s, QJsonArray{u"Blinky.ino"_s});
+        view.showLocal(sketch);
+        QVERIFY(view.summaryText().contains(u"arduino-cli"_s));
+        QCOMPARE(view.boardPicker()->itemText(1), u"ESP32-C3 SuperMini (ESP32-C3)"_s);
+        QVERIFY(!view.buildButton()->isHidden());
+        QSignalSpy edit(&view, &ProjectView::editRequested);
+        view.editButton()->menu()->actions().first()->trigger();
+        QCOMPARE(edit.size(), 1);
+        QVERIFY(edit.at(0).at(0).toJsonObject().value(u"path"_s).toString().endsWith(u"/Blinky.ino"_s));
+
         // No ESP-IDF, or the folder gone: it says so.
         QJsonObject noIdf = result;
         noIdf.insert(u"idf"_s, QJsonValue::Null);

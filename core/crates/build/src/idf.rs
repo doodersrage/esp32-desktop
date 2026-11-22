@@ -432,14 +432,29 @@ fn with_defaults(
     vars
 }
 
-/// A local ESP-IDF project.
+/// A project folder of the user's own: an ESP-IDF project, or (phase 7) an Arduino
+/// sketch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalProject {
     pub id: String,
-    /// The project's name, from `project(<name>)` in its `CMakeLists.txt`.
+    /// The project's name: `project(<name>)` in an ESP-IDF project's `CMakeLists.txt`,
+    /// a sketch's folder name.
     pub name: String,
     pub path: PathBuf,
+    /// What builds it. Entries saved before phase 7 have none: ESP-IDF.
+    #[serde(default)]
+    pub kind: LocalKind,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LocalKind {
+    /// idf.py, for a chip.
+    #[default]
+    Idf,
+    /// arduino-cli, for a board from the library (`crate::sketch`).
+    Arduino,
 }
 
 /// The id of the project at `path` (canonical): `local-` and 12 hex digits.
@@ -453,16 +468,32 @@ pub fn is_local(id: &str) -> bool {
     id.starts_with("local-")
 }
 
-/// Check that `path` is an ESP-IDF project and describe it.
+/// Check that `path` is an ESP-IDF project or an Arduino sketch (the folder, or its
+/// `.ino` file) and describe it.
 pub fn check_project(path: &Path) -> Result<LocalProject, Error> {
+    if let Some(folder) = crate::sketch::folder(path)
+        && !folder.join("CMakeLists.txt").is_file()
+    {
+        let name = folder
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        return Ok(LocalProject {
+            id: local_id(&folder),
+            name,
+            path: folder,
+            kind: LocalKind::Arduino,
+        });
+    }
     let path = path
         .canonicalize()
         .map_err(|e| Error::NotAnIdfProject(format!("{}: {e}", path.display())))?;
     let cmake = path.join("CMakeLists.txt");
     let text = std::fs::read_to_string(&cmake).map_err(|_| {
         Error::NotAnIdfProject(format!(
-            "{} has no CMakeLists.txt: it is not an ESP-IDF project",
-            path.display()
+            "{} is neither an ESP-IDF project (it has no CMakeLists.txt) nor an Arduino sketch (it has no {}.ino)",
+            path.display(),
+            path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
         ))
     })?;
     if !text.contains("tools/cmake/project.cmake") {
@@ -480,6 +511,7 @@ pub fn check_project(path: &Path) -> Result<LocalProject, Error> {
         id: local_id(&path),
         name,
         path,
+        kind: LocalKind::Idf,
     })
 }
 
@@ -879,6 +911,7 @@ mod tests {
             id: "local-0123456789ab".into(),
             name: "blinky".into(),
             path: "/home/u/blinky".into(),
+            kind: LocalKind::Idf,
         };
         let p = plan(&lp, "esp32s3", &idf).unwrap();
         assert_eq!(p.target, "esp32s3");

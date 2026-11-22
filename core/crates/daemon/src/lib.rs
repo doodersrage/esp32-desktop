@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.44.0";
+pub const PROTOCOL: &str = "0.45.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -856,6 +856,11 @@ fn build_error(e: esp32bench_build::Error) -> RpcError {
 async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: BuildParams = parse_params(params)?;
     if esp32bench_build::idf::is_local(&p.project) {
+        if let Some(project) = state.local.get(&p.project)
+            && project.kind == esp32bench_build::idf::LocalKind::Arduino
+        {
+            return sketch_build_start(project, p.board, ctx, state).await;
+        }
         return local_build_start(p, ctx, state);
     }
     let manifest = state
@@ -1512,6 +1517,91 @@ fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Valu
     Ok(json!({ "job": job, "plan": result_plan }))
 }
 
+/// A build of the user's own Arduino sketch (phase 7): in place, for a board from the
+/// library, with no consent asked (it is their folder); the events are build.start's.
+async fn sketch_build_start(
+    project: esp32bench_build::idf::LocalProject,
+    board: String,
+    ctx: Ctx,
+    state: Arc<State>,
+) -> Result<Value, RpcError> {
+    use esp32bench_build::sketch;
+    esp32bench_build::safe_id(&board).map_err(build_error)?;
+    let tools = match &state.arduino_cli {
+        Some(cli) => esp32bench_build::Toolchain {
+            arduino_cli: cli.clone(),
+            sketchbook: state.sketchbook.clone(),
+        },
+        None => {
+            esp32bench_build::Toolchain::detect(state.sketchbook.clone()).map_err(build_error)?
+        }
+    };
+    // A variant builds as its parent, as for library builds.
+    let target = match state.library.load().await {
+        Ok(Some(m)) => m
+            .boards
+            .iter()
+            .find(|b| b.id == board)
+            .and_then(|b| b.build_as.clone())
+            .unwrap_or_else(|| board.clone()),
+        _ => board.clone(),
+    };
+    let plan = sketch::plan(&project.id, &project.path, &board, &target).map_err(build_error)?;
+    let result_plan = plan.clone();
+    let job = ctx.subscribe(move |sub| async move {
+        let _one_at_a_time = state.build_lock.lock().await;
+        let started = std::time::Instant::now();
+        let dirs = sketch::Dirs::new(&state.builds_root, &plan);
+        let mut first = esp32bench_build::diagnostics::Finder::new(Some(&plan.path));
+        let mut all = esp32bench_build::diagnostics::Collector::new(Some(&plan.path));
+        let mut size = esp32bench_build::diagnostics::SizeReader::default();
+        let r = sketch::run(&plan, &tools, &dirs, |stream, line| {
+            first.line(&line);
+            all.line(&line);
+            size.line(&line);
+            let mut params = json!({ "stream": stream, "line": line });
+            if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
+                params["level"] = json!(level);
+                if let Some(at) = first.location(&line) {
+                    params["location"] = json!(at);
+                }
+            }
+            sub.send("build.log", params);
+        })
+        .await;
+        if r.is_ok() {
+            esp32bench_build::write_stamp(&dirs.out, &plan);
+        }
+        let mut event = finished_event(r, first.first(), all.diagnostics());
+        if event["ok"] == true
+            && let Some(sz) = size.size()
+        {
+            event["size"] = json!(sz);
+        }
+        event["seconds"] = json!((started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
+        sub.send("build.finished", event);
+    });
+    Ok(json!({ "job": job, "plan": result_plan }))
+}
+
+/// The boards a sketch builds for: the library's that this program has a board package
+/// for, with their names and chips.
+async fn sketch_boards(state: &State) -> Vec<Value> {
+    let Ok(Some(m)) = state.library.load().await else {
+        return esp32bench_build::sketch::boards()
+            .map(|(id, _)| json!({ "id": id, "name": id, "chip": id }))
+            .collect();
+    };
+    m.boards
+        .iter()
+        .filter(|b| {
+            let target = b.build_as.as_deref().unwrap_or(&b.id);
+            esp32bench_build::sketch::boards().any(|(id, _)| id == target)
+        })
+        .map(|b| json!({ "id": b.id, "name": b.name, "chip": b.chip }))
+        .collect()
+}
+
 /// The boards a local project builds for, named as the library names them when it is
 /// there, and their chips.
 async fn local_boards(state: &State) -> Vec<Value> {
@@ -1558,13 +1648,29 @@ async fn local_get(params: Value, state: Arc<State>) -> Result<Value, RpcError> 
         .local
         .get(&p.id)
         .ok_or_else(|| build_error(esp32bench_build::Error::NoLocalProject(p.id.clone())))?;
-    let exists = project.path.join("CMakeLists.txt").is_file();
+    let arduino = project.kind == esp32bench_build::idf::LocalKind::Arduino;
+    let exists = if arduino {
+        esp32bench_build::sketch::main_file(&project.path).is_some()
+    } else {
+        project.path.join("CMakeLists.txt").is_file()
+    };
+    let (boards, sources) = if arduino {
+        (
+            sketch_boards(&state).await,
+            esp32bench_build::sketch::sources(&project.path),
+        )
+    } else {
+        (
+            local_boards(&state).await,
+            esp32bench_build::idf::sources(&project.path),
+        )
+    };
     Ok(json!({
         "project": project,
-        "boards": local_boards(&state).await,
+        "boards": boards,
         "idf": state.idf(),
         "exists": exists,
-        "sources": esp32bench_build::idf::sources(&project.path),
+        "sources": sources,
     }))
 }
 

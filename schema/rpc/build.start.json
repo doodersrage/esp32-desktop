@@ -141,6 +141,36 @@
                 }
               }
             }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "project",
+              "board",
+              "fqbn",
+              "path"
+            ],
+            "description": "Since protocol 0.45: the user's own Arduino sketch (a local project of kind arduino), built in place with arduino-cli.",
+            "properties": {
+              "project": {
+                "type": "string"
+              },
+              "board": {
+                "type": "string"
+              },
+              "fqbn": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string",
+                "description": "The sketch folder."
+              },
+              "libraries": {
+                "type": "string",
+                "description": "The user's own Arduino libraries folder, when there is one."
+              }
+            }
           }
         ],
         "description": "What the build does: an Arduino build of a library project, or an ESP-IDF build of a local one."

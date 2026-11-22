@@ -4717,3 +4717,86 @@ async fn editor_open_runs_the_template_and_refuses_bad_ones() {
         }
     }
 }
+
+/// The user's own Arduino sketch (phase 7): local.open takes the folder or its .ino,
+/// local.get lists the library's boards and the sketch's files, and build.start builds
+/// it in place without asking for consent (the user chose it), its outputs where the
+/// simulator and flashing look for a project's build.
+#[cfg(unix)]
+#[tokio::test]
+async fn arduino_sketches_open_and_build_in_place() {
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let sketch = d.path().join("Blinky");
+    std::fs::create_dir_all(&sketch).unwrap();
+    std::fs::write(
+        sketch.join("Blinky.ino"),
+        "void setup() {}\nvoid loop() {}\n",
+    )
+    .unwrap();
+    std::fs::write(sketch.join("pins.h"), "#define LED 2\n").unwrap();
+    let r = c
+        .call("local.open", json!({ "path": sketch.join("Blinky.ino") }))
+        .await
+        .unwrap();
+    assert_valid(&method_def("local.open")["result"], &r, "local.open result");
+    assert_eq!(r["project"]["kind"], "arduino");
+    assert_eq!(r["project"]["name"], "Blinky");
+    let id = r["project"]["id"].as_str().unwrap().to_owned();
+    let got = c.call("local.get", json!({ "id": id })).await.unwrap();
+    assert_valid(&method_def("local.get")["result"], &got, "local.get result");
+    assert_eq!(got["sources"], json!(["Blinky.ino", "pins.h"]));
+    assert_eq!(got["exists"], true);
+    let boards: Vec<&str> = got["boards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["id"].as_str().unwrap())
+        .collect();
+    assert!(
+        boards.contains(&"esp32c3-supermini") && boards.contains(&"esp32"),
+        "{boards:?}"
+    );
+
+    let r = c
+        .call("build.start", json!({ "project": id, "board": "esp32" }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("build.start")["result"],
+        &r,
+        "build.start result",
+    );
+    assert_eq!(r["plan"]["fqbn"], "esp32:esp32:esp32:FlashMode=dio");
+    let done = loop {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(10), c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        let event = n["method"].as_str().unwrap().to_owned();
+        assert_valid(&method_def(&event)["params"], &n["params"], &event);
+        if event == "build.finished" {
+            break n["params"].clone();
+        }
+    };
+    assert_eq!(done["ok"], true, "{done}");
+    let image = std::path::PathBuf::from(done["image"].as_str().unwrap());
+    assert_eq!(
+        image.file_name().unwrap().to_string_lossy(),
+        format!("{id}.ino.merged.bin")
+    );
+    assert!(image.is_file());
+    let status = c
+        .call("build.status", json!({ "project": id, "board": "esp32" }))
+        .await
+        .unwrap();
+    assert_eq!(status["built"], true, "{status}");
+    // Nothing was written into the user's folder.
+    let mut names: Vec<String> = std::fs::read_dir(&sketch)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["Blinky.ino", "pins.h"]);
+}

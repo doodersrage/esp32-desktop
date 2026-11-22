@@ -109,6 +109,8 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 signals:
+    // A local project's file to open in the user's editor ({file, path, line}).
+    void editRequested(const QJsonObject &at);
     // A click beside line `line` of the sketch shown (the Code tab's gutter).
     void codeLineClicked(int line);
     // Run to this line, from the Code tab's right-click menu.

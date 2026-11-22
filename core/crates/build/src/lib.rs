@@ -21,6 +21,7 @@ use tokio::process::Command;
 pub mod backtrace;
 pub mod diagnostics;
 pub mod idf;
+pub mod sketch;
 
 /// Overrides the arduino-cli binary (tests use a stand-in).
 pub const ARDUINO_CLI_ENV: &str = "ESP32BENCH_ARDUINO_CLI";
@@ -198,7 +199,7 @@ pub fn built_boards(builds_root: &Path, project: &str) -> Vec<String> {
 /// a project needing `huge_app` (a 3 MB app) its room: `huge_app` itself, or on the
 /// XIAO ESP32-S3, which has no `huge_app` entry, its 8 MB default (a 3.2 MB app).
 /// Checked against core 3.3.12's boards.txt.
-const BOARDS: &[(&str, &str, &str)] = &[
+pub(crate) const BOARDS: &[(&str, &str, &str)] = &[
     ("esp32", "esp32:esp32:esp32", "huge_app"),
     ("esp32s3", "esp32:esp32:esp32s3", "huge_app"),
     ("esp32c3", "esp32:esp32:esp32c3", "huge_app"),
@@ -676,7 +677,7 @@ pub async fn run_arduino_cli(
     step(tools, name, args, log).await
 }
 
-async fn step(
+pub(crate) async fn step(
     tools: &Toolchain,
     name: &'static str,
     args: Vec<OsString>,

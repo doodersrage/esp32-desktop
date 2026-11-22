@@ -47,6 +47,13 @@
           "path": {
             "type": "string",
             "description": "The project folder (canonical)."
+          },
+          "kind": {
+            "enum": [
+              "idf",
+              "arduino"
+            ],
+            "description": "Since protocol 0.45: what builds it: idf.py for a chip (absent in older cores: idf), or arduino-cli for a library board (the user's own Arduino sketch, a folder with <folder>.ino)."
           }
         }
       },
@@ -70,9 +77,12 @@
             "chip": {
               "enum": [
                 "esp32",
+                "esp32s2",
                 "esp32s3",
-                "esp32c3"
-              ]
+                "esp32c3",
+                "esp32c6"
+              ],
+              "description": "An ESP-IDF project's boards are the simulated chips; a sketch's (since 0.45) any library board this program can build for."
             }
           }
         }

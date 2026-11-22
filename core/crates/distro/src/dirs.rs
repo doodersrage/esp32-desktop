@@ -75,6 +75,17 @@ pub fn arduino_data() -> Option<PathBuf> {
 }
 
 /// The bytes of the files under `dir` (links are not followed); 0 if it is missing.
+/// The user's own Arduino sketchbook, as the Arduino IDE keeps it: `~/Arduino` on
+/// Linux, `Documents/Arduino` on macOS and Windows. Not the app's private one.
+pub fn user_sketchbook() -> Option<PathBuf> {
+    let home = home()?;
+    Some(if cfg!(any(target_os = "macos", windows)) {
+        home.join("Documents").join("Arduino")
+    } else {
+        home.join("Arduino")
+    })
+}
+
 pub fn dir_bytes(dir: &std::path::Path) -> u64 {
     let mut total = 0;
     let mut stack = vec![dir.to_path_buf()];

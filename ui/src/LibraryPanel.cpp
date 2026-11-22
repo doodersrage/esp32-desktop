@@ -95,8 +95,9 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     });
 
     m_open->setIcon(QIcon::fromTheme(u"document-open-folder"_s));
-    m_open->setText(tr("Open ESP-IDF project…"));
-    m_open->setToolTip(tr("Add one of your own ESP-IDF project folders, to build with ESP-IDF, flash and simulate"));
+    m_open->setText(tr("Open project folder…"));
+    m_open->setToolTip(tr("Add one of your own folders: an ESP-IDF project, or an Arduino sketch (a folder with its "
+                          ".ino file), to build, flash and simulate"));
     m_open->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     connect(m_open, &QToolButton::clicked, this, &LibraryPanel::openFolder);
 
@@ -444,7 +445,7 @@ void LibraryPanel::showLibrary(const QJsonObject &library)
 
 void LibraryPanel::openFolder()
 {
-    const QString dir = QFileDialog::getExistingDirectory(this, tr("Open an ESP-IDF project folder"));
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Open an ESP-IDF project or Arduino sketch folder"));
     if (!dir.isEmpty())
         m_core->openLocal(dir); // the core checks it is an ESP-IDF project
 }

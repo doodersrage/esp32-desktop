@@ -1,6 +1,6 @@
 {
   "method": "local.open",
-  "description": "Open a local ESP-IDF project: a folder whose CMakeLists.txt includes ESP-IDF's project.cmake. The core remembers it (local.list) and returns it with its id, which then works wherever a library project id does: build.start builds it with idf.py (no consent: the user chose the folder), and sim.start, board.flash and circuit.* use the build. Opening it again returns the same id. Nothing is written to the folder.",
+  "description": "Open a local project: an ESP-IDF project (a folder whose CMakeLists.txt includes ESP-IDF's project.cmake) or, since protocol 0.45, the user's own Arduino sketch (a folder holding <folder>.ino, or that file), built in place with arduino-cli for a board from the library (kind arduino). The core remembers it (local.list) and returns it with its id, which then works wherever a library project id does: build.start builds it with idf.py (no consent: the user chose the folder), and sim.start, board.flash and circuit.* use the build. Opening it again returns the same id. Nothing is written to the folder.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -44,6 +44,13 @@
           "path": {
             "type": "string",
             "description": "The project folder (canonical)."
+          },
+          "kind": {
+            "enum": [
+              "idf",
+              "arduino"
+            ],
+            "description": "Since protocol 0.45: what builds it: idf.py for a chip (absent in older cores: idf), or arduino-cli for a library board (the user's own Arduino sketch, a folder with <folder>.ino)."
           }
         }
       }

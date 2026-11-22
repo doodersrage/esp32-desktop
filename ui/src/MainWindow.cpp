@@ -247,6 +247,7 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_problems = new ProblemsPanel(core, m_problemsDock);
     m_problemsDock->setWidget(m_problems);
     connect(m_problems, &ProblemsPanel::locationActivated, this, &MainWindow::showLocation);
+    connect(m_project, &ProjectView::editRequested, this, &MainWindow::showLocation);
     connect(core, &CoreConnection::buildDiagnostics, m_problems, &ProblemsPanel::setBuildDiagnostics);
     connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
         if (method == u"editor.open")
@@ -934,7 +935,7 @@ QString MainWindow::connectionText() const
 void MainWindow::buildMenus()
 {
     QMenu *file = menuBar()->addMenu(tr("&File"));
-    QAction *openIdf = file->addAction(QIcon::fromTheme(u"document-open-folder"_s), tr("&Open ESP-IDF Project…"));
+    QAction *openIdf = file->addAction(QIcon::fromTheme(u"document-open-folder"_s), tr("&Open Project Folder…"));
     openIdf->setShortcut(QKeySequence::Open);
     connect(openIdf, &QAction::triggered, m_library, &LibraryPanel::openFolder);
     // The projects shown lately, newest first (project/recent in the settings).

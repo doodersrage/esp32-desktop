@@ -1690,12 +1690,12 @@ Os pinos do módulo: %2. A alimentação e o terra não são simulados.</transla
         <translation>Baixando a biblioteca de projetos…</translation>
     </message>
     <message>
-        <source>Open ESP-IDF project…</source>
-        <translation>Abrir projeto ESP-IDF…</translation>
+        <source>Open project folder…</source>
+        <translation>Abrir pasta de projeto…</translation>
     </message>
     <message>
-        <source>Add one of your own ESP-IDF project folders, to build with ESP-IDF, flash and simulate</source>
-        <translation>Adiciona uma das suas pastas de projeto ESP-IDF, para compilar com o ESP-IDF, gravar e simular</translation>
+        <source>Add one of your own folders: an ESP-IDF project, or an Arduino sketch (a folder with its .ino file), to build, flash and simulate</source>
+        <translation>Adicionar uma pasta sua: um projeto ESP-IDF ou um sketch do Arduino (uma pasta com seu arquivo .ino), para compilar, gravar e simular</translation>
     </message>
     <message>
         <source>Clear filters</source>
@@ -1834,8 +1834,8 @@ Compilado neste computador para: %2.</translation>
         <translation>Projetos: %1. Baixados em: %2.</translation>
     </message>
     <message>
-        <source>Open an ESP-IDF project folder</source>
-        <translation>Abrir uma pasta de projeto ESP-IDF</translation>
+        <source>Open an ESP-IDF project or Arduino sketch folder</source>
+        <translation>Abrir uma pasta de projeto ESP-IDF ou de sketch do Arduino</translation>
     </message>
     <message>
         <source>ESP-IDF (your folder)</source>
@@ -1915,6 +1915,10 @@ O painel Compilação abaixo tem o registro completo.</translation>
     <message>
         <source>Debugger</source>
         <translation>Depurador</translation>
+    </message>
+    <message>
+        <source>&amp;Open Project Folder…</source>
+        <translation>&amp;Abrir pasta de projeto…</translation>
     </message>
     <message>
         <source>Undo or redo a change to the circuit</source>
@@ -2175,10 +2179,6 @@ Ferramentas → Preferências escolhe o editor.</translation>
     <message>
         <source>&amp;File</source>
         <translation>&amp;Arquivo</translation>
-    </message>
-    <message>
-        <source>&amp;Open ESP-IDF Project…</source>
-        <translation>&amp;Abrir projeto ESP-IDF…</translation>
     </message>
     <message>
         <source>Recent projects</source>
@@ -3155,8 +3155,16 @@ Clique duas vezes para ver a linha.</translation>
         <translation>Projeto ESP-IDF · %1</translation>
     </message>
     <message>
+        <source>Arduino sketch · %1</source>
+        <translation>Sketch do Arduino · %1</translation>
+    </message>
+    <message>
         <source>The project is no longer in %1. Forget it from the library&apos;s list, or put it back.</source>
         <translation>O projeto não está mais em %1. Esqueça-o na lista da biblioteca ou coloque-o de volta.</translation>
+    </message>
+    <message>
+        <source>Builds with arduino-cli for the board you choose, with your own Arduino libraries when you have some. Build files go to the app&apos;s cache; the sketch folder is not changed. Edit it in your own editor, then flash it or run it in the simulator from the Build dock.</source>
+        <translation>Compila com o arduino-cli para a placa que você escolher, com suas próprias bibliotecas do Arduino, se tiver. Os arquivos de compilação vão para o cache do app; a pasta do sketch não é alterada. Edite no seu próprio editor e depois grave ou rode no simulador pelo painel de compilação.</translation>
     </message>
     <message>
         <source>ESP-IDF was not found, so this project cannot be built yet. Install it with Espressif&apos;s installer, or as Espressif&apos;s guide does into %USERPROFILE%\esp\esp-idf, or set IDF_PATH, then select the project again.</source>
@@ -3177,6 +3185,10 @@ Clique duas vezes para ver a linha.</translation>
     <message>
         <source>Open folder</source>
         <translation>Abrir pasta</translation>
+    </message>
+    <message>
+        <source>Build this sketch for the selected board with arduino-cli</source>
+        <translation>Compilar este sketch para a placa selecionada com o arduino-cli</translation>
     </message>
     <message>
         <source>Build this project for the selected chip with ESP-IDF</source>

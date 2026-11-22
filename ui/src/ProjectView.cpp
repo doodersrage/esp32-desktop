@@ -603,11 +603,18 @@ void ProjectView::showLocal(const QJsonObject &result)
     const QString path = p.value(u"path"_s).toString();
     const QJsonObject idf = result.value(u"idf"_s).toObject();
     const bool exists = result.value(u"exists"_s).toBool();
-    m_localBuildable = exists && !idf.isEmpty();
+    // The user's own Arduino sketch (phase 7): arduino-cli, for a board; no ESP-IDF.
+    const bool sketch = p.value(u"kind"_s).toString() == u"arduino";
+    m_localBuildable = exists && (sketch || !idf.isEmpty());
     m_title->setText(p.value(u"name"_s).toString());
-    m_meta->setText(tr("ESP-IDF project · %1").arg(path));
+    m_meta->setText(sketch ? tr("Arduino sketch · %1").arg(path) : tr("ESP-IDF project · %1").arg(path));
     if (!exists)
         m_summary->setText(tr("The project is no longer in %1. Forget it from the library's list, or put it back.").arg(path));
+    else if (sketch)
+        m_summary->setText(tr("Builds with arduino-cli for the board you choose, with your own Arduino libraries "
+                              "when you have some. Build files go to the app's cache; the sketch folder is not "
+                              "changed. Edit it in your own editor, then flash it or run it in the simulator from "
+                              "the Build dock."));
     else if (idf.isEmpty())
 #if defined(Q_OS_WIN)
         m_summary->setText(tr("ESP-IDF was not found, so this project cannot be built yet. Install it with "
@@ -635,24 +642,30 @@ void ProjectView::showLocal(const QJsonObject &result)
     m_edit->menu()->clear();
     for (const QJsonValue &v : result.value(u"sources"_s).toArray()) {
         const QString rel = v.toString();
-        m_edit->menu()->addAction(rel, this, [path, rel] {
-            QDesktopServices::openUrl(QUrl::fromLocalFile(QDir(path).filePath(rel)));
+        // In the editor chosen in Preferences, as a problem's file opens.
+        m_edit->menu()->addAction(rel, this, [this, path, rel] {
+            emit editRequested(QJsonObject{{u"file"_s, rel}, {u"path"_s, QDir(path).filePath(rel)}, {u"line"_s, 1}});
         });
     }
     m_edit->setVisible(exists && !m_edit->menu()->isEmpty());
-    setBuildToolTip(tr("Build this project for the selected chip with ESP-IDF"));
+    setBuildToolTip(sketch ? tr("Build this sketch for the selected board with arduino-cli")
+                           : tr("Build this project for the selected chip with ESP-IDF"));
     m_tabs->hide();
 
     const QSignalBlocker block(m_board);
     m_board->clear();
     for (const QJsonValue &v : boards) {
         const QJsonObject b = v.toObject();
-        // An ESP-IDF build is for a chip, and runs on any board with it.
-        m_board->addItem(Labels::chipName(b.value(u"chip"_s).toString()), b.value(u"id"_s).toString());
-        m_board->setItemData(m_board->count() - 1, b.value(u"chip"_s).toString(), ChipRole);
+        // An ESP-IDF build is for a chip, and runs on any board with it; a sketch's is
+        // for a board.
+        const QString chip = b.value(u"chip"_s).toString();
+        m_board->addItem(sketch ? tr("%1 (%2)").arg(b.value(u"name"_s).toString(), Labels::chipName(chip))
+                                : Labels::chipName(chip),
+                         b.value(u"id"_s).toString());
+        m_board->setItemData(m_board->count() - 1, chip, ChipRole);
     }
     markConnectedBoards();
-    m_boardLabel->setText(tr("Chip:"));
+    m_boardLabel->setText(sketch ? tr("Board:") : tr("Chip:"));
     m_board->setEnabled(m_builds.size() > 1);
     const int start = qMax(0, m_board->findData(keepBoard));
     m_board->setCurrentIndex(start);
