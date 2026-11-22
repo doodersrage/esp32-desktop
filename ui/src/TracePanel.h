@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <QSet>
+
 #include <QHash>
 #include <QJsonArray>
 #include <QList>
@@ -42,6 +44,14 @@ public:
     void setHold(bool hold);
 
     QList<int> pins() const { return m_pins; }
+    // The pins drawn: all but the hidden ones. Right-click a pin's name to hide it,
+    // show only it, or show them all again.
+    QList<int> shownPins() const;
+    void setPinHidden(int gpio, bool hidden);
+    void showOnly(int gpio);
+    void showAll();
+    // The pin whose row is at y, or -1.
+    int pinAt(int y) const;
     QList<Edge> edges(int gpio) const { return m_edges.value(gpio); }
     // The latest simulated time seen; the right edge of the picture when following.
     qint64 now() const { return m_now; }
@@ -84,6 +94,7 @@ private:
     qint64 m_markB = -1;
 
     QList<int> m_pins;
+    QSet<int> m_hidden;
     QHash<int, QList<Edge>> m_edges;
     qint64 m_now = 0;
     qint64 m_end = 0; // right edge of the picture

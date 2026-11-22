@@ -14,6 +14,7 @@ class CoreConnection;
 class QCheckBox;
 class QComboBox;
 class QLabel;
+class QPushButton;
 class QLineEdit;
 class QToolButton;
 class QTreeWidget;
@@ -61,6 +62,11 @@ public:
     // Select a project by id (for links), now or once the list has arrived.
     void selectProject(const QString &id);
     QString statusText() const;
+    // "Showing 12 of 227 projects" while a filter hides some, else empty.
+    QString countText() const;
+    QPushButton *clearFiltersButton() const { return m_clearFilters; }
+    // Every filter and the search off.
+    void clearFilters();
     // The list's column widths, order and hidden columns, which the main window saves
     // with its layout. Widths the user dragged are kept; until then the name column
     // fits the longest name.
@@ -101,6 +107,11 @@ private:
     QCheckBox *m_starredOnly;
     QCheckBox *m_builtOnly;
     QComboBox *m_tag;
+    QLabel *m_count = nullptr;
+    QPushButton *m_clearFilters = nullptr;
+    // The topic kept from the last start, chosen once the library lists it.
+    QString m_savedTopic;
+    bool m_restoring = false;
     // Chips on the connected boards that say which they are (device.list).
     QStringList m_connectedChips;
     QByteArray m_defaultColumns;

@@ -1021,6 +1021,14 @@ Variables globales: %4 de %5</translation>
         <translation>Añade una de tus carpetas de proyecto ESP-IDF, para compilarla con ESP-IDF, grabarla y simularla</translation>
     </message>
     <message>
+        <source>Clear filters</source>
+        <translation>Quitar filtros</translation>
+    </message>
+    <message>
+        <source>Show every project again: no search, topic or other filter</source>
+        <translation>Volver a mostrar todos los proyectos: sin búsqueda, tema ni otro filtro</translation>
+    </message>
+    <message>
         <source>Project</source>
         <translation>Proyecto</translation>
     </message>
@@ -1051,6 +1059,10 @@ Variables globales: %4 de %5</translation>
     <message>
         <source>Star this project</source>
         <translation>Marcar con estrella</translation>
+    </message>
+    <message>
+        <source>Copy link</source>
+        <translation>Copiar enlace</translation>
     </message>
     <message>
         <source>Only projects that run in the simulator, with no board needed</source>
@@ -1155,6 +1167,20 @@ Compilado en este equipo para: %2.</translation>
     <message>
         <source>Your own ESP-IDF project, built with idf.py. Right-click to forget it.</source>
         <translation>Tu propio proyecto ESP-IDF, compilado con idf.py. Haz clic derecho para olvidarlo.</translation>
+    </message>
+    <message numerus="yes">
+        <source>No project matches these filters (%n in the library).</source>
+        <translation>
+            <numerusform>Ningún proyecto coincide con estos filtros (%n en la biblioteca).</numerusform>
+            <numerusform>Ningún proyecto coincide con estos filtros (%n en la biblioteca).</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>Showing %1 of %n projects.</source>
+        <translation>
+            <numerusform>Se muestra %1 de %n proyecto.</numerusform>
+            <numerusform>Se muestran %1 de %n proyectos.</numerusform>
+        </translation>
     </message>
     <message>
         <source>%1 (%2)</source>
@@ -1729,6 +1755,14 @@ SHA-256 del código: %2</translation>
         <translation>Controlar</translation>
     </message>
     <message>
+        <source>Rate</source>
+        <translation>Frecuencia</translation>
+    </message>
+    <message>
+        <source>How fast a pin toggles, in simulated time, and how much of the time it is high (a PWM duty cycle)</source>
+        <translation>Lo rápido que cambia un pin, en tiempo simulado, y cuánto tiempo está en alto (el ciclo de trabajo de un PWM)</translation>
+    </message>
+    <message>
         <source>The GPIOs this project uses. Outputs show what the firmware drives; the switch drives a pin as an input, like a button.</source>
         <translation>Los GPIO que usa este proyecto. Las salidas muestran lo que pone el firmware; el interruptor controla un pin como entrada, como un botón.</translation>
     </message>
@@ -1791,6 +1825,22 @@ SHA-256 del código: %2</translation>
     <message>
         <source>low</source>
         <translation>bajo</translation>
+    </message>
+    <message>
+        <source>%1 MHz</source>
+        <translation>%1 MHz</translation>
+    </message>
+    <message>
+        <source>%1 kHz</source>
+        <translation>%1 kHz</translation>
+    </message>
+    <message>
+        <source>%1 Hz</source>
+        <translation>%1 Hz</translation>
+    </message>
+    <message>
+        <source>%1 · %2% high</source>
+        <translation>%1 · %2% en alto</translation>
     </message>
 </context>
 <context>
@@ -2034,6 +2084,14 @@ SHA-256 del código: %2</translation>
     <message>
         <source>Wiring</source>
         <translation>Cableado</translation>
+    </message>
+    <message>
+        <source>Copy link</source>
+        <translation>Copiar enlace</translation>
+    </message>
+    <message>
+        <source>Copy a link that opens this project on this board in ESP32 Bench, to send to someone (it asks them before building anything)</source>
+        <translation>Copia un enlace que abre este proyecto en esta placa en ESP32 Bench, para enviarlo a alguien (le pregunta antes de compilar nada)</translation>
     </message>
     <message>
         <source>Board</source>
@@ -2497,6 +2555,14 @@ SHA-256 del código: %2</translation>
         <translation>Instalar todo lo necesario</translation>
     </message>
     <message>
+        <source>Cancel install</source>
+        <translation>Cancelar la instalación</translation>
+    </message>
+    <message>
+        <source>Stop installing; what was downloaded or built so far is removed</source>
+        <translation>Detiene la instalación; se elimina lo descargado o compilado hasta ahora</translation>
+    </message>
+    <message>
         <source>Download progress</source>
         <translation>Progreso de la descarga</translation>
     </message>
@@ -2739,8 +2805,8 @@ SHA-256 del código: %2</translation>
         <translation>Guardar VCD…</translation>
     </message>
     <message>
-        <source>Click to place marker A, again for B, to measure the time between them; right-click clears them. Ctrl and the mouse wheel zoom; the wheel alone scrolls back in time.</source>
-        <translation>Haz clic para poner el marcador A, otra vez para B, y medir el tiempo entre ellos; el clic derecho los quita. Ctrl y la rueda del ratón hacen zoom; la rueda sola retrocede en el tiempo.</translation>
+        <source>Click to place marker A, again for B, to measure the time between them; right-click clears them. Ctrl and the mouse wheel zoom; the wheel alone scrolls back in time. Right-click a pin&apos;s name to hide it or show only it.</source>
+        <translation>Haz clic para colocar el marcador A, y otra vez para el B, para medir el tiempo entre ellos; el clic derecho los borra. Ctrl y la rueda del ratón hacen zoom; la rueda sola retrocede en el tiempo. Haz clic derecho en el nombre de un pin para ocultarlo o mostrar solo ese.</translation>
     </message>
     <message>
         <source>Pin trace</source>
@@ -2864,6 +2930,18 @@ SHA-256 del código: %2</translation>
     <message>
         <source>A–B: %1 (%2)</source>
         <translation>A–B: %1 (%2)</translation>
+    </message>
+    <message>
+        <source>Hide %1</source>
+        <translation>Ocultar %1</translation>
+    </message>
+    <message>
+        <source>Show only %1</source>
+        <translation>Mostrar solo %1</translation>
+    </message>
+    <message>
+        <source>Show all pins</source>
+        <translation>Mostrar todos los pines</translation>
     </message>
     <message>
         <source>GPIO %1</source>

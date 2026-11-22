@@ -78,6 +78,7 @@ public:
     QString currentBuildBoard() const;
     QString currentBoardName() const;
     QPushButton *openButton() const { return m_openSite; }
+    QPushButton *copyLinkButton() const { return m_copyLink; }
     // A local project's source files, to open in the user's editor.
     QToolButton *editButton() const { return m_edit; }
     QString summaryText() const;
@@ -147,6 +148,7 @@ private:
     QLabel *m_meta;
     QLabel *m_summary;
     QPushButton *m_openSite;
+    QPushButton *m_copyLink = nullptr;
     QToolButton *m_edit;
     QPushButton *m_build;
     QAction *m_buildAction;

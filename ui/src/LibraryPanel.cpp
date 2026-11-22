@@ -16,6 +16,10 @@
 #include <QIcon>
 #include <QJsonArray>
 #include <QLabel>
+#include <QGuiApplication>
+#include <QClipboard>
+#include <QPushButton>
+#include <QSettings>
 #include <QLineEdit>
 #include <QLocale>
 #include <QStyle>
@@ -97,6 +101,12 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     connect(m_open, &QToolButton::clicked, this, &LibraryPanel::openFolder);
 
     m_status->setWordWrap(true);
+    m_count = new QLabel(this);
+    m_count->hide();
+    m_clearFilters = new QPushButton(QIcon::fromTheme(u"edit-clear"_s), tr("Clear filters"), this);
+    m_clearFilters->setToolTip(tr("Show every project again: no search, topic or other filter"));
+    m_clearFilters->hide();
+    connect(m_clearFilters, &QPushButton::clicked, this, &LibraryPanel::clearFilters);
 
     m_tree->setColumnCount(ColumnCount);
     m_tree->setHeaderLabels({tr("Project"), tr("Level"), tr("Time"), tr("Chips"), tr("Firmware")});
@@ -161,6 +171,8 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
             menu.addAction(QIcon::fromTheme(u"starred"_s),
                            starred ? tr("Remove the star") : tr("Star this project"), this,
                            [this, id, starred] { m_core->starProject(id, !starred); });
+            menu.addAction(QIcon::fromTheme(u"edit-copy"_s), tr("Copy link"), this,
+                           [id] { QGuiApplication::clipboard()->setText(Labels::projectLink(id)); });
         }
         menu.exec(m_tree->viewport()->mapToGlobal(pos));
     });
@@ -202,9 +214,13 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
     filters->addWidget(m_builtOnly);
     filters->addWidget(m_tag);
     filters->addStretch(1);
+    auto *count = new QHBoxLayout;
+    count->addWidget(m_count, 1);
+    count->addWidget(m_clearFilters);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     layout->addLayout(filters);
+    layout->addLayout(count);
     layout->addWidget(m_status);
     layout->addWidget(m_tree, 1);
 
@@ -240,6 +256,34 @@ LibraryPanel::LibraryPanel(CoreConnection *core, QWidget *parent)
         }
     });
     updateEnabled();
+
+    // The filters and search as they were left.
+    {
+        m_restoring = true;
+        QSettings settings;
+        m_simOnly->setChecked(settings.value(u"library/simOnly"_s, false).toBool());
+        m_fitsBoard->setChecked(settings.value(u"library/fitsBoard"_s, false).toBool());
+        m_starredOnly->setChecked(settings.value(u"library/starredOnly"_s, false).toBool());
+        m_builtOnly->setChecked(settings.value(u"library/builtOnly"_s, false).toBool());
+        m_filter->setText(settings.value(u"library/search"_s).toString());
+        m_savedTopic = settings.value(u"library/topic"_s).toString();
+        m_restoring = false;
+    }
+}
+
+QString LibraryPanel::countText() const
+{
+    return m_count->isHidden() ? QString() : m_count->text();
+}
+
+void LibraryPanel::clearFilters()
+{
+    m_savedTopic.clear();
+    for (QCheckBox *b : {m_simOnly, m_fitsBoard, m_starredOnly, m_builtOnly})
+        b->setChecked(false);
+    m_tag->setCurrentIndex(0);
+    m_filter->clear();
+    applyFilter();
 }
 
 QString LibraryPanel::statusText() const
@@ -521,6 +565,7 @@ void LibraryPanel::selectProject(const QString &id)
 void LibraryPanel::applyFilter()
 {
     const QStringList terms = m_filter->text().toLower().split(u' ', Qt::SkipEmptyParts);
+    int shown = 0;
     for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
         QTreeWidgetItem *item = m_tree->topLevelItem(i);
         const QString text = item->data(NameColumn, Qt::UserRole).toString();
@@ -540,7 +585,25 @@ void LibraryPanel::applyFilter()
                                          [&](const QString &c) { return m_connectedChips.contains(c); });
         }
         item->setHidden(!match);
+        shown += match ? 1 : 0;
     }
+    const int total = m_tree->topLevelItemCount();
+    const bool filtered = shown < total;
+    m_count->setText(shown == 0 ? tr("No project matches these filters (%n in the library).", nullptr, total)
+                                : tr("Showing %1 of %n projects.", nullptr, total).arg(shown));
+    m_count->setVisible(filtered);
+    m_clearFilters->setVisible(filtered);
+    if (m_restoring)
+        return;
+    QSettings settings;
+    settings.setValue(u"library/simOnly"_s, m_simOnly->isChecked());
+    settings.setValue(u"library/fitsBoard"_s, m_fitsBoard->isChecked());
+    settings.setValue(u"library/starredOnly"_s, m_starredOnly->isChecked());
+    settings.setValue(u"library/builtOnly"_s, m_builtOnly->isChecked());
+    settings.setValue(u"library/search"_s, m_filter->text());
+    // Before the library lists its topics, the kept one is still to come.
+    const QString topic = m_tag->currentData().toString();
+    settings.setValue(u"library/topic"_s, topic.isEmpty() && m_tag->count() <= 1 ? m_savedTopic : topic);
 }
 
 QList<std::pair<QString, QString>> LibraryPanel::projects() const
@@ -568,7 +631,9 @@ void LibraryPanel::fillTopics()
     std::sort(tags.begin(), tags.end(), [&](const QString &a, const QString &b) {
         return count.value(a) != count.value(b) ? count.value(a) > count.value(b) : a < b;
     });
-    const QString current = m_tag->currentData().toString();
+    // The kept topic, the first time the library lists it.
+    const QString current = m_tag->count() <= 1 && !m_savedTopic.isEmpty() ? std::exchange(m_savedTopic, {})
+                                                                          : m_tag->currentData().toString();
     const QSignalBlocker block(m_tag);
     while (m_tag->count() > 1)
         m_tag->removeItem(1);

@@ -2897,6 +2897,35 @@ async fn sim_bridges_the_projects_pins() {
             }
         }
     }
+    // Its rate: the firmware flips it every 500 ms, so about 1 Hz, half the time high.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+    let rate = loop {
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
+            .await
+            .expect("no rate for GPIO 2")
+            .unwrap();
+        let method = n["method"].as_str().unwrap();
+        assert_valid(&method_def(method)["params"], &n["params"], method);
+        match method {
+            "sim.output" => text.push_str(n["params"]["text"].as_str().unwrap()),
+            "sim.trace" => traced.extend(n["params"]["edges"].as_array().unwrap().iter().cloned()),
+            "sim.pins" => {
+                let found = n["params"]["pins"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|p| p["gpio"] == 2 && p["rate"].is_object())
+                    .map(|p| p["rate"].clone());
+                if let Some(r) = found {
+                    break r;
+                }
+            }
+            _ => {}
+        }
+    };
+    let (hz, high) = (rate["hz"].as_f64().unwrap(), rate["high"].as_f64().unwrap());
+    assert!((0.8..=1.05).contains(&hz), "{rate}");
+    assert!((0.4..=0.6).contains(&high), "{rate}");
     // Drive GPIO 4; the firmware reports what it reads.
     c.call(
         "sim.setPin",

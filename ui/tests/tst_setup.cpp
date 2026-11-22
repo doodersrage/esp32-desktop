@@ -45,7 +45,9 @@ class FakeCore : public QObject {
     Q_OBJECT
 public:
     bool coreInstalled = false;
+    bool slow = false; // installs never finish by themselves
     QStringList installs;
+    QList<qint64> cancelled;
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -74,14 +76,22 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello")
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.32.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.33.0"_s}});
         else if (m == u"device.watch")
             reply(id, QJsonObject{{u"subscription"_s, 1}, {u"ports"_s, QJsonArray{}}});
         else if (m == u"library.list")
             reply(id, QJsonObject{{u"available"_s, true}, {u"source"_s, u"x"_s}, {u"projects"_s, QJsonArray{}}});
         else if (m == u"toolchain.status")
             reply(id, QJsonObject{{u"components"_s, components(coreInstalled)}});
-        else if (m == u"toolchain.install") {
+        else if (m == u"job.cancel") {
+            cancelled << req.value(u"params"_s).toObject().value(u"job"_s).toInteger();
+            reply(id, QJsonObject{});
+        } else if (m == u"toolchain.install" && slow) {
+            // Still downloading: no finished event until cancelled.
+            installs << req.value(u"params"_s).toObject().value(u"component"_s).toString();
+            event(u"toolchain.progress"_s, {{u"line"_s, u"Downloading..."_s}});
+            reply(id, QJsonObject{{u"job"_s, 6}});
+        } else if (m == u"toolchain.install") {
             installs << req.value(u"params"_s).toObject().value(u"component"_s).toString();
             event(u"toolchain.progress"_s, {{u"line"_s, u"Installing esp32:esp32@3.3.12..."_s}});
             coreInstalled = true;
@@ -160,6 +170,30 @@ private slots:
         // Done: nothing left to install, so the button goes.
         QTRY_VERIFY(!dialog.installAllButton()->isVisibleTo(&dialog));
         QVERIFY(dialog.logText().contains(u"Done."_s));
+    }
+
+    void cancelsAnInstall()
+    {
+        FakeCore fake(path());
+        fake.slow = true;
+        CoreConnection core;
+        core.setSocketPath(path());
+        SetupDialog dialog(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        core.requestToolchainStatus();
+        QTRY_VERIFY(dialog.installAllButton()->isVisibleTo(&dialog));
+        QVERIFY(!dialog.cancelButton()->isVisibleTo(&dialog));
+        dialog.installAllButton()->click();
+        QTRY_VERIFY(core.isInstalling());
+        QTRY_VERIFY(dialog.logText().contains(u"Downloading..."_s));
+        QVERIFY(dialog.cancelButton()->isVisibleTo(&dialog));
+        dialog.cancelButton()->click();
+        QTRY_COMPARE(fake.cancelled, QList<qint64>{6});
+        QTRY_VERIFY(!core.isInstalling());
+        QVERIFY(dialog.logText().contains(u"Install failed: Cancelled."_s));
+        QVERIFY(!dialog.cancelButton()->isVisibleTo(&dialog));
+        QCOMPARE(fake.installs, QStringList{u"esp32-core"_s}); // nothing more after it
     }
 
     // With ESP32BENCH_SETUP_STATUS (a toolchain.status components file) and

@@ -31,6 +31,7 @@ public:
     QString logText() const;
 
     QPushButton *installAllButton() const { return m_installAll; }
+    QPushButton *cancelButton() const { return m_cancel; }
 
     // Render toolchain.download (public for tests), and what the bar says.
     void showDownload(qint64 bytes, qint64 total);
@@ -49,6 +50,7 @@ private:
     QElapsedTimer m_clock;
     QList<std::pair<qint64, qint64>> m_samples; // (ms, bytes) of the last half minute
     QPushButton *m_installAll = nullptr;
+    QPushButton *m_cancel = nullptr;
     // Components the app can install that are missing (id, name), and those still to
     // install in this round.
     QList<std::pair<QString, QString>> m_missing;

@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QWheelEvent>
+#include <QMenu>
 #include <QPainter>
 #include <QPushButton>
 #include <QStandardPaths>
@@ -43,6 +44,49 @@ void TraceView::setPins(const QList<int> &gpios)
     setLabels(m_labels);
     updateGeometry();
     update();
+}
+
+QList<int> TraceView::shownPins() const
+{
+    QList<int> out;
+    for (int g : m_pins)
+        if (!m_hidden.contains(g))
+            out << g;
+    return out;
+}
+
+void TraceView::setPinHidden(int gpio, bool hidden)
+{
+    if (hidden)
+        m_hidden.insert(gpio);
+    else
+        m_hidden.remove(gpio);
+    updateGeometry();
+    update();
+}
+
+void TraceView::showOnly(int gpio)
+{
+    m_hidden.clear();
+    for (int g : std::as_const(m_pins))
+        if (g != gpio)
+            m_hidden.insert(g);
+    updateGeometry();
+    update();
+}
+
+void TraceView::showAll()
+{
+    m_hidden.clear();
+    updateGeometry();
+    update();
+}
+
+int TraceView::pinAt(int y) const
+{
+    const QList<int> shown = shownPins();
+    const int row = y < AxisHeight ? -1 : (y - AxisHeight) / RowHeight;
+    return row >= 0 && row < shown.size() ? shown.at(row) : -1;
 }
 
 void TraceView::clear()
@@ -130,6 +174,19 @@ QString TraceView::measurement() const
 
 void TraceView::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::RightButton && event->position().x() < m_labelWidth) {
+        // On a pin's name: hide it, or show only it.
+        const int gpio = pinAt(int(event->position().y()));
+        QMenu menu(this);
+        if (gpio >= 0) {
+            menu.addAction(tr("Hide %1").arg(pinName(gpio)), this, [this, gpio] { setPinHidden(gpio, true); });
+            menu.addAction(tr("Show only %1").arg(pinName(gpio)), this, [this, gpio] { showOnly(gpio); });
+        }
+        QAction *all = menu.addAction(tr("Show all pins"), this, &TraceView::showAll);
+        all->setEnabled(!m_hidden.isEmpty());
+        menu.exec(event->globalPosition().toPoint());
+        return;
+    }
     if (event->button() == Qt::RightButton) {
         setMarkers(-1, -1);
         return;
@@ -199,7 +256,7 @@ void TraceView::setLabels(const QHash<int, QString> &labels)
 
 QSize TraceView::sizeHint() const
 {
-    return {600, AxisHeight + RowHeight * int(std::max<qsizetype>(m_pins.size(), 2)) + 4};
+    return {600, AxisHeight + RowHeight * int(std::max<qsizetype>(shownPins().size(), 2)) + 4};
 }
 
 QSize TraceView::minimumSizeHint() const
@@ -245,8 +302,9 @@ void TraceView::paintEvent(QPaintEvent *)
     QPen line(pal.color(QPalette::Text), 1.5);
     QPen inputLine(pal.color(QPalette::Highlight), 1.5);
     QPen unknown(pal.color(QPalette::Mid), 1, Qt::DashLine);
-    for (int row = 0; row < m_pins.size(); ++row) {
-        const int gpio = m_pins[row];
+    const QList<int> shown = shownPins();
+    for (int row = 0; row < shown.size(); ++row) {
+        const int gpio = shown[row];
         const int top = AxisHeight + row * RowHeight + 5;
         const int high = top, low = top + RowHeight - 10;
         p.setPen(pal.color(QPalette::Text));
@@ -310,7 +368,8 @@ TracePanel::TracePanel(CoreConnection *core, QWidget *parent)
     m_measure = new QLabel(this);
     m_measure->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_view->setToolTip(tr("Click to place marker A, again for B, to measure the time between them; right-click "
-                          "clears them. Ctrl and the mouse wheel zoom; the wheel alone scrolls back in time."));
+                          "clears them. Ctrl and the mouse wheel zoom; the wheel alone scrolls back in time. "
+                          "Right-click a pin's name to hide it or show only it."));
     m_view->setAccessibleName(tr("Pin trace"));
     connect(m_view, &TraceView::markersChanged, this, [this] { m_measure->setText(m_view->measurement()); });
     connect(m_view, &TraceView::held, this, [this] {

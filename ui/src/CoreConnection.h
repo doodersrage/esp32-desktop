@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 32;
+    static constexpr int ProtocolMinor = 33;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -104,6 +104,8 @@ public:
     void requestToolchainStatus();
     void installComponent(const QString &component);
     bool isInstalling() const { return m_installJob != 0; }
+    // job.cancel on the running install; toolchainInstallFinished(false) follows.
+    void cancelInstall();
 
     // board.inspect / board.flash / board.erase: one board job at a time, reporting
     // through boardProgress and boardFinished. board.flash asks for consent first

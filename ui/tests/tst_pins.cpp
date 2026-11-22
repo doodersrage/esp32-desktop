@@ -11,6 +11,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QTemporaryDir>
+#include <QLocale>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -50,7 +51,7 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.32.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.33.0"_s}});
         } else if (m == u"sim.start") {
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false},
                                   {u"engine"_s, u"lcgamboa"_s}, {u"pins"_s, pinsToReport}});
@@ -96,6 +97,15 @@ private slots:
         QTRY_COMPARE(panel.row(2)->text(PinsPanel::LevelColumn), u"low"_s);
         QCOMPARE(panel.row(4)->text(PinsPanel::DirectionColumn), u"input"_s);
         QVERIFY(!panel.row(9));
+        // How fast a pin toggles, and when it stops.
+        QVERIFY(panel.row(2)->text(PinsPanel::RateColumn).isEmpty());
+        fake.pins(QJsonArray{QJsonObject{{u"gpio"_s, 2}, {u"rate"_s, QJsonObject{{u"hz"_s, 1.0}, {u"high"_s, 0.5}}}}});
+        QTRY_COMPARE(panel.row(2)->text(PinsPanel::RateColumn),
+                     u"%1 Hz · 50% high"_s.arg(QLocale().toString(1.0, 'f', 2)));
+        fake.pins(QJsonArray{QJsonObject{{u"gpio"_s, 2}, {u"rate"_s, QJsonValue::Null}}});
+        QTRY_VERIFY(panel.row(2)->text(PinsPanel::RateColumn).isEmpty());
+        QCOMPARE(PinsPanel::rateText(QJsonObject{{u"hz"_s, 5000.0}, {u"high"_s, 0.25}}),
+                 u"%1 kHz · 25% high"_s.arg(QLocale().toString(5.0, 'f', 2)));
 
         auto *drive = qobject_cast<QPushButton *>(panel.tree()->itemWidget(panel.row(4), PinsPanel::DriveColumn));
         QVERIFY(drive);

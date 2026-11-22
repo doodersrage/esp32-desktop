@@ -66,7 +66,7 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.32.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.33.0"_s}});
         } else if (m == u"sim.start") {
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false},
                                   {u"engine"_s, u"lcgamboa"_s}, {u"pins"_s, pinsToReport}});
@@ -168,6 +168,27 @@ private slots:
         view.setLabels({{2, u"LED anode"_s}});
         QCOMPARE(view.pinName(2), u"2 · LED anode"_s);
         QCOMPARE(view.pinName(4), u"GPIO 4"_s);
+    }
+
+    void hidesPins()
+    {
+        TraceView view;
+        view.setPins({2, 4, 5});
+        QCOMPARE(view.shownPins(), (QList<int>{2, 4, 5}));
+        const int h = view.sizeHint().height();
+        view.setPinHidden(4, true);
+        QCOMPARE(view.shownPins(), (QList<int>{2, 5}));
+        QVERIFY(view.sizeHint().height() < h);
+        view.showOnly(5);
+        QCOMPARE(view.shownPins(), QList<int>{5});
+        // The one row left is the first under the time axis.
+        int found = -1;
+        for (int y = 0; y < view.sizeHint().height() && found < 0; ++y)
+            found = view.pinAt(y);
+        QCOMPARE(found, 5);
+        QCOMPARE(view.pinAt(0), -1); // the time axis
+        view.showAll();
+        QCOMPARE(view.shownPins(), (QList<int>{2, 4, 5}));
     }
 
     void nothingToTraceWithoutPins()

@@ -6,6 +6,7 @@
 #include <QIcon>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLocale>
 #include <QPushButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -25,7 +26,9 @@ PinsPanel::PinsPanel(CoreConnection *core, QWidget *parent)
     m_tree->setAccessibleName(tr("Pins"));
     m_status->setWordWrap(true);
     m_tree->setColumnCount(ColumnCount);
-    m_tree->setHeaderLabels({tr("GPIO"), tr("Direction"), tr("Level"), tr("Drive")});
+    m_tree->setHeaderLabels({tr("GPIO"), tr("Direction"), tr("Level"), tr("Rate"), tr("Drive")});
+    m_tree->headerItem()->setToolTip(RateColumn, tr("How fast a pin toggles, in simulated time, and how much of the "
+                                                    "time it is high (a PWM duty cycle)"));
     m_tree->setRootIsDecorated(false);
     m_tree->setUniformRowHeights(true);
     m_tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -107,6 +110,8 @@ void PinsPanel::update(const QJsonArray &pins)
             const bool output = p.value(u"output"_s).toBool();
             item->setText(DirectionColumn, output ? tr("output") : tr("input"));
         }
+        if (p.contains(u"rate"_s))
+            item->setText(RateColumn, rateText(p.value(u"rate"_s)));
         if (p.contains(u"level"_s)) {
             const bool high = p.value(u"level"_s).toBool();
             item->setText(LevelColumn, high ? tr("high") : tr("low"));
@@ -114,6 +119,20 @@ void PinsPanel::update(const QJsonArray &pins)
             item->setIcon(LevelColumn, QIcon::fromTheme(high ? u"state-ok"_s : u"state-offline"_s));
         }
     }
+}
+
+QString PinsPanel::rateText(const QJsonValue &rate)
+{
+    if (!rate.isObject())
+        return {};
+    const QJsonObject r = rate.toObject();
+    const double hz = r.value(u"hz"_s).toDouble();
+    const int high = qRound(r.value(u"high"_s).toDouble() * 100);
+    const QLocale loc;
+    const QString freq = hz >= 1e6   ? tr("%1 MHz").arg(loc.toString(hz / 1e6, 'f', 2))
+                         : hz >= 1e3 ? tr("%1 kHz").arg(loc.toString(hz / 1e3, 'f', 2))
+                                     : tr("%1 Hz").arg(loc.toString(hz, 'f', hz >= 100 ? 0 : 2));
+    return tr("%1 · %2% high").arg(freq).arg(high);
 }
 
 void PinsPanel::setLabels(const QHash<int, QString> &labels)

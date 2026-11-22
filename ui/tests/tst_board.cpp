@@ -70,7 +70,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         const QJsonArray ports{QJsonObject{{u"path"_s, u"/dev/ttyACM0"_s}}};
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.32.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.33.0"_s}});
             return;
         }
         if (m == u"device.watch") {

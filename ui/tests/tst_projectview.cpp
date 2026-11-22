@@ -3,6 +3,7 @@
 
 #include "CodeView.h"
 #include "CoreConnection.h"
+#include "Labels.h"
 #include "ProjectView.h"
 
 #include <QAction>
@@ -17,6 +18,8 @@
 #include <QTabWidget>
 #include <QMenu>
 #include <QToolButton>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -122,6 +125,19 @@ private slots:
         QCOMPARE(code->extraSelections().size(), 1);
         view.showPausedLine(0);
         QVERIFY(code->extraSelections().isEmpty());
+    }
+
+    void copiesALinkToTheProjectAndBoard()
+    {
+        CoreConnection core;
+        ProjectView view(&core);
+        view.showResult(example());
+        QVERIFY(!view.copyLinkButton()->isHidden());
+        view.copyLinkButton()->click();
+        QCOMPARE(QGuiApplication::clipboard()->text(),
+                 u"esp32bench://project/%1?board=%2"_s.arg(view.currentProjectId(), view.currentBuildBoard()));
+        QCOMPARE(Labels::projectLink(u"blink"_s), u"esp32bench://project/blink"_s);
+        QCOMPARE(Labels::projectLink(u"blink"_s, u"esp32c3 mini"_s), u"esp32bench://project/blink?board=esp32c3%20mini"_s);
     }
 
     void startsOnTheConnectedBoardsChip()

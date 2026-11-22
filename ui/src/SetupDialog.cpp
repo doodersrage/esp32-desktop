@@ -7,6 +7,7 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QJsonObject>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLocale>
 #include <QPlainTextEdit>
@@ -59,6 +60,17 @@ SetupDialog::SetupDialog(CoreConnection *core, QWidget *parent)
         installNext();
     });
 
+    // Stop the install that is running, and the ones queued after it; the core
+    // removes what it had downloaded or built so far.
+    m_cancel = new QPushButton(QIcon::fromTheme(u"process-stop"_s), tr("Cancel install"), this);
+    m_cancel->setToolTip(tr("Stop installing; what was downloaded or built so far is removed"));
+    m_cancel->hide();
+    connect(m_cancel, &QPushButton::clicked, this, [this] {
+        m_queue.clear();
+        m_cancel->setEnabled(false);
+        m_core->cancelInstall();
+    });
+
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
@@ -66,7 +78,11 @@ SetupDialog::SetupDialog(CoreConnection *core, QWidget *parent)
     layout->addWidget(intro);
     layout->addWidget(m_tree, 2);
     layout->addWidget(m_summary);
-    layout->addWidget(m_installAll, 0, Qt::AlignLeft);
+    auto *actions = new QHBoxLayout;
+    actions->addWidget(m_installAll);
+    actions->addWidget(m_cancel);
+    actions->addStretch(1);
+    layout->addLayout(actions);
     layout->addWidget(m_download);
     layout->addWidget(m_log, 1);
     layout->addWidget(buttons);
@@ -84,6 +100,7 @@ SetupDialog::SetupDialog(CoreConnection *core, QWidget *parent)
         m_samples.clear();
     });
     connect(m_core, &CoreConnection::toolchainInstallFinished, this, [this](bool ok, const QString &error) {
+        m_cancel->hide();
         m_log->appendPlainText(ok ? tr("Done.") : tr("Install failed: %1").arg(error));
         if (!ok)
             m_queue.clear(); // stop at the first failure; the log says why
@@ -103,6 +120,8 @@ void SetupDialog::install(const QString &component, const QString &name)
 {
     m_log->appendPlainText(tr("Installing %1…").arg(name));
     m_core->installComponent(component);
+    m_cancel->setEnabled(true);
+    m_cancel->show();
     // Disable every install button until the status comes back.
     for (int i = 0; i < m_tree->topLevelItemCount(); ++i)
         if (QWidget *w = m_tree->itemWidget(m_tree->topLevelItem(i), ActionColumn))

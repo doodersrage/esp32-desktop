@@ -626,6 +626,20 @@ void CoreConnection::installComponent(const QString &component)
     });
 }
 
+void CoreConnection::cancelInstall()
+{
+    if (m_installJob <= 0)
+        return;
+    const qint64 job = m_installJob;
+    m_client->call(u"job.cancel"_s, {{u"job"_s, job}}, this, [this, job](const RpcReply &r) {
+        // A cancelled job sends no toolchain.finished, so report it here.
+        if (r.ok && m_installJob == job) {
+            m_installJob = 0;
+            emit toolchainInstallFinished(false, tr("Cancelled."));
+        }
+    });
+}
+
 void CoreConnection::handleInstallEvent(const QString &method, const QJsonObject &params)
 {
     if (method == u"toolchain.progress") {

@@ -109,6 +109,13 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     m_edit->setMenu(new QMenu(m_edit));
     m_edit->setToolTip(tr("Open one of the project's source files in your editor"));
     m_edit->hide();
+    m_copyLink = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), tr("Copy link"), page);
+    m_copyLink->setToolTip(tr("Copy a link that opens this project on this board in ESP32 Bench, to send to "
+                              "someone (it asks them before building anything)"));
+    connect(m_copyLink, &QPushButton::clicked, this, [this] {
+        QGuiApplication::clipboard()->setText(
+            Labels::projectLink(m_project.value(u"id"_s).toString(), currentBuildBoard()));
+    });
     connect(m_openSite, &QPushButton::clicked, this, [this] {
         if (m_local) {
             QDesktopServices::openUrl(QUrl::fromLocalFile(m_project.value(u"path"_s).toString()));
@@ -230,6 +237,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     head->addLayout(headText, 1);
     head->addWidget(m_build, 0, Qt::AlignTop);
     head->addWidget(m_edit, 0, Qt::AlignTop);
+    head->addWidget(m_copyLink, 0, Qt::AlignTop);
     head->addWidget(m_openSite, 0, Qt::AlignTop);
     auto *boardRow = new QFormLayout;
     m_boardLabel = new QLabel(tr("Board:"), page);
@@ -433,6 +441,7 @@ void ProjectView::showLocal(const QJsonObject &result)
 
     m_openSite->setText(tr("Open folder"));
     m_openSite->setIcon(QIcon::fromTheme(u"folder-open"_s));
+    m_copyLink->hide(); // a folder on this computer: nothing to send
     m_edit->menu()->clear();
     for (const QJsonValue &v : result.value(u"sources"_s).toArray()) {
         const QString rel = v.toString();
@@ -479,6 +488,7 @@ void ProjectView::showResult(const QJsonObject &result)
     m_builds = p.value(u"builds"_s).toArray();
     m_openSite->setText(tr("Open on esp32bench.dev"));
     m_openSite->setIcon(QIcon::fromTheme(u"internet-web-browser"_s));
+    m_copyLink->show();
     m_edit->hide();
     setBuildToolTip(tr("Build this project for the selected board with arduino-cli"));
     m_tabs->show();

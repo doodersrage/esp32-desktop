@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.32.0";
+pub const PROTOCOL: &str = "0.33.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -1267,6 +1267,9 @@ fn stop_frame(f: &Value) -> Value {
     Value::Object(out)
 }
 
+/// The simulated time a pin's rate (sim.pins' rate) is measured over.
+const RATE_WINDOW_NS: u64 = 2_000_000_000;
+
 /// Removes a simulator from the table when its subscription ends; dropping the task
 /// also drops its Session, which stops QEMU.
 struct SimEntry {
@@ -1482,6 +1485,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
             let mut parts_changed: std::collections::BTreeMap<String, Value> =
                 std::collections::BTreeMap::new();
             // gpio -> (level, output), and the pins changed since the last batch.
+            let mut rates: HashMap<u8, esp32bench_sim::trace::Rate> = HashMap::new();
             let mut pin_state: std::collections::BTreeMap<u8, (Option<bool>, Option<bool>)> =
                 std::collections::BTreeMap::new();
             let mut pin_changed: std::collections::BTreeSet<u8> = std::collections::BTreeSet::new();
@@ -1591,6 +1595,43 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                                 // The host sends it twice a second.
                                 PinEvent::Clock { ns } => {
                                     sub.send("sim.clock", json!({ "ns": ns }));
+                                    // How fast each pin toggles, over the last two
+                                    // simulated seconds: sent when it changes, null
+                                    // once a pin stops.
+                                    let changed: Vec<Value> = {
+                                        let t = trace.lock().unwrap_or_else(|p| p.into_inner());
+                                        pin_state
+                                            .keys()
+                                            .filter_map(|&g| {
+                                                let now = t.rate(g, ns, RATE_WINDOW_NS);
+                                                let before = rates.get(&g).copied();
+                                                let same = match (now, before) {
+                                                    (Some(a), Some(b)) => !a.differs(&b),
+                                                    (None, None) => true,
+                                                    _ => false,
+                                                };
+                                                if same {
+                                                    return None;
+                                                }
+                                                match now {
+                                                    Some(r) => rates.insert(g, r),
+                                                    None => rates.remove(&g),
+                                                };
+                                                let (level, output) = pin_state[&g];
+                                                let mut o = json!({ "gpio": g, "rate": now });
+                                                if let Some(l) = level {
+                                                    o["level"] = json!(l);
+                                                }
+                                                if let Some(out) = output {
+                                                    o["output"] = json!(out);
+                                                }
+                                                Some(o)
+                                            })
+                                            .collect()
+                                    };
+                                    if !changed.is_empty() {
+                                        sub.send("sim.pins", json!({ "pins": changed }));
+                                    }
                                     continue;
                                 }
                                 // The host already limits these to 20 a second.

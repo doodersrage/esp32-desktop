@@ -88,7 +88,10 @@ pub async fn install_archive(
     let staging = parent.join(format!(".{name}.partial"));
     let _cleanup = Cleanup(vec![archive.clone(), staging.clone()]);
 
+    // A cancelled install (job.cancel drops this future) stops its download and
+    // unpacking too, before the guard removes their files.
     let out = Command::new("curl")
+        .kill_on_drop(true)
         .args(["--fail", "--location", "--silent", "--show-error"])
         .args(["--proto", "=https", "--proto-redir", "=https"])
         .arg("--output")
@@ -116,6 +119,7 @@ pub async fn install_archive(
     let _ = tokio::fs::remove_dir_all(&staging).await;
     tokio::fs::create_dir_all(&staging).await?;
     let out = Command::new("tar")
+        .kill_on_drop(true)
         .arg("--extract")
         .args(compression)
         .args(["--no-same-owner", "--file"])

@@ -34,6 +34,33 @@
             },
             "output": {
               "type": "boolean"
+            },
+            "rate": {
+              "description": "Since protocol 0.33: how fast the pin toggles over the last two simulated seconds (hz, rising edges a second) and the share of that time it is high (high, 0 to 1); null once it no longer toggles. Sent when it changes, about twice a second at most.",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "hz",
+                    "high"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "hz": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "high": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         }
@@ -49,6 +76,22 @@
             "gpio": 2,
             "level": true,
             "output": true
+          }
+        ]
+      }
+    },
+    {
+      "params": {
+        "subscription": 3,
+        "pins": [
+          {
+            "gpio": 2,
+            "level": true,
+            "output": true,
+            "rate": {
+              "hz": 1.0,
+              "high": 0.5
+            }
           }
         ]
       }

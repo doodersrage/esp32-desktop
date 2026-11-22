@@ -22,6 +22,22 @@ pub struct Edge {
     pub input: bool,
 }
 
+/// How fast a pin toggles: rising edges per second, and the share of the time it is
+/// high (PWM's duty), over whole periods.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct Rate {
+    pub hz: f64,
+    pub high: f64,
+}
+
+impl Rate {
+    /// Whether `other` would read differently: 0.5% in frequency or half a percent
+    /// of duty.
+    pub fn differs(&self, other: &Rate) -> bool {
+        (self.hz - other.hz).abs() > self.hz.abs() * 0.005 || (self.high - other.high).abs() > 0.005
+    }
+}
+
 /// The latest edges of a session, oldest dropped first once `cap` is reached.
 #[derive(Debug, Clone)]
 pub struct Trace {
@@ -81,6 +97,41 @@ impl Trace {
         }
         self.edges.push_back(edge);
         Some(edge)
+    }
+
+    /// `gpio`'s rate over the `window_ns` before `now_ns`: from its first rising edge
+    /// there to its last, so at least two are needed; None for a pin that does not
+    /// toggle that often.
+    pub fn rate(&self, gpio: u8, now_ns: u64, window_ns: u64) -> Option<Rate> {
+        let since = now_ns.saturating_sub(window_ns);
+        let mut edges: Vec<&Edge> = self
+            .edges
+            .iter()
+            .rev()
+            .take_while(|e| e.time_ns >= since)
+            .filter(|e| e.gpio == gpio)
+            .collect();
+        edges.reverse();
+        // Rises: a high after a low (the host may repeat a level).
+        let rises: Vec<usize> = (1..edges.len())
+            .filter(|&i| edges[i].level && !edges[i - 1].level)
+            .collect();
+        let (&first, &last) = (rises.first()?, rises.last()?);
+        let (start, end) = (edges[first].time_ns, edges[last].time_ns);
+        if rises.len() < 2 || end <= start {
+            return None;
+        }
+        let mut high_ns = 0;
+        for w in edges[first..=last].windows(2) {
+            if w[0].level {
+                high_ns += w[1].time_ns - w[0].time_ns;
+            }
+        }
+        let span = (end - start) as f64;
+        Some(Rate {
+            hz: (rises.len() - 1) as f64 * 1e9 / span,
+            high: high_ns as f64 / span,
+        })
     }
 
     pub fn edges(&self) -> impl Iterator<Item = &Edge> {
@@ -144,6 +195,41 @@ impl Trace {
 
 #[cfg(test)]
 mod tests {
+    fn level(gpio: u8, level: bool, t: u64) -> PinEvent {
+        PinEvent::Level {
+            gpio,
+            level,
+            time_ns: Some(t),
+        }
+    }
+
+    #[test]
+    fn measures_how_fast_a_pin_toggles() {
+        let mut t = Trace::default();
+        // GPIO 2 at 1 kHz, high 25% of the time; GPIO 4 changes once.
+        for n in 0..10u64 {
+            t.record(&level(2, true, n * 1_000_000));
+            t.record(&level(2, true, n * 1_000_000 + 100)); // a repeated level
+            t.record(&level(2, false, n * 1_000_000 + 250_000));
+        }
+        t.record(&level(4, true, 5_000_000));
+        let r = t.rate(2, 10_000_000, 2_000_000_000).unwrap();
+        assert!((r.hz - 1000.0).abs() < 1e-6, "{r:?}");
+        assert!((r.high - 0.25).abs() < 1e-9, "{r:?}");
+        assert_eq!(t.rate(4, 10_000_000, 2_000_000_000), None);
+        assert_eq!(t.rate(9, 10_000_000, 2_000_000_000), None);
+        // Outside the window: no longer toggling.
+        assert_eq!(t.rate(2, 10_000_000_000, 2_000_000_000), None);
+        assert!(r.differs(&Rate {
+            hz: 1010.0,
+            high: 0.25
+        }));
+        assert!(!r.differs(&Rate {
+            hz: 1001.0,
+            high: 0.252
+        }));
+    }
+
     use super::*;
 
     fn out(gpio: u8, level: bool, t: u64) -> PinEvent {

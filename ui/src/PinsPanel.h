@@ -19,7 +19,9 @@ class PinsPanel : public QWidget {
 public:
     explicit PinsPanel(CoreConnection *core, QWidget *parent = nullptr);
 
-    enum Column { GpioColumn, DirectionColumn, LevelColumn, DriveColumn, ColumnCount };
+    enum Column { GpioColumn, DirectionColumn, LevelColumn, RateColumn, DriveColumn, ColumnCount };
+    // sim.pins' rate as shown: "1.00 Hz · 50% high", or empty.
+    static QString rateText(const QJsonValue &rate);
 
     QString statusText() const;
     QTreeWidget *tree() const { return m_tree; }

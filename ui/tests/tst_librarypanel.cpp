@@ -11,6 +11,9 @@
 #include <QLineEdit>
 #include <QComboBox>
 #include <QSignalSpy>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QPushButton>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -30,6 +33,40 @@ private:
     }
 
 private slots:
+    // Keep QSettings away from the real configuration; each test starts unfiltered.
+    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+    void init() { QSettings().remove(u"library"_s); }
+
+    void countsRemembersAndClearsFilters()
+    {
+        CoreConnection core;
+        {
+            LibraryPanel panel(&core);
+            panel.showLibrary(library());
+            QVERIFY(panel.countText().isEmpty()); // all shown
+            QVERIFY(panel.clearFiltersButton()->isHidden());
+            panel.filter()->setText(u"heartbeat"_s);
+            QCOMPARE(panel.countText(), u"Showing 1 of 2 projects."_s);
+            QVERIFY(!panel.clearFiltersButton()->isHidden());
+            panel.filter()->setText(u"nothing like this"_s);
+            QCOMPARE(panel.countText(), u"No project matches these filters (2 in the library)."_s);
+            panel.filter()->setText(u"heartbeat"_s);
+            panel.simulatorFilter()->setChecked(true);
+        }
+        // The next start has them back...
+        LibraryPanel panel(&core);
+        QCOMPARE(panel.filter()->text(), u"heartbeat"_s);
+        QVERIFY(panel.simulatorFilter()->isChecked());
+        panel.showLibrary(library());
+        QVERIFY(!panel.countText().isEmpty());
+        // ...and Clear filters shows everything.
+        panel.clearFiltersButton()->click();
+        QVERIFY(panel.filter()->text().isEmpty());
+        QVERIFY(!panel.simulatorFilter()->isChecked());
+        QVERIFY(panel.countText().isEmpty());
+        QVERIFY(!QSettings().value(u"library/simOnly"_s).toBool());
+    }
+
     void rendersProjects()
     {
         CoreConnection core;

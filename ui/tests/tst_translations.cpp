@@ -40,9 +40,26 @@ QList<Message> readTs(const QString &path)
             m.source = xml.readElementText();
         else if (xml.name() == "translation"_L1) {
             const QString type = xml.attributes().value("type"_L1).toString();
-            m.translation = xml.readElementText();
-            m.finished = type.isEmpty() && !m.translation.isEmpty();
-            out.append(m);
+            // A plural (%n) has one <numerusform> per form; each is checked as a
+            // translation of its own.
+            QStringList forms;
+            QString text;
+            while (!xml.atEnd()) {
+                xml.readNext();
+                if (xml.isStartElement() && xml.name() == "numerusform"_L1)
+                    forms << xml.readElementText();
+                else if (xml.isCharacters())
+                    text += xml.text();
+                else if (xml.isEndElement() && xml.name() == "translation"_L1)
+                    break;
+            }
+            if (forms.isEmpty())
+                forms << text;
+            for (const QString &form : std::as_const(forms)) {
+                m.translation = form;
+                m.finished = type.isEmpty() && !form.trimmed().isEmpty();
+                out.append(m);
+            }
         }
     }
     return xml.hasError() ? QList<Message>{} : out;
