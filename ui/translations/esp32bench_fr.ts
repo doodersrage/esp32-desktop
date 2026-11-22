@@ -2946,10 +2946,6 @@ Il reste une étape, dans les réglages de votre éditeur : lancer clangd avec c
         <translation>Partout</translation>
     </message>
     <message>
-        <source>The build failed at %1, line %2: %3</source>
-        <translation>La compilation a échoué à %1, ligne %2 : %3</translation>
-    </message>
-    <message>
         <source>Look it up on esp32bench.dev</source>
         <translation>Le chercher sur esp32bench.dev</translation>
     </message>

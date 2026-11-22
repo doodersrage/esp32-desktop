@@ -2946,10 +2946,6 @@ Falta um passo, nas configurações do seu editor: iniciar o clangd com esta op�
         <translation>Todos os lugares</translation>
     </message>
     <message>
-        <source>The build failed at %1, line %2: %3</source>
-        <translation>A compilação falhou em %1, linha %2: %3</translation>
-    </message>
-    <message>
         <source>Look it up on esp32bench.dev</source>
         <translation>Procurar em esp32bench.dev</translation>
     </message>

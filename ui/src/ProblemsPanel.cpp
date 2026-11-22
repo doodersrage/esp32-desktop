@@ -79,16 +79,8 @@ ProblemsPanel::ProblemsPanel(CoreConnection *core, QWidget *parent)
         });
     }
     connect(core, &CoreConnection::serialBacktrace, this, [this](const QJsonArray &f) { addCrash(u"serial"_s, f); });
-    connect(core, &CoreConnection::buildFirstError, this, [this](const QJsonObject &e) {
-        add(u"build"_s, QJsonArray{QJsonObject{
-                            {u"level"_s, u"problem"_s},
-                            {u"text"_s, tr("The build failed at %1, line %2: %3")
-                                            .arg(e.value(u"file"_s).toString())
-                                            .arg(e.value(u"line"_s).toInt())
-                                            .arg(e.value(u"message"_s).toString())}}});
-        if (QTreeWidgetItem *item = m_tree->topLevelItem(m_tree->topLevelItemCount() - 1))
-            item->setData(TextColumn, SearchRole, e.value(u"message"_s).toString());
-    });
+    // A build's errors come as its diagnostics (setBuildDiagnostics), each opening at its
+    // line, so its first error is not listed again here.
     // Right-click: look an error up on esp32bench.dev, by its own words only.
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_tree, &QWidget::customContextMenuRequested, this, [this](const QPoint &at) {

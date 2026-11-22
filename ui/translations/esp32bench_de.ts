@@ -2946,10 +2946,6 @@ Ein Schritt bleibt, in den Einstellungen Ihres Editors: clangd mit dieser Option
         <translation>Überall</translation>
     </message>
     <message>
-        <source>The build failed at %1, line %2: %3</source>
-        <translation>Der Build ist bei %1, Zeile %2 fehlgeschlagen: %3</translation>
-    </message>
-    <message>
         <source>Look it up on esp32bench.dev</source>
         <translation>Auf esp32bench.dev nachschlagen</translation>
     </message>
