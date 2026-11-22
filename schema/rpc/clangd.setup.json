@@ -1,0 +1,59 @@
+{
+  "method": "clangd.setup",
+  "description": "Since protocol 0.46: set up clangd for one of the user's own projects (phase 7.3), after a build for the board: write <project>/.clangd pointing at that build's compilation database (an ESP-IDF build's own; a sketch's mapped from arduino-cli's working copy to the user's files) and removing the GCC-only options clangd does not know. A .clangd the app did not write is left alone (an error says so). The result gives the --query-driver the user's editor must pass to clangd (esp32bench_build::clangd).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "board"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "description": "A local project's id."
+      },
+      "board": {
+        "type": "string"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "clangd",
+      "compilationDatabase",
+      "queryDriver"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "clangd": {
+        "type": "string",
+        "description": "The .clangd written."
+      },
+      "compilationDatabase": {
+        "type": "string",
+        "description": "The folder holding compile_commands.json."
+      },
+      "queryDriver": {
+        "type": "string",
+        "description": "The glob of the cross-compilers, for clangd's --query-driver."
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "project": "local-1b6c57715d28",
+        "board": "esp32c3-supermini"
+      },
+      "result": {
+        "clangd": "/home/u/EditLoop/.clangd",
+        "compilationDatabase": "/home/u/.cache/esp32bench/builds/local-1b6c57715d28/esp32c3-supermini/clangd",
+        "queryDriver": "/home/u/.arduino15/packages/esp32/tools/**/bin/*"
+      }
+    }
+  ]
+}

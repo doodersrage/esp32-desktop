@@ -97,6 +97,10 @@ public:
     // Show where a build line or a crash backtrace points: a library sketch's line in the
     // Code tab, else the file in the user's editor.
     void showLocation(const QJsonObject &at);
+    // clangd (phase 7.3): asked before .clangd is written into `folder` (virtual, so a
+    // test can answer), and the editor step that is left.
+    virtual bool confirmClangd(const QString &folder);
+    void showClangdSetup(const QJsonObject &result);
     // Project → Decode a crash backtrace…, against the project and board shown.
     void showBacktraceDialog();
     // View → Layout: the panels for writing code, debugging, or a real board.

@@ -19,6 +19,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 pub mod backtrace;
+pub mod clangd;
 pub mod diagnostics;
 pub mod idf;
 pub mod sketch;

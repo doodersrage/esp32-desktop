@@ -1608,3 +1608,15 @@ void CoreConnection::openInEditor(const QString &path, int line, int column, con
             emit requestFailed(u"editor.open"_s, r.errorMessage);
     });
 }
+
+void CoreConnection::setupClangd(const QString &project, const QString &board)
+{
+    m_client->call(u"clangd.setup"_s, {{u"project"_s, project}, {u"board"_s, board}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"clangd.setup"_s, r.errorMessage);
+                           return;
+                       }
+                       emit clangdReady(r.result.toObject());
+                   });
+}

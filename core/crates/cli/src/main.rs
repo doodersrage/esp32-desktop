@@ -63,6 +63,15 @@ enum Cmd {
         #[arg(long)]
         clear: bool,
     },
+    /// Set up clangd for one of your own projects after a build for the board: write
+    /// its `.clangd` (never over one of yours) and print the --query-driver your
+    /// editor must pass to clangd.
+    Clangd {
+        /// A local project's id (`local list`).
+        project: String,
+        #[arg(long)]
+        board: String,
+    },
     /// Open a file at a line in your editor, as the app's Problems list does
     /// (`main/app.c:12:5`): with --editor kate, code or a template such as
     /// "kate -l {line} -c {col} {file}", else the system's default program.
@@ -1380,6 +1389,40 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             if !kept.is_empty() {
                 println!("{kept}");
             }
+        }
+        Cmd::Clangd { project, board } => {
+            use esp32bench_build::idf;
+            esp32bench_build::safe_id(&board)?;
+            let registry = idf::Registry::new(
+                esp32bench_sim::install::data_dir()?.join("local-projects.json"),
+            );
+            let lp = registry
+                .get(&project)
+                .ok_or_else(|| esp32bench_build::Error::NoLocalProject(project.clone()))?;
+            let tools = match lp.kind {
+                idf::LocalKind::Arduino => esp32bench_distro::dirs::arduino_data()
+                    .context("no Arduino data folder")?
+                    .join("packages")
+                    .join("esp32")
+                    .join("tools"),
+                idf::LocalKind::Idf => idf::detect()
+                    .and_then(|i| idf::python_env(&i).and_then(|(_, t)| t))
+                    .or_else(|| esp32bench_distro::dirs::home().map(|h| h.join(".espressif")))
+                    .context("no ESP-IDF tools folder")?
+                    .join("tools"),
+            };
+            let base = esp32bench_library::cache_dir()?
+                .join("builds")
+                .join(&lp.id)
+                .join(&board);
+            let done =
+                esp32bench_build::clangd::setup(&lp, &base, &tools).map_err(anyhow::Error::msg)?;
+            println!("wrote {}", done.clangd.display());
+            println!(
+                "compilation database: {}",
+                done.compilation_database.display()
+            );
+            println!("give clangd: --query-driver={}", done.query_driver);
         }
         Cmd::Open { at, editor } => {
             // `file:line:col`, `file:line` or `file`: numbers taken from the end only, so a

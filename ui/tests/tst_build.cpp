@@ -25,6 +25,9 @@
 #include <QLineEdit>
 #include <QSettings>
 #include <QTreeWidget>
+#include <QMessageBox>
+#include <QTimer>
+#include <QApplication>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -38,6 +41,7 @@ public:
     QStringList buildRequests; // the consent value of each build.start, or "-"
     QStringList statusRequests; // each build.status, as project/board
     QList<QJsonObject> opened; // each editor.open's params
+    QList<QJsonObject> clangd; // each clangd.setup's params
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -73,6 +77,14 @@ private:
                                {u"target"_s, u"esp32"_s}, {u"fqbn"_s, u"esp32:esp32:esp32:FlashMode=dio"_s},
                                {u"codeSha256"_s, QString(64, u'a')},
                                {u"install"_s, QJsonArray{u"Adafruit NeoPixel"_s}}};
+        if (method == u"clangd.setup") {
+            clangd << params;
+            send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
+                     {u"result"_s, QJsonObject{{u"clangd"_s, u"/home/u/Blinky/.clangd"_s},
+                                               {u"compilationDatabase"_s, u"/c/b/clangd"_s},
+                                               {u"queryDriver"_s, u"/home/u/.arduino15/packages/esp32/tools/**/bin/*"_s}}}});
+            return;
+        }
         if (method == u"editor.open") {
             opened << params;
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id}, {u"result"_s, QJsonObject{}}});
@@ -81,7 +93,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.45.0"_s}}}});
+                                               {u"protocol"_s, u"0.46.0"_s}}}});
         } else if (method == u"build.status") {
             statusRequests << params.value(u"project"_s).toString() + u"/"_s + params.value(u"board"_s).toString();
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
@@ -137,6 +149,13 @@ public:
         ++asked;
         askedPlan = plan;
         return answer;
+    }
+    bool clangdAnswer = false;
+    int clangdAsked = 0;
+    bool confirmClangd(const QString &) override
+    {
+        ++clangdAsked;
+        return clangdAnswer;
     }
 };
 
@@ -278,6 +297,36 @@ private slots:
         for (int i = 0; i < tree->topLevelItemCount(); ++i)
             left += tree->topLevelItem(i)->data(ProblemsPanel::TextColumn, ProblemsPanel::DiagnosticRole).toBool() ? 1 : 0;
         QCOMPARE(left, 0);
+    }
+
+    // clangd for the user's own project: asked first, then the editor's step shown.
+    void setsUpClangdAfterAsking()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        AnsweringWindow window(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        emit window.projectView()->clangdRequested(u"local-1"_s, u"esp32"_s, u"/home/u/Blinky"_s);
+        QCOMPARE(window.clangdAsked, 1);
+        QTest::qWait(100);
+        QVERIFY(fake.clangd.isEmpty()); // declined: nothing written
+        window.clangdAnswer = true;
+        // The dialog runs its own loop: a timer, firing inside it, reads and closes it.
+        QString shown;
+        QTimer closer;
+        connect(&closer, &QTimer::timeout, this, [&] {
+            if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
+                shown = box->informativeText();
+                box->close();
+            }
+        });
+        closer.start(20);
+        emit window.projectView()->clangdRequested(u"local-1"_s, u"esp32"_s, u"/home/u/Blinky"_s);
+        QTRY_COMPARE(fake.clangd.size(), 1);
+        QCOMPARE(fake.clangd.at(0).value(u"board"_s).toString(), u"esp32"_s);
+        QTRY_COMPARE(shown, u"--query-driver=/home/u/.arduino15/packages/esp32/tools/**/bin/*"_s);
     }
 
     void countsAndFiltersProblems()

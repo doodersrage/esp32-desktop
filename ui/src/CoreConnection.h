@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 45;
+    static constexpr int ProtocolMinor = 46;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -230,6 +230,9 @@ public:
     // editor.open: a file at a line in the user's editor (`editor`: kate, code, a
     // template, or empty for the system's default); a failure is a requestFailed.
     void openInEditor(const QString &path, int line, int column, const QString &editor);
+    // clangd.setup: a .clangd in a local project for its build for `board`
+    // (clangdReady with the result, else requestFailed).
+    void setupClangd(const QString &project, const QString &board);
     // circuit.pinNotes: a board's pins to be careful with (pinNotesListed).
     void getPinNotes(const QString &board);
     // circuit.export / circuit.import: a board's parts to or from a file.
@@ -287,6 +290,8 @@ signals:
     void buildFinished(bool ok, const QString &error, const QString &image);
     // Every error and warning of the build that finished (build.finished's diagnostics).
     void buildDiagnostics(const QJsonArray &diagnostics);
+    // clangd.setup's result: {clangd, compilationDatabase, queryDriver}.
+    void clangdReady(const QJsonObject &result);
     // Serial monitor.
     void serialOpened(const QString &path, int baud);
     // `shown`: the text without colour codes (protocol 0.27; undefined from older

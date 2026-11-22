@@ -111,6 +111,8 @@ protected:
 signals:
     // A local project's file to open in the user's editor ({file, path, line}).
     void editRequested(const QJsonObject &at);
+    // Set up clangd for a local project's build for `board` (in its folder `path`).
+    void clangdRequested(const QString &project, const QString &board, const QString &path);
     // A click beside line `line` of the sketch shown (the Code tab's gutter).
     void codeLineClicked(int line);
     // Run to this line, from the Code tab's right-click menu.

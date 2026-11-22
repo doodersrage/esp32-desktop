@@ -106,6 +106,8 @@ pub fn plan(project: &str, path: &Path, board: &str, target: &str) -> Result<Pla
 pub struct Dirs {
     pub build: PathBuf,
     pub out: PathBuf,
+    /// The compilation database mapped to the user's files, for clangd (`crate::clangd`).
+    pub clangd: PathBuf,
 }
 
 impl Dirs {
@@ -114,6 +116,7 @@ impl Dirs {
         Dirs {
             build: base.join("build"),
             out: base.join("out"),
+            clangd: base.join("clangd"),
         }
     }
 }
@@ -160,7 +163,10 @@ pub async fn run(
     tokio::fs::create_dir_all(&dirs.build).await?;
     tokio::fs::create_dir_all(&dirs.out).await?;
     tokio::fs::create_dir_all(&tools.sketchbook).await?;
-    step(tools, "compiling", compile_args(plan, dirs), &mut log).await?;
+    let compiled = step(tools, "compiling", compile_args(plan, dirs), &mut log).await;
+    // For clangd, whether or not it compiled: a failed build is when it helps most.
+    crate::clangd::write_sketch_database(&dirs.build, &plan.path, &dirs.clangd);
+    compiled?;
     let name = plan
         .path
         .file_name()

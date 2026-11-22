@@ -75,9 +75,11 @@ case "$1" in
       echo "/tmp/x/blink/blink.ino:12:3: error: 'ledd' was not declared in this scope" >&2
       exit 1
     fi
-    out=""; prev=""
-    for a in "$@"; do [ "$prev" = "--output-dir" ] && out="$a"; prev="$a"; last="$a"; done
+    out=""; build=""; prev=""
+    for a in "$@"; do [ "$prev" = "--output-dir" ] && out="$a"; [ "$prev" = "--build-path" ] && build="$a"; prev="$a"; last="$a"; done
     name=$(basename "$last")
+    # A compilation database naming the working copy, as arduino-cli writes one.
+    [ -n "$build" ] && mkdir -p "$build" && printf '[{"directory":"/x","file":"%s/sketch/%s.ino.cpp","arguments":["g++","-c","%s/sketch/%s.ino.cpp"]}]' "$build" "$name" "$build" "$name" > "$build/compile_commands.json"
     echo "Sketch uses 1234 bytes (1%) of program storage space. Maximum is 1310720 bytes."
     echo "Global variables use 2048 bytes (0%) of dynamic memory, leaving 325632 bytes for local variables. Maximum is 327680 bytes."
     : > "$out/$name.ino.merged.bin"; : > "$out/$name.ino.elf" ;;
@@ -4799,4 +4801,49 @@ async fn arduino_sketches_open_and_build_in_place() {
         .collect();
     names.sort();
     assert_eq!(names, ["Blinky.ino", "pins.h"]);
+
+    // clangd (7.3): a .clangd pointing at the build's database, mapped to the sketch.
+    let r = c
+        .call("clangd.setup", json!({ "project": id, "board": "esp32" }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("clangd.setup")["result"],
+        &r,
+        "clangd.setup result",
+    );
+    let dot = std::fs::read_to_string(sketch.join(".clangd")).unwrap();
+    assert!(dot.starts_with("# Written by ESP32 Bench"), "{dot}");
+    let db_dir = std::path::PathBuf::from(r["compilationDatabase"].as_str().unwrap());
+    let db: Value =
+        serde_json::from_slice(&std::fs::read(db_dir.join("compile_commands.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        db[0]["file"],
+        sketch
+            .canonicalize()
+            .unwrap()
+            .join("Blinky.ino")
+            .to_string_lossy()
+            .as_ref()
+    );
+    assert!(
+        r["queryDriver"].as_str().unwrap().ends_with("/**/bin/*"),
+        "{r}"
+    );
+    // A .clangd of the user's own is left alone; a board never built is refused.
+    std::fs::write(sketch.join(".clangd"), "CompileFlags:\n  Add: [-DMINE]\n").unwrap();
+    for (board, why) in [("esp32", "already there"), ("esp32s3", "once first")] {
+        match c
+            .call("clangd.setup", json!({ "project": id, "board": board }))
+            .await
+        {
+            Err(ClientError::Rpc(e)) => assert!(e.message.contains(why), "{}", e.message),
+            other => panic!("{board}: {other:?}"),
+        }
+    }
+    assert_eq!(
+        std::fs::read_to_string(sketch.join(".clangd")).unwrap(),
+        "CompileFlags:\n  Add: [-DMINE]\n"
+    );
 }

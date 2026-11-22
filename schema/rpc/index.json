@@ -1,5 +1,5 @@
 {
-  "protocol": "0.45.0",
+  "protocol": "0.46.0",
   "description": "JSON-RPC methods between the esp32bench UI and core. See docs/rpc.md.",
   "methods": [
     "backtrace.decode",
@@ -20,6 +20,7 @@
     "circuit.pinNotes",
     "circuit.set",
     "circuit.suggest",
+    "clangd.setup",
     "commands.get",
     "commands.set",
     "console.save",

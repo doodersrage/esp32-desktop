@@ -500,9 +500,15 @@ private slots:
         // Its source files, from local.get, to open in the user's editor.
         QVERIFY(!view.editButton()->isHidden());
         QStringList files;
-        for (QAction *a : view.editButton()->menu()->actions())
+        const QList<QAction *> items = view.editButton()->menu()->actions();
+        for (QAction *a : items) {
+            if (a->isSeparator())
+                break;
             files << a->text();
+        }
         QCOMPARE(files, (QStringList{u"CMakeLists.txt"_s, u"main/CMakeLists.txt"_s, u"main/blinky.c"_s}));
+        // After them, clangd for the board shown.
+        QVERIFY(items.last()->text().contains(u"clangd"_s));
         QVERIFY(!view.buildButton()->isHidden());
         QCOMPARE(selected.last(), (QStringList{u"local-3f9a0c21b4de"_s, u"esp32"_s}));
         view.boardPicker()->setCurrentIndex(2);

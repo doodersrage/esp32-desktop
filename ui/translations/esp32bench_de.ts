@@ -2115,6 +2115,10 @@ Das Build-Fenster unten hat das ganze Protokoll.</translation>
         <translation>%1 · %2</translation>
     </message>
     <message>
+        <source>clangd was not set up: %1</source>
+        <translation>clangd wurde nicht eingerichtet: %1</translation>
+    </message>
+    <message>
         <source>Could not open the file in the editor: %1
 Tools → Preferences chooses the editor.</source>
         <translation>Die Datei ließ sich nicht im Editor öffnen: %1
@@ -2519,6 +2523,30 @@ Code-SHA-256: %2</translation>
     <message>
         <source>Erase</source>
         <translation>Löschen</translation>
+    </message>
+    <message>
+        <source>Set up clangd</source>
+        <translation>clangd einrichten</translation>
+    </message>
+    <message>
+        <source>Write a .clangd file into %1? It tells clangd how the project&apos;s last build for this board compiled, so your editor can complete and check its code. A .clangd of your own is left as it is.</source>
+        <translation>Eine .clangd-Datei in %1 schreiben? Sie sagt clangd, wie der letzte Build des Projekts für dieses Board kompiliert wurde, damit Ihr Editor den Code vervollständigen und prüfen kann. Eine eigene .clangd bleibt, wie sie ist.</translation>
+    </message>
+    <message>
+        <source>clangd is set up</source>
+        <translation>clangd ist eingerichtet</translation>
+    </message>
+    <message>
+        <source>Wrote %1.
+
+One step is left, in your editor&apos;s settings: start clangd with this option, so it finds the ESP32 compilers and their headers:</source>
+        <translation>%1 geschrieben.
+
+Ein Schritt bleibt, in den Einstellungen Ihres Editors: clangd mit dieser Option starten, damit es die ESP32-Compiler und ihre Header findet:</translation>
+    </message>
+    <message>
+        <source>Copy the option</source>
+        <translation>Option kopieren</translation>
     </message>
 </context>
 <context>
@@ -3185,6 +3213,10 @@ Doppelklicken, um die Zeile zu sehen.</translation>
     <message>
         <source>Open folder</source>
         <translation>Ordner öffnen</translation>
+    </message>
+    <message>
+        <source>Set up clangd for this board…</source>
+        <translation>clangd für dieses Board einrichten…</translation>
     </message>
     <message>
         <source>Build this sketch for the selected board with arduino-cli</source>

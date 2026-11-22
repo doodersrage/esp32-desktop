@@ -51,6 +51,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QToolButton>
+#include <QClipboard>
 #include <QMessageBox>
 #include <memory>
 #include <QProgressBar>
@@ -248,8 +249,17 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_problemsDock->setWidget(m_problems);
     connect(m_problems, &ProblemsPanel::locationActivated, this, &MainWindow::showLocation);
     connect(m_project, &ProjectView::editRequested, this, &MainWindow::showLocation);
+    // clangd: the app writes .clangd only after asking, as it is the user's folder.
+    connect(m_project, &ProjectView::clangdRequested, this,
+            [this](const QString &project, const QString &board, const QString &path) {
+                if (confirmClangd(path))
+                    m_core->setupClangd(project, board);
+            });
+    connect(core, &CoreConnection::clangdReady, this, &MainWindow::showClangdSetup);
     connect(core, &CoreConnection::buildDiagnostics, m_problems, &ProblemsPanel::setBuildDiagnostics);
     connect(core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
+        if (method == u"clangd.setup")
+            m_messages->showError(tr("clangd was not set up: %1").arg(message));
         if (method == u"editor.open")
             m_messages->showError(tr("Could not open the file in the editor: %1\nTools → Preferences chooses the "
                                      "editor.")
@@ -1639,4 +1649,32 @@ void MainWindow::freePort(const QString &port)
         m_reopenSerial = port;
         m_core->closeSerial();
     }
+}
+
+bool MainWindow::confirmClangd(const QString &folder)
+{
+    return QMessageBox::question(
+               this, tr("Set up clangd"),
+               tr("Write a .clangd file into %1? It tells clangd how the project's last build for this board "
+                  "compiled, so your editor can complete and check its code. A .clangd of your own is left as it is.")
+                   .arg(QDir::toNativeSeparators(folder)))
+           == QMessageBox::Yes;
+}
+
+void MainWindow::showClangdSetup(const QJsonObject &result)
+{
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Information);
+    box.setWindowTitle(tr("clangd is set up"));
+    box.setText(tr("Wrote %1.\n\nOne step is left, in your editor's settings: start clangd with this option, so it "
+                   "finds the ESP32 compilers and their headers:")
+                    .arg(QDir::toNativeSeparators(result.value(u"clangd"_s).toString())));
+    const QString option = u"--query-driver="_s + result.value(u"queryDriver"_s).toString();
+    box.setInformativeText(option);
+    box.setTextInteractionFlags(Qt::TextSelectableByMouse);
+    QPushButton *copy = box.addButton(tr("Copy the option"), QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Close);
+    box.exec();
+    if (box.clickedButton() == copy)
+        QGuiApplication::clipboard()->setText(option);
 }

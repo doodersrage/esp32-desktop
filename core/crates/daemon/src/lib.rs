@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.45.0";
+pub const PROTOCOL: &str = "0.46.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -553,6 +553,13 @@ pub fn router(state: Arc<State>) -> Router {
         .method("plot.save", |p, _| async move { plot_save(p).await })
         .method("frame.save", |p, _| async move { frame_save(p).await })
         .method("editor.open", |p, _| async move { editor_open(p) })
+        .method("clangd.setup", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { clangd_setup(p, s).await }
+            }
+        })
         .method("library.star", {
             let s = stars.clone();
             move |p, _| {
@@ -2690,6 +2697,39 @@ struct FrameSaveParams {
 }
 
 /// Write a picture (as sim.frame carries one) to `path` as PNG.
+/// clangd.setup: a `.clangd` in the user's project pointing at its last build's
+/// compilation database for the board, and the --query-driver their editor needs
+/// (esp32bench_build::clangd). Only for the user's own projects, after a build.
+async fn clangd_setup(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    use esp32bench_build::idf;
+    let p: BuildParams = parse_params(params)?;
+    esp32bench_build::safe_id(&p.board).map_err(build_error)?;
+    let project = state
+        .local
+        .get(&p.project)
+        .ok_or_else(|| build_error(esp32bench_build::Error::NoLocalProject(p.project.clone())))?;
+    let tools = match project.kind {
+        idf::LocalKind::Arduino => state
+            .arduino_data
+            .join("packages")
+            .join("esp32")
+            .join("tools"),
+        idf::LocalKind::Idf => idf_tools(state.idf()),
+    };
+    let base = state.builds_root.join(&project.id).join(&p.board);
+    let done = esp32bench_build::clangd::setup(&project, &base, &tools)
+        .map_err(|e| RpcError::new(code::FAILED, e))?;
+    Ok(json!(done))
+}
+
+/// ESP-IDF's tools folder (`$IDF_TOOLS_PATH/tools`, as recorded, else `~/.espressif/tools`).
+fn idf_tools(idf: Option<esp32bench_build::idf::Idf>) -> PathBuf {
+    idf.and_then(|i| esp32bench_build::idf::python_env(&i).and_then(|(_, t)| t))
+        .or_else(|| esp32bench_distro::dirs::home().map(|h| h.join(".espressif")))
+        .unwrap_or_default()
+        .join("tools")
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EditorOpenParams {

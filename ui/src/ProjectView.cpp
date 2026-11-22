@@ -647,6 +647,14 @@ void ProjectView::showLocal(const QJsonObject &result)
             emit editRequested(QJsonObject{{u"file"_s, rel}, {u"path"_s, QDir(path).filePath(rel)}, {u"line"_s, 1}});
         });
     }
+    if (exists && !m_edit->menu()->isEmpty()) {
+        // clangd in the user's editor: a .clangd pointing at this board's build.
+        m_edit->menu()->addSeparator();
+        m_edit->menu()->addAction(QIcon::fromTheme(u"configure"_s), tr("Set up clangd for this board…"), this, [this] {
+            emit clangdRequested(m_project.value(u"id"_s).toString(), m_board->currentData().toString(),
+                                 m_project.value(u"path"_s).toString());
+        });
+    }
     m_edit->setVisible(exists && !m_edit->menu()->isEmpty());
     setBuildToolTip(sketch ? tr("Build this sketch for the selected board with arduino-cli")
                            : tr("Build this project for the selected chip with ESP-IDF"));
