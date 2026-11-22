@@ -88,6 +88,8 @@ public:
     // Help → Keyboard shortcuts' text (rich text), and its dialog.
     QString shortcutsText() const;
     void showShortcuts();
+    // The kept breakpoints on the sketch shown, as dots beside its lines.
+    void showBreakpointLines();
     // Help → Report a problem: a new GitHub issue with the versions filled in.
     QUrl problemReportUrl() const;
     // The app, core, system, Qt and tool versions, as "- name: version" lines.
@@ -142,6 +144,7 @@ private:
     DevicesPanel *m_devices;
     LibraryPanel *m_library = nullptr;
     ProjectView *m_project = nullptr;
+    bool m_expectAlerted = false;
     QSplitter *m_split = nullptr;
     QDockWidget *m_devicesDock;
     QDockWidget *m_buildDock = nullptr;

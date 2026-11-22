@@ -11,6 +11,9 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QPushButton>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QImage>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -55,7 +58,7 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello")
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.30.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.32.0"_s}});
         else if (m == u"frame.save") {
             saved = req.value(u"params"_s).toObject();
             reply(id, QJsonObject{{u"path"_s, saved.value(u"path"_s)}, {u"bytes"_s, 1}});
@@ -114,6 +117,14 @@ private slots:
         QCOMPARE(rgb.size(), 320 * 240 * 3);
         QCOMPARE(rgb.left(3), QByteArray("\xff\x00\x00", 3));
         QTRY_VERIFY(panel.statusText().contains(u"/tmp/panel.png"_s));
+        // Another dock's picture saved through the same call is not claimed here.
+        core.saveFrame(u"/tmp/plot.png"_s, QImage(8, 8, QImage::Format_RGB888));
+        QTest::qWait(100);
+        QVERIFY(!panel.statusText().contains(u"/tmp/plot.png"_s));
+        // Copy picture: the picture as it is, on the clipboard.
+        QVERIFY(panel.copyButton()->isEnabled());
+        panel.copyButton()->click();
+        QCOMPARE(QGuiApplication::clipboard()->image().size(), QSize(320, 240));
 
         // Bad frames are ignored rather than drawn wrong.
         fake.frame(4, 4, u"rgb565"_s);

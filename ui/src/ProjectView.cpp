@@ -1,5 +1,7 @@
 #include "ProjectView.h"
 
+#include "CodeView.h"
+
 #include "CoreConnection.h"
 #include "Labels.h"
 
@@ -27,6 +29,7 @@
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QTabWidget>
+#include <QTextBlock>
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -174,8 +177,12 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     m_tabs->addTab(wiringPage, tr("Wiring"));
 
     auto *codePage = new QWidget(m_tabs);
-    m_code = readOnlyText(codePage, true);
+    m_code = new CodeView(codePage);
     m_code->setAccessibleName(tr("Code"));
+    connect(m_code, &CodeView::gutterClicked, this, [this](int line) {
+        if (!currentProjectId().isEmpty() && !m_copyCode->isHidden())
+            emit codeLineClicked(line);
+    });
     m_copyCode = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), tr("Copy code"), codePage);
     m_copyCode->setToolTip(tr("Copy the sketch, to paste it into the Arduino IDE"));
     connect(m_copyCode, &QPushButton::clicked, this, [this] { QGuiApplication::clipboard()->setText(m_code->toPlainText()); });
@@ -297,6 +304,29 @@ void ProjectView::setTryAvailable(bool available)
     m_tryAvailable = available;
     if (m_stack->currentIndex() == 0 && m_placeholder->isEnabled())
         m_try->setVisible(available);
+}
+
+bool ProjectView::showCodeLine(int line)
+{
+    if (currentProjectId().isEmpty() || m_copyCode->isHidden() || line < 1)
+        return false;
+    const QTextBlock block = m_code->document()->findBlockByNumber(line - 1);
+    if (!block.isValid())
+        return false;
+    m_tabs->setCurrentIndex(CodeTab);
+    QTextCursor c(block);
+    c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    m_code->setTextCursor(c);
+    m_code->centerCursor();
+    m_code->setFocus(Qt::OtherFocusReason);
+    return true;
+}
+
+void ProjectView::showPausedLine(int line)
+{
+    m_code->setPausedLine(line);
+    if (line > 0)
+        m_tabs->setCurrentIndex(CodeTab);
 }
 
 QString ProjectView::currentProjectId() const
@@ -602,6 +632,7 @@ void ProjectView::showBuild(int index)
     m_code->setPlainText(code.isString()
                              ? code.toString()
                              : tr("This project ships as prebuilt firmware, so there is no sketch to show."));
+    m_code->setPausedLine(0); // another board's sketch
     QStringList sample;
     for (const QJsonValue &v : b.value(u"sample"_s).toArray())
         sample << v.toString();

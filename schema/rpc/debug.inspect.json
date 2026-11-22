@@ -68,6 +68,34 @@
             }
           }
         }
+      },
+      "locals": {
+        "type": "array",
+        "maxItems": 64,
+        "description": "Since protocol 0.32: the innermost frame's arguments and local variables, at most 64; empty where it has no debug information. value is absent for values GDB does not print simply (structs, arrays).",
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "arg": {
+              "const": true,
+              "description": "An argument of the function."
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   },
@@ -97,6 +125,23 @@
           {
             "name": "ar0",
             "value": "0x800d2b44"
+          }
+        ],
+        "locals": [
+          {
+            "name": "pin",
+            "type": "int",
+            "arg": true,
+            "value": "2"
+          },
+          {
+            "name": "now",
+            "type": "unsigned long",
+            "value": "1500"
+          },
+          {
+            "name": "reading",
+            "type": "Reading"
           }
         ]
       }

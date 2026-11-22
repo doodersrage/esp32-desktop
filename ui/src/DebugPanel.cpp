@@ -19,6 +19,7 @@ using namespace Qt::StringLiterals;
 
 namespace {
 constexpr int NumberRole = Qt::UserRole + 1;
+constexpr int LocationRole = Qt::UserRole + 2;
 }
 
 DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
@@ -37,7 +38,12 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     , m_breakpoints(new QListWidget(this))
     , m_stack(new QTreeWidget(this))
     , m_registers(new QTreeWidget(this))
+    , m_locals(new QTreeWidget(this))
 {
+    m_locals->setAccessibleName(tr("Local variables"));
+    m_locals->setHeaderLabels({tr("Variable"), tr("Value"), tr("Type")});
+    m_locals->setRootIsDecorated(false);
+    m_locals->setToolTip(tr("The arguments and local variables of the function the firmware stopped in"));
     m_location->setAccessibleName(tr("Breakpoint location"));
     m_breakpoints->setAccessibleName(tr("Breakpoints"));
     m_stack->setAccessibleName(tr("Call stack"));
@@ -95,13 +101,21 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     stackLayout->addWidget(new QLabel(tr("Call stack"), stackBox));
     stackLayout->addWidget(m_stack, 1);
 
+    auto *localsBox = new QWidget(this);
+    auto *localsLayout = new QVBoxLayout(localsBox);
+    localsLayout->setContentsMargins(0, 0, 0, 0);
+    localsLayout->addWidget(new QLabel(tr("Local variables"), localsBox));
+    localsLayout->addWidget(m_locals, 1);
+    m_locals->setFont(fixed);
+    m_locals->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+
     auto *splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(bpBox);
     splitter->addWidget(stackBox);
+    splitter->addWidget(localsBox);
     splitter->addWidget(m_registers);
-    splitter->setStretchFactor(0, 1);
-    splitter->setStretchFactor(1, 1);
-    splitter->setStretchFactor(2, 1);
+    for (int i = 0; i < 4; ++i)
+        splitter->setStretchFactor(i, 1);
     // Wide enough for a register's name and a 32-bit value, and a function and its file.
     m_registers->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_registers->setMinimumWidth(m_registers->fontMetrics().averageCharWidth() * 26);
@@ -117,7 +131,18 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
         m_breakpoints->clear();
         m_stack->clear();
         m_registers->clear();
+        m_locals->clear();
         setMode(Mode::Paused);
+        // The kept breakpoints, set while the firmware has not started yet.
+        m_restoring = int(m_kept.size());
+        for (const QString &loc : std::as_const(m_kept))
+            m_core->debugBreak(loc);
+    });
+    connect(m_core, &CoreConnection::breakpointsListed, this, [this](const QString &project, const QStringList &list) {
+        if (project != m_project || m_mode != Mode::Off)
+            return;
+        m_kept = list;
+        emit breakpointsChanged();
     });
     connect(m_core, &CoreConnection::debugStopped, this, &DebugPanel::stopped);
     connect(m_core, &CoreConnection::debugRunning, this, [this] {
@@ -127,29 +152,46 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     connect(m_core, &CoreConnection::debugExited, this, [this] {
         m_status->setText(tr("GDB has stopped; the simulator keeps running without the debugger."));
         setMode(Mode::Off);
+        m_core->getBreakpoints(m_project); // the project shown may have changed meanwhile
     });
     connect(m_core, &CoreConnection::simStopped, this, [this] {
         if (m_mode == Mode::Off)
             return;
         m_status->setText(tr("The simulator has stopped."));
         setMode(Mode::Off);
+        m_core->getBreakpoints(m_project);
     });
-    connect(m_core, &CoreConnection::breakpointSet, this, [this](const QJsonObject &bp) {
+    connect(m_core, &CoreConnection::breakpointSet, this, [this](const QJsonObject &bp, const QString &location) {
         const int number = bp.value(u"number"_s).toInt();
         auto *item = new QListWidgetItem(tr("%1: %2").arg(number).arg(where(bp)), m_breakpoints);
         item->setData(NumberRole, number);
+        item->setData(LocationRole, location);
         item->setToolTip(bp.value(u"file"_s).toString());
+        if (m_restoring > 0) {
+            --m_restoring; // one of the kept ones
+            return;
+        }
         m_location->clear();
+        if (!location.isEmpty() && !m_kept.contains(location))
+            keep(m_kept + QStringList{location});
     });
     connect(m_core, &CoreConnection::breakpointDeleted, this, [this](int number) {
         for (int i = 0; i < m_breakpoints->count(); ++i) {
-            if (m_breakpoints->item(i)->data(NumberRole).toInt() == number)
-                delete m_breakpoints->takeItem(i);
+            if (m_breakpoints->item(i)->data(NumberRole).toInt() != number)
+                continue;
+            const QString location = m_breakpoints->item(i)->data(LocationRole).toString();
+            delete m_breakpoints->takeItem(i);
+            QStringList left = m_kept;
+            left.removeAll(location);
+            keep(left);
+            break;
         }
         setMode(m_mode);
     });
     connect(m_core, &CoreConnection::debugInspected, this, &DebugPanel::showInspection);
     connect(m_core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
+        if (method == u"debug.break" && m_restoring > 0)
+            --m_restoring; // a kept one that no longer fits the build; it stays kept
         if (method.startsWith(u"debug."))
             m_status->setText(tr("Debugger: %1").arg(message));
     });
@@ -161,6 +203,48 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
 QString DebugPanel::statusText() const
 {
     return m_status->text();
+}
+
+void DebugPanel::setProject(const QString &project)
+{
+    if (project == m_project)
+        return;
+    m_project = project;
+    if (m_mode == Mode::Off) {
+        m_kept.clear();
+        emit breakpointsChanged();
+        m_core->getBreakpoints(project);
+    }
+}
+
+void DebugPanel::keep(const QStringList &locations)
+{
+    m_kept = locations;
+    m_core->setBreakpoints(m_project, m_kept);
+    emit breakpointsChanged();
+}
+
+bool DebugPanel::toggleBreakpoint(const QString &location)
+{
+    if (m_mode == Mode::Running) {
+        m_status->setText(tr("Pause the firmware first: GDB changes breakpoints only while it is stopped."));
+        return false;
+    }
+    if (m_mode == Mode::Paused) {
+        for (int i = 0; i < m_breakpoints->count(); ++i) {
+            if (m_breakpoints->item(i)->data(LocationRole).toString() == location) {
+                m_core->debugDelete(m_breakpoints->item(i)->data(NumberRole).toInt());
+                return true;
+            }
+        }
+        m_core->debugBreak(location);
+        return true;
+    }
+    QStringList list = m_kept;
+    if (!list.removeAll(location))
+        list << location;
+    keep(list);
+    return true;
 }
 
 void DebugPanel::addBreakpoint()
@@ -199,8 +283,22 @@ void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int br
     m_core->debugInspect();
 }
 
-void DebugPanel::showInspection(const QJsonArray &frames, const QJsonArray &registers)
+void DebugPanel::showInspection(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals)
 {
+    m_locals->clear();
+    for (const QJsonValue &v : locals) {
+        const QJsonObject l = v.toObject();
+        auto *item = new QTreeWidgetItem(m_locals);
+        item->setText(0, l.value(u"arg"_s).toBool() ? tr("%1 (argument)").arg(l.value(u"name"_s).toString())
+                                                    : l.value(u"name"_s).toString());
+        if (l.contains(u"value"_s)) {
+            item->setText(1, l.value(u"value"_s).toString());
+        } else {
+            item->setText(1, tr("…"));
+            item->setToolTip(1, tr("GDB shows this kind of value (a structure or an array) only in parts"));
+        }
+        item->setText(2, l.value(u"type"_s).toString());
+    }
     m_stack->clear();
     for (const QJsonValue &v : frames) {
         const QJsonObject f = v.toObject();
@@ -236,5 +334,6 @@ void DebugPanel::setMode(Mode mode)
     if (mode == Mode::Running) {
         m_stack->clear();
         m_registers->clear();
+        m_locals->clear();
     }
 }

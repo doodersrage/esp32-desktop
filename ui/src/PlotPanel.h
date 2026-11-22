@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <QImage>
+
 #include <QHash>
 #include <QRectF>
 #include <QSet>
@@ -62,6 +64,11 @@ public:
     // Have the core write them to `path` as CSV (plot.save); Save CSV… asks for it.
     void saveTo(const QString &path);
     QPushButton *saveButton() const { return m_save; }
+    QPushButton *savePictureButton() const { return m_savePicture; }
+    // The plot as drawn, at most 4096 pixels a side (frame.save's limit).
+    QImage picture() const;
+    // Have the core write it to `path` as PNG (frame.save); Save picture… asks for it.
+    void savePictureTo(const QString &path);
     static constexpr int KeptRows = 100000;
 
 signals:
@@ -75,6 +82,8 @@ private:
     QCheckBox *m_pause;
     QPushButton *m_clear;
     QPushButton *m_save;
+    QPushButton *m_savePicture = nullptr;
+    QString m_savingTo;
     QList<QJsonValue> m_rows; // QList drops its first item cheaply
     bool m_seen = false;
 

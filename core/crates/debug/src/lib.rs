@@ -387,6 +387,32 @@ impl Gdb {
         self.command(cmd).await.map(|_| ())
     }
 
+    /// The innermost frame's arguments and local variables, at most 64: name, type,
+    /// whether it is an argument, and the value of those GDB prints simply (numbers,
+    /// pointers, enums; not structs or arrays). Empty where there is no debug
+    /// information (GDB says "No symbol table info available").
+    pub async fn locals(&mut self) -> Result<Vec<Local>, Error> {
+        let r = match self.command("-stack-list-variables --simple-values").await {
+            Ok(r) => r,
+            Err(Error::Gdb(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+        Ok(r["variables"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .take(64)
+            .filter_map(|v| {
+                Some(Local {
+                    name: v["name"].as_str()?.to_owned(),
+                    kind: v["type"].as_str().unwrap_or("").to_owned(),
+                    arg: v["arg"].as_str() == Some("1"),
+                    value: v["value"].as_str().map(str::to_owned),
+                })
+            })
+            .collect())
+    }
+
     pub async fn frames(&mut self) -> Result<Value, Error> {
         Ok(self.command("-stack-list-frames 0 31").await?["stack"].clone())
     }
@@ -428,6 +454,19 @@ impl Gdb {
         }
         Ok(out)
     }
+}
+
+/// An argument or local variable of the frame the firmware stopped in.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Local {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub arg: bool,
+    /// Absent for values GDB does not print simply (structs, arrays).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
 }
 
 /// Registers shown by [`Gdb::registers`], by their GDB names on Xtensa and RISC-V.

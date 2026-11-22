@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.30.0";
+pub const PROTOCOL: &str = "0.32.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -37,6 +37,8 @@ pub struct State {
     /// Open serial ports by (connection, subscription): subscription ids are only
     /// unique within a connection.
     serial_ports: std::sync::Mutex<HashMap<(u64, u64), SharedPort>>,
+    /// Each open port's recording to a file (serial.record), if one is running.
+    serial_records: std::sync::Mutex<HashMap<(u64, u64), SharedRecording>>,
     /// Ports serial.open may open instead of those device.list reports (tests).
     pub serial_allow: Option<Vec<PathBuf>>,
     /// How long a port opened with `reconnect` is waited for after it goes away.
@@ -62,6 +64,9 @@ pub struct State {
     pub known_boards: esp32bench_device::Known,
     /// Lines sent often, per project (commands.get/commands.set).
     pub commands: esp32bench_library::commands::Commands,
+    /// Breakpoints kept per project (breakpoints.get/breakpoints.set), in the same
+    /// format: an object from project id to its locations.
+    pub breakpoints: esp32bench_library::commands::Commands,
     /// ESP-IDF to use instead of detecting one (tests).
     pub idf_path: Option<PathBuf>,
 }
@@ -78,6 +83,7 @@ pub struct FlashPlan {
 }
 
 type SharedPort = Arc<std::sync::Mutex<esp32bench_serial::Port>>;
+type SharedRecording = Arc<std::sync::Mutex<Option<esp32bench_serial::record::Recording>>>;
 type SharedTrace = Arc<std::sync::Mutex<esp32bench_sim::trace::Trace>>;
 
 /// How many simulations' traces sim.traceSave can still reach.
@@ -101,6 +107,12 @@ impl Drop for PortEntry {
             .lock()
             .unwrap_or_else(|p| p.into_inner());
         ports.remove(&self.key);
+        drop(ports);
+        self.state
+            .serial_records
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&self.key);
     }
 }
 
@@ -121,6 +133,7 @@ impl State {
             arduino_cli: None,
             build_lock: tokio::sync::Mutex::new(()),
             serial_ports: std::sync::Mutex::new(HashMap::new()),
+            serial_records: std::sync::Mutex::new(HashMap::new()),
             serial_allow: None,
             serial_reconnect_for: std::time::Duration::from_secs(30),
             arduino_data: esp32bench_toolchain::Env::default_arduino_data()
@@ -151,6 +164,11 @@ impl State {
                 esp32bench_sim::install::data_dir()
                     .map(|d| d.join("commands.json"))
                     .unwrap_or_else(|_| PathBuf::from("esp32bench-commands.json")),
+            ),
+            breakpoints: esp32bench_library::commands::Commands::new(
+                esp32bench_sim::install::data_dir()
+                    .map(|d| d.join("breakpoints.json"))
+                    .unwrap_or_else(|_| PathBuf::from("esp32bench-breakpoints.json")),
             ),
             idf_path: None,
         }
@@ -300,6 +318,13 @@ pub fn router(state: Arc<State>) -> Router {
             let s = s7.clone();
             async move { serial_reset(p, ctx, s).await }
         })
+        .method("serial.record", {
+            let s = stars.clone();
+            move |p, ctx| {
+                let s = s.clone();
+                async move { serial_record(p, ctx, s).await }
+            }
+        })
         .method("build.start", move |p, ctx| {
             let s = s4.clone();
             async move { build_start(p, ctx, s).await }
@@ -333,6 +358,20 @@ pub fn router(state: Arc<State>) -> Router {
             move |p, _| {
                 let s = s.clone();
                 async move { commands(p, s, true).await }
+            }
+        })
+        .method("breakpoints.get", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { breakpoints(p, s, false).await }
+            }
+        })
+        .method("breakpoints.set", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { breakpoints(p, s, true).await }
             }
         })
         .method("library.export", {
@@ -712,6 +751,9 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
             let mut params = json!({ "stream": stream, "line": line });
             if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
                 params["level"] = json!(level);
+                if let Some(at) = first.location(&line) {
+                    params["location"] = json!(at);
+                }
             }
             let found = explain.line_findings(&line);
             if !found.is_empty() {
@@ -798,6 +840,45 @@ async fn commands(params: Value, state: Arc<State>, set: bool) -> Result<Value, 
         state.commands.get(&p.project)
     };
     Ok(json!({ "commands": lines }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BreakpointsParams {
+    project: String,
+    #[serde(default)]
+    breakpoints: Option<Vec<String>>,
+}
+
+/// breakpoints.get and breakpoints.set: where a project's debugging stops, set again
+/// at the next debug run. Each location is one debug.break takes.
+async fn breakpoints(params: Value, state: Arc<State>, set: bool) -> Result<Value, RpcError> {
+    let p: BreakpointsParams = parse_params(params)?;
+    if p.project.is_empty() || p.project.len() > 200 {
+        return Err(RpcError::invalid_params("bad project id"));
+    }
+    let kept = if set {
+        let list = p
+            .breakpoints
+            .ok_or_else(|| RpcError::invalid_params("breakpoints.set needs breakpoints"))?;
+        if let Some(bad) = list.iter().find(|l| !esp32bench_debug::valid_location(l)) {
+            return Err(RpcError::invalid_params(format!(
+                "`{bad}` is not a function name or file:line"
+            )));
+        }
+        state
+            .breakpoints
+            .set(&p.project, list)
+            .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?
+    } else {
+        if p.breakpoints.is_some() {
+            return Err(RpcError::invalid_params(
+                "breakpoints.get takes no breakpoints",
+            ));
+        }
+        state.breakpoints.get(&p.project)
+    };
+    Ok(json!({ "breakpoints": kept }))
 }
 
 #[derive(Deserialize)]
@@ -921,6 +1002,9 @@ fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Valu
             let mut params = json!({ "stream": stream, "line": line });
             if let Some(level) = esp32bench_build::diagnostics::line_level(&line) {
                 params["level"] = json!(level);
+                if let Some(at) = first.location(&line) {
+                    params["location"] = json!(at);
+                }
             }
             sub.send("build.log", params);
         })
@@ -1155,8 +1239,10 @@ async fn debug_request(gdb: &mut esp32bench_debug::Gdb, req: DebugReq) -> Result
         DebugReq::Inspect => async {
             let frames = gdb.frames().await?;
             let registers = gdb.registers().await?;
+            let locals = gdb.locals().await?;
             Ok(json!({
                 "frames": frames.as_array().into_iter().flatten().map(stop_frame).collect::<Vec<_>>(),
+                "locals": locals,
                 "registers": registers.into_iter().map(|(name, value)| json!({ "name": name, "value": value })).collect::<Vec<_>>(),
             }))
         }
@@ -1500,6 +1586,11 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                                         pin_flush = tokio::time::Instant::now();
                                     }
                                     parts_changed.insert(id.clone(), json!({ "id": id, "error": message }));
+                                    continue;
+                                }
+                                // The host sends it twice a second.
+                                PinEvent::Clock { ns } => {
+                                    sub.send("sim.clock", json!({ "ns": ns }));
                                     continue;
                                 }
                                 // The host already limits these to 20 a second.
@@ -2486,6 +2577,12 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .insert(key, port.clone());
+        let recording: SharedRecording = Arc::default();
+        state
+            .serial_records
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(key, recording.clone());
         let entry = PortEntry {
             state: state.clone(),
             key,
@@ -2524,6 +2621,23 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                 };
                 match event {
                     esp32bench_serial::Event::Data(bytes) => {
+                        // Recording: the bytes as they came. A failed write ends it.
+                        let failed = {
+                            let mut r = recording.lock().unwrap_or_else(|p| p.into_inner());
+                            match r.as_mut().map(|rec| rec.write(&bytes)) {
+                                Some(Err(e)) => {
+                                    let rec = r.take();
+                                    Some((e, rec.map_or(0, |rec| rec.bytes())))
+                                }
+                                _ => None,
+                            }
+                        };
+                        if let Some((e, written)) = failed {
+                            sub.send(
+                                "serial.recordFailed",
+                                json!({ "message": e.to_string(), "bytes": written }),
+                            );
+                        }
                         let mut params = json!({
                             "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
                             "text": String::from_utf8_lossy(&bytes),
@@ -2661,6 +2775,55 @@ async fn serial_write(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Valu
     .map_err(|e| RpcError::internal(e.to_string()))?
     .map_err(serial_error)?;
     Ok(json!({}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SerialRecordParams {
+    subscription: u64,
+    #[serde(default)]
+    path: Option<PathBuf>,
+}
+
+/// serial.record: with a path, append everything the board sends from now on to that
+/// file (the user chose it); without, stop. Returns the file and the bytes written.
+async fn serial_record(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: SerialRecordParams = parse_params(params)?;
+    let slot = state
+        .serial_records
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&(ctx.connection_id(), p.subscription))
+        .cloned()
+        .ok_or_else(|| {
+            RpcError::new(
+                code::NOT_FOUND,
+                format!("no open serial port {} on this connection", p.subscription),
+            )
+        })?;
+    let started = match &p.path {
+        Some(path) => {
+            let path = path.clone();
+            let r = tokio::task::spawn_blocking(move || {
+                esp32bench_serial::record::Recording::start(&path)
+            })
+            .await
+            .map_err(|e| RpcError::internal(e.to_string()))?;
+            Some(r.map_err(|e| match e.kind() {
+                std::io::ErrorKind::InvalidInput => RpcError::invalid_params(e.to_string()),
+                _ => RpcError::new(code::FAILED, e.to_string()),
+            })?)
+        }
+        None => None,
+    };
+    let mut slot = slot.lock().unwrap_or_else(|p| p.into_inner());
+    let previous = std::mem::replace(&mut *slot, started);
+    let (path, bytes) = match (slot.as_ref(), previous.as_ref()) {
+        (Some(now), _) => (Some(now.path().to_owned()), 0),
+        (None, Some(was)) => (Some(was.path().to_owned()), was.bytes()),
+        (None, None) => (None, 0),
+    };
+    Ok(json!({ "recording": slot.is_some(), "path": path, "bytes": bytes }))
 }
 
 async fn serial_reset(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {

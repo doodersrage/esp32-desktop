@@ -42,7 +42,13 @@ public:
     void movePart(const QString &id, QPointF to);
     // Back to the parts as they were before the last change (add, remove, move).
     void undo();
+    // Again the change Undo took back.
+    void redo();
     QPushButton *undoButton() const { return m_undoButton; }
+    QPushButton *redoButton() const { return m_redoButton; }
+    QPushButton *duplicateButton() const { return m_duplicate; }
+    // The selected part's id, or empty.
+    QString selectedPartId() const;
     // The canvas's zoom: by a factor (between a quarter and four times), to fit the
     // whole circuit, and the scale now.
     void zoomBy(qreal factor);
@@ -83,7 +89,9 @@ private:
     void modelsLoaded(const QJsonArray &models);
     void rebuildScene();
     void resetStates();
-    void addDialog(const QString &kind);
+    // `from`: a part to copy (Duplicate): its settings and label, with pins and an
+    // I2C address no other part uses where there is one.
+    void addDialog(const QString &kind, const QJsonObject &from = {});
     QString freeId(const QString &kind) const;
     void updateStatus();
     void rebuildControls();
@@ -97,9 +105,13 @@ private:
     QPushButton *m_remove;
     QPushButton *m_addSuggested;
     QPushButton *m_undoButton;
+    QPushButton *m_redoButton = nullptr;
+    QPushButton *m_duplicate = nullptr;
     QToolButton *m_fitButton = nullptr;
     // The board's circuits before each change, newest last.
     QList<QJsonObject> m_undo;
+    // The circuits Undo went back from, newest last; a new change clears them.
+    QList<QJsonObject> m_redo;
     // What the project's wiring gives (circuit.suggest) for the board shown.
     QJsonObject m_suggested;
     QStringList m_unmatched;

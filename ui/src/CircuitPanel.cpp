@@ -386,9 +386,18 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     m_add->setToolTip(tr("Place a part on the board's pins"));
     m_remove->setToolTip(tr("Remove the selected part"));
     connect(m_remove, &QPushButton::clicked, this, [this] {
-        for (QGraphicsItem *i : m_scene->selectedItems()) {
-            if (auto *part = dynamic_cast<PartItem *>(i)) {
-                removePart(part->id());
+        if (const QString id = selectedPartId(); !id.isEmpty())
+            removePart(id);
+    });
+    m_duplicate = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), tr("Duplicate"), this);
+    m_duplicate->setToolTip(tr("Add another part like the selected one, on pins it does not use (Ctrl+D)"));
+    m_duplicate->setEnabled(false);
+    connect(m_duplicate, &QPushButton::clicked, this, [this] {
+        const QString id = selectedPartId();
+        for (const QJsonValue &v : parts()) {
+            const QJsonObject part = v.toObject();
+            if (part.value(u"id"_s).toString() == id) {
+                addDialog(part.value(u"kind"_s).toString(), part);
                 return;
             }
         }
@@ -397,6 +406,7 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     // after the button has gone.
     connect(m_scene, &QGraphicsScene::selectionChanged, m_remove, [this] {
         m_remove->setEnabled(!m_scene->selectedItems().isEmpty());
+        m_duplicate->setEnabled(!selectedPartId().isEmpty());
         rebuildControls();
     });
 
@@ -411,12 +421,20 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     m_undoButton->setShortcut(QKeySequence::Undo);
     m_undoButton->setEnabled(false);
     connect(m_undoButton, &QPushButton::clicked, this, &CircuitPanel::undo);
+    m_redoButton = new QPushButton(QIcon::fromTheme(u"edit-redo"_s), tr("Redo"), this);
+    m_redoButton->setToolTip(tr("Make the change Undo took back again (%1)")
+                                 .arg(QKeySequence(QKeySequence::Redo).toString(QKeySequence::NativeText)));
+    m_redoButton->setShortcut(QKeySequence::Redo);
+    m_redoButton->setEnabled(false);
+    connect(m_redoButton, &QPushButton::clicked, this, &CircuitPanel::redo);
 
     auto *tools = new QHBoxLayout;
     tools->addWidget(m_addSuggested);
     tools->addWidget(m_add);
     tools->addWidget(m_remove);
+    tools->addWidget(m_duplicate);
     tools->addWidget(m_undoButton);
+    tools->addWidget(m_redoButton);
     // Zoom: Ctrl+wheel or Ctrl+= / Ctrl+- on the canvas, and Fit for all of it.
     m_fitButton = new QToolButton(this);
     m_fitButton->setIcon(QIcon::fromTheme(u"zoom-fit-best"_s));
@@ -433,6 +451,10 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     key(QKeySequence(Qt::CTRL | Qt::Key_Equal), [this] { zoomBy(1.25); });
     key(QKeySequence::ZoomOut, [this] { zoomBy(0.8); });
     key(QKeySequence(Qt::CTRL | Qt::Key_0), [this] { fitView(); });
+    // On the canvas: Delete (or Backspace) removes the selected part, Ctrl+D copies it.
+    key(QKeySequence::Delete, [this] { m_remove->click(); });
+    key(QKeySequence(Qt::Key_Backspace), [this] { m_remove->click(); });
+    key(QKeySequence(Qt::CTRL | Qt::Key_D), [this] { m_duplicate->click(); });
     m_view->viewport()->installEventFilter(this);
     tools->addStretch(1);
     auto *layout = new QVBoxLayout(this);
@@ -563,7 +585,9 @@ void CircuitPanel::showBoard(const QString &project, const QString &board, const
     m_suggested = {};
     m_unmatched.clear();
     m_undo.clear();
+    m_redo.clear();
     m_undoButton->setEnabled(false);
+    m_redoButton->setEnabled(false);
     m_addSuggested->setVisible(false);
     rebuildScene();
     m_add->setEnabled(!m_models.isEmpty());
@@ -865,6 +889,8 @@ void CircuitPanel::edit(const QJsonObject &circuit)
     if (m_undo.size() > 30)
         m_undo.removeFirst();
     m_undoButton->setEnabled(true);
+    m_redo.clear();
+    m_redoButton->setEnabled(false);
     m_core->saveCircuit(m_project, m_board, circuit);
 }
 
@@ -876,11 +902,35 @@ void CircuitPanel::undo()
     if (previous.isEmpty())
         previous = QJsonObject{{u"schemaVersion"_s, u"1.3.0"_s}, {u"parts"_s, QJsonArray{}}};
     m_undoButton->setEnabled(!m_undo.isEmpty());
+    m_redo.append(m_circuit);
+    m_redoButton->setEnabled(true);
     m_core->saveCircuit(m_project, m_board, previous);
 }
 
+void CircuitPanel::redo()
+{
+    if (m_redo.isEmpty() || m_project.isEmpty())
+        return;
+    QJsonObject next = m_redo.takeLast();
+    if (next.isEmpty())
+        next = QJsonObject{{u"schemaVersion"_s, u"1.3.0"_s}, {u"parts"_s, QJsonArray{}}};
+    m_redoButton->setEnabled(!m_redo.isEmpty());
+    m_undo.append(m_circuit);
+    m_undoButton->setEnabled(true);
+    m_core->saveCircuit(m_project, m_board, next);
+}
+
+QString CircuitPanel::selectedPartId() const
+{
+    for (QGraphicsItem *i : m_scene->selectedItems()) {
+        if (auto *part = dynamic_cast<PartItem *>(i))
+            return part->id();
+    }
+    return {};
+}
+
 // A dialog built from the model: a GPIO for each pin, a field for each property.
-void CircuitPanel::addDialog(const QString &kind)
+void CircuitPanel::addDialog(const QString &kind, const QJsonObject &from)
 {
     const QJsonObject model = m_models.value(kind);
     QDialog dialog(this);
@@ -888,6 +938,23 @@ void CircuitPanel::addDialog(const QString &kind)
     auto *form = new QFormLayout(&dialog);
     QList<QPair<QString, QSpinBox *>> pinBoxes;
     int next = 0;
+    // A copy: the project's pins no part uses come first, else the original's.
+    QList<int> used;
+    QList<QPair<int, int>> usedAddresses; // bus, address
+    for (const QJsonValue &v : parts()) {
+        const QJsonObject p = v.toObject();
+        used << connections(p, m_models.value(p.value(u"kind"_s).toString())).values();
+        if (p.contains(u"i2c"_s)) {
+            const QJsonObject i = p.value(u"i2c"_s).toObject();
+            usedAddresses << qMakePair(i.value(u"bus"_s).toInt(), i.value(u"address"_s).toInt());
+        }
+    }
+    QList<int> freePins;
+    for (int gpio : std::as_const(m_projectPins))
+        if (!used.contains(gpio))
+            freePins << gpio;
+    const QHash<QString, int> fromPins = connections(from, model);
+    const QJsonObject fromProps = from.value(u"props"_s).toObject();
     const QJsonArray optional = model.value(u"optionalPins"_s).toArray();
     for (const QJsonValue &v : model.value(u"pins"_s).toArray()) {
         auto *box = new QSpinBox(&dialog);
@@ -899,8 +966,12 @@ void CircuitPanel::addDialog(const QString &kind)
             box->setValue(-1);
         } else {
             box->setRange(0, 48);
-            if (next < m_projectPins.size())
+            if (!from.isEmpty()) {
+                if (fromPins.contains(v.toString()))
+                    box->setValue(next < freePins.size() ? freePins.at(next++) : fromPins.value(v.toString()));
+            } else if (next < m_projectPins.size()) {
                 box->setValue(m_projectPins.at(next++));
+            }
         }
         const QString name = v.toString();
         form->addRow(model.value(u"pins"_s).toArray().size() == 1 ? tr("Pin:") : tr("%1 pin:").arg(name), box);
@@ -916,14 +987,16 @@ void CircuitPanel::addDialog(const QString &kind)
         if (type == u"bool") {
             auto *box = new QCheckBox(label, &dialog);
             // Buttons are usually wired to GND with INPUT_PULLUP.
-            box->setChecked(kind == u"button" && key == u"activeLow" ? true : p.value(u"default"_s).toBool());
+            box->setChecked(fromProps.contains(key)                        ? fromProps.value(key).toBool()
+                            : kind == u"button" && key == u"activeLow" ? true
+                                                                       : p.value(u"default"_s).toBool());
             form->addRow(QString(), box);
             propFields << [key, box] { return qMakePair(key, QJsonValue(box->isChecked())); };
         } else {
             auto *box = new QDoubleSpinBox(&dialog);
             box->setDecimals(type == u"int" ? 0 : 2);
             box->setRange(p.value(u"min"_s).toDouble(-1e9), p.value(u"max"_s).toDouble(1e9));
-            box->setValue(p.value(u"default"_s).toDouble());
+            box->setValue(fromProps.value(key).toDouble(p.value(u"default"_s).toDouble()));
             form->addRow(label, box);
             propFields << [key, box, type] {
                 return qMakePair(key, type == u"int" ? QJsonValue(qRound(box->value())) : QJsonValue(box->value()));
@@ -942,10 +1015,21 @@ void CircuitPanel::addDialog(const QString &kind)
         for (const QJsonValue &a : addresses)
             address->addItem(u"0x%1"_s.arg(a.toInt(), 2, 16, QLatin1Char('0')), a.toInt());
         form->addRow(tr("Address:"), address);
+        if (!from.isEmpty()) {
+            // The original's bus, at an address no part there has, if the part has one.
+            bus->setValue(from.value(u"i2c"_s).toObject().value(u"bus"_s).toInt());
+            for (int n = 0; n < address->count(); ++n) {
+                if (!usedAddresses.contains(qMakePair(bus->value(), address->itemData(n).toInt()))) {
+                    address->setCurrentIndex(n);
+                    break;
+                }
+            }
+        }
     }
     auto *labelEdit = new QLineEdit(&dialog);
     labelEdit->setMaxLength(40);
     labelEdit->setPlaceholderText(tr("Optional, e.g. Status LED"));
+    labelEdit->setText(from.value(u"label"_s).toString());
     form->addRow(tr("Label:"), labelEdit);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);

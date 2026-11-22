@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <QResizeEvent>
 #include <QScrollBar>
 #include <QTextCursor>
 
@@ -53,6 +54,48 @@ ConsoleView::ConsoleView(QWidget *parent)
     key(QKeySequence(Qt::CTRL | Qt::Key_Equal), [this] { zoom(1); });
     key(QKeySequence::ZoomOut, [this] { zoom(-1); });
     key(QKeySequence(Qt::CTRL | Qt::Key_0), [this] { resetZoom(); });
+    // Reading further up while output comes: it stays put, and this goes to the end.
+    m_jump = new QToolButton(this);
+    m_jump->setText(tr("New output ↓"));
+    m_jump->setToolTip(tr("Go to the latest output and follow it"));
+    m_jump->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    m_jump->setAutoRaise(false);
+    m_jump->hide();
+    connect(m_jump, &QToolButton::clicked, this, [this] { verticalScrollBar()->setValue(verticalScrollBar()->maximum()); });
+    connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int v) {
+        if (v == verticalScrollBar()->maximum())
+            m_jump->hide();
+    });
+    // Cleared, or everything fits again.
+    connect(verticalScrollBar(), &QScrollBar::rangeChanged, this, [this](int, int max) {
+        if (verticalScrollBar()->value() == max)
+            m_jump->hide();
+    });
+}
+
+void ConsoleView::followOrOffer(bool wasAtEnd)
+{
+    QScrollBar *bar = verticalScrollBar();
+    if (wasAtEnd) {
+        bar->setValue(bar->maximum());
+    } else if (m_jump->isHidden()) {
+        placeJump();
+        m_jump->show();
+        m_jump->raise();
+    }
+}
+
+void ConsoleView::placeJump()
+{
+    m_jump->adjustSize();
+    const QRect area = viewport()->geometry();
+    m_jump->move(area.right() - m_jump->width() - 8, area.bottom() - m_jump->height() - 8);
+}
+
+void ConsoleView::resizeEvent(QResizeEvent *event)
+{
+    QPlainTextEdit::resizeEvent(event);
+    placeJump();
 }
 
 void ConsoleView::zoom(int steps)
@@ -346,21 +389,22 @@ void ConsoleView::appendText(QString text)
     QTextCursor c(document());
     c.movePosition(QTextCursor::End);
     c.insertText(text);
-    if (atEnd)
-        bar->setValue(bar->maximum());
+    followOrOffer(atEnd);
 }
 
 void ConsoleView::appendNotice(const QString &text)
 {
-    const QString current = toPlainText();
+    QScrollBar *bar = verticalScrollBar();
+    const bool atEnd = bar->value() == bar->maximum();
     QTextCursor c(document());
     c.movePosition(QTextCursor::End);
-    if (!current.isEmpty() && !current.endsWith(u'\n'))
+    // A notice starts its own line: after a line still being printed, a new one.
+    if (!document()->lastBlock().text().isEmpty())
         c.insertText(u"\n"_s);
     c.insertText(u"-- %1\n"_s.arg(text));
     OutputLines::mark(document()->lastBlock().previous(), OutputLines::Notice, {}, palette());
     m_atLineStart = true;
-    verticalScrollBar()->setValue(verticalScrollBar()->maximum());
+    followOrOffer(atEnd);
 }
 
 ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &setting, QWidget *parent)

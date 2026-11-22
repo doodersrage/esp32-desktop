@@ -20,6 +20,7 @@ add_library(esp32bench_ui STATIC
     src/RpcClient.cpp src/RpcClient.h
     src/BoardInfoDialog.cpp src/BoardInfoDialog.h
     src/BuildPanel.cpp src/BuildPanel.h
+    src/CodeView.cpp src/CodeView.h
     src/ConsoleView.cpp src/ConsoleView.h
     src/CoreConnection.cpp src/CoreConnection.h
     src/DebugPanel.cpp src/DebugPanel.h
@@ -96,6 +97,7 @@ qt_add_resources(esp32bench_ui "fallback_icons"
         icons/esp32bench-fallback/scalable/edit-clear.svg
         icons/esp32bench-fallback/scalable/edit-copy.svg
         icons/esp32bench-fallback/scalable/edit-delete.svg
+        icons/esp32bench-fallback/scalable/edit-redo.svg
         icons/esp32bench-fallback/scalable/edit-undo.svg
         icons/esp32bench-fallback/scalable/folder-open.svg
         icons/esp32bench-fallback/scalable/help-about.svg
@@ -104,6 +106,7 @@ qt_add_resources(esp32bench_ui "fallback_icons"
         icons/esp32bench-fallback/scalable/list-remove.svg
         icons/esp32bench-fallback/scalable/media-flash.svg
         icons/esp32bench-fallback/scalable/media-playback-pause.svg
+        icons/esp32bench-fallback/scalable/media-record.svg
         icons/esp32bench-fallback/scalable/media-playback-start.svg
         icons/esp32bench-fallback/scalable/media-playback-stop.svg
         icons/esp32bench-fallback/scalable/network-serial.svg

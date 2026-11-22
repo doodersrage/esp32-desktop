@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLineEdit>
+#include <QLocale>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QPointer>
@@ -58,7 +59,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.30.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.32.0"_s}});
             return;
         }
         calls << m;
@@ -171,6 +172,20 @@ private slots:
         QVERIFY(panel.runAgainButton()->isHidden());
         core.stopSim();
         QTRY_VERIFY(!core.isSimRunning());
+    }
+
+    void showsTheSimulatedTime()
+    {
+        CoreConnection core;
+        SimulatorPanel panel(&core);
+        QVERIFY(panel.clockText().isEmpty());
+        emit core.simClock(12'449'000'000);
+        QCOMPARE(panel.clockText(), u"%1 s simulated"_s.arg(QLocale().toString(12.4, 'f', 1)));
+        emit core.simClock(754'000'000'000);
+        QCOMPARE(panel.clockText(), u"12 min 34 s simulated"_s);
+        // A new run starts from nothing.
+        emit core.simStarted(u"blink"_s, u"esp32"_s, u"esp32"_s);
+        QVERIFY(panel.clockText().isEmpty());
     }
 
     void showsTheSimulatedNetwork()
@@ -302,6 +317,11 @@ private slots:
         QCOMPARE(panel.rows().size(), kept);
         QCOMPARE(panel.rows().at(0).toArray(), row(21.5, 45));
         QVERIFY(panel.saveButton()->isEnabled());
+        // Save picture…: the plot as drawn.
+        QVERIFY(panel.savePictureButton()->isEnabled());
+        const QImage picture = panel.picture();
+        QVERIFY(!picture.isNull());
+        QVERIFY(picture.width() <= 4096 && picture.height() <= 4096);
     }
 
     void sendsChipLikeTimingWhenChosen()

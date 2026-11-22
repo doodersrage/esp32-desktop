@@ -12,6 +12,7 @@
 #include <QIcon>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLocale>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -92,8 +93,21 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     new InputHistory(m_input); // Up and Down recall what was sent
     connect(m_input, &QLineEdit::returnPressed, this, &SimulatorPanel::send);
 
+    m_clock = new QLabel(this);
+    m_clock->setToolTip(tr("How long the firmware has run, in the simulation's own time. It can fall behind "
+                           "the real time, most with Chip-like timing on."));
+    m_clock->hide();
+    connect(m_core, &CoreConnection::simClock, this, [this](qint64 ns) {
+        const qint64 tenths = ns / 100'000'000;
+        const QString time = tenths < 600
+            ? tr("%1 s").arg(QLocale().toString(tenths / 10.0, 'f', 1))
+            : tr("%1 min %2 s").arg(tenths / 600).arg(tenths / 10 % 60, 2, 10, QLatin1Char('0'));
+        m_clock->setText(tr("%1 simulated").arg(time));
+        m_clock->show();
+    });
     auto *top = new QHBoxLayout;
     top->addWidget(m_status, 1);
+    top->addWidget(m_clock);
     top->addWidget(m_reset);
     top->addWidget(m_stop);
     top->addWidget(m_again);
@@ -118,6 +132,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
                 m_output->appendNotice(tr("Started %1 for %2 on a simulated %3.")
                                            .arg(project, board, Labels::chipName(chip)));
                 m_status->setText(tr("Running %1 on a simulated %2.").arg(project, Labels::chipName(chip)));
+                m_clock->hide();
                 m_lastProject = project;
                 m_lastBoard = board;
                 m_expect->hide();
@@ -192,6 +207,11 @@ QString SimulatorPanel::outputText() const
 QString SimulatorPanel::networkText() const
 {
     return m_network->isHidden() ? QString() : m_network->text();
+}
+
+QString SimulatorPanel::clockText() const
+{
+    return m_clock->isHidden() ? QString() : m_clock->text();
 }
 
 QString SimulatorPanel::statusText() const

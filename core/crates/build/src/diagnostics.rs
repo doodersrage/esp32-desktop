@@ -22,6 +22,18 @@ pub struct FirstError {
     pub message: String,
 }
 
+/// Where a compiler error or warning points, for the app to show that line: the
+/// same naming as [`FirstError`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Location {
+    pub file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<PathBuf>,
+    pub line: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<u32>,
+}
+
 /// How much of the board the firmware takes, from arduino-cli's two size lines:
 /// `Sketch uses N bytes (P%) of program storage space. Maximum is M bytes.` and
 /// `Global variables use N bytes (P%) of dynamic memory, ... Maximum is M bytes.`
@@ -94,6 +106,7 @@ pub fn line_level(line: &str) -> Option<&'static str> {
 pub struct Finder {
     compile: Regex,
     link: Regex,
+    located: Regex,
     project: Option<PathBuf>,
     found: Option<FirstError>,
 }
@@ -105,6 +118,8 @@ impl Finder {
             // Proven at compile time: fixed patterns.
             compile: Regex::new(r"^(.+?):(\d+):(?:(\d+):)? (?:fatal )?error: (.+)$").unwrap(),
             link: Regex::new(r"^(.+?):(\d+): (undefined reference to .+)$").unwrap(),
+            located: Regex::new(r"^(.+?):(\d+):(?:(\d+):)? (?:(?:fatal )?error|warning|note): ")
+                .unwrap(),
             project: project.and_then(|p| p.canonicalize().ok()),
             found: None,
         }
@@ -137,6 +152,29 @@ impl Finder {
             column,
             message,
         });
+    }
+
+    /// Where an error or warning line points, if it names a file and line.
+    pub fn location(&self, line: &str) -> Option<Location> {
+        let line = line.trim_end();
+        let (raw, number, column) = if let Some(c) = self.located.captures(line) {
+            (
+                c.get(1)?.as_str(),
+                c.get(2)?.as_str(),
+                c.get(3).and_then(|m| m.as_str().parse().ok()),
+            )
+        } else {
+            let c = self.link.captures(line)?;
+            (c.get(1)?.as_str(), c.get(2)?.as_str(), None)
+        };
+        let line = number.parse().ok().filter(|n| *n > 0)?;
+        let (file, path) = self.name(Path::new(raw));
+        Some(Location {
+            file,
+            path,
+            line,
+            column,
+        })
     }
 
     pub fn first(&self) -> Option<&FirstError> {
@@ -229,6 +267,31 @@ mod tests {
         let e = f.first().unwrap();
         assert_eq!((e.file.as_str(), e.line, e.column), ("main.cpp", 40, None));
         assert!(e.message.starts_with("undefined reference"));
+    }
+
+    #[test]
+    fn errors_and_warnings_say_where_they_point() {
+        let f = Finder::new(None);
+        let l = f
+            .location("/tmp/x/sketch/blink.ino:12:3: warning: unused variable 'n'")
+            .unwrap();
+        assert_eq!(
+            (l.file.as_str(), l.line, l.column, l.path),
+            ("blink.ino", 12, Some(3), None)
+        );
+        let l = f
+            .location("/tmp/x/main.cpp:40: undefined reference to `setup'")
+            .unwrap();
+        assert_eq!((l.file.as_str(), l.line, l.column), ("main.cpp", 40, None));
+        assert_eq!(
+            f.location("Sketch uses 254756 bytes (19%) of program storage space."),
+            None
+        );
+        assert_eq!(
+            f.location("collect2: error: ld returned 1 exit status"),
+            None
+        );
+        assert_eq!(f.location("x.c:0: error: nowhere"), None);
     }
 
     #[test]

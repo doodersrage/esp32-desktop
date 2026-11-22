@@ -272,7 +272,7 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
         else if (m_buildJob == -1)
             m_earlyBuildEvents.append({method, params}); // our job id is not known yet
     } else if (method == u"sim.output" || method == u"sim.frame" || method == u"sim.pins" || method == u"sim.trace" || method == u"sim.parts" || method == u"sim.partPicture"
-               || method == u"sim.exited" || method == u"sim.wifiJoined" || method == u"sim.expect"
+               || method == u"sim.exited" || method == u"sim.wifiJoined" || method == u"sim.expect" || method == u"sim.clock"
                || method.startsWith(u"debug.")) {
         if (sub == m_simSub)
             handleSimEvent(method, params);
@@ -290,7 +290,8 @@ void CoreConnection::onNotification(const QString &method, const QJsonObject &pa
         else if (m_installJob == -1)
             m_earlyInstallEvents.append({method, params}); // our job id is not known yet
     } else if (method == u"serial.data" || method == u"serial.closed" || method == u"serial.lost"
-               || method == u"serial.reconnected" || method == u"serial.expect" || method == u"serial.garbled") {
+               || method == u"serial.reconnected" || method == u"serial.expect" || method == u"serial.garbled"
+               || method == u"serial.recordFailed") {
         if (sub == m_serialSub)
             handleSerialEvent(method, params);
         else if (m_serialSub == -1)
@@ -464,7 +465,7 @@ void CoreConnection::handleBuildEvent(const QString &method, const QJsonObject &
 {
     if (method == u"build.log") {
         emit buildLog(params.value(u"stream"_s).toString(), params.value(u"line"_s).toString(),
-                      params.value(u"level"_s).toString());
+                      params.value(u"level"_s).toString(), params.value(u"location"_s).toObject());
         if (params.contains(u"explain"_s))
             emit outputExplained(u"build"_s, params.value(u"explain"_s).toArray());
         return;
@@ -529,6 +530,10 @@ void CoreConnection::handleSerialEvent(const QString &method, const QJsonObject 
             emit outputExplained(u"serial"_s, params.value(u"explain"_s).toArray());
         if (params.contains(u"plot"_s))
             emit plotRows(params.value(u"plot"_s).toArray());
+        return;
+    }
+    if (method == u"serial.recordFailed") {
+        emit serialRecordFailed(params.value(u"message"_s).toString(), params.value(u"bytes"_s).toInteger());
         return;
     }
     if (method == u"serial.garbled") {
@@ -757,6 +762,10 @@ void CoreConnection::handleSimEvent(const QString &method, const QJsonObject &pa
                        params.value(u"seconds"_s).toInt(), params.value(u"timedOut"_s).toBool());
         return;
     }
+    if (method == u"sim.clock") {
+        emit simClock(params.value(u"ns"_s).toInteger());
+        return;
+    }
     if (method == u"sim.wifiJoined") {
         emit simWifiJoined(params.value(u"ssid"_s).toString());
         return;
@@ -875,12 +884,12 @@ void CoreConnection::debugBreak(const QString &location)
     if (!isDebugging())
         return;
     m_client->call(u"debug.break"_s, {{u"subscription"_s, m_simSub}, {u"location"_s, location}}, this,
-                   [this](const RpcReply &r) {
+                   [this, location](const RpcReply &r) {
                        if (!r.ok) {
                            emit requestFailed(u"debug.break"_s, r.errorMessage);
                            return;
                        }
-                       emit breakpointSet(r.result.toObject().value(u"breakpoint"_s).toObject());
+                       emit breakpointSet(r.result.toObject().value(u"breakpoint"_s).toObject(), location);
                    });
 }
 
@@ -919,7 +928,8 @@ void CoreConnection::debugInspect()
             return;
         }
         const QJsonObject o = r.result.toObject();
-        emit debugInspected(o.value(u"frames"_s).toArray(), o.value(u"registers"_s).toArray());
+        emit debugInspected(o.value(u"frames"_s).toArray(), o.value(u"registers"_s).toArray(),
+                            o.value(u"locals"_s).toArray());
     });
 }
 
@@ -1037,6 +1047,50 @@ void CoreConnection::getCommands(const QString &project)
         for (const QJsonValue &v : r.result.toObject().value(u"commands"_s).toArray())
             out << v.toString();
         emit commandsListed(project, out);
+    });
+}
+
+void CoreConnection::getBreakpoints(const QString &project)
+{
+    if (project.isEmpty())
+        return;
+    m_client->call(u"breakpoints.get"_s, {{u"project"_s, project}}, this, [this, project](const RpcReply &r) {
+        if (!r.ok)
+            return;
+        QStringList out;
+        for (const QJsonValue &v : r.result.toObject().value(u"breakpoints"_s).toArray())
+            out << v.toString();
+        emit breakpointsListed(project, out);
+    });
+}
+
+void CoreConnection::setBreakpoints(const QString &project, const QStringList &locations)
+{
+    if (project.isEmpty())
+        return;
+    m_client->call(u"breakpoints.set"_s,
+                   {{u"project"_s, project}, {u"breakpoints"_s, QJsonArray::fromStringList(locations)}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok)
+                           emit requestFailed(u"breakpoints.set"_s, r.errorMessage);
+                   });
+}
+
+void CoreConnection::recordSerial(const QString &path)
+{
+    if (m_serialSub <= 0)
+        return;
+    QJsonObject params{{u"subscription"_s, m_serialSub}};
+    if (!path.isEmpty())
+        params.insert(u"path"_s, path);
+    m_client->call(u"serial.record"_s, params, this, [this](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"serial.record"_s, r.errorMessage);
+            return;
+        }
+        const QJsonObject o = r.result.toObject();
+        emit serialRecording(o.value(u"recording"_s).toBool(), o.value(u"path"_s).toString(),
+                             o.value(u"bytes"_s).toInteger());
     });
 }
 

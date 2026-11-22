@@ -3,6 +3,8 @@
 #include "CoreConnection.h"
 
 #include <QComboBox>
+#include <QGuiApplication>
+#include <QClipboard>
 #include <QDateTime>
 #include <QDir>
 #include <QFileDialog>
@@ -47,8 +49,17 @@ DisplayPanel::DisplayPanel(CoreConnection *core, QWidget *parent)
         if (!path.isEmpty())
             saveTo(path);
     });
-    connect(core, &CoreConnection::frameSaved, this,
-            [this](const QString &path) { m_status->setText(tr("Saved the picture to %1.").arg(path)); });
+    connect(core, &CoreConnection::frameSaved, this, [this](const QString &path) {
+        if (path == std::exchange(m_savingTo, {}))
+            m_status->setText(tr("Saved the picture to %1.").arg(path));
+    });
+    m_copy = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), tr("Copy picture"), this);
+    m_copy->setToolTip(tr("Copy the picture shown, to paste it into a message or a document"));
+    m_copy->setEnabled(false);
+    connect(m_copy, &QPushButton::clicked, this, [this] {
+        if (!m_image.isNull())
+            QGuiApplication::clipboard()->setImage(m_image);
+    });
     m_scroll->setWidget(m_picture);
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
@@ -65,6 +76,7 @@ DisplayPanel::DisplayPanel(CoreConnection *core, QWidget *parent)
     auto *top = new QHBoxLayout;
     top->addWidget(m_status, 1);
     top->addWidget(m_zoom);
+    top->addWidget(m_copy);
     top->addWidget(m_save);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
@@ -121,8 +133,10 @@ void DisplayPanel::setZoom(int zoom)
 
 void DisplayPanel::saveTo(const QString &path)
 {
-    if (!m_image.isNull())
-        m_core->saveFrame(path, m_image);
+    if (m_image.isNull())
+        return;
+    m_savingTo = path;
+    m_core->saveFrame(path, m_image);
 }
 
 void DisplayPanel::rescale()
@@ -130,6 +144,7 @@ void DisplayPanel::rescale()
     if (m_image.isNull())
         return;
     m_save->setEnabled(true);
+    m_copy->setEnabled(true);
     const int fixed = m_zoom->currentData().toInt();
     if (fixed > 0) {
         // A fixed size; the dock scrolls when it is bigger.

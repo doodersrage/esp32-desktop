@@ -1,4 +1,8 @@
 #include "SerialMonitor.h"
+#include <QDir>
+#include <QDateTime>
+#include <QFileDialog>
+#include <QStandardPaths>
 
 #include "ConsoleView.h"
 #include "CoreConnection.h"
@@ -114,6 +118,39 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     });
     connect(m_reset, &QPushButton::clicked, m_core, &CoreConnection::resetSerial);
     connect(m_clear, &QPushButton::clicked, m_output, &QPlainTextEdit::clear);
+    m_record = new QPushButton(QIcon::fromTheme(u"media-record"_s), tr("Record…"), this);
+    m_record->setToolTip(tr("Write everything the board sends from now on to a file, however long it runs"));
+    m_record->setCheckable(true);
+    connect(m_record, &QPushButton::clicked, this, [this] {
+        m_record->setChecked(!m_recordingTo.isEmpty()); // the core's answer sets it
+        if (!m_recordingTo.isEmpty()) {
+            recordTo({});
+            return;
+        }
+        const QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+        const QString name = u"esp32bench-serial-%1.log"_s.arg(QDateTime::currentDateTime().toString(u"yyyyMMdd-HHmmss"_s));
+        const QString path = QFileDialog::getSaveFileName(this, tr("Record the board's output"), QDir(dir).filePath(name),
+                                                          tr("Log files (*.log *.txt);;All files (*)"), nullptr,
+                                                          QFileDialog::DontConfirmOverwrite);
+        if (!path.isEmpty())
+            recordTo(path);
+    });
+    connect(m_core, &CoreConnection::serialRecording, this, [this](bool on, const QString &path, qint64 bytes) {
+        m_recordingTo = on ? path : QString();
+        m_record->setChecked(on);
+        m_record->setText(on ? tr("Stop recording") : tr("Record…"));
+        m_output->appendNotice(on ? tr("Recording to %1 (added to the end of the file).").arg(path)
+                                  : tr("Recorded %1 bytes to %2.").arg(bytes).arg(path));
+    });
+    connect(m_core, &CoreConnection::serialRecordFailed, this, [this](const QString &message, qint64 bytes) {
+        m_output->appendNotice(tr("Recording stopped: %1. %2 bytes were written to %3.")
+                                   .arg(message)
+                                   .arg(bytes)
+                                   .arg(m_recordingTo));
+        m_recordingTo.clear();
+        m_record->setChecked(false);
+        m_record->setText(tr("Record…"));
+    });
     connect(m_send, &QPushButton::clicked, this, &SerialMonitor::send);
     new InputHistory(m_input); // Up and Down recall what was sent
     connect(m_input, &QLineEdit::returnPressed, this, &SerialMonitor::send);
@@ -123,6 +160,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     top->addWidget(m_baud);
     top->addWidget(m_open);
     top->addWidget(m_reset);
+    top->addWidget(m_record);
     top->addWidget(m_clear);
     // Unreadable output: most likely the wrong speed; one click tries the usual one.
     m_garbled = new QLabel(this);
@@ -214,6 +252,12 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
         setOpen(true);
     });
     connect(m_core, &CoreConnection::serialClosed, this, [this](const QString &reason) {
+        if (!m_recordingTo.isEmpty()) {
+            m_output->appendNotice(tr("Stopped recording to %1.").arg(m_recordingTo));
+            m_recordingTo.clear();
+            m_record->setChecked(false);
+            m_record->setText(tr("Record…"));
+        }
         if (m_open_)
             m_output->appendNotice(tr("Disconnected: %1").arg(reason));
         else if (!reason.isEmpty())
@@ -352,6 +396,11 @@ QByteArray SerialMonitor::hexBytes(const QString &text)
     return QByteArray::fromHex(digits.toLatin1());
 }
 
+void SerialMonitor::recordTo(const QString &path)
+{
+    m_core->recordSerial(path);
+}
+
 void SerialMonitor::setOpen(bool open)
 {
     m_open_ = open;
@@ -362,6 +411,7 @@ void SerialMonitor::setOpen(bool open)
     m_port->setEnabled(!open);
     m_baud->setEnabled(!open);
     m_reset->setEnabled(open);
+    m_record->setEnabled(open);
     m_input->setEnabled(open);
     for (int i = 0; m_quick && i < m_quick->count(); ++i) {
         if (QWidget *w = m_quick->itemAt(i)->widget())

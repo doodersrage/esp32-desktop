@@ -1,0 +1,31 @@
+{
+  "event": "sim.clock",
+  "description": "Since protocol 0.32: how long the firmware has run, in nanoseconds of QEMU's virtual clock (with icount, counted in instructions, so it can fall behind the wall clock). Sent about twice a second while a session runs on lcgamboa's fork; Espressif's QEMU sends none.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "ns"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "ns": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "ns": 12400000000
+      }
+    }
+  ]
+}

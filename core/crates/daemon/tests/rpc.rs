@@ -818,6 +818,65 @@ async fn commands_are_kept_per_project() {
 }
 
 #[tokio::test]
+async fn breakpoints_are_kept_per_project() {
+    let (_d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let get = json!({ "project": "blink" });
+    assert_valid(
+        &method_def("breakpoints.get")["params"],
+        &get,
+        "breakpoints.get params",
+    );
+    let r = c.call("breakpoints.get", get.clone()).await.unwrap();
+    assert_valid(
+        &method_def("breakpoints.get")["result"],
+        &r,
+        "breakpoints.get result",
+    );
+    assert_eq!(r["breakpoints"], json!([]));
+    let set =
+        json!({ "project": "blink", "breakpoints": ["blink.ino:12", "setup", "blink.ino:12"] });
+    assert_valid(
+        &method_def("breakpoints.set")["params"],
+        &set,
+        "breakpoints.set params",
+    );
+    let r = c.call("breakpoints.set", set).await.unwrap();
+    assert_valid(
+        &method_def("breakpoints.set")["result"],
+        &r,
+        "breakpoints.set result",
+    );
+    assert_eq!(r["breakpoints"], json!(["blink.ino:12", "setup"]));
+    assert_eq!(
+        c.call("breakpoints.get", get.clone()).await.unwrap()["breakpoints"],
+        json!(["blink.ino:12", "setup"])
+    );
+    // Only places debug.break takes; nothing is kept from a refused list.
+    for bad in [
+        json!({ "project": "blink", "breakpoints": ["-exec"] }),
+        json!({ "project": "" , "breakpoints": [] }),
+    ] {
+        match c.call("breakpoints.set", bad).await {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+            other => panic!("expected invalid params, got {other:?}"),
+        }
+    }
+    let r = c
+        .call(
+            "breakpoints.set",
+            json!({ "project": "blink", "breakpoints": [] }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r["breakpoints"], json!([]));
+    assert_eq!(
+        c.call("breakpoints.get", get).await.unwrap()["breakpoints"],
+        json!([])
+    );
+}
+
+#[tokio::test]
 async fn library_export_saves_a_sketch_for_the_arduino_ide() {
     let (_d, sock, _lock) = daemon().await;
     let mut c = Client::connect(&sock).await.unwrap();
@@ -902,6 +961,13 @@ async fn a_failed_build_names_its_first_error() {
         }
         if n["params"]["level"] == "error" {
             errors += 1;
+            // And say where they point, for the app to show the line.
+            assert_eq!(
+                n["params"]["location"],
+                json!({ "file": "blink.ino", "line": 12, "column": 3 })
+            );
+        } else {
+            assert!(n["params"].get("location").is_none(), "{n}");
         }
     };
     assert_eq!(errors, 1);
@@ -1159,6 +1225,85 @@ fn b64(bytes: &[u8]) -> String {
 fn un_b64(s: &str) -> Vec<u8> {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.decode(s).unwrap()
+}
+
+/// Read serial.data until `want` bytes came; checks each event's schema.
+#[cfg(unix)]
+async fn serial_read(c: &mut Client, want: usize) -> Vec<u8> {
+    let mut got = Vec::new();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(6);
+    while got.len() < want {
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
+            .await
+            .unwrap()
+            .unwrap();
+        let event = n["method"].as_str().unwrap();
+        assert_valid(&method_def(event)["params"], &n["params"], event);
+        if event == "serial.data" {
+            got.extend(un_b64(n["params"]["data"].as_str().unwrap()));
+        }
+    }
+    got
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
+async fn serial_records_to_a_file() {
+    use std::os::fd::AsRawFd;
+    let (master, port) = pty();
+    let (d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    let sub = c
+        .call("serial.open", json!({ "path": port, "baud": 115200 }))
+        .await
+        .unwrap()["subscription"]
+        .as_u64()
+        .unwrap();
+    let board = |bytes: &[u8]| {
+        // SAFETY: write a valid buffer to the pty master.
+        unsafe { libc::write(master.as_raw_fd(), bytes.as_ptr().cast(), bytes.len()) };
+    };
+    let def = method_def("serial.record");
+    board(b"before\n");
+    serial_read(&mut c, 7).await;
+
+    let log = d.path().join("board.log");
+    let params = json!({ "subscription": sub, "path": log });
+    assert_valid(&def["params"], &params, "serial.record params");
+    let r = c.call("serial.record", params).await.unwrap();
+    assert_valid(&def["result"], &r, "serial.record result");
+    assert_eq!(r["recording"], true);
+    board(b"rst:0x1 \xff\n");
+    serial_read(&mut c, 10).await;
+    let r = c
+        .call("serial.record", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+    assert_valid(&def["result"], &r, "serial.record result");
+    assert_eq!(r, json!({ "recording": false, "path": log, "bytes": 10 }));
+    // Only what came while recording, as it came.
+    assert_eq!(std::fs::read(&log).unwrap(), b"rst:0x1 \xff\n");
+    board(b"after\n");
+    serial_read(&mut c, 6).await;
+    assert_eq!(std::fs::read(&log).unwrap().len(), 10);
+
+    for bad in [
+        json!({ "subscription": sub, "path": "relative.log" }),
+        json!({ "subscription": sub, "path": d.path() }),
+    ] {
+        assert!(c.call("serial.record", bad).await.is_err());
+    }
+    match c
+        .call("serial.record", json!({ "subscription": sub + 99 }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("expected not found, got {other:?}"),
+    }
 }
 
 #[cfg(unix)]
@@ -1972,6 +2117,7 @@ async fn board_erase_needs_confirmation_and_the_stub() {
 /// Wait for sim.output until `marker` has appeared; checks each event's schema.
 async fn sim_wait_for(c: &mut Client, sub: &Value, marker: &str) {
     let mut text = String::new();
+    let mut clock = 0;
     // One deadline for the loop: other events keep arriving, so a per-event
     // timeout would never fire.
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(90);
@@ -1983,8 +2129,15 @@ async fn sim_wait_for(c: &mut Client, sub: &Value, marker: &str) {
         let event = n["method"].as_str().unwrap();
         assert_valid(&method_def(event)["params"], &n["params"], event);
         assert_eq!(&n["params"]["subscription"], sub);
-        // The project's expectation is checked alongside (sim.expect has its own test).
+        // The project's expectation is checked alongside (sim.expect has its own test),
+        // and the simulated time comes twice a second; it only goes forward.
         if event == "sim.expect" {
+            continue;
+        }
+        if event == "sim.clock" {
+            let ns = n["params"]["ns"].as_u64().unwrap();
+            assert!(ns >= clock, "the clock went back: {clock} then {ns}");
+            clock = ns;
             continue;
         }
         assert_eq!(event, "sim.output", "{n}");

@@ -1,0 +1,65 @@
+{
+  "method": "serial.record",
+  "description": "Since protocol 0.32: with path (an absolute path to a file the user chose), append every byte the board sends from now on to it, raw, until called without one or the port closes; a second path replaces the first. Without path, stop. The result names the file: the new one when starting, else the one stopped and the bytes written to it.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "path": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "recording",
+      "path",
+      "bytes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "recording": {
+        "type": "boolean"
+      },
+      "path": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "bytes": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 4,
+        "path": "/home/me/board.log"
+      },
+      "result": {
+        "recording": true,
+        "path": "/home/me/board.log",
+        "bytes": 0
+      }
+    }
+  ]
+}

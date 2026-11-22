@@ -63,6 +63,31 @@
           "warning"
         ],
         "description": "Since protocol 0.27: the line is a compiler or tool error or warning."
+      },
+      "location": {
+        "type": "object",
+        "required": [
+          "file",
+          "line"
+        ],
+        "additionalProperties": false,
+        "description": "Since protocol 0.32: for an error or warning line that names one, the file and line it points at. file is relative to a local project's folder, else the file's name (a library sketch's is <id>.ino, numbered as the code the library shows); path is the file itself, only for a file inside a local project.",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
       }
     }
   },
@@ -72,6 +97,19 @@
         "subscription": 7,
         "stream": "stdout",
         "line": "Sketch uses 254756 bytes (19%) of program storage space."
+      }
+    },
+    {
+      "params": {
+        "subscription": 7,
+        "stream": "stderr",
+        "line": "/tmp/b/blink/blink.ino:12:3: error: 'ledPn' was not declared in this scope",
+        "level": "error",
+        "location": {
+          "file": "blink.ino",
+          "line": 12,
+          "column": 3
+        }
       }
     }
   ]

@@ -222,6 +222,21 @@ PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
         if (!path.isEmpty())
             saveTo(path);
     });
+    m_savePicture = new QPushButton(QIcon::fromTheme(u"document-save"_s), tr("Save picture…"), this);
+    m_savePicture->setToolTip(tr("Save the plot as drawn as a PNG picture, to share it"));
+    m_savePicture->setEnabled(false);
+    connect(m_savePicture, &QPushButton::clicked, this, [this] {
+        const QString dir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+        const QString name = u"esp32bench-plot-%1.png"_s.arg(QDateTime::currentDateTime().toString(u"yyyyMMdd-HHmm"_s));
+        const QString path = QFileDialog::getSaveFileName(this, tr("Save the plot as a picture"),
+                                                          QDir(dir).filePath(name), tr("PNG pictures (*.png)"));
+        if (!path.isEmpty())
+            savePictureTo(path);
+    });
+    connect(m_core, &CoreConnection::frameSaved, this, [this](const QString &path) {
+        if (path == std::exchange(m_savingTo, {}))
+            m_status->setText(tr("Saved the picture to %1.").arg(path));
+    });
     connect(m_core, &CoreConnection::plotSaved, this, [this](const QString &path, qint64 rows) {
         m_status->setText(tr("Saved %1 rows to %2.").arg(rows).arg(path));
     });
@@ -244,6 +259,7 @@ PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
         while (m_rows.size() > KeptRows)
             m_rows.removeFirst();
         m_save->setEnabled(true);
+        m_savePicture->setEnabled(true);
     };
     connect(m_core, &CoreConnection::plotRows, this, add);
     // A new run starts a new plot.
@@ -261,6 +277,7 @@ PlotPanel::PlotPanel(CoreConnection *core, QWidget *parent)
     top->addWidget(m_pause);
     top->addWidget(m_clear);
     top->addWidget(m_save);
+    top->addWidget(m_savePicture);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
     layout->addWidget(m_canvas, 1);
@@ -271,6 +288,21 @@ void PlotPanel::clearRows()
     m_canvas->clear();
     m_rows = {};
     m_save->setEnabled(false);
+    m_savePicture->setEnabled(false);
+}
+
+QImage PlotPanel::picture() const
+{
+    QImage image = m_canvas->grab().toImage();
+    if (image.width() > 4096 || image.height() > 4096)
+        image = image.scaled(4096, 4096, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    return image;
+}
+
+void PlotPanel::savePictureTo(const QString &path)
+{
+    m_savingTo = path;
+    m_core->saveFrame(path, picture());
 }
 
 QJsonArray PlotPanel::rows() const

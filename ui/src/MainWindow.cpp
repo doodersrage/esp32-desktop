@@ -12,6 +12,7 @@
 #include "SetupDialog.h"
 #include "SimulatorPanel.h"
 #include "DebugPanel.h"
+#include "CodeView.h"
 #include "DisplayPanel.h"
 #include "PinsPanel.h"
 #include "PlotPanel.h"
@@ -172,6 +173,9 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     // Esc closes the message above the library (dialogs keep their own Esc).
     auto *escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
     connect(escape, &QShortcut::activated, this, [this] {
+        // In the Build dock, Esc stops a build that is running.
+        if (m_buildPanel->isAncestorOf(QApplication::focusWidget()) && m_buildPanel->cancelRunning())
+            return;
         if (!m_messages->isHidden())
             m_messages->dismiss();
     });
@@ -219,6 +223,36 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     addDockWidget(Qt::BottomDockWidgetArea, m_buildDock);
     connect(core, &CoreConnection::buildStarted, m_buildDock, &QDockWidget::show);
     connect(core, &CoreConnection::buildStarted, m_buildDock, &QDockWidget::raise);
+    // An error or warning line that names a place: a library sketch's line in its Code
+    // tab, a local project's file in the user's editor.
+    connect(m_buildPanel, &BuildPanel::locationActivated, this, [this](const QJsonObject &at) {
+        const QString file = at.value(u"file"_s).toString();
+        const int line = at.value(u"line"_s).toInt();
+        const QString id = m_project->currentProjectId();
+        if (!id.isEmpty() && file == id + u".ino"_s && m_project->showCodeLine(line))
+            return;
+        const QString path = at.value(u"path"_s).toString();
+        if (!path.isEmpty()) {
+            if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
+                m_messages->showError(tr("Nothing on this computer opens %1. Its line %2 has the problem.")
+                                          .arg(QDir::toNativeSeparators(path))
+                                          .arg(line));
+            return;
+        }
+        m_messages->showError(tr("Line %1 of %2 is not in this project's own code: it is in a library "
+                                 "or in the ESP32 core the build uses.")
+                                  .arg(line)
+                                  .arg(file));
+    });
+    // A run's output check ending (it matched, or timed out) while the window is
+    // behind others asks for attention, as builds and flashes do; once per run.
+    connect(core, &CoreConnection::simStarted, this, [this] { m_expectAlerted = false; });
+    connect(core, &CoreConnection::simExpect, this,
+            [this](const QStringList &matched, const QStringList &missing, const QString &, int, bool timedOut) {
+                const bool ended = timedOut || (missing.isEmpty() && !matched.isEmpty());
+                if (ended && !std::exchange(m_expectAlerted, true) && !isActiveWindow())
+                    QApplication::alert(this);
+            });
 
     // Every explanation of the session, beside the build log; hidden until opened
     // from the View menu or the message bar.
@@ -576,6 +610,29 @@ void MainWindow::buildToolBar()
     // The serial monitor's quick-send lines follow the project shown.
     connect(m_project, &ProjectView::currentChanged, this,
             [this] { m_serial->setProject(m_project->currentProjectId()); });
+    // So do the kept breakpoints, shown beside the sketch's lines; a click beside a
+    // line adds or removes one there (set at once while paused, else kept for the
+    // next debug run).
+    connect(m_project, &ProjectView::currentChanged, this,
+            [this] { m_debugger->setProject(m_project->currentProjectId()); });
+    connect(m_debugger, &DebugPanel::breakpointsChanged, this, &MainWindow::showBreakpointLines);
+    connect(m_project, &ProjectView::currentChanged, this, &MainWindow::showBreakpointLines);
+    connect(m_project, &ProjectView::codeLineClicked, this, [this](int line) {
+        const QString id = m_project->currentProjectId();
+        if (!m_debugger->toggleBreakpoint(u"%1.ino:%2"_s.arg(id).arg(line))) {
+            m_debugDock->show();
+            m_debugDock->raise();
+        }
+    });
+    // Paused in the sketch shown: its line is marked in the Code tab.
+    connect(m_core, &CoreConnection::debugStopped, this, [this](const QString &, const QJsonObject &frame, int) {
+        const QString id = m_project->currentProjectId();
+        const bool here = !id.isEmpty() && QFileInfo(frame.value(u"file"_s).toString()).fileName() == id + u".ino"_s;
+        m_project->showPausedLine(here ? frame.value(u"line"_s).toInt() : 0);
+    });
+    for (auto signal : {&CoreConnection::debugRunning, &CoreConnection::debugExited})
+        connect(m_core, signal, this, [this] { m_project->showPausedLine(0); });
+    connect(m_core, &CoreConnection::simStopped, this, [this] { m_project->showPausedLine(0); });
     // Another project picked meanwhile: that run is off.
     connect(m_library, &LibraryPanel::projectSelected, this, [this](const QString &id) {
         if (id != m_activatePending)
@@ -1086,10 +1143,27 @@ QString MainWindow::shortcutsText() const
         tr("Bigger or smaller text in the console (also Ctrl and the mouse wheel)"));
     add(QKeySequence(Qt::CTRL | Qt::Key_0).toString(QKeySequence::NativeText), tr("The console's text at its usual size"));
     add(tr("Up / Down"), tr("In the text to send: the lines sent before"));
-    add(QKeySequence(QKeySequence::Undo).toString(QKeySequence::NativeText), tr("Undo a change to the circuit"));
-    add(QKeySequence(Qt::Key_Escape).toString(QKeySequence::NativeText), tr("Close the message above the library"));
+    add(QKeySequence(QKeySequence::Undo).toString(QKeySequence::NativeText) + u" / "_s
+            + QKeySequence(QKeySequence::Redo).toString(QKeySequence::NativeText),
+        tr("Undo or redo a change to the circuit"));
+    add(QKeySequence(Qt::CTRL | Qt::Key_D).toString(QKeySequence::NativeText), tr("In the circuit: a copy of the selected part"));
+    add(QKeySequence(QKeySequence::Delete).toString(QKeySequence::NativeText), tr("In the circuit: remove the selected part"));
+    add(QKeySequence(Qt::Key_Escape).toString(QKeySequence::NativeText),
+        tr("Close the message above the library; in the Build dock, stop the build"));
     add(tr("Tab, arrows, Space"), tr("In the circuit: go to a part, move it, press or switch it"));
     return u"<table>%1</table>"_s.arg(rows.join(QString()));
+}
+
+void MainWindow::showBreakpointLines()
+{
+    const QString prefix = m_project->currentProjectId() + u".ino:"_s;
+    QSet<int> lines;
+    for (const QString &loc : m_debugger->breakpointLocations()) {
+        if (loc.startsWith(prefix))
+            lines.insert(loc.mid(prefix.size()).toInt());
+    }
+    lines.remove(0);
+    m_project->codeView()->setBreakpointLines(lines);
 }
 
 void MainWindow::showShortcuts()

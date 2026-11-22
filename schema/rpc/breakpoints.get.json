@@ -1,0 +1,54 @@
+{
+  "method": "breakpoints.get",
+  "description": "Since protocol 0.32: the breakpoints kept for a project's debug runs (breakpoints.set), each a location debug.break takes: a function name or file:line. The app sets them again while a new debug run is paused before the firmware starts.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "breakpoints"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "breakpoints": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink"
+      },
+      "result": {
+        "breakpoints": [
+          "blink.ino:12",
+          "setup"
+        ]
+      }
+    }
+  ]
+}

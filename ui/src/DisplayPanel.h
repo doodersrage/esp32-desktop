@@ -25,6 +25,7 @@ public:
     void setZoom(int zoom);
     QComboBox *zoomPicker() const { return m_zoom; }
     QPushButton *saveButton() const { return m_save; }
+    QPushButton *copyButton() const { return m_copy; }
     // Have the core write the picture to `path` as PNG (frame.save).
     void saveTo(const QString &path);
     // Room for the picture at its own size (or a typical panel before the first one).
@@ -47,6 +48,8 @@ private:
     QScrollArea *m_scroll;
     QComboBox *m_zoom;
     QPushButton *m_save;
+    QPushButton *m_copy = nullptr;
+    QString m_savingTo; // frame.save is shared with the plot: only this panel's saves
     QImage m_image;
     int m_scale = 1;
     bool m_seenThisSession = false;

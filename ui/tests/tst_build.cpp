@@ -16,6 +16,7 @@
 #include <QTemporaryDir>
 #include <QStandardPaths>
 #include <QCheckBox>
+#include <QPushButton>
 #include <QTest>
 
 using namespace Qt::StringLiterals;
@@ -65,7 +66,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.30.0"_s}}}});
+                                               {u"protocol"_s, u"0.32.0"_s}}}});
         } else if (method == u"build.start") {
             const QString consent = params.value(u"consent"_s).toString();
             buildRequests << (consent.isEmpty() ? u"-"_s : consent);
@@ -214,6 +215,43 @@ private slots:
         QCOMPARE(panel.visibleLogLines(), (QStringList{u"a.ino:1:1: warning: unused"_s, u"a.ino:2:1: error: oops"_s}));
         panel.problemsOnlyBox()->setChecked(false);
         QCOMPARE(panel.visibleLogLines().size(), 3);
+    }
+
+    void locatedLinesCopyAndEscape()
+    {
+        CoreConnection core;
+        BuildPanel panel(&core);
+        QVERIFY(panel.copyProblemsButton()->isHidden());
+        QVERIFY(!panel.cancelRunning()); // nothing running
+        emit core.buildStarted(QJsonObject{{u"project"_s, u"blink"_s}, {u"board"_s, u"esp32"_s}});
+        const QJsonObject at{{u"file"_s, u"blink.ino"_s}, {u"line"_s, 12}, {u"column"_s, 3}};
+        emit core.buildLog(u"stdout"_s, u"Compiling…"_s);
+        emit core.buildLog(u"stderr"_s, u"/tmp/b/blink.ino:12:3: error: oops"_s, u"error"_s, at);
+        emit core.buildLog(u"stderr"_s, u"collect2: error: ld returned 1 exit status"_s, u"error"_s);
+        // A double-click (or Enter) on a line that names a place asks to show it.
+        QSignalSpy shown(&panel, &BuildPanel::locationActivated);
+        QVERIFY(!panel.activateLine(0));
+        QVERIFY(panel.activateLine(1));
+        QCOMPARE(shown.size(), 1);
+        QCOMPARE(shown.at(0).at(0).toJsonObject(), at);
+        QVERIFY(!panel.activateLine(2));
+        // Copy problems: only the error and warning lines.
+        QVERIFY(!panel.copyProblemsButton()->isHidden());
+        QCOMPARE(panel.problemLines(),
+                 u"/tmp/b/blink.ino:12:3: error: oops\ncollect2: error: ld returned 1 exit status"_s);
+        // Esc in the dock stops the running build, once.
+        QVERIFY(panel.cancelRunning());
+        emit core.buildFinished(false, u"cancelled"_s, {});
+        QVERIFY(!panel.cancelRunning());
+    }
+
+    void aPlaceOutsideTheProjectIsSaidSo()
+    {
+        CoreConnection core;
+        MainWindow window(&core);
+        emit window.buildPanel()->locationActivated(
+            QJsonObject{{u"file"_s, u"Wire.cpp"_s}, {u"line"_s, 40}});
+        QVERIFY2(window.messageBar()->text().contains(u"Line 40 of Wire.cpp"_s), qPrintable(window.messageBar()->text()));
     }
 
     void saysTheSizeAndFlashSpeed()

@@ -612,6 +612,16 @@ async fn circuit_command(cmd: CircuitCmd) -> Result<()> {
 
 #[derive(Subcommand)]
 enum SimCmd {
+    /// Show the breakpoints kept for a project's debug runs, or keep these instead
+    /// (as `breakpoints.get` / `breakpoints.set`): function names or file:line.
+    Breakpoints {
+        #[arg(long)]
+        project: String,
+        locations: Vec<String>,
+        /// Forget the kept breakpoints.
+        #[arg(long)]
+        clear: bool,
+    },
     /// Boot an image, stream UART0 to stdout and stdin lines to UART0, until QEMU exits or Ctrl-C.
     Run {
         #[command(flatten)]
@@ -1013,6 +1023,29 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 out.elf.display()
             );
         }
+        Cmd::Sim(SimCmd::Breakpoints {
+            project,
+            locations,
+            clear,
+        }) => {
+            if let Some(bad) = locations
+                .iter()
+                .find(|l| !esp32bench_debug::valid_location(l))
+            {
+                bail!("`{bad}` is not a function name or file:line");
+            }
+            let store = esp32bench_library::commands::Commands::new(
+                esp32bench_sim::install::data_dir()?.join("breakpoints.json"),
+            );
+            let kept = if clear || !locations.is_empty() {
+                store.set(&project, locations)?
+            } else {
+                store.get(&project)
+            };
+            for l in kept {
+                println!("{l}");
+            }
+        }
         Cmd::Serial(SerialCmd::Commands {
             project,
             lines,
@@ -1295,6 +1328,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         Some(esp32bench_sim::gpio::PinEvent::PartError { id, message }) => {
                             eprintln!("[{id} error: {message}]");
                         }
+                        Some(esp32bench_sim::gpio::PinEvent::Clock { .. }) => {}
                         Some(esp32bench_sim::gpio::PinEvent::Picture { id, width, height, pixels }) => {
                             let lit = pixels.iter().filter(|p| **p != 0).count();
                             match &frames {

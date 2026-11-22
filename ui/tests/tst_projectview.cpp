@@ -1,6 +1,7 @@
 // ProjectView renders library.get results. The fixture is the example in
 // schema/rpc/library.get.json, the same data the core's schema test checks.
 
+#include "CodeView.h"
 #include "CoreConnection.h"
 #include "ProjectView.h"
 
@@ -67,6 +68,60 @@ private slots:
                  builds.at(0).toObject().value(u"wiring"_s).toArray().size());
         view.boardPicker()->setCurrentIndex(1);
         QVERIFY(view.codeView()->toPlainText().contains(second));
+    }
+
+    void showsTheLineABuildErrorPointsAt()
+    {
+        CoreConnection core;
+        ProjectView view(&core);
+        QVERIFY(!view.showCodeLine(1)); // nothing shown
+        view.showResult(example());
+        view.tabs()->setCurrentIndex(ProjectView::PartsTab);
+        const QString code = view.codeView()->toPlainText();
+        const int lines = int(code.count(u'\n')) + 1;
+        QVERIFY(lines >= 2);
+        QVERIFY(view.showCodeLine(2));
+        QCOMPARE(view.tabs()->currentIndex(), int(ProjectView::CodeTab));
+        QCOMPARE(view.codeView()->textCursor().blockNumber(), 1);
+        QCOMPARE(view.codeView()->textCursor().selectedText(), code.section(u'\n', 1, 1));
+        QVERIFY(!view.showCodeLine(lines + 5));
+        QVERIFY(!view.showCodeLine(0));
+    }
+
+    void codeGutterShowsBreakpointsAndTakesClicks()
+    {
+        CoreConnection core;
+        ProjectView view(&core);
+        view.resize(600, 500);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        view.showResult(example());
+        view.tabs()->setCurrentIndex(ProjectView::CodeTab);
+        CodeView *code = view.codeView();
+        QVERIFY(code->gutterWidth() > 0);
+        QSignalSpy clicked(&view, &ProjectView::codeLineClicked);
+        // A click beside the second line asks for it.
+        QWidget *gutter = code->findChild<QWidget *>(u"gutter"_s);
+        QVERIFY(gutter);
+        const int lineHeight = code->fontMetrics().height();
+        int y = -1;
+        for (int at = 0; at < lineHeight * 4 && y < 0; ++at)
+            if (code->lineAt(at) == 2)
+                y = at;
+        QVERIFY(y >= 0);
+        QTest::mouseClick(gutter, Qt::LeftButton, {}, QPoint(4, y + 1));
+        QCOMPARE(clicked.size(), 1);
+        QCOMPARE(clicked.at(0).at(0).toInt(), 2);
+        code->setBreakpointLines({2});
+        QCOMPARE(code->breakpointLines(), QSet<int>{2});
+        // The paused line: marked, and the Code tab shown.
+        view.tabs()->setCurrentIndex(ProjectView::PartsTab);
+        view.showPausedLine(2);
+        QCOMPARE(view.tabs()->currentIndex(), int(ProjectView::CodeTab));
+        QCOMPARE(code->pausedLine(), 2);
+        QCOMPARE(code->extraSelections().size(), 1);
+        view.showPausedLine(0);
+        QVERIFY(code->extraSelections().isEmpty());
     }
 
     void startsOnTheConnectedBoardsChip()

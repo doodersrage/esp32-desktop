@@ -720,6 +720,7 @@ fn start_bridge(
             bql_unlock,
             pictures: HashMap::new(),
             last_tick: None,
+            last_clock: None,
         };
         loop {
             match rx.recv_timeout(std::time::Duration::from_millis(PICTURE_MS)) {
@@ -733,6 +734,7 @@ fn start_bridge(
             }
             worker.flush_pictures(false);
             worker.tick();
+            worker.clock();
         }
     });
 }
@@ -754,9 +756,29 @@ struct Worker {
     bql_unlock: UnlockFn,
     pictures: HashMap<String, PendingPicture>,
     last_tick: Option<std::time::Instant>,
+    last_clock: Option<std::time::Instant>,
 }
 
+/// How often the simulated time goes to the core, for the app to show.
+const CLOCK_MS: u128 = 500;
+
 impl Worker {
+    /// Every CLOCK_MS, `clock <ns>`: the simulation's time, for the app to show how
+    /// long the firmware has run (with -icount it falls behind the wall clock).
+    fn clock(&mut self) {
+        if self
+            .last_clock
+            .is_some_and(|t| t.elapsed().as_millis() < CLOCK_MS)
+        {
+            return;
+        }
+        self.last_clock = Some(std::time::Instant::now());
+        let t = virtual_ns();
+        if !t.is_empty() {
+            self.send(&format!("clock{t}"));
+        }
+    }
+
     fn send(&mut self, line: &str) -> bool {
         writeln!(self.out, "{line}").is_ok()
     }

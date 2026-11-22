@@ -26,6 +26,8 @@ public:
 
     QString outputText() const;
     QString statusText() const;
+    // How long the firmware has run in simulated time (sim.clock), or empty.
+    QString clockText() const;
     QString networkText() const;
     QLineEdit *input() const { return m_input; }
     QPushButton *stopButton() const { return m_stop; }
@@ -39,6 +41,7 @@ private:
 
     CoreConnection *m_core;
     QLabel *m_status;
+    QLabel *m_clock;
     // The simulated Wi-Fi network and the link to the sketch's web page.
     QLabel *m_network;
     QLabel *m_expect;

@@ -11,6 +11,7 @@
 #include "SerialMonitor.h"
 
 #include <QCheckBox>
+#include <QScrollBar>
 #include <QAction>
 #include <QComboBox>
 #include <QDockWidget>
@@ -92,7 +93,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.30.0"_s}});
+                                  {u"protocol"_s, u"0.32.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
@@ -110,6 +111,12 @@ private:
             reply(id, QJsonObject{});
         } else if (m == u"core.unsubscribe") {
             reply(id, QJsonObject{});
+        } else if (m == u"serial.record") {
+            const QString to = p.value(u"path"_s).toString();
+            recorded << to;
+            reply(id, QJsonObject{{u"recording"_s, !to.isEmpty()}, {u"path"_s, to.isEmpty() ? recording : to},
+                                  {u"bytes"_s, to.isEmpty() ? 42 : 0}});
+            recording = to;
         } else if (m == u"console.save") {
             saved.insert(p.value(u"path"_s).toString(), p.value(u"text"_s).toString());
             reply(id, QJsonObject{});
@@ -117,6 +124,9 @@ private:
     }
 public:
     QHash<QString, QString> saved;
+    QStringList recorded; // serial.record's paths ("" to stop)
+    QString recording;
+    void pushRecordFailed() { send(event(u"serial.recordFailed"_s, {{u"message"_s, u"No space left on device"_s}, {u"bytes"_s, 7}})); }
 private:
 
     QLocalServer *m_server;
@@ -172,6 +182,70 @@ private slots:
         QTRY_VERIFY(!core.isSerialOpen());
         QVERIFY(mon->outputText().contains(u"Disconnected"_s));
         QVERIFY(!mon->input()->isEnabled());
+    }
+
+    void recordsToAFile()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        MainWindow window(&core);
+        SerialMonitor *mon = window.serialMonitor();
+        core.start();
+        QTRY_COMPARE(mon->portPicker()->count(), 1);
+        QVERIFY(!mon->recordButton()->isEnabled()); // nothing open
+        mon->openButton()->click();
+        QTRY_VERIFY(core.isSerialOpen());
+        QVERIFY(mon->recordButton()->isEnabled());
+
+        mon->recordTo(u"/tmp/board.log"_s);
+        QTRY_VERIFY(mon->recordButton()->isChecked());
+        QCOMPARE(fake.recorded, QStringList{u"/tmp/board.log"_s});
+        QVERIFY(mon->outputText().contains(u"Recording to /tmp/board.log"_s));
+        // Stop: from the button, which needs no file then.
+        mon->recordButton()->click();
+        QTRY_VERIFY(!mon->recordButton()->isChecked());
+        QCOMPARE(fake.recorded.last(), QString());
+        QTRY_VERIFY(mon->outputText().contains(u"Recorded 42 bytes to /tmp/board.log."_s));
+
+        // A failed write ends it, and says how far it got.
+        mon->recordTo(u"/tmp/full.log"_s);
+        QTRY_VERIFY(mon->recordButton()->isChecked());
+        fake.pushRecordFailed();
+        QTRY_VERIFY(!mon->recordButton()->isChecked());
+        QVERIFY(mon->outputText().contains(u"No space left on device. 7 bytes were written to /tmp/full.log."_s));
+
+        // Closing the port ends a recording too.
+        mon->recordTo(u"/tmp/again.log"_s);
+        QTRY_VERIFY(mon->recordButton()->isChecked());
+        fake.pushClosed();
+        QTRY_VERIFY(!mon->recordButton()->isChecked());
+        QVERIFY(mon->outputText().contains(u"Stopped recording to /tmp/again.log."_s));
+        QVERIFY(!mon->recordButton()->isEnabled());
+    }
+
+    void consoleStaysWhereTheReaderIs()
+    {
+        ConsoleView view;
+        view.resize(300, 120);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        QScrollBar *bar = view.verticalScrollBar();
+        for (int n = 0; n < 100; ++n)
+            view.appendNotice(u"line %1"_s.arg(n));
+        QVERIFY(bar->maximum() > 0);
+        QCOMPARE(bar->value(), bar->maximum()); // at the end: it follows
+        QVERIFY(view.newOutputButton()->isHidden());
+        // Scrolled up: new output and notices leave the view where it is...
+        bar->setValue(0);
+        view.appendNotice(u"Simulator stopped"_s);
+        QCOMPARE(bar->value(), 0);
+        QVERIFY(!view.newOutputButton()->isHidden());
+        // ...and the button goes to the end and away.
+        view.newOutputButton()->click();
+        QCOMPARE(bar->value(), bar->maximum());
+        QVERIFY(view.newOutputButton()->isHidden());
+        QVERIFY(view.toPlainText().endsWith(u"-- Simulator stopped\n"_s));
     }
 
     void consoleFindsStampsAndSaves()

@@ -18,6 +18,9 @@
 #include <QTemporaryDir>
 #include <QApplication>
 #include <QMouseEvent>
+#include <QDialog>
+#include <QSpinBox>
+#include <QTimer>
 #include <QTest>
 #include <QToolButton>
 
@@ -78,7 +81,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.30.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.32.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -274,6 +277,64 @@ private slots:
         QTRY_COMPARE(panel.parts().size(), 2);
         panel.undoButton()->click();
         QTRY_COMPARE(panel.parts().size(), 1);
+    }
+
+    void redoesDeletesAndDuplicates()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        CircuitPanel panel(&core);
+        panel.resize(700, 500);
+        panel.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&panel));
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QTRY_VERIFY(!panel.modelIds().isEmpty());
+        panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"5"_s});
+        QTRY_COMPARE(panel.parts().size(), 1);
+        QVERIFY(!panel.redoButton()->isEnabled());
+
+        // Redo makes again what Undo took back; a new change ends that.
+        panel.addPart(u"button"_s, 4, true, u"Go"_s);
+        QTRY_COMPARE(panel.parts().size(), 2);
+        panel.undoButton()->click();
+        QTRY_COMPARE(panel.parts().size(), 1);
+        QVERIFY(panel.redoButton()->isEnabled());
+        panel.redoButton()->click();
+        QTRY_COMPARE(panel.parts().size(), 2);
+        QVERIFY(!panel.redoButton()->isEnabled());
+
+        // Delete on the canvas removes the selected part.
+        panel.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&panel));
+        const QString button = panel.parts().at(1).toObject().value(u"id"_s).toString();
+        panel.selectPart(button, true);
+        QCOMPARE(panel.selectedPartId(), button);
+        QVERIFY(panel.duplicateButton()->isEnabled());
+        panel.view()->setFocus();
+        QTest::keyClick(panel.view(), Qt::Key_Delete);
+        QTRY_COMPARE(panel.parts().size(), 1);
+
+        // Duplicate: the add dialog, filled from the LED, on the project pin it leaves free.
+        QTRY_VERIFY(panel.selectedPartId().isEmpty() || panel.selectedPartId() == u"led-1"_s);
+        panel.selectPart(u"led-1"_s, true);
+        QTRY_COMPARE(panel.selectedPartId(), u"led-1"_s);
+        int offered = -1;
+        QTimer::singleShot(0, this, [&offered] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            const auto boxes = dialog->findChildren<QSpinBox *>();
+            QVERIFY(!boxes.isEmpty());
+            offered = boxes.first()->value();
+            dialog->accept();
+        });
+        QTest::keyClick(panel.view(), Qt::Key_D, Qt::ControlModifier);
+        QCOMPARE(offered, 5);
+        QTRY_COMPARE(panel.parts().size(), 2);
+        const QJsonObject copy = panel.parts().at(1).toObject();
+        QCOMPARE(copy.value(u"kind"_s).toString(), u"led"_s);
+        QCOMPARE(copy.value(u"pins"_s).toObject().begin().value().toInt(), 5);
     }
 
     void zoomsAndFits()

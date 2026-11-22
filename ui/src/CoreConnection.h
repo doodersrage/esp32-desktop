@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 30;
+    static constexpr int ProtocolMinor = 32;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -169,6 +169,12 @@ public:
     // commands.get / commands.set: a project's quick-send lines; commandsListed after.
     void getCommands(const QString &project);
     void setCommands(const QString &project, const QStringList &commands);
+    // breakpoints.get / breakpoints.set: a project's kept breakpoints (breakpointsListed).
+    void getBreakpoints(const QString &project);
+    void setBreakpoints(const QString &project, const QStringList &locations);
+    // serial.record: append what the open port receives to `path`, or stop with an
+    // empty path (serialRecording).
+    void recordSerial(const QString &path);
 
     // debug.*: on the simulator started with debug. Results come as signals.
     void debugBreak(const QString &location);
@@ -206,7 +212,10 @@ signals:
                               const QJsonObject &plan);
     void buildStarted(const QJsonObject &plan);
     // `level`: "error" or "warning" for compiler and tool problems, else empty.
-    void buildLog(const QString &stream, const QString &line, const QString &level = {});
+    // level: error or warning, else empty; location: where such a line points (file,
+    // line, column, path), when it names a place.
+    void buildLog(const QString &stream, const QString &line, const QString &level = {},
+                  const QJsonObject &location = {});
     // `image` is the merged flash image when ok.
     void buildFinished(bool ok, const QString &error, const QString &image);
     // Serial monitor.
@@ -233,6 +242,8 @@ signals:
     void simOutput(const QByteArray &bytes, const QJsonValue &shown = {}, const QJsonArray &lines = {});
     // sim.wifiJoined: the core gave a library sketch the simulated network's settings.
     void simWifiJoined(const QString &ssid);
+    // sim.clock: how long the firmware has run, in simulated nanoseconds.
+    void simClock(qint64 ns);
     // Rows of numbers from the simulator's or the serial port's output (the events'
     // plot field): arrays of {name, value}.
     void plotRows(const QJsonArray &rows);
@@ -261,6 +272,11 @@ signals:
     void consoleSaved(const QString &path);
     void plotSaved(const QString &path, qint64 rows);
     void commandsListed(const QString &project, const QStringList &commands);
+    void breakpointsListed(const QString &project, const QStringList &locations);
+    // Recording started (on) or stopped, the file, and the bytes written to it.
+    void serialRecording(bool on, const QString &path, qint64 bytes);
+    // serial.recordFailed: writing the file failed, so it stopped.
+    void serialRecordFailed(const QString &message, qint64 bytes);
     void frameSaved(const QString &path);
     void sketchExported(const QString &path, const QStringList &libraries, bool existing);
     void buildStatusReady(const QString &project, const QString &board, const QJsonObject &status);
@@ -286,9 +302,10 @@ signals:
     void debugStopped(const QString &reason, const QJsonObject &frame, int breakpoint);
     void debugRunning();
     void debugExited();
-    void breakpointSet(const QJsonObject &breakpoint);
+    // location: what was asked for (debug.break's location).
+    void breakpointSet(const QJsonObject &breakpoint, const QString &location = {});
     void breakpointDeleted(int number);
-    void debugInspected(const QJsonArray &frames, const QJsonArray &registers);
+    void debugInspected(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals = {});
     // A request failed. `method` is the RPC method name.
     void requestFailed(const QString &method, const QString &message);
 

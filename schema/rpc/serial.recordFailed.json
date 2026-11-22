@@ -1,0 +1,36 @@
+{
+  "event": "serial.recordFailed",
+  "description": "Since protocol 0.32: writing the recording failed (the disk is full, the file went away), so recording stopped; bytes says how much was written before.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "message",
+      "bytes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "message": {
+        "type": "string"
+      },
+      "bytes": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "message": "No space left on device",
+        "bytes": 1048576
+      }
+    }
+  ]
+}

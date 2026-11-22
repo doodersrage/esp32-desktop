@@ -135,6 +135,10 @@
         <translation>Log da compilação</translation>
     </message>
     <message>
+        <source>Double-click an error or warning, or press Enter on it, to see the line it points at</source>
+        <translation>Clique duas vezes em um erro ou aviso, ou pressione Enter sobre ele, para ver a linha a que ele se refere</translation>
+    </message>
+    <message>
         <source>Board port</source>
         <translation>Porta da placa</translation>
     </message>
@@ -157,6 +161,14 @@
     <message>
         <source>Show only the build&apos;s errors and warnings</source>
         <translation>Mostrar só os erros e avisos da compilação</translation>
+    </message>
+    <message>
+        <source>Copy problems</source>
+        <translation>Copiar problemas</translation>
+    </message>
+    <message>
+        <source>Copy the build&apos;s error and warning lines, to paste into a forum post or an issue</source>
+        <translation>Copia as linhas de erro e aviso da compilação, para colar em um fórum ou em uma issue</translation>
     </message>
     <message>
         <source>Flashing %1 to %2…</source>
@@ -266,8 +278,24 @@ Variáveis globais: %4 de %5</translation>
         <translation>Remove a peça selecionada</translation>
     </message>
     <message>
+        <source>Duplicate</source>
+        <translation>Duplicar</translation>
+    </message>
+    <message>
+        <source>Add another part like the selected one, on pins it does not use (Ctrl+D)</source>
+        <translation>Adiciona outra peça como a selecionada, em pinos que ela não usa (Ctrl+D)</translation>
+    </message>
+    <message>
         <source>Undo the last change to the parts (Ctrl+Z)</source>
         <translation>Desfazer a última mudança nas peças (Ctrl+Z)</translation>
+    </message>
+    <message>
+        <source>Redo</source>
+        <translation>Refazer</translation>
+    </message>
+    <message>
+        <source>Make the change Undo took back again (%1)</source>
+        <translation>Faz de novo a alteração que Desfazer desfez (%1)</translation>
     </message>
     <message>
         <source>Fit</source>
@@ -387,6 +415,17 @@ Variáveis globais: %4 de %5</translation>
     </message>
 </context>
 <context>
+    <name>CodeView</name>
+    <message>
+        <source>Click beside a line to add or remove a breakpoint there</source>
+        <translation>Clique ao lado de uma linha para adicionar ou remover um breakpoint nela</translation>
+    </message>
+    <message>
+        <source>Line numbers and breakpoints</source>
+        <translation>Números de linha e breakpoints</translation>
+    </message>
+</context>
+<context>
     <name>CommandPalette</name>
     <message>
         <source>Find an action or project</source>
@@ -493,6 +532,17 @@ Variáveis globais: %4 de %5</translation>
     </message>
 </context>
 <context>
+    <name>ConsoleView</name>
+    <message>
+        <source>New output ↓</source>
+        <translation>Nova saída ↓</translation>
+    </message>
+    <message>
+        <source>Go to the latest output and follow it</source>
+        <translation>Ir para a saída mais recente e acompanhá-la</translation>
+    </message>
+</context>
+<context>
     <name>CoreConnection</name>
     <message>
         <source>The connection to the core was lost.</source>
@@ -556,6 +606,22 @@ Variáveis globais: %4 de %5</translation>
     <message>
         <source>Remove</source>
         <translation>Remover</translation>
+    </message>
+    <message>
+        <source>Local variables</source>
+        <translation>Variáveis locais</translation>
+    </message>
+    <message>
+        <source>Variable</source>
+        <translation>Variável</translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation>Tipo</translation>
+    </message>
+    <message>
+        <source>The arguments and local variables of the function the firmware stopped in</source>
+        <translation>Os argumentos e as variáveis locais da função em que o firmware parou</translation>
     </message>
     <message>
         <source>Breakpoint location</source>
@@ -638,6 +704,10 @@ Variáveis globais: %4 de %5</translation>
         <translation>Sem depuração. Compile um projeto para uma placa ESP32, ESP32-S3 ou ESP32-C3 e depois escolha Depurar na barra de ferramentas.</translation>
     </message>
     <message>
+        <source>Pause the firmware first: GDB changes breakpoints only while it is stopped.</source>
+        <translation>Pause o firmware primeiro: o GDB só muda breakpoints enquanto ele está parado.</translation>
+    </message>
+    <message>
         <source>%1 (%2, line %3)</source>
         <translation>%1 (%2, linha %3)</translation>
     </message>
@@ -652,6 +722,18 @@ Variáveis globais: %4 de %5</translation>
     <message>
         <source>Paused in %1.</source>
         <translation>Pausado em %1.</translation>
+    </message>
+    <message>
+        <source>%1 (argument)</source>
+        <translation>%1 (argumento)</translation>
+    </message>
+    <message>
+        <source>…</source>
+        <translation>…</translation>
+    </message>
+    <message>
+        <source>GDB shows this kind of value (a structure or an array) only in parts</source>
+        <translation>O GDB só mostra esse tipo de valor (uma estrutura ou um vetor) em partes</translation>
     </message>
     <message>
         <source>%1:%2</source>
@@ -838,6 +920,14 @@ Variáveis globais: %4 de %5</translation>
     <message>
         <source>Saved the picture to %1.</source>
         <translation>Imagem salva em %1.</translation>
+    </message>
+    <message>
+        <source>Copy picture</source>
+        <translation>Copiar imagem</translation>
+    </message>
+    <message>
+        <source>Copy the picture shown, to paste it into a message or a document</source>
+        <translation>Copia a imagem mostrada, para colar em uma mensagem ou em um documento</translation>
     </message>
     <message>
         <source>No picture. Firmware that draws on QEMU&apos;s virtual RGB panel (esp_lcd_qemu_rgb) shows here while it runs in the simulator.</source>
@@ -1124,6 +1214,22 @@ O painel Compilação abaixo tem o registro completo.</translation>
         <translation>Depurador</translation>
     </message>
     <message>
+        <source>Undo or redo a change to the circuit</source>
+        <translation>Desfazer ou refazer uma alteração no circuito</translation>
+    </message>
+    <message>
+        <source>In the circuit: a copy of the selected part</source>
+        <translation>No circuito: uma cópia da peça selecionada</translation>
+    </message>
+    <message>
+        <source>In the circuit: remove the selected part</source>
+        <translation>No circuito: remover a peça selecionada</translation>
+    </message>
+    <message>
+        <source>Close the message above the library; in the Build dock, stop the build</source>
+        <translation>Fechar a mensagem acima da biblioteca; no painel Compilação, parar a compilação</translation>
+    </message>
+    <message>
         <source>Reading the board on %1…</source>
         <translation>Lendo a placa em %1…</translation>
     </message>
@@ -1188,6 +1294,14 @@ O painel Compilação abaixo tem o log completo.</translation>
     <message>
         <source>Open the file</source>
         <translation>Abrir o arquivo</translation>
+    </message>
+    <message>
+        <source>Nothing on this computer opens %1. Its line %2 has the problem.</source>
+        <translation>Nada neste computador abre %1. O problema está na linha %2.</translation>
+    </message>
+    <message>
+        <source>Line %1 of %2 is not in this project&apos;s own code: it is in a library or in the ESP32 core the build uses.</source>
+        <translation>A linha %1 de %2 não faz parte do código deste projeto: está em uma biblioteca ou no núcleo ESP32 que a compilação usa.</translation>
     </message>
     <message>
         <source>Problems</source>
@@ -1514,14 +1628,6 @@ SHA-256 do código: %2</translation>
         <translation>No texto a enviar: as linhas enviadas antes</translation>
     </message>
     <message>
-        <source>Undo a change to the circuit</source>
-        <translation>Desfazer uma alteração no circuito</translation>
-    </message>
-    <message>
-        <source>Close the message above the library</source>
-        <translation>Fechar a mensagem acima da biblioteca</translation>
-    </message>
-    <message>
         <source>Tab, arrows, Space</source>
         <translation>Tab, setas, Espaço</translation>
     </message>
@@ -1723,6 +1829,26 @@ SHA-256 do código: %2</translation>
     <message>
         <source>CSV files (*.csv)</source>
         <translation>Arquivos CSV (*.csv)</translation>
+    </message>
+    <message>
+        <source>Save picture…</source>
+        <translation>Salvar imagem…</translation>
+    </message>
+    <message>
+        <source>Save the plot as drawn as a PNG picture, to share it</source>
+        <translation>Salva o gráfico como está desenhado em uma imagem PNG, para compartilhar</translation>
+    </message>
+    <message>
+        <source>Save the plot as a picture</source>
+        <translation>Salvar o gráfico como imagem</translation>
+    </message>
+    <message>
+        <source>PNG pictures (*.png)</source>
+        <translation>Imagens PNG (*.png)</translation>
+    </message>
+    <message>
+        <source>Saved the picture to %1.</source>
+        <translation>Imagem salva em %1.</translation>
     </message>
     <message>
         <source>Saved %1 rows to %2.</source>
@@ -2216,6 +2342,38 @@ SHA-256 do código: %2</translation>
         <translation>O que adicionar depois de cada linha enviada</translation>
     </message>
     <message>
+        <source>Record…</source>
+        <translation>Gravar…</translation>
+    </message>
+    <message>
+        <source>Write everything the board sends from now on to a file, however long it runs</source>
+        <translation>Grava em um arquivo tudo o que a placa enviar a partir de agora, por quanto tempo ela rodar</translation>
+    </message>
+    <message>
+        <source>Record the board&apos;s output</source>
+        <translation>Gravar a saída da placa</translation>
+    </message>
+    <message>
+        <source>Log files (*.log *.txt);;All files (*)</source>
+        <translation>Arquivos de log (*.log *.txt);;Todos os arquivos (*)</translation>
+    </message>
+    <message>
+        <source>Stop recording</source>
+        <translation>Parar a gravação</translation>
+    </message>
+    <message>
+        <source>Recording to %1 (added to the end of the file).</source>
+        <translation>Gravando em %1 (adicionado ao fim do arquivo).</translation>
+    </message>
+    <message>
+        <source>Recorded %1 bytes to %2.</source>
+        <translation>%1 bytes gravados em %2.</translation>
+    </message>
+    <message>
+        <source>Recording stopped: %1. %2 bytes were written to %3.</source>
+        <translation>A gravação parou: %1. %2 bytes foram gravados em %3.</translation>
+    </message>
+    <message>
         <source>Switch speed</source>
         <translation>Trocar velocidade</translation>
     </message>
@@ -2254,6 +2412,10 @@ SHA-256 do código: %2</translation>
     <message>
         <source>Reconnected.</source>
         <translation>Reconectado.</translation>
+    </message>
+    <message>
+        <source>Stopped recording to %1.</source>
+        <translation>Gravação em %1 parada.</translation>
     </message>
     <message>
         <source>Disconnected: %1</source>
@@ -2496,6 +2658,22 @@ SHA-256 do código: %2</translation>
     <message>
         <source>Count time in instructions, as the chip does: timing no longer depends on how busy this computer is. Simulations run slower (an ESP32 takes about two seconds to boot), and a sketch that waits in a loop reading hardware, such as an SD card library looking for a card, can take minutes. Applies from the next run.</source>
         <translation>Conta o tempo em instruções, como o chip faz: o tempo deixa de depender de quão ocupado este computador está. As simulações ficam mais lentas (um ESP32 leva cerca de dois segundos para iniciar), e um sketch que espera em um loop lendo o hardware, como uma biblioteca de cartão SD procurando um cartão, pode levar minutos. Vale a partir da próxima execução.</translation>
+    </message>
+    <message>
+        <source>How long the firmware has run, in the simulation&apos;s own time. It can fall behind the real time, most with Chip-like timing on.</source>
+        <translation>Há quanto tempo o firmware está rodando, no tempo da própria simulação. Ele pode ficar atrás do tempo real, principalmente com Tempo como no chip ligado.</translation>
+    </message>
+    <message>
+        <source>%1 s</source>
+        <translation>%1 s</translation>
+    </message>
+    <message>
+        <source>%1 min %2 s</source>
+        <translation>%1 min %2 s</translation>
+    </message>
+    <message>
+        <source>%1 simulated</source>
+        <translation>%1 simulados</translation>
     </message>
     <message>
         <source>Started %1 for %2 on a simulated %3.</source>

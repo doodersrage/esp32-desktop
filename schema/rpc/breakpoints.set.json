@@ -1,0 +1,66 @@
+{
+  "method": "breakpoints.set",
+  "description": "Since protocol 0.32: keep these breakpoints for a project, in the data directory's breakpoints.json; repeats are dropped, at most 20. Every location must be one debug.break takes (a function name or file:line), else nothing changes. An empty list forgets them.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "breakpoints"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "breakpoints": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "breakpoints"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "breakpoints": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink",
+        "breakpoints": [
+          "blink.ino:12",
+          "setup"
+        ]
+      },
+      "result": {
+        "breakpoints": [
+          "blink.ino:12",
+          "setup"
+        ]
+      }
+    }
+  ]
+}

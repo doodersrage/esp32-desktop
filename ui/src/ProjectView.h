@@ -18,6 +18,7 @@ class QAction;
 class QPushButton;
 class QToolButton;
 class QStackedWidget;
+class CodeView;
 class QTabWidget;
 class QTreeWidget;
 
@@ -51,13 +52,19 @@ public:
     QComboBox *boardPicker() const { return m_board; }
     QTreeWidget *partsTree() const { return m_parts; }
     QTreeWidget *wiringTree() const { return m_wiring; }
-    QPlainTextEdit *codeView() const { return m_code; }
+    CodeView *codeView() const { return m_code; }
     QTabWidget *tabs() const { return m_tabs; }
     QPushButton *buildButton() const { return m_build; }
     QPushButton *copyCodeButton() const { return m_copyCode; }
     QPushButton *saveCodeButton() const { return m_saveCode; }
     QPushButton *openIdeButton() const { return m_openIde; }
     QString buildStateText() const;
+    // Show a line of the library sketch shown (1-based), selected in the Code tab, as
+    // a build error points at it; false when no sketch is shown or it is shorter.
+    bool showCodeLine(int line);
+    // The line the debugger is paused at in the sketch shown (0 for none): marked, and
+    // the Code tab shown when there is one.
+    void showPausedLine(int line);
     // Render a build.status result for the project and board shown. Public for tests.
     void showBuildState(const QJsonObject &status);
     // The same as the Build button, for the main window's toolbar: enabled when the
@@ -77,6 +84,8 @@ public:
     QString notesText() const;
 
 signals:
+    // A click beside line `line` of the sketch shown (the Code tab's gutter).
+    void codeLineClicked(int line);
     // The project and board now shown, with the build's pin list as the library has it.
     void boardSelected(const QString &project, const QString &board, const QJsonArray &pins);
     // What is shown or whether it can be built changed (currentProjectTitle(), buildAction()).
@@ -148,7 +157,7 @@ private:
     QLabel *m_libraries;
     QTreeWidget *m_wiring;
     QLabel *m_pins;
-    QPlainTextEdit *m_code;
+    CodeView *m_code;
     QPushButton *m_copyCode;
     QPushButton *m_saveCode;
     QPushButton *m_openIde;

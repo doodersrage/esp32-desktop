@@ -7,6 +7,10 @@
 
 #include <QAction>
 #include <QCheckBox>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QKeyEvent>
+#include <QMouseEvent>
 #include <QComboBox>
 #include <QTextBlock>
 #include <QFileInfo>
@@ -24,6 +28,18 @@
 #include <QVBoxLayout>
 
 using namespace Qt::StringLiterals;
+
+namespace {
+// What an error or warning line points at (build.log's location); its block owns it.
+class LocationData : public QTextBlockUserData {
+public:
+    explicit LocationData(QJsonObject l)
+        : location(std::move(l))
+    {
+    }
+    QJsonObject location;
+};
+}
 
 namespace {
 // Keep the log bounded; arduino-cli can print a lot with many libraries.
@@ -47,6 +63,7 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     , m_progress(new QProgressBar(this))
 {
     m_log->setAccessibleName(tr("Build log"));
+    m_log->setToolTip(tr("Double-click an error or warning, or press Enter on it, to see the line it points at"));
     m_port->setAccessibleName(tr("Board port"));
     m_simulate->setToolTip(tr("Run the selected project in the simulator, building it first if needed "
                               "(ESP32, ESP32-S3 and ESP32-C3 boards)"));
@@ -73,6 +90,13 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     connect(m_cancel, &QPushButton::clicked, m_core, &CoreConnection::cancelBuild);
 
     m_problemsOnly->setToolTip(tr("Show only the build's errors and warnings"));
+    m_copyProblems = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), tr("Copy problems"), this);
+    m_copyProblems->setToolTip(tr("Copy the build's error and warning lines, to paste into a forum post or an issue"));
+    m_copyProblems->hide();
+    connect(m_copyProblems, &QPushButton::clicked, this,
+            [this] { QGuiApplication::clipboard()->setText(problemLines()); });
+    m_log->viewport()->installEventFilter(this);
+    m_log->installEventFilter(this);
     m_problems->hide();
     connect(m_problemsOnly, &QCheckBox::toggled, this, [this](bool on) {
         for (QTextBlock b = m_log->document()->begin(); b.isValid(); b = b.next())
@@ -89,6 +113,7 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
     top->addWidget(m_status, 1);
     top->addWidget(m_problems);
     top->addWidget(m_problemsOnly);
+    top->addWidget(m_copyProblems);
     top->addWidget(m_cancel);
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(top);
@@ -158,12 +183,15 @@ void BuildPanel::started(const QJsonObject &plan)
     m_cancel->setEnabled(true);
 }
 
-void BuildPanel::appendLine(const QString &, const QString &line, const QString &level)
+void BuildPanel::appendLine(const QString &, const QString &line, const QString &level,
+                            const QJsonObject &location)
 {
     m_log->appendPlainText(line);
     const int state = OutputLines::state(level);
     QTextBlock b = m_log->document()->lastBlock();
     OutputLines::mark(b, state, {}, m_log->palette());
+    if (!location.isEmpty())
+        b.setUserData(new LocationData(location)); // the block owns it
     if (state == OutputLines::Error)
         ++m_errors;
     else if (state == OutputLines::Warning)
@@ -175,6 +203,48 @@ void BuildPanel::appendLine(const QString &, const QString &line, const QString 
     showProblemCount();
 }
 
+bool BuildPanel::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_log->viewport() && event->type() == QEvent::MouseButtonDblClick) {
+        const auto *mouse = static_cast<QMouseEvent *>(event);
+        if (activateLine(m_log->cursorForPosition(mouse->position().toPoint()).blockNumber()))
+            return true;
+    } else if (watched == m_log && event->type() == QEvent::KeyPress) {
+        const int key = static_cast<QKeyEvent *>(event)->key();
+        if ((key == Qt::Key_Return || key == Qt::Key_Enter) && activateLine(m_log->textCursor().blockNumber()))
+            return true;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+bool BuildPanel::activateLine(int blockNumber)
+{
+    const QTextBlock b = m_log->document()->findBlockByNumber(blockNumber);
+    const auto *d = static_cast<const LocationData *>(b.userData());
+    if (!d)
+        return false;
+    emit locationActivated(d->location);
+    return true;
+}
+
+bool BuildPanel::cancelRunning()
+{
+    if (!m_cancel->isEnabled())
+        return false;
+    m_cancel->click();
+    return true;
+}
+
+QString BuildPanel::problemLines() const
+{
+    QStringList lines;
+    for (QTextBlock b = m_log->document()->begin(); b.isValid(); b = b.next()) {
+        if (b.userState() == OutputLines::Error || b.userState() == OutputLines::Warning)
+            lines << b.text();
+    }
+    return lines.join(u'\n');
+}
+
 void BuildPanel::showProblemCount()
 {
     QStringList parts;
@@ -184,6 +254,7 @@ void BuildPanel::showProblemCount()
         parts << tr("Warnings: %1").arg(m_warnings);
     m_problems->setText(parts.join(u"  "_s));
     m_problems->setVisible(!parts.isEmpty());
+    m_copyProblems->setVisible(!parts.isEmpty());
 }
 
 void BuildPanel::finished(bool ok, const QString &error, const QString &image)

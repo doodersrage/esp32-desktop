@@ -26,6 +26,7 @@ class FakeCore : public QObject {
 public:
     QList<QJsonObject> calls; // method and params of each call after the handshake
     bool debugEnabled = true;
+    QJsonArray kept{u"blink.ino:7"_s}; // breakpoints.get's answer for any project
 
     explicit FakeCore(const QString &path)
         : m_server(new QLocalServer(this))
@@ -63,7 +64,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.30.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.32.0"_s}});
             return;
         }
         if (m == u"device.list" || m == u"device.watch") {
@@ -95,8 +96,15 @@ private:
                 event(u"debug.running"_s, {});
                 event(u"debug.stopped"_s, {{u"reason"_s, u"breakpoint-hit"_s}, {u"breakpoint"_s, 1}, {u"frame"_s, setup}});
             }
+        } else if (m == u"breakpoints.get") {
+            reply(id, QJsonObject{{u"breakpoints"_s, kept}});
+        } else if (m == u"breakpoints.set") {
+            kept = p.value(u"breakpoints"_s).toArray();
+            reply(id, QJsonObject{{u"breakpoints"_s, kept}});
         } else if (m == u"debug.inspect") {
             reply(id, QJsonObject{
+                          {u"locals"_s, QJsonArray{QJsonObject{{u"name"_s, u"pin"_s}, {u"type"_s, u"int"_s}, {u"arg"_s, true}, {u"value"_s, u"2"_s}},
+                                                   QJsonObject{{u"name"_s, u"reading"_s}, {u"type"_s, u"Reading"_s}}}},
                           {u"frames"_s, QJsonArray{setup, QJsonObject{{u"addr"_s, u"0x400d2b40"_s}, {u"func"_s, u"loopTask"_s}}}},
                           {u"registers"_s, QJsonArray{QJsonObject{{u"name"_s, u"pc"_s}, {u"value"_s, u"0x400d1a2c"_s}},
                                                       QJsonObject{{u"name"_s, u"ar0"_s}, {u"value"_s, u"0x800d2b44"_s}}}},
@@ -168,6 +176,55 @@ private slots:
         QTRY_VERIFY(!core.isDebugging());
         QVERIFY(!panel.continueButton()->isEnabled());
         QVERIFY(!panel.addButton()->isEnabled());
+    }
+
+    void keepsBreakpointsAndShowsLocals()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        DebugPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        const auto count = [&fake](const QString &method) { return fake.methods().count(method); };
+        const auto lastOf = [&fake](const QString &method) {
+            for (qsizetype i = fake.calls.size() - 1; i >= 0; --i) {
+                if (fake.calls.at(i).value(u"method"_s).toString() == method)
+                    return fake.calls.at(i).value(u"params"_s).toObject();
+            }
+            return QJsonObject();
+        };
+
+        // Not debugging: the project's kept breakpoints, changed in place.
+        panel.setProject(u"blink"_s);
+        QTRY_COMPARE(panel.breakpointLocations(), QStringList{u"blink.ino:7"_s});
+        QVERIFY(panel.toggleBreakpoint(u"blink.ino:9"_s));
+        QCOMPARE(panel.breakpointLocations(), (QStringList{u"blink.ino:7"_s, u"blink.ino:9"_s}));
+        QTRY_COMPARE(lastOf(u"breakpoints.set"_s).value(u"breakpoints"_s).toArray().size(), 2);
+        QVERIFY(panel.toggleBreakpoint(u"blink.ino:9"_s));
+        QTRY_COMPARE(lastOf(u"breakpoints.set"_s).value(u"breakpoints"_s).toArray(), (QJsonArray{u"blink.ino:7"_s}));
+        const auto saves = count(u"breakpoints.set"_s);
+
+        // A debug run sets them before the firmware starts, without saving again.
+        core.startSim(u"blink"_s, u"esp32"_s, true);
+        QTRY_COMPARE(panel.breakpoints()->count(), 1);
+        QCOMPARE(lastOf(u"debug.break"_s).value(u"location"_s).toString(), u"blink.ino:7"_s);
+        QCOMPARE(count(u"breakpoints.set"_s), saves);
+        // One added while paused is set at once and kept.
+        QVERIFY(panel.toggleBreakpoint(u"blink.ino:12"_s));
+        QTRY_COMPARE(panel.breakpoints()->count(), 2);
+        QTRY_COMPARE(lastOf(u"breakpoints.set"_s).value(u"breakpoints"_s).toArray(),
+                     (QJsonArray{u"blink.ino:7"_s, u"blink.ino:12"_s}));
+
+        // Stopped: the function's arguments and locals.
+        panel.continueButton()->click();
+        QTRY_COMPARE(panel.locals()->topLevelItemCount(), 2);
+        QCOMPARE(panel.locals()->topLevelItem(0)->text(0), u"pin (argument)"_s);
+        QCOMPARE(panel.locals()->topLevelItem(0)->text(1), u"2"_s);
+        QCOMPARE(panel.locals()->topLevelItem(1)->text(2), u"Reading"_s);
+        QVERIFY(!panel.locals()->topLevelItem(1)->toolTip(1).isEmpty()); // no simple value
+        core.stopSim();
+        QTRY_VERIFY(!core.isDebugging());
     }
 
     void debuggerSitsBesideTheConsole()

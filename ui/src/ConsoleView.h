@@ -77,6 +77,8 @@ public:
     // Set the steps from the system's size (Preferences), without saving them.
     void setZoomSteps(int steps);
     int zoomSteps() const { return m_zoom; }
+    // Scrolled up while output came: the "New output" button that goes to the end shows.
+    QToolButton *newOutputButton() const { return m_jump; }
 
 signals:
     void tagsChanged();
@@ -84,8 +86,13 @@ signals:
 protected:
     void wheelEvent(QWheelEvent *event) override;
     void changeEvent(QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
+    // After adding text: follow it when the view was at the end, else offer to.
+    void followOrOffer(bool wasAtEnd);
+    void placeJump();
+    QToolButton *m_jump = nullptr;
     void applyZoom();
     void appendText(QString text);
     void markLines(const QJsonArray &lines);

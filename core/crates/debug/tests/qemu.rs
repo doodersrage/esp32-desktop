@@ -111,6 +111,21 @@ async fn debug_session(
     let regs = g.registers().await.unwrap();
     assert!(regs.iter().any(|(n, v)| n == "pc" && v.starts_with("0x")));
     assert!(regs.iter().any(|(n, _)| n == "sp" || n == "a1"), "{regs:?}");
+    // app_main's locals: the chip info struct and the line buffer have no simple
+    // value; they are listed with their types.
+    let locals = g.locals().await.unwrap();
+    let info = locals.iter().find(|l| l.name == "info").expect("no `info`");
+    assert_eq!(
+        (info.kind.as_str(), info.arg, &info.value),
+        ("esp_chip_info_t", false, &None),
+        "{locals:?}"
+    );
+    assert!(
+        locals
+            .iter()
+            .any(|l| l.name == "line" && l.kind.starts_with("char [")),
+        "{locals:?}"
+    );
     // Interrupt works while running (mi-async).
     g.break_delete(1).await.unwrap();
     g.control("continue").await.unwrap();

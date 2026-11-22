@@ -418,6 +418,22 @@ async fn session_bridges_pins(chip: Chip) {
         .await
         .unwrap();
     assert_eq!(found, WaitOutcome::Found);
+    // The host reports the simulation's time about twice a second, and it moves on.
+    let mut clocks = Vec::new();
+    while clocks.len() < 2 {
+        let ev = tokio::time::timeout(Duration::from_secs(5), gpio.next_event())
+            .await
+            .unwrap_or_else(|_| panic!("{chip}: no clock from the host"))
+            .unwrap()
+            .expect("host closed the link");
+        if let PinEvent::Clock { ns } = ev {
+            clocks.push(ns);
+        }
+    }
+    assert!(
+        clocks[0] < clocks[1] && clocks[0] >= times[0],
+        "{chip}: {clocks:?}"
+    );
     s.shutdown().await.unwrap();
 }
 

@@ -32,6 +32,10 @@ public:
     void openPort(const QString &path, const QString &expect = {});
     QString expectText() const;
     QPushButton *garbledSwitch() const { return m_garbledSwitch; }
+    // Record…: everything the board sends, appended to a file (serial.record).
+    QPushButton *recordButton() const { return m_record; }
+    // Start recording to `path`, or stop with an empty one; Record… asks for the file.
+    void recordTo(const QString &path);
     // At start: choose the port used last time when it shows up, and open it again
     // if it was open when the app quit (Preferences::reopenSerial).
     void restoreLastPort() { m_restore = true; }
@@ -71,6 +75,8 @@ private:
     QPushButton *m_open;
     QPushButton *m_reset;
     QPushButton *m_clear;
+    QPushButton *m_record = nullptr;
+    QString m_recordingTo;
     ConsoleView *m_output;
     QLineEdit *m_input;
     QComboBox *m_ending;

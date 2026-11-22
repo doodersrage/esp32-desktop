@@ -53,6 +53,9 @@ pub enum PinEvent {
     },
     /// A part's script failed.
     PartError { id: String, message: String },
+    /// The simulation's time, in nanoseconds of QEMU's virtual clock (sent about
+    /// twice a second).
+    Clock { ns: u64 },
 }
 
 /// Parse one line from the host; None for lines that are not pin events.
@@ -62,6 +65,11 @@ pub fn parse_line(line: &str) -> Option<PinEvent> {
         return Some(PinEvent::Part {
             id: id.to_owned(),
             state: serde_json::from_str(json).ok()?,
+        });
+    }
+    if let Some(rest) = line.strip_prefix("clock ") {
+        return Some(PinEvent::Clock {
+            ns: rest.trim().parse().ok()?,
         });
     }
     if let Some(rest) = line.strip_prefix("parterror ") {
@@ -188,6 +196,11 @@ mod tests {
 
     #[test]
     fn parses_host_lines() {
+        assert_eq!(
+            parse_line("clock 12400000000"),
+            Some(PinEvent::Clock { ns: 12_400_000_000 })
+        );
+        assert_eq!(parse_line("clock soon"), None);
         assert_eq!(
             parse_line("out 2 1"),
             Some(PinEvent::Level {

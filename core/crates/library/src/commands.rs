@@ -1,6 +1,7 @@
 //! Lines the user sends to boards often, kept per project for the serial monitor's
 //! quick-send buttons, in a JSON file in the data directory (`commands.json`): an
-//! object from project id ("" for none) to its lines.
+//! object from project id ("" for none) to its lines. The daemon keeps each project's
+//! breakpoints the same way, in `breakpoints.json`.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

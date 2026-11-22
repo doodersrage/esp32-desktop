@@ -51,6 +51,13 @@ public:
     // What Run, Debug and Flash act on now.
     QString targetProject() const;
     QString targetBoard() const;
+    // Cancel the build that is running, if there is one (Esc in this dock).
+    bool cancelRunning();
+    // The error and warning lines, for pasting into a forum post or an issue.
+    QString problemLines() const;
+    QPushButton *copyProblemsButton() const { return m_copyProblems; }
+    // Show what a located log line points at, as a double-click on it does. For tests.
+    bool activateLine(int blockNumber);
 
 signals:
     // Run, Debug or Flash needs the project shown built first.
@@ -59,13 +66,18 @@ signals:
     void actionsChanged();
     // Flash the last successful build to `port`.
     void flashRequested(const QString &port, const QString &project, const QString &board);
+    // A double-click or Enter on an error or warning line that names a file and line:
+    // build.log's location (file, line, column, and path for a local project's file).
+    void locationActivated(const QJsonObject &location);
 
 private:
     enum class Then { Nothing, Run, Debug, Flash };
     void act(Then what);
     bool targetBuilt() const;
     void started(const QJsonObject &plan);
-    void appendLine(const QString &stream, const QString &line, const QString &level = {});
+    void appendLine(const QString &stream, const QString &line, const QString &level = {},
+                    const QJsonObject &location = {});
+    bool eventFilter(QObject *watched, QEvent *event) override;
     void finished(bool ok, const QString &error, const QString &image);
     void setPorts(const QJsonArray &ports);
     void updateFlashButton();
@@ -74,6 +86,7 @@ private:
     QLabel *m_status;
     QPushButton *m_cancel;
     QPlainTextEdit *m_log;
+    QPushButton *m_copyProblems = nullptr;
     QLabel *m_problems;
     QCheckBox *m_problemsOnly;
     int m_errors = 0;
