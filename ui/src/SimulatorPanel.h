@@ -11,6 +11,7 @@ class CoreConnection;
 class QCheckBox;
 class QComboBox;
 class QLabel;
+class QAction;
 class QLineEdit;
 class QPushButton;
 
@@ -34,10 +35,15 @@ public:
     QPushButton *resetButton() const { return m_reset; }
     QPushButton *runAgainButton() const { return m_again; }
     QCheckBox *icountBox() const { return m_icount; }
+    // Pause or resume the running simulation (F6; not a debug run, which the
+    // debugger pauses). For the toolbar and Project menu too.
+    QAction *pauseAction() const { return m_pauseAction; }
+    QPushButton *pauseButton() const { return m_pause; }
 
 private:
     void send();
     void setRunning(bool running);
+    void updatePause();
 
     CoreConnection *m_core;
     QLabel *m_status;
@@ -46,6 +52,9 @@ private:
     QLabel *m_network;
     QLabel *m_expect;
     QPushButton *m_reset;
+    QPushButton *m_pause;
+    QAction *m_pauseAction;
+    QString m_runningText; // the status while it runs, for after a pause
     QPushButton *m_stop;
     QPushButton *m_again;
     // The last build run here, for Run again.

@@ -1,0 +1,74 @@
+{
+  "event": "serial.backtrace",
+  "description": "Since protocol 0.34, for a port opened with decode: the crash backtrace the firmware just printed (Xtensa's Backtrace: line, or a RISC-V register dump's MEPC and RA), decoded from the build's ELF with the pinned toolchain's addr2line, innermost first. Not sent without the ELF or the toolchain.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "frames"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "frames": {
+        "type": "array",
+        "maxItems": 96,
+        "items": {
+          "type": "object",
+          "required": [
+            "addr"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "addr": {
+              "type": "string",
+              "description": "The code address, 0x and eight hex digits. Inlined code gives several frames with one address: the inlined function first."
+            },
+            "func": {
+              "type": "string",
+              "description": "The function, when the ELF names it."
+            },
+            "file": {
+              "type": "string",
+              "description": "The source file's path, when known."
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sketch": {
+              "const": true,
+              "description": "The frame is in the project's own sketch (<project>.ino)."
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "frames": [
+          {
+            "addr": "0x400d2a5e",
+            "func": "loop()",
+            "file": "/home/u/.local/share/esp32bench/sketchbook/blink/blink.ino",
+            "line": 12,
+            "sketch": true
+          },
+          {
+            "addr": "0x400d1b6f",
+            "func": "loopTask(void*)",
+            "file": "/home/u/.arduino15/packages/esp32/hardware/esp32/3.3.12/cores/esp32/main.cpp",
+            "line": 74
+          }
+        ]
+      }
+    }
+  ]
+}

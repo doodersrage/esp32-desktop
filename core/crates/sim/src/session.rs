@@ -291,6 +291,11 @@ impl Session {
         self.qmp.execute("cont", None).await.map(|_| ())
     }
 
+    /// Stop the CPUs; QEMU's virtual clock stands still until [`Session::resume`].
+    pub async fn pause(&mut self) -> Result<(), Error> {
+        self.qmp.execute("stop", None).await.map(|_| ())
+    }
+
     /// Ask QEMU to quit, then kill it if it does not exit promptly. A QEMU that no
     /// longer answers QMP is killed too, instead of waiting for its reply forever.
     pub async fn shutdown(mut self) -> Result<(), Error> {

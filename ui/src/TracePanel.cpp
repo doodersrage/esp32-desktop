@@ -8,6 +8,7 @@
 #include <QHBoxLayout>
 #include <QJsonObject>
 #include <QLabel>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QMenu>
@@ -35,12 +36,99 @@ TraceView::TraceView(QWidget *parent)
 {
     setAutoFillBackground(true);
     setBackgroundRole(QPalette::Base);
+    setFocusPolicy(Qt::StrongFocus); // the arrow keys step the markers
+}
+
+void TraceView::setSelectedPin(int gpio)
+{
+    m_selected = m_pins.contains(gpio) ? gpio : -1;
+    update();
+    emit markersChanged();
+}
+
+bool TraceView::stepMarker(bool b, bool forward)
+{
+    if (m_selected < 0)
+        return false;
+    const QList<Edge> list = m_edges.value(m_selected);
+    qint64 from = b ? m_markB : m_markA;
+    if (from < 0) // from the edge of the picture
+        from = forward ? m_end - m_span - 1 : m_end + 1;
+    std::optional<qint64> to;
+    if (forward) {
+        auto it = std::upper_bound(list.cbegin(), list.cend(), from, [](qint64 t, const Edge &e) { return t < e.t; });
+        if (it != list.cend())
+            to = it->t;
+    } else {
+        auto it = std::lower_bound(list.cbegin(), list.cend(), from, [](const Edge &e, qint64 t) { return e.t < t; });
+        if (it != list.cbegin())
+            to = (it - 1)->t;
+    }
+    if (!to)
+        return false;
+    if (b)
+        setMarkers(m_markA < 0 ? *to : m_markA, *to);
+    else
+        setMarkers(*to, m_markB);
+    // Into view, holding the picture.
+    if (*to < m_end - m_span || *to > m_end) {
+        m_end = std::min(m_now, *to + m_span / 2);
+        if (!m_hold) {
+            m_hold = true;
+            emit held();
+        }
+        update();
+    }
+    return true;
+}
+
+double TraceView::highFraction(int gpio, qint64 from, qint64 to) const
+{
+    if (to < from)
+        std::swap(from, to);
+    const QList<Edge> list = m_edges.value(gpio);
+    auto it = std::upper_bound(list.cbegin(), list.cend(), from, [](qint64 t, const Edge &e) { return t < e.t; });
+    if (to == from || it == list.cbegin())
+        return -1; // its level at `from` is not known
+    bool level = (it - 1)->level;
+    qint64 at = from, high = 0;
+    for (; it != list.cend() && it->t < to; ++it) {
+        if (level)
+            high += it->t - at;
+        at = it->t;
+        level = it->level;
+    }
+    if (level)
+        high += to - at;
+    return double(high) / double(to - from);
+}
+
+void TraceView::keyPressEvent(QKeyEvent *event)
+{
+    const bool left = event->key() == Qt::Key_Left, right = event->key() == Qt::Key_Right;
+    if ((left || right) && m_selected >= 0) {
+        stepMarker(event->modifiers() & Qt::ShiftModifier, right);
+        event->accept();
+        return;
+    }
+    if ((event->key() == Qt::Key_Up || event->key() == Qt::Key_Down) && !shownPins().isEmpty()) {
+        // Select the pin above or below.
+        const QList<int> shown = shownPins();
+        const qsizetype i = shown.indexOf(m_selected);
+        const qsizetype next = i < 0 ? 0 : std::clamp<qsizetype>(i + (event->key() == Qt::Key_Down ? 1 : -1), 0, shown.size() - 1);
+        setSelectedPin(shown.at(next));
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
 }
 
 void TraceView::setPins(const QList<int> &gpios)
 {
     m_pins = gpios;
     std::sort(m_pins.begin(), m_pins.end());
+    if (!m_pins.contains(m_selected))
+        m_selected = -1;
     setLabels(m_labels);
     updateGeometry();
     update();
@@ -169,7 +257,10 @@ QString TraceView::measurement() const
     const QString freq = hz >= 1e6   ? tr("%1 MHz").arg(loc.toString(hz / 1e6, 'g', 4))
                          : hz >= 1e3 ? tr("%1 kHz").arg(loc.toString(hz / 1e3, 'g', 4))
                                      : tr("%1 Hz").arg(loc.toString(hz, 'g', 4));
-    return tr("A–B: %1 (%2)").arg(duration(dt), freq);
+    QString text = tr("A–B: %1 (%2)").arg(duration(dt), freq);
+    if (const double high = m_selected >= 0 ? highFraction(m_selected, m_markA, m_markB) : -1; high >= 0)
+        text = tr("%1 · %2 high %3% of it").arg(text, pinName(m_selected)).arg(qRound(high * 100));
+    return text;
 }
 
 void TraceView::mousePressEvent(QMouseEvent *event)
@@ -191,7 +282,12 @@ void TraceView::mousePressEvent(QMouseEvent *event)
         setMarkers(-1, -1);
         return;
     }
-    if (event->button() != Qt::LeftButton || event->position().x() < m_labelWidth)
+    if (event->button() != Qt::LeftButton)
+        return;
+    // A click on a row selects its pin, for the arrow keys.
+    if (const int gpio = pinAt(int(event->position().y())); gpio >= 0 && gpio != m_selected)
+        setSelectedPin(gpio);
+    if (event->position().x() < m_labelWidth)
         return;
     const qint64 t = timeAt(int(event->position().x()));
     // A, then B, then a new A.
@@ -307,7 +403,13 @@ void TraceView::paintEvent(QPaintEvent *)
         const int gpio = shown[row];
         const int top = AxisHeight + row * RowHeight + 5;
         const int high = top, low = top + RowHeight - 10;
-        p.setPen(pal.color(QPalette::Text));
+        if (gpio == m_selected) {
+            // The selected pin's row, as a selection is shown.
+            p.fillRect(QRect(0, top - 4, m_labelWidth - 2, RowHeight - 2), pal.brush(QPalette::Highlight));
+            p.setPen(pal.color(QPalette::HighlightedText));
+        } else {
+            p.setPen(pal.color(QPalette::Text));
+        }
         p.drawText(QRect(4, top, m_labelWidth - 8, low - top), Qt::AlignLeft | Qt::AlignVCenter,
                    pinName(gpio));
 
@@ -369,7 +471,8 @@ TracePanel::TracePanel(CoreConnection *core, QWidget *parent)
     m_measure->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_view->setToolTip(tr("Click to place marker A, again for B, to measure the time between them; right-click "
                           "clears them. Ctrl and the mouse wheel zoom; the wheel alone scrolls back in time. "
-                          "Right-click a pin's name to hide it or show only it."));
+                          "Right-click a pin's name to hide it or show only it. Click a pin's row, then the left and right "
+                          "arrow keys move marker A to its edges (with Shift, marker B); up and down pick another pin."));
     m_view->setAccessibleName(tr("Pin trace"));
     connect(m_view, &TraceView::markersChanged, this, [this] { m_measure->setText(m_view->measurement()); });
     connect(m_view, &TraceView::held, this, [this] {

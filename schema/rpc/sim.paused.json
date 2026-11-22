@@ -1,0 +1,30 @@
+{
+  "event": "sim.paused",
+  "description": "Since protocol 0.34: the simulation was paused or resumed (sim.pause).",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "paused"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "paused": {
+        "type": "boolean"
+      }
+    }
+  },
+  "examples": [
+    {
+      "params": {
+        "subscription": 3,
+        "paused": true
+      }
+    }
+  ]
+}

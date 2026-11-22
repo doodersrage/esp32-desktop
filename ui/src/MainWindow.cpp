@@ -225,25 +225,7 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     connect(core, &CoreConnection::buildStarted, m_buildDock, &QDockWidget::raise);
     // An error or warning line that names a place: a library sketch's line in its Code
     // tab, a local project's file in the user's editor.
-    connect(m_buildPanel, &BuildPanel::locationActivated, this, [this](const QJsonObject &at) {
-        const QString file = at.value(u"file"_s).toString();
-        const int line = at.value(u"line"_s).toInt();
-        const QString id = m_project->currentProjectId();
-        if (!id.isEmpty() && file == id + u".ino"_s && m_project->showCodeLine(line))
-            return;
-        const QString path = at.value(u"path"_s).toString();
-        if (!path.isEmpty()) {
-            if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
-                m_messages->showError(tr("Nothing on this computer opens %1. Its line %2 has the problem.")
-                                          .arg(QDir::toNativeSeparators(path))
-                                          .arg(line));
-            return;
-        }
-        m_messages->showError(tr("Line %1 of %2 is not in this project's own code: it is in a library "
-                                 "or in the ESP32 core the build uses.")
-                                  .arg(line)
-                                  .arg(file));
-    });
+    connect(m_buildPanel, &BuildPanel::locationActivated, this, &MainWindow::showLocation);
     // A run's output check ending (it matched, or timed out) while the window is
     // behind others asks for attention, as builds and flashes do; once per run.
     connect(core, &CoreConnection::simStarted, this, [this] { m_expectAlerted = false; });
@@ -278,6 +260,9 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
     m_simDock = new QDockWidget(tr("Simulator"), this);
     m_simDock->setObjectName(u"simDock"_s);
     m_sim = new SimulatorPanel(core, m_simDock);
+    // A decoded crash backtrace's line, clicked in a console.
+    connect(m_sim->console(), &ConsoleView::frameActivated, this, &MainWindow::showLocation);
+    connect(m_serial->console(), &ConsoleView::frameActivated, this, &MainWindow::showLocation);
     m_simDock->setWidget(m_sim);
     addDockWidget(Qt::BottomDockWidgetArea, m_simDock);
     tabifyDockWidget(m_serialDock, m_simDock);
@@ -407,6 +392,7 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
             [this](const QString &port, const QString &project, const QString &board) {
                 freePort(port);
                 m_flashedProject = project;
+                m_flashedBoard = board;
                 m_core->flashBuild(port, project, board);
             });
     connect(core, &CoreConnection::boardConsentRequired, this,
@@ -445,7 +431,8 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
                     // At the speed the new firmware talks, or its output is garbled.
                     m_serial->suggestBaud(m_serial->projectBaud(m_flashedProject));
                     // And whether it prints what the project expects.
-                    m_serial->openPort(m_lastBoardPort, m_flashedProject);
+                    // And decode its crashes from the build flashed.
+                    m_serial->openPort(m_lastBoardPort, m_flashedProject, m_flashedBoard);
                     m_reopenSerial.clear();
                 } else if (!m_reopenSerial.isEmpty()) {
                     m_serial->openPort(std::exchange(m_reopenSerial, {}));
@@ -558,6 +545,7 @@ void MainWindow::buildToolBar()
     m_stopSim->setToolTip(tr("Stop the simulation"));
     m_stopSim->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
     connect(m_stopSim, &QAction::triggered, m_core, &CoreConnection::stopSim);
+    m_toolBar->insertAction(m_stopSim, m_sim->pauseAction());
     m_toolBar->addSeparator();
     auto *portLabel = new QLabel(tr("Port:"), m_toolBar);
     portLabel->setContentsMargins(6, 0, 4, 0);
@@ -617,6 +605,14 @@ void MainWindow::buildToolBar()
             [this] { m_debugger->setProject(m_project->currentProjectId()); });
     connect(m_debugger, &DebugPanel::breakpointsChanged, this, &MainWindow::showBreakpointLines);
     connect(m_project, &ProjectView::currentChanged, this, &MainWindow::showBreakpointLines);
+    connect(m_project, &ProjectView::runToLineRequested, this, [this](int line) {
+        m_debugger->runTo(u"%1.ino:%2"_s.arg(m_project->currentProjectId()).arg(line));
+    });
+    // Run to a line works while paused in a debug run.
+    connect(m_core, &CoreConnection::debugStopped, this, [this] { m_project->codeView()->setRunToEnabled(true); });
+    for (auto signal : {&CoreConnection::debugRunning, &CoreConnection::debugExited})
+        connect(m_core, signal, this, [this] { m_project->codeView()->setRunToEnabled(false); });
+    connect(m_core, &CoreConnection::simStopped, this, [this] { m_project->codeView()->setRunToEnabled(false); });
     connect(m_project, &ProjectView::codeLineClicked, this, [this](int line) {
         const QString id = m_project->currentProjectId();
         if (!m_debugger->toggleBreakpoint(u"%1.ino:%2"_s.arg(id).arg(line))) {
@@ -832,6 +828,7 @@ void MainWindow::buildMenus()
     project->addAction(m_project->buildAction());
     project->addAction(m_buildPanel->simulateAction());
     project->addAction(m_buildPanel->debugAction());
+    project->addAction(m_sim->pauseAction());
     project->addAction(m_stopSim);
     project->addSeparator();
     project->addAction(m_buildPanel->flashAction());
@@ -1108,8 +1105,34 @@ void MainWindow::showPreferences()
     m_preferences->raise();
 }
 
+void MainWindow::showLocation(const QJsonObject &at)
+{
+    const QString file = at.value(u"file"_s).toString();
+    const int line = at.value(u"line"_s).toInt();
+    const QString id = m_project->currentProjectId();
+    if (!id.isEmpty() && file == id + u".ino"_s && m_project->showCodeLine(line))
+        return;
+    const QString path = at.value(u"path"_s).toString();
+    if (!path.isEmpty()) {
+        if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
+            m_messages->showError(tr("Nothing on this computer opens %1. Its line %2 has the problem.")
+                                      .arg(QDir::toNativeSeparators(path))
+                                      .arg(line));
+        return;
+    }
+    m_messages->showError(tr("Line %1 of %2 is not in this project's own code: it is in a library "
+                             "or in the ESP32 core the build uses.")
+                              .arg(line)
+                              .arg(file));
+}
+
 void MainWindow::find()
 {
+    // In the Code tab: find in the sketch.
+    if (m_project->codeHasFocus()) {
+        m_project->findInCode();
+        return;
+    }
     // The console the focus is in, if it is in one.
     for (QWidget *w = QApplication::focusWidget(); w; w = w->parentWidget()) {
         if (auto *bar = w->findChild<ConsoleBar *>(QString(), Qt::FindDirectChildrenOnly)) {
@@ -1143,10 +1166,15 @@ QString MainWindow::shortcutsText() const
         tr("Bigger or smaller text in the console (also Ctrl and the mouse wheel)"));
     add(QKeySequence(Qt::CTRL | Qt::Key_0).toString(QKeySequence::NativeText), tr("The console's text at its usual size"));
     add(tr("Up / Down"), tr("In the text to send: the lines sent before"));
+    add(QKeySequence(Qt::CTRL | Qt::Key_L).toString(QKeySequence::NativeText), tr("In the Code tab: go to a line"));
     add(QKeySequence(QKeySequence::Undo).toString(QKeySequence::NativeText) + u" / "_s
             + QKeySequence(QKeySequence::Redo).toString(QKeySequence::NativeText),
         tr("Undo or redo a change to the circuit"));
     add(QKeySequence(Qt::CTRL | Qt::Key_D).toString(QKeySequence::NativeText), tr("In the circuit: a copy of the selected part"));
+    add(QKeySequence(QKeySequence::Copy).toString(QKeySequence::NativeText) + u" / "_s
+            + QKeySequence(QKeySequence::Paste).toString(QKeySequence::NativeText),
+        tr("In the circuit: copy the selected part, and paste it into this or another project's circuit"));
+    add(tr("Left / Right"), tr("In the trace: move marker A to the selected pin's previous or next change (with Shift, marker B)"));
     add(QKeySequence(QKeySequence::Delete).toString(QKeySequence::NativeText), tr("In the circuit: remove the selected part"));
     add(QKeySequence(Qt::Key_Escape).toString(QKeySequence::NativeText),
         tr("Close the message above the library; in the Build dock, stop the build"));

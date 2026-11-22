@@ -66,7 +66,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.33.0"_s}}}});
+                                               {u"protocol"_s, u"0.34.0"_s}}}});
         } else if (method == u"build.start") {
             const QString consent = params.value(u"consent"_s).toString();
             buildRequests << (consent.isEmpty() ? u"-"_s : consent);
@@ -265,6 +265,13 @@ private slots:
         QVERIFY(panel.statusText().contains(u"92%"_s));
         QVERIFY(panel.statusText().contains(u"6%"_s));
         QVERIFY(panel.statusText().contains(u"nearly full"_s));
+        // How long it took.
+        emit core.buildStarted(QJsonObject{{u"project"_s, u"blink"_s}, {u"board"_s, u"esp32"_s}});
+        emit core.buildTime(75.4);
+        emit core.buildFinished(true, {}, u"/tmp/x/blink.ino.merged.bin"_s);
+        QVERIFY2(panel.statusText().contains(u"It took 1 min 15 s."_s), qPrintable(panel.statusText()));
+        emit core.buildFinished(false, u"x"_s, {});
+        QVERIFY(!panel.statusText().contains(u"It took"_s)); // not the last build's time
         // Flash progress: the percent, then the speed and time left.
         QVERIFY(panel.flashProgressText(0, 1000).startsWith(u"Writing 0%"_s));
         QTest::qWait(600);

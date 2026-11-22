@@ -2,10 +2,14 @@
 
 #include "ConsoleView.h"
 
+#include <QContextMenuEvent>
 #include <QFontDatabase>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QTextBlock>
+
+using namespace Qt::StringLiterals;
 
 class CodeGutter : public QWidget {
 public:
@@ -19,6 +23,14 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *event) override { m_view->paintGutter(event); }
+    void contextMenuEvent(QContextMenuEvent *event) override
+    {
+        if (const int line = m_view->lineAt(event->pos().y()); line > 0) {
+            QMenu *menu = m_view->lineMenu(line);
+            menu->setAttribute(Qt::WA_DeleteOnClose);
+            menu->popup(event->globalPos());
+        }
+    }
     void mousePressEvent(QMouseEvent *event) override
     {
         if (event->button() == Qt::LeftButton) {
@@ -53,6 +65,66 @@ int CodeView::gutterWidth() const
         ++digits;
     // Room for the dot or arrow, then the numbers.
     return fontMetrics().height() + 6 + fontMetrics().horizontalAdvance(QLatin1Char('9')) * std::max(2, digits);
+}
+
+QMenu *CodeView::lineMenu(int line)
+{
+    auto *menu = new QMenu(this);
+    menu->addAction(QIcon::fromTheme(u"media-record"_s), tr("Add or remove a breakpoint on line %1").arg(line), this,
+                    [this, line] { emit gutterClicked(line); });
+    QAction *run = menu->addAction(QIcon::fromTheme(u"media-playback-start"_s), tr("Run to line %1").arg(line), this,
+                                   [this, line] { emit runToRequested(line); });
+    run->setEnabled(m_runTo);
+    if (!m_runTo)
+        run->setToolTip(tr("While debugging, when the firmware is paused"));
+    menu->setToolTipsVisible(true);
+    return menu;
+}
+
+void CodeView::contextMenuEvent(QContextMenuEvent *event)
+{
+    QMenu *menu = createStandardContextMenu(event->pos());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    const int line = cursorForPosition(event->pos()).blockNumber() + 1;
+    QMenu *lines = lineMenu(line);
+    menu->addSeparator();
+    for (QAction *a : lines->actions()) {
+        a->setParent(menu);
+        menu->addAction(a);
+    }
+    lines->deleteLater();
+    menu->setToolTipsVisible(true);
+    menu->popup(event->globalPos());
+}
+
+bool CodeView::findText(const QString &text, bool backward)
+{
+    if (text.isEmpty())
+        return false;
+    const QTextDocument::FindFlags flags = backward ? QTextDocument::FindBackward : QTextDocument::FindFlags();
+    if (find(text, flags))
+        return true;
+    // Round from the other end.
+    const QTextCursor saved = textCursor();
+    QTextCursor c(document());
+    c.movePosition(backward ? QTextCursor::End : QTextCursor::Start);
+    setTextCursor(c);
+    if (find(text, flags))
+        return true;
+    setTextCursor(saved);
+    return false;
+}
+
+bool CodeView::goToLine(int line)
+{
+    const QTextBlock block = document()->findBlockByNumber(line - 1);
+    if (line < 1 || !block.isValid())
+        return false;
+    QTextCursor c(block);
+    c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    setTextCursor(c);
+    centerCursor();
+    return true;
 }
 
 int CodeView::lineAt(int y) const

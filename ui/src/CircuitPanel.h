@@ -47,6 +47,15 @@ public:
     QPushButton *undoButton() const { return m_undoButton; }
     QPushButton *redoButton() const { return m_redoButton; }
     QPushButton *duplicateButton() const { return m_duplicate; }
+    QPushButton *pasteButton() const { return m_paste; }
+    // Copy the selected part (Ctrl+C on the canvas), to paste into any project's or
+    // board's circuit (Ctrl+V): the Add dialog opens with its settings, on pins of
+    // this project that no part uses. False when no part is selected.
+    bool copyPart();
+    // False when the clipboard holds no part, or its kind is not one this app has.
+    bool pastePart();
+    // The clipboard's format for a part: its circuit JSON.
+    static constexpr const char *PartMime = "application/x-esp32bench-part";
     // The selected part's id, or empty.
     QString selectedPartId() const;
     // The canvas's zoom: by a factor (between a quarter and four times), to fit the
@@ -107,6 +116,8 @@ private:
     QPushButton *m_undoButton;
     QPushButton *m_redoButton = nullptr;
     QPushButton *m_duplicate = nullptr;
+    QPushButton *m_paste = nullptr;
+    void updatePaste();
     QToolButton *m_fitButton = nullptr;
     // The board's circuits before each change, newest last.
     QList<QJsonObject> m_undo;

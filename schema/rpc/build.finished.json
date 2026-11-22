@@ -86,6 +86,11 @@
             "minimum": 1
           }
         }
+      },
+      "seconds": {
+        "type": "number",
+        "minimum": 0,
+        "description": "Since protocol 0.34: how long the build took, to a tenth of a second, not counting a wait for another build to finish."
       }
     }
   },

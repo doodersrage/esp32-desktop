@@ -122,6 +122,7 @@ BuildPanel::BuildPanel(CoreConnection *core, QWidget *parent)
 
     connect(m_core, &CoreConnection::buildStarted, this, &BuildPanel::started);
     connect(m_core, &CoreConnection::buildSize, this, [this](const QJsonObject &size) { m_size = size; });
+    connect(m_core, &CoreConnection::buildTime, this, [this](double seconds) { m_seconds = seconds; });
     connect(m_core, &CoreConnection::buildLog, this, &BuildPanel::appendLine);
     connect(m_core, &CoreConnection::buildFinished, this, &BuildPanel::finished);
     connect(m_core, &CoreConnection::devicesListed, this, &BuildPanel::setPorts);
@@ -282,6 +283,10 @@ void BuildPanel::finished(bool ok, const QString &error, const QString &image)
                                       loc.formattedDataSize(m_size.value(u"ramMax"_s).toInteger())));
     }
     m_size = {};
+    // How long it took.
+    if (m_seconds >= 0)
+        m_status->setText(m_status->text() + u" "_s + tr("It took %1.").arg(Labels::duration(m_seconds)));
+    m_seconds = -1;
     if (ok) {
         m_builtProject = m_pendingProject;
         m_builtBoard = m_pendingBoard;

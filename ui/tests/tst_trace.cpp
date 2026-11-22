@@ -66,7 +66,7 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.33.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.34.0"_s}});
         } else if (m == u"sim.start") {
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false},
                                   {u"engine"_s, u"lcgamboa"_s}, {u"pins"_s, pinsToReport}});
@@ -158,6 +158,49 @@ private slots:
         QCOMPARE(view.span(), 500'000);
         QVERIFY(std::abs(view.timeAt(at.x()) - t) < 2'000);
         QCOMPARE(held.size(), 1);
+    }
+
+    void stepsMarkersToEdgesAndMeasuresTheDuty()
+    {
+        TraceView view;
+        view.resize(664, 120);
+        view.setPins({2, 4});
+        view.setSpan(10'000'000);
+        // GPIO 2: high 1 ms of every 4 ms.
+        QJsonArray edges;
+        for (int i = 0; i < 3; ++i) {
+            edges << QJsonObject{{u"gpio"_s, 2}, {u"t"_s, qint64(i) * 4'000'000 + 1'000'000}, {u"level"_s, true}};
+            edges << QJsonObject{{u"gpio"_s, 2}, {u"t"_s, qint64(i) * 4'000'000 + 2'000'000}, {u"level"_s, false}};
+        }
+        view.addEdges(edges);
+        QVERIFY(!view.stepMarker(false, true)); // no pin selected
+        // Up and Down pick a pin; Right steps A to its edges.
+        view.setFocus();
+        QTest::keyClick(&view, Qt::Key_Down);
+        QCOMPARE(view.selectedPin(), 2);
+        view.setMarkers(500'000, -1);
+        QTest::keyClick(&view, Qt::Key_Right);
+        QCOMPARE(view.markerA(), 1'000'000);
+        QTest::keyClick(&view, Qt::Key_Right);
+        QCOMPARE(view.markerA(), 2'000'000);
+        QTest::keyClick(&view, Qt::Key_Left);
+        QCOMPARE(view.markerA(), 1'000'000);
+        // Shift moves B: one period on, from A's edge.
+        view.setMarkers(1'000'000, 1'000'000);
+        QTest::keyClick(&view, Qt::Key_Right, Qt::ShiftModifier);
+        QTest::keyClick(&view, Qt::Key_Right, Qt::ShiftModifier);
+        QCOMPARE(view.markerB(), 5'000'000);
+        // From one rising edge to the next: the period, and the duty cycle.
+        QCOMPARE(view.highFraction(2, 1'000'000, 5'000'000), 0.25);
+        QVERIFY2(view.measurement().contains(u"GPIO 2 high 25% of it"_s), qPrintable(view.measurement()));
+        QCOMPARE(view.highFraction(2, 0, 500'000), -1.0); // its level before the first edge is unknown
+        // No edge before the first one.
+        view.setMarkers(1'000'000, -1);
+        QVERIFY(!view.stepMarker(false, false));
+        QCOMPARE(view.markerA(), 1'000'000);
+        QTest::keyClick(&view, Qt::Key_Down);
+        QCOMPARE(view.selectedPin(), 4);
+        QVERIFY(!view.stepMarker(false, true)); // GPIO 4 never changed
     }
 
     void namesPinsFromTheWiring()

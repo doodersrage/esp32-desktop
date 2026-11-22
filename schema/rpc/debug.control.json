@@ -1,6 +1,6 @@
 {
   "method": "debug.control",
-  "description": "Run or step the debugged firmware: continue, next (step over), step (into), finish (out of the function), or interrupt (pause). The result comes at once; debug.running and debug.stopped follow.",
+  "description": "Run or step the debugged firmware: continue, next (step over), step (into), finish (out of the function), interrupt (pause), or since protocol 0.34 runTo, which runs to location through a temporary breakpoint (or stops at a breakpoint before it). The result comes at once; debug.running and debug.stopped follow.",
   "params": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -20,8 +20,14 @@
           "next",
           "step",
           "finish",
-          "interrupt"
+          "interrupt",
+          "runTo"
         ]
+      },
+      "location": {
+        "type": "string",
+        "maxLength": 256,
+        "description": "Since protocol 0.34, for runTo only: a function name or file:line."
       }
     }
   },
@@ -41,6 +47,14 @@
       "params": {
         "subscription": 5,
         "action": "continue"
+      },
+      "result": {}
+    },
+    {
+      "params": {
+        "subscription": 5,
+        "action": "runTo",
+        "location": "blink.ino:12"
       },
       "result": {}
     }

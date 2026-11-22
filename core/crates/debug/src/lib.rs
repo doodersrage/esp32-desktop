@@ -387,6 +387,34 @@ impl Gdb {
         self.command(cmd).await.map(|_| ())
     }
 
+    /// Run until `location` (a function or `file:line`), through a temporary hardware
+    /// breakpoint that GDB deletes when it is hit, or at a breakpoint before it.
+    pub async fn run_to(&mut self, location: &str) -> Result<(), Error> {
+        if !valid_location(location) {
+            return Err(Error::Gdb(format!(
+                "`{location}` is not a function or file:line"
+            )));
+        }
+        self.command(&format!("-break-insert -t -h {location}"))
+            .await?;
+        self.command("-exec-continue").await.map(|_| ())
+    }
+
+    /// The value of a C or C++ expression in the frame the firmware stopped in, as GDB
+    /// prints it (`count * 2`, `buf[3]`, `*sensor`).
+    pub async fn evaluate(&mut self, expression: &str) -> Result<String, Error> {
+        if !valid_expression(expression) {
+            return Err(Error::Gdb(
+                "an expression is one line, without GDB's $_ functions".into(),
+            ));
+        }
+        let quoted = expression.replace('\\', "\\\\").replace('"', "\\\"");
+        let r = self
+            .command(&format!("-data-evaluate-expression \"{quoted}\""))
+            .await?;
+        Ok(r["value"].as_str().unwrap_or("").to_owned())
+    }
+
     /// The innermost frame's arguments and local variables, at most 64: name, type,
     /// whether it is an argument, and the value of those GDB prints simply (numbers,
     /// pointers, enums; not structs or arrays). Empty where there is no debug
@@ -533,6 +561,16 @@ pub fn valid_location(loc: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | ':' | '.' | '/' | '-'))
 }
 
+/// An expression for [`Gdb::evaluate`]: one line of at most 256 characters, and none
+/// of GDB's convenience functions (`$_shell` runs a shell command); registers (`$pc`)
+/// and the program's own names are fine.
+pub fn valid_expression(expr: &str) -> bool {
+    !expr.trim().is_empty()
+        && expr.len() <= 256
+        && !expr.chars().any(char::is_control)
+        && !expr.contains("$_")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -625,6 +663,19 @@ mod tests {
         ] {
             assert!(!is_general_register(r), "{r}");
         }
+    }
+
+    #[test]
+    fn expressions_stay_expressions() {
+        assert!(valid_expression("count * 2"));
+        assert!(valid_expression("buf[3]"));
+        assert!(valid_expression("$pc"));
+        assert!(valid_expression("name == \"x\""));
+        assert!(!valid_expression(""));
+        assert!(!valid_expression("  "));
+        assert!(!valid_expression("1\n-gdb-exit"));
+        assert!(!valid_expression("$_shell(\"rm x\")"));
+        assert!(!valid_expression(&"x".repeat(257)));
     }
 
     #[test]

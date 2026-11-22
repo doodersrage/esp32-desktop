@@ -8,6 +8,9 @@
 
 #include <QAction>
 #include <QComboBox>
+#include <QDateTime>
+#include <QLineEdit>
+#include <QLocale>
 #include <QSignalSpy>
 #include <QFile>
 #include <QJsonArray>
@@ -127,6 +130,66 @@ private slots:
         QVERIFY(code->extraSelections().isEmpty());
     }
 
+    void findsInTheCodeAndGoesToALine()
+    {
+        CoreConnection core;
+        ProjectView view(&core);
+        view.resize(600, 500);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        view.showResult(example());
+        CodeView *code = view.codeView();
+        const QString text = code->toPlainText();
+        const QString second = text.section(u'\n', 1, 1).trimmed();
+        QVERIFY(!second.isEmpty());
+
+        QVERIFY(!view.codeFindField()->isVisible());
+        view.findInCode();
+        QCOMPARE(view.tabs()->currentIndex(), int(ProjectView::CodeTab));
+        QVERIFY(view.codeFindField()->isVisible());
+        QVERIFY(view.codeHasFocus());
+        QTest::keyClicks(view.codeFindField(), second);
+        QCOMPARE(code->textCursor().selectedText(), second);
+        QCOMPARE(code->textCursor().blockNumber(), 1);
+        QVERIFY(!code->findText(u"no such text anywhere"_s));
+        QTest::keyClick(view.codeFindField(), Qt::Key_Escape);
+        QVERIFY(!view.codeFindField()->isVisible());
+
+        QVERIFY(code->goToLine(2));
+        QCOMPARE(code->textCursor().blockNumber(), 1);
+        QVERIFY(!code->goToLine(0));
+        QVERIFY(!code->goToLine(int(text.count(u'\n')) + 5));
+
+        // The line menu: a breakpoint, and Run to the line while paused.
+        QSignalSpy runTo(&view, &ProjectView::runToLineRequested);
+        QSignalSpy toggled(&view, &ProjectView::codeLineClicked);
+        QMenu *menu = code->lineMenu(3);
+        QCOMPARE(menu->actions().size(), 2);
+        QVERIFY(!menu->actions().at(1)->isEnabled());
+        menu->actions().at(0)->trigger();
+        QCOMPARE(toggled.size(), 1);
+        QCOMPARE(toggled.at(0).at(0).toInt(), 3);
+        delete menu;
+        code->setRunToEnabled(true);
+        menu = code->lineMenu(3);
+        QVERIFY(menu->actions().at(1)->isEnabled());
+        menu->actions().at(1)->trigger();
+        QCOMPARE(runTo.size(), 1);
+        QCOMPARE(runTo.at(0).at(0).toInt(), 3);
+        delete menu;
+    }
+
+    void saysWhenThingsHappened()
+    {
+        const QDateTime now(QDate(2026, 11, 22), QTime(15, 0));
+        QCOMPARE(Labels::ago(now.addSecs(-20), now), u"just now"_s);
+        QCOMPARE(Labels::ago(now.addSecs(-5 * 60 - 3), now), u"5 min ago"_s);
+        QCOMPARE(Labels::ago(now.addSecs(-3 * 3600), now), u"3 h ago"_s);
+        QCOMPARE(Labels::ago(now.addDays(-2), now), QLocale().toString(now.addDays(-2), QLocale::ShortFormat));
+        QCOMPARE(Labels::duration(12.34), u"%1 s"_s.arg(QLocale().toString(12.3, 'f', 1)));
+        QCOMPARE(Labels::duration(125), u"2 min 05 s"_s);
+    }
+
     void copiesALinkToTheProjectAndBoard()
     {
         CoreConnection core;
@@ -232,6 +295,11 @@ private slots:
         view.showBuildState(QJsonObject{{u"built"_s, true}, {u"builtAt"_s, 1795000000}, {u"current"_s, false}});
         QVERIFY(view.buildStateText().contains(u"built again"_s));
         QCOMPARE(current.last().at(2).toBool(), false);
+        // A build of a minute ago, said as such.
+        view.showBuildState(QJsonObject{{u"built"_s, true},
+                                        {u"builtAt"_s, QDateTime::currentSecsSinceEpoch() - 90},
+                                        {u"current"_s, true}});
+        QVERIFY(view.buildStateText().contains(u"Built 1 min ago"_s));
     }
 
     void marksConnectedBoardsAndOpensInTheIde()

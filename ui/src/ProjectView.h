@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QHash>
@@ -19,6 +20,7 @@ class QPushButton;
 class QToolButton;
 class QStackedWidget;
 class CodeView;
+class QLineEdit;
 class QTabWidget;
 class QTreeWidget;
 
@@ -58,6 +60,13 @@ public:
     QPushButton *copyCodeButton() const { return m_copyCode; }
     QPushButton *saveCodeButton() const { return m_saveCode; }
     QPushButton *openIdeButton() const { return m_openIde; }
+    // Find in the sketch (Ctrl+F there): the Code tab's find row, shown and focused.
+    void findInCode();
+    // Whether the focus is in the Code tab, where Ctrl+F finds in the sketch.
+    bool codeHasFocus() const;
+    QLineEdit *codeFindField() const { return m_codeFind; }
+    // Ctrl+L in the Code tab: ask for a line and go to it.
+    void goToLine();
     QString buildStateText() const;
     // Show a line of the library sketch shown (1-based), selected in the Code tab, as
     // a build error points at it; false when no sketch is shown or it is shorter.
@@ -84,9 +93,16 @@ public:
     QString summaryText() const;
     QString notesText() const;
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 signals:
     // A click beside line `line` of the sketch shown (the Code tab's gutter).
     void codeLineClicked(int line);
+    // Run to this line, from the Code tab's right-click menu.
+    void runToLineRequested(int line);
+    // Esc in the Code tab's find field.
+    void codeFindEscaped();
     // The project and board now shown, with the build's pin list as the library has it.
     void boardSelected(const QString &project, const QString &board, const QJsonArray &pins);
     // What is shown or whether it can be built changed (currentProjectTitle(), buildAction()).
@@ -161,6 +177,12 @@ private:
     QLabel *m_pins;
     CodeView *m_code;
     QPushButton *m_copyCode;
+    // When the build shown was made, and how that was said, for the minute's update.
+    QDateTime m_builtAt;
+    QString m_builtWhen;
+    QWidget *m_codeFindRow;
+    QLineEdit *m_codeFind;
+    QLabel *m_codeFindNone;
     QPushButton *m_saveCode;
     QPushButton *m_openIde;
     QLabel *m_buildState;

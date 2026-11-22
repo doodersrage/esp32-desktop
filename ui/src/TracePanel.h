@@ -16,6 +16,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QPushButton;
+class QKeyEvent;
 class QMouseEvent;
 class QWheelEvent;
 
@@ -65,7 +66,18 @@ public:
     qint64 markerB() const { return m_markB; }
     void setMarkers(qint64 a, qint64 b);
     // The time between the markers, and its frequency, in words; empty without both.
+    // With a pin selected, also how much of that time it was high (its duty cycle,
+    // when A to B is one period).
     QString measurement() const;
+    // The pin selected by clicking its row (-1 for none), whose edges the arrow keys
+    // step marker A to (Shift: marker B).
+    int selectedPin() const { return m_selected; }
+    void setSelectedPin(int gpio);
+    // Move marker A (or B) to the selected pin's next edge after it (or the previous
+    // one before it); false when there is none. Scrolls it into view.
+    bool stepMarker(bool b, bool forward);
+    // The share of [from, to] the pin was high, 0 to 1, or -1 when not known.
+    double highFraction(int gpio, qint64 from, qint64 to) const;
     // The simulated time at x, and x of a time.
     qint64 timeAt(int x) const;
     // Zoom by a factor around simulated time `at` (Ctrl+wheel); it holds the picture.
@@ -82,6 +94,7 @@ signals:
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
 
 private:
@@ -92,6 +105,7 @@ private:
     int m_labelWidth = 64;
     qint64 m_markA = -1;
     qint64 m_markB = -1;
+    int m_selected = -1;
 
     QList<int> m_pins;
     QSet<int> m_hidden;

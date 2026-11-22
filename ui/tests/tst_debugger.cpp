@@ -64,7 +64,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.33.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.34.0"_s}});
             return;
         }
         if (m == u"device.list" || m == u"device.watch") {
@@ -95,7 +95,20 @@ private:
             if (a == u"continue") {
                 event(u"debug.running"_s, {});
                 event(u"debug.stopped"_s, {{u"reason"_s, u"breakpoint-hit"_s}, {u"breakpoint"_s, 1}, {u"frame"_s, setup}});
+            } else if (a == u"runTo") {
+                // At GDB's temporary breakpoint, number 9: not one of the list.
+                QJsonObject at = setup;
+                at.insert(u"line"_s, 12);
+                event(u"debug.running"_s, {});
+                event(u"debug.stopped"_s, {{u"reason"_s, u"breakpoint-hit"_s}, {u"breakpoint"_s, 9}, {u"frame"_s, at}});
             }
+        } else if (m == u"debug.evaluate") {
+            const QString e = p.value(u"expression"_s).toString();
+            if (e == u"nope"_s)
+                send({{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
+                      {u"error"_s, QJsonObject{{u"code"_s, -32000}, {u"message"_s, u"No symbol \"nope\" in current context."_s}}}});
+            else
+                reply(id, QJsonObject{{u"value"_s, u"%1 = 84"_s.arg(e)}});
         } else if (m == u"breakpoints.get") {
             reply(id, QJsonObject{{u"breakpoints"_s, kept}});
         } else if (m == u"breakpoints.set") {
@@ -225,6 +238,48 @@ private slots:
         QVERIFY(!panel.locals()->topLevelItem(1)->toolTip(1).isEmpty()); // no simple value
         core.stopSim();
         QTRY_VERIFY(!core.isDebugging());
+    }
+
+    void watchesExpressionsAndRunsToALine()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        DebugPanel panel(&core);
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+
+        // Not debugging: an expression waits for a stop, and Run to a line says why not.
+        panel.addWatch(u"count * 2"_s);
+        QCOMPARE(panel.watches()->topLevelItemCount(), 1);
+        QVERIFY(!panel.runTo(u"blink.ino:12"_s));
+        QVERIFY(panel.statusText().contains(u"Debug"_s));
+
+        core.startSim(u"blink"_s, u"esp32"_s, true);
+        QTRY_VERIFY(core.isDebugging());
+        // Each stop reads the watched expressions again.
+        QTRY_COMPARE(panel.watches()->topLevelItem(0)->text(1), u"count * 2 = 84"_s);
+        panel.watchInput()->setText(u"nope"_s);
+        QTest::keyClick(panel.watchInput(), Qt::Key_Return);
+        QTRY_COMPARE(panel.watches()->topLevelItemCount(), 2);
+        QTRY_VERIFY(panel.watches()->topLevelItem(1)->text(1).contains(u"No symbol"_s));
+        QVERIFY(panel.watchInput()->text().isEmpty());
+        panel.addWatch(u"nope"_s); // once only
+        QCOMPARE(panel.watches()->topLevelItemCount(), 2);
+
+        const qsizetype before = fake.methods().count(u"debug.evaluate"_s);
+        QVERIFY(panel.runTo(u"blink.ino:12"_s));
+        QTRY_VERIFY(panel.statusText().contains(u"line 12"_s));
+        // GDB's temporary breakpoint is not called one of the list's.
+        QVERIFY(!panel.statusText().contains(u"breakpoint"_s));
+        QJsonObject run;
+        for (const QJsonObject &c : fake.calls)
+            if (c.value(u"method"_s) == u"debug.control"_s)
+                run = c.value(u"params"_s).toObject();
+        QCOMPARE(run.value(u"action"_s).toString(), u"runTo"_s);
+        QCOMPARE(run.value(u"location"_s).toString(), u"blink.ino:12"_s);
+        QTRY_COMPARE(fake.methods().count(u"debug.evaluate"_s), before + 2);
+        core.stopSim();
     }
 
     void debuggerSitsBesideTheConsole()

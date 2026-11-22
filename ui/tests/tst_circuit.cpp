@@ -21,6 +21,9 @@
 #include <QDialog>
 #include <QSpinBox>
 #include <QTimer>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QMimeData>
 #include <QTest>
 #include <QToolButton>
 
@@ -81,7 +84,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.33.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.34.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -335,6 +338,56 @@ private slots:
         const QJsonObject copy = panel.parts().at(1).toObject();
         QCOMPARE(copy.value(u"kind"_s).toString(), u"led"_s);
         QCOMPARE(copy.value(u"pins"_s).toObject().begin().value().toInt(), 5);
+    }
+
+    void copiesAndPastesParts()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        CircuitPanel panel(&core);
+        panel.resize(700, 500);
+        panel.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&panel));
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QTRY_VERIFY(!panel.modelIds().isEmpty());
+        panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"5"_s});
+        QTRY_COMPARE(panel.parts().size(), 1);
+        QVERIFY(!panel.copyPart()); // nothing selected
+
+        panel.selectPart(u"led-1"_s, true);
+        QTRY_COMPARE(panel.selectedPartId(), u"led-1"_s);
+        QVERIFY(panel.copyPart());
+        const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+        QVERIFY(data->hasFormat(QString::fromLatin1(CircuitPanel::PartMime)));
+        QCOMPARE(QJsonDocument::fromJson(data->data(QString::fromLatin1(CircuitPanel::PartMime))).object().value(u"kind"_s),
+                 QJsonValue(u"led"_s));
+        QTRY_VERIFY(panel.pasteButton()->isEnabled());
+
+        // Into another project: the Add dialog, on a pin of that project no part uses.
+        panel.showBoard(u"other"_s, u"esp32"_s, QJsonArray{u"2"_s, u"13"_s});
+        QTRY_COMPARE(panel.parts().size(), 1);
+        int offered = -1;
+        QTimer::singleShot(0, this, [&offered] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            offered = dialog->findChildren<QSpinBox *>().first()->value();
+            dialog->accept();
+        });
+        panel.pasteButton()->click();
+        QCOMPARE(offered, 13);
+        QTRY_COMPARE(panel.parts().size(), 2);
+        QCOMPARE(panel.parts().at(1).toObject().value(u"kind"_s).toString(), u"led"_s);
+
+        // A part of a kind this app does not have is refused.
+        auto *odd = new QMimeData;
+        odd->setData(QString::fromLatin1(CircuitPanel::PartMime), R"({"kind":"flux-capacitor","id":"x"})");
+        QGuiApplication::clipboard()->setMimeData(odd);
+        QVERIFY(!panel.pastePart());
+        QVERIFY(panel.statusText().contains(u"not one this version"_s));
+        QGuiApplication::clipboard()->clear();
+        QTRY_VERIFY(!panel.pasteButton()->isEnabled());
     }
 
     void zoomsAndFits()

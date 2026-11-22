@@ -39,6 +39,13 @@ public:
     // set at once; while not debugging it is kept for the next run; while running
     // GDB cannot take it, and this says so and returns false.
     bool toggleBreakpoint(const QString &location);
+    // Run to a function or file:line (debug.control's runTo) while paused; else say
+    // why not and return false.
+    bool runTo(const QString &location);
+    // Expressions read again at every stop (debug.evaluate), kept while the app runs.
+    QLineEdit *watchInput() const { return m_watchInput; }
+    QTreeWidget *watches() const { return m_watches; }
+    void addWatch(const QString &expression);
 
 signals:
     void breakpointsChanged();
@@ -50,6 +57,7 @@ private:
     void stopped(const QString &reason, const QJsonObject &frame, int breakpoint);
     void showInspection(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals);
     void keep(const QStringList &locations);
+    void evaluateWatches();
     static QString where(const QJsonObject &frame);
 
     CoreConnection *m_core;
@@ -66,6 +74,8 @@ private:
     QTreeWidget *m_stack;
     QTreeWidget *m_registers;
     QTreeWidget *m_locals;
+    QLineEdit *m_watchInput;
+    QTreeWidget *m_watches;
     Mode m_mode = Mode::Off;
     QString m_project;
     // The kept breakpoints, and how many of them are still being set at a run's start.

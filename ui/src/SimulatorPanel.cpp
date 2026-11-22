@@ -4,6 +4,7 @@
 #include "CoreConnection.h"
 #include "Labels.h"
 
+#include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QSettings>
@@ -11,6 +12,7 @@
 #include <QRegularExpression>
 #include <QIcon>
 #include <QJsonObject>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLocale>
 #include <QLineEdit>
@@ -44,6 +46,8 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     , m_network(new QLabel(this))
     , m_expect(new QLabel(this))
     , m_reset(new QPushButton(QIcon::fromTheme(u"view-refresh"_s), tr("Reset"), this))
+    , m_pause(new QPushButton(QIcon::fromTheme(u"media-playback-pause"_s), tr("Pause"), this))
+    , m_pauseAction(new QAction(QIcon::fromTheme(u"media-playback-pause"_s), tr("Pause simulation"), this))
     , m_stop(new QPushButton(QIcon::fromTheme(u"media-playback-stop"_s), tr("Stop"), this))
     , m_again(new QPushButton(QIcon::fromTheme(u"media-playback-start"_s), tr("Run again"), this))
     , m_clear(new QPushButton(QIcon::fromTheme(u"edit-clear"_s), tr("Clear"), this))
@@ -72,6 +76,22 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     m_ending->addItem(tr("No line ending"), QString());
 
     connect(m_reset, &QPushButton::clicked, m_core, &CoreConnection::resetSim);
+    m_pauseAction->setShortcut(QKeySequence(Qt::Key_F6));
+    m_pauseAction->setShortcutContext(Qt::ApplicationShortcut);
+    connect(m_pauseAction, &QAction::triggered, this, [this] {
+        if (m_core->isSimRunning() && !m_core->isDebugging())
+            m_core->pauseSim(!m_core->isSimPaused());
+    });
+    connect(m_pause, &QPushButton::clicked, m_pauseAction, &QAction::trigger);
+    connect(m_core, &CoreConnection::simPaused, this, [this](bool paused) {
+        if (paused) {
+            m_status->setText(tr("Paused: the simulated time, pins and trace stand still."));
+        } else if (!m_runningText.isEmpty()) {
+            m_status->setText(m_runningText);
+        }
+        updatePause();
+    });
+    connect(m_core, &CoreConnection::debugStarted, this, &SimulatorPanel::updatePause);
     connect(m_stop, &QPushButton::clicked, m_core, &CoreConnection::stopSim);
     m_again->setToolTip(tr("Run the same build again, without rebuilding"));
     connect(m_again, &QPushButton::clicked, this, [this] {
@@ -108,6 +128,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
     auto *top = new QHBoxLayout;
     top->addWidget(m_status, 1);
     top->addWidget(m_clock);
+    top->addWidget(m_pause);
     top->addWidget(m_reset);
     top->addWidget(m_stop);
     top->addWidget(m_again);
@@ -131,7 +152,8 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
                 m_output->resetDecoder();
                 m_output->appendNotice(tr("Started %1 for %2 on a simulated %3.")
                                            .arg(project, board, Labels::chipName(chip)));
-                m_status->setText(tr("Running %1 on a simulated %2.").arg(project, Labels::chipName(chip)));
+                m_runningText = tr("Running %1 on a simulated %2.").arg(project, Labels::chipName(chip));
+                m_status->setText(m_runningText);
                 m_clock->hide();
                 m_lastProject = project;
                 m_lastBoard = board;
@@ -186,6 +208,7 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
                 .arg(ssid));
     });
     connect(m_core, &CoreConnection::simOutput, m_output, &ConsoleView::appendOutput);
+    connect(m_core, &CoreConnection::simBacktrace, m_output, &ConsoleView::appendBacktrace);
     connect(m_core, &CoreConnection::simStopped, this, [this](const QString &reason) {
         m_output->appendNotice(tr("Simulator stopped: %1").arg(reason));
         m_status->setText(tr("Not running."));
@@ -230,6 +253,26 @@ void SimulatorPanel::send()
     m_input->clear();
 }
 
+void SimulatorPanel::updatePause()
+{
+    const bool can = m_core->isSimRunning() && !m_core->isDebugging();
+    const bool paused = m_core->isSimPaused();
+    const QIcon icon = QIcon::fromTheme(paused ? u"media-playback-start"_s : u"media-playback-pause"_s);
+    m_pauseAction->setEnabled(can);
+    m_pauseAction->setText(paused ? tr("Resume simulation") : tr("Pause simulation"));
+    m_pauseAction->setIcon(icon);
+    m_pauseAction->setToolTip(paused ? tr("Run the firmware on from where it stopped (%1)")
+                                           .arg(m_pauseAction->shortcut().toString(QKeySequence::NativeText))
+                                     : tr("Stop the firmware where it is, to look at its pins and trace (%1)")
+                                           .arg(m_pauseAction->shortcut().toString(QKeySequence::NativeText)));
+    m_pause->setEnabled(can);
+    m_pause->setIcon(icon);
+    m_pause->setText(paused ? tr("Resume") : tr("Pause"));
+    m_pause->setToolTip(m_pauseAction->toolTip());
+    // A debug run is paused from the Debugger dock.
+    m_pause->setVisible(!m_core->isDebugging());
+}
+
 void SimulatorPanel::setRunning(bool running)
 {
     m_reset->setEnabled(running);
@@ -238,4 +281,5 @@ void SimulatorPanel::setRunning(bool running)
     m_input->setEnabled(running);
     m_ending->setEnabled(running);
     m_send->setEnabled(running);
+    updatePause();
 }

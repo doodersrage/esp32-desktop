@@ -1,6 +1,9 @@
 // SimulatorPanel and CoreConnection's sim calls against a fake core.
 
 #include "CoreConnection.h"
+#include <QAction>
+#include <QTextBlock>
+#include "ConsoleView.h"
 #include "PlotPanel.h"
 #include "SimulatorPanel.h"
 
@@ -59,7 +62,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.33.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.34.0"_s}});
             return;
         }
         calls << m;
@@ -108,6 +111,21 @@ private:
         } else if (m == u"sim.write") {
             written << QByteArray::fromBase64(p.value(u"data"_s).toString().toLatin1());
             reply(id, QJsonObject{});
+        } else if (m == u"sim.pause") {
+            const bool paused = p.value(u"paused"_s).toBool();
+            reply(id, QJsonObject{{u"paused"_s, paused}});
+            send({{u"jsonrpc"_s, u"2.0"_s}, {u"method"_s, u"sim.paused"_s},
+                  {u"params"_s, QJsonObject{{u"subscription"_s, 5}, {u"paused"_s, paused}}}});
+            if (!paused) {
+                // Then it crashes, and the core decodes the backtrace.
+                send({{u"jsonrpc"_s, u"2.0"_s}, {u"method"_s, u"sim.backtrace"_s},
+                      {u"params"_s, QJsonObject{{u"subscription"_s, 5},
+                                                {u"frames"_s, QJsonArray{
+                                                    QJsonObject{{u"addr"_s, u"0x400d2a5e"_s}, {u"func"_s, u"loop()"_s},
+                                                                {u"file"_s, u"/s/blink/blink.ino"_s}, {u"line"_s, 12},
+                                                                {u"sketch"_s, true}},
+                                                    QJsonObject{{u"addr"_s, u"0x40001234"_s}}}}}}});
+            }
         } else if (m == u"sim.reset") {
             reply(id, QJsonObject{});
             output("rst:0x1\n");
@@ -172,6 +190,54 @@ private slots:
         QVERIFY(panel.runAgainButton()->isHidden());
         core.stopSim();
         QTRY_VERIFY(!core.isSimRunning());
+    }
+
+    void pausesAndShowsBacktraces()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        SimulatorPanel panel(&core);
+        panel.show();
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QVERIFY(!panel.pauseAction()->isEnabled());
+        core.startSim(u"blink"_s, u"esp32"_s);
+        QTRY_VERIFY(core.isSimRunning());
+        QVERIFY(panel.pauseAction()->isEnabled());
+        QCOMPARE(panel.pauseButton()->text(), u"Pause"_s);
+        QCOMPARE(panel.pauseAction()->shortcut(), QKeySequence(Qt::Key_F6));
+
+        panel.pauseButton()->click();
+        QTRY_VERIFY(core.isSimPaused());
+        QCOMPARE(panel.pauseButton()->text(), u"Resume"_s);
+        QVERIFY(panel.statusText().startsWith(u"Paused"_s));
+        panel.pauseAction()->trigger();
+        QTRY_VERIFY(!core.isSimPaused());
+        QVERIFY(panel.statusText().contains(u"simulated ESP32"_s));
+        QCOMPARE(fake.calls.count(u"sim.pause"_s), 2);
+
+        // The decoded backtrace: a line per frame, the sketch's a link.
+        QTRY_VERIFY(panel.outputText().contains(u"loop() at blink.ino, line 12"_s));
+        QVERIFY(panel.outputText().contains(u"--   0x40001234"_s));
+        QSignalSpy clicked(panel.console(), &ConsoleView::frameActivated);
+        const QTextBlock block = panel.console()->document()->findBlock(
+            int(panel.outputText().indexOf(u"blink.ino, line 12"_s)));
+        QTextCursor c(block);
+        c.setPosition(int(panel.outputText().indexOf(u"blink.ino, line 12"_s)) + 3);
+        const QPoint at = panel.console()->cursorRect(c).center();
+        QTest::mouseClick(panel.console()->viewport(), Qt::LeftButton, {}, at);
+        QCOMPARE(clicked.size(), 1);
+        const QJsonObject frame = clicked.at(0).at(0).toJsonObject();
+        QCOMPARE(frame.value(u"file"_s).toString(), u"blink.ino"_s);
+        QCOMPARE(frame.value(u"line"_s).toInt(), 12);
+        QCOMPARE(frame.value(u"path"_s).toString(), u"/s/blink/blink.ino"_s);
+
+        // A debug run is paused from the debugger, not here.
+        core.stopSim();
+        QTRY_VERIFY(!core.isSimRunning());
+        QVERIFY(!core.isSimPaused());
+        QVERIFY(!panel.pauseAction()->isEnabled());
     }
 
     void showsTheSimulatedTime()

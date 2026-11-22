@@ -28,8 +28,8 @@ public:
 
     // Open `path` (e.g. from a double-click in the Devices panel).
     // With `expect`, a library project: say whether the board prints what it expects
-    // (after flashing it).
-    void openPort(const QString &path, const QString &expect = {});
+    // (after flashing it); with `board` too, decode its crash backtraces from that build.
+    void openPort(const QString &path, const QString &expect = {}, const QString &board = {});
     QString expectText() const;
     QPushButton *garbledSwitch() const { return m_garbledSwitch; }
     // Record…: everything the board sends, appended to a file (serial.record).

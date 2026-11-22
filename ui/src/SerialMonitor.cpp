@@ -239,6 +239,7 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
         setOpen(true);
     });
     connect(m_core, &CoreConnection::serialData, m_output, &ConsoleView::appendOutput);
+    connect(m_core, &CoreConnection::serialBacktrace, m_output, &ConsoleView::appendBacktrace);
     // The core reopens a port that comes back (a reset over the board's own USB, or
     // plugging it in again).
     connect(m_core, &CoreConnection::serialLost, this, [this] {
@@ -290,7 +291,7 @@ QString SerialMonitor::expectText() const
     return m_expect->isHidden() ? QString() : m_expect->text();
 }
 
-void SerialMonitor::openPort(const QString &path, const QString &expect)
+void SerialMonitor::openPort(const QString &path, const QString &expect, const QString &board)
 {
     m_expect->hide();
     m_garbled->hide();
@@ -307,7 +308,7 @@ void SerialMonitor::openPort(const QString &path, const QString &expect)
     }
     m_port->setCurrentIndex(i);
     m_open->setEnabled(false);
-    m_core->openSerial(path, m_baud->currentData().toInt(), expect);
+    m_core->openSerial(path, m_baud->currentData().toInt(), expect, board);
 }
 
 void SerialMonitor::setPorts(const QJsonArray &ports)

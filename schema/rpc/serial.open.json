@@ -35,6 +35,23 @@
       "expect": {
         "type": "string",
         "description": "Since protocol 0.28: a library project id. Check what the board prints against that project's expected output (the manifest's expect): serial.expect events, timed by the project's seconds plus five, from the open and from each reconnection. Absent: no check."
+      },
+      "decode": {
+        "type": "object",
+        "required": [
+          "project",
+          "board"
+        ],
+        "additionalProperties": false,
+        "description": "Since protocol 0.34: the build the board runs (a library or local project and its board), whose ELF decodes crash backtraces: serial.backtrace events.",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "board": {
+            "type": "string"
+          }
+        }
       }
     }
   },

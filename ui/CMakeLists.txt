@@ -97,9 +97,12 @@ qt_add_resources(esp32bench_ui "fallback_icons"
         icons/esp32bench-fallback/scalable/edit-clear.svg
         icons/esp32bench-fallback/scalable/edit-copy.svg
         icons/esp32bench-fallback/scalable/edit-delete.svg
+        icons/esp32bench-fallback/scalable/edit-paste.svg
         icons/esp32bench-fallback/scalable/edit-redo.svg
         icons/esp32bench-fallback/scalable/edit-undo.svg
         icons/esp32bench-fallback/scalable/folder-open.svg
+        icons/esp32bench-fallback/scalable/go-down.svg
+        icons/esp32bench-fallback/scalable/go-up.svg
         icons/esp32bench-fallback/scalable/help-about.svg
         icons/esp32bench-fallback/scalable/internet-web-browser.svg
         icons/esp32bench-fallback/scalable/list-add.svg

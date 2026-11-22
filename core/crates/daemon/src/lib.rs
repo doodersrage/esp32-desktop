@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.33.0";
+pub const PROTOCOL: &str = "0.34.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -212,6 +212,7 @@ pub fn router(state: Arc<State>) -> Router {
     let (s8, s9) = (state.clone(), state.clone());
     let (s10, s11, s12) = (state.clone(), state.clone(), state.clone());
     let (s13, s14, s15) = (state.clone(), state.clone(), state.clone());
+    let (p1, d6) = (state.clone(), state.clone());
     let (d1, d2, d3, d4, d5) = (
         state.clone(),
         state.clone(),
@@ -238,6 +239,10 @@ pub fn router(state: Arc<State>) -> Router {
         .method("sim.reset", move |p, ctx| {
             let s = s15.clone();
             async move { sim_reset(p, ctx, s).await }
+        })
+        .method("sim.pause", move |p, ctx| {
+            let s = p1.clone();
+            async move { sim_pause(p, ctx, s).await }
         })
         .method("sim.setPin", move |p, ctx| {
             let s = d5.clone();
@@ -281,6 +286,10 @@ pub fn router(state: Arc<State>) -> Router {
         .method("debug.control", move |p, ctx| {
             let s = d3.clone();
             async move { debug_control(p, ctx, s).await }
+        })
+        .method("debug.evaluate", move |p, ctx| {
+            let s = d6.clone();
+            async move { debug_evaluate(p, ctx, s).await }
         })
         .method("debug.inspect", move |p, ctx| {
             let s = d4.clone();
@@ -742,6 +751,7 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
     let mut explain = esp32bench_library::explain::Explainer::new(&manifest.explain);
     let job = ctx.subscribe(move |sub| async move {
         let _one_at_a_time = state.build_lock.lock().await;
+        let started = std::time::Instant::now();
         let dirs = esp32bench_build::Dirs::new(&state.builds_root, &plan);
         let mut first = esp32bench_build::diagnostics::Finder::new(None);
         let mut size = esp32bench_build::diagnostics::SizeReader::default();
@@ -771,6 +781,8 @@ async fn build_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
         {
             event["size"] = json!(sz);
         }
+        // How long it took, in tenths of a second (not counting a wait for another build).
+        event["seconds"] = json!((started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
         sub.send("build.finished", event);
     });
     Ok(json!({ "job": job, "plan": result_plan }))
@@ -964,6 +976,7 @@ fn prebuilt_start(
     let result_plan = plan.clone();
     let job = ctx.subscribe(move |sub| async move {
         let _one_at_a_time = state.build_lock.lock().await;
+        let started = std::time::Instant::now();
         let dirs = esp32bench_build::Dirs::new(&state.builds_root, &plan);
         let r = esp32bench_build::fetch_image(&plan, &source, &dirs, |stream, line| {
             sub.send("build.log", json!({ "stream": stream, "line": line }));
@@ -972,10 +985,12 @@ fn prebuilt_start(
         if r.is_ok() {
             esp32bench_build::write_stamp(&dirs.out, &plan);
         }
-        let event = match r {
+        let mut event = match r {
             Ok(out) => json!({ "ok": true, "image": out.image, "elf": out.elf }),
             Err(e) => json!({ "ok": false, "error": e.to_string() }),
         };
+        // How long it took, in tenths of a second (not counting a wait for another build).
+        event["seconds"] = json!((started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
         sub.send("build.finished", event);
     });
     Ok(json!({ "job": job, "plan": result_plan }))
@@ -995,6 +1010,7 @@ fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Valu
     let result_plan = plan.clone();
     let job = ctx.subscribe(move |sub| async move {
         let _one_at_a_time = state.build_lock.lock().await;
+        let started = std::time::Instant::now();
         let dirs = idf::Dirs::new(&state.builds_root, &plan);
         let mut first = esp32bench_build::diagnostics::Finder::new(Some(&plan.path));
         let r = idf::run(&plan, &dirs, |stream, line| {
@@ -1012,7 +1028,9 @@ fn local_build_start(p: BuildParams, ctx: Ctx, state: Arc<State>) -> Result<Valu
         if r.is_ok() {
             esp32bench_build::write_stamp(&dirs.out, &plan);
         }
-        let event = finished_event(r, first.first());
+        let mut event = finished_event(r, first.first());
+        // How long it took, in tenths of a second (not counting a wait for another build).
+        event["seconds"] = json!((started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
         sub.send("build.finished", event);
     });
     Ok(json!({ "job": job, "plan": result_plan }))
@@ -1164,6 +1182,8 @@ enum SimCmd {
         tokio::sync::oneshot::Sender<Result<(), String>>,
     ),
     Reset(tokio::sync::oneshot::Sender<Result<(), String>>),
+    /// Stop (true) or resume (false) the CPUs, outside the debugger.
+    Pause(bool, tokio::sync::oneshot::Sender<Result<(), String>>),
     Debug(
         DebugReq,
         tokio::sync::oneshot::Sender<Result<Value, String>>,
@@ -1197,6 +1217,8 @@ enum DebugReq {
     Break(String),
     Delete(u32),
     Control(String),
+    RunTo(String),
+    Evaluate(String),
     Inspect,
 }
 
@@ -1236,6 +1258,8 @@ async fn debug_request(gdb: &mut esp32bench_debug::Gdb, req: DebugReq) -> Result
         }),
         DebugReq::Delete(n) => gdb.break_delete(n).await.map(|()| json!({})),
         DebugReq::Control(a) => gdb.control(&a).await.map(|()| json!({})),
+        DebugReq::RunTo(loc) => gdb.run_to(&loc).await.map(|()| json!({})),
+        DebugReq::Evaluate(e) => gdb.evaluate(&e).await.map(|v| json!({ "value": v })),
         DebugReq::Inspect => async {
             let frames = gdb.frames().await?;
             let registers = gdb.registers().await?;
@@ -1403,6 +1427,7 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
     let network = config.network;
     config.icount = p.icount;
     let mut joiner = (network.is_some() && p.join_wifi).then(esp32bench_sim::network::Joiner::new);
+    let mut crashes = CrashDecoder::new(&state, &p.project, &p.board, &chip_id);
     let mut explain = esp32bench_library::explain::Explainer::new(&manifest.explain);
     // What the project should print (the manifest's expect), checked as the output
     // comes (sim.expect). Not while debugging: the run pauses at the user's will.
@@ -1503,6 +1528,9 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                 sub.send("sim.expect", expect_event(&c.progress(), false));
                 expect_deadline = Some(tokio::time::Instant::now() + wait);
             }
+            // Paused by sim.pause, and the output check's time left when it was.
+            let mut paused = false;
+            let mut expect_left: Option<std::time::Duration> = None;
             loop {
                 let wait = display.as_ref().map(esp32bench_sim::display::Display::interval);
                 tokio::select! {
@@ -1705,6 +1733,11 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                             if !sent {
                                 break;
                             }
+                            if let Some(c) = crashes.as_mut() {
+                                for bt in c.feed(&bytes).await {
+                                    sub.send("sim.backtrace", bt);
+                                }
+                            }
                             if let Some(progress) = checker.as_mut().and_then(|c| c.feed(&bytes)) {
                                 if progress.complete() {
                                     expect_deadline = None;
@@ -1758,6 +1791,28 @@ async fn sim_start(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, 
                         }
                         Some(SimCmd::Reset(done)) => {
                             let _ = done.send(session.reset().await.map_err(|e| e.to_string()));
+                        }
+                        Some(SimCmd::Pause(pause, done)) => {
+                            let r = if debugger.is_some() {
+                                Err("a debug run is paused from the debugger".to_owned())
+                            } else if pause == paused {
+                                Ok(())
+                            } else {
+                                let r = if pause { session.pause().await } else { session.resume().await };
+                                r.map(|()| {
+                                    paused = pause;
+                                    // The output check waits only while the firmware runs.
+                                    let now = tokio::time::Instant::now();
+                                    if pause {
+                                        expect_left = expect_deadline.take().map(|d| d.saturating_duration_since(now));
+                                    } else if let Some(left) = expect_left.take() {
+                                        expect_deadline = Some(now + left);
+                                    }
+                                    sub.send("sim.paused", json!({ "paused": pause }));
+                                })
+                                .map_err(|e| e.to_string())
+                            };
+                            let _ = done.send(r);
                         }
                         Some(SimCmd::Debug(req, done)) => {
                             let r = match debugger.as_mut() {
@@ -1983,6 +2038,16 @@ struct DebugDeleteParams {
 struct DebugControlParams {
     subscription: u64,
     action: String,
+    /// Where `runTo` runs to: a function or file:line.
+    #[serde(default)]
+    location: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DebugEvaluateParams {
+    subscription: u64,
+    expression: String,
 }
 
 async fn debug_call(
@@ -2018,12 +2083,39 @@ async fn debug_delete(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Valu
 
 async fn debug_control(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: DebugControlParams = parse_params(params)?;
-    if !["continue", "next", "step", "finish", "interrupt"].contains(&p.action.as_str()) {
+    let req = match (p.action.as_str(), p.location) {
+        ("runTo", Some(loc)) if esp32bench_debug::valid_location(&loc) => DebugReq::RunTo(loc),
+        ("runTo", _) => {
+            return Err(RpcError::invalid_params(
+                "runTo needs a location: a function name or file:line",
+            ));
+        }
+        (a, None) if ["continue", "next", "step", "finish", "interrupt"].contains(&a) => {
+            DebugReq::Control(p.action)
+        }
+        _ => {
+            return Err(RpcError::invalid_params(
+                "action must be continue, next, step, finish, interrupt or runTo (with a location)",
+            ));
+        }
+    };
+    debug_call(&state, &ctx, p.subscription, req).await
+}
+
+async fn debug_evaluate(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: DebugEvaluateParams = parse_params(params)?;
+    if !esp32bench_debug::valid_expression(&p.expression) {
         return Err(RpcError::invalid_params(
-            "action must be continue, next, step, finish or interrupt",
+            "an expression is one line of at most 256 characters, without GDB's $_ functions",
         ));
     }
-    debug_call(&state, &ctx, p.subscription, DebugReq::Control(p.action)).await
+    debug_call(
+        &state,
+        &ctx,
+        p.subscription,
+        DebugReq::Evaluate(p.expression),
+    )
+    .await
 }
 
 async fn debug_inspect(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
@@ -2191,6 +2283,28 @@ async fn sim_set_pin(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
     Ok(json!({}))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PauseParams {
+    subscription: u64,
+    paused: bool,
+}
+
+/// Stop or resume a simulation's CPUs (QMP stop and cont): its simulated time, pins and
+/// trace stand still meanwhile. Not for a debug run, which GDB pauses.
+async fn sim_pause(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: PauseParams = parse_params(params)?;
+    let (done, result) = tokio::sync::oneshot::channel();
+    sim_sender(&state, &ctx, p.subscription)?
+        .send(SimCmd::Pause(p.paused, done))
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?;
+    result
+        .await
+        .map_err(|_| RpcError::new(code::NOT_FOUND, "the simulator has stopped"))?
+        .map_err(|e| RpcError::new(code::FAILED, e))?;
+    Ok(json!({ "paused": p.paused }))
+}
+
 async fn sim_reset(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: SerialRefParams = parse_params(params)?;
     let (done, result) = tokio::sync::oneshot::channel();
@@ -2214,6 +2328,9 @@ struct SerialOpenParams {
     /// A library project whose expected output to check this board's against.
     #[serde(default)]
     expect: Option<String>,
+    /// The build the board runs, whose ELF decodes crash backtraces (serial.backtrace).
+    #[serde(default)]
+    decode: Option<CircuitRef>,
 }
 
 #[derive(Deserialize)]
@@ -2553,6 +2670,79 @@ fn serial_error(e: esp32bench_serial::Error) -> RpcError {
 }
 
 /// The site's explanations of output lines (the manifest's explain), for a run.
+/// Decodes the crash backtraces in a build's output (sim.backtrace, serial.backtrace)
+/// from its ELF, with the pinned toolchain's addr2line.
+struct CrashDecoder {
+    finder: esp32bench_build::backtrace::Finder,
+    addr2line: PathBuf,
+    elf: PathBuf,
+    sketch: String,
+}
+
+impl CrashDecoder {
+    /// For `project`'s build for `board` on `chip`; None without its ELF or addr2line.
+    fn new(state: &State, project: &str, board: &str, chip: &str) -> Option<Self> {
+        esp32bench_build::safe_id(project).ok()?;
+        esp32bench_build::safe_id(board).ok()?;
+        let elf = state
+            .builds_root
+            .join(project)
+            .join(board)
+            .join("out")
+            .join(format!("{project}.ino.elf"));
+        let addr2line = esp32bench_build::backtrace::find_addr2line(&state.arduino_data, chip)?;
+        elf.is_file().then(|| Self {
+            finder: esp32bench_build::backtrace::Finder::new(),
+            addr2line,
+            elf,
+            sketch: format!("{project}.ino"),
+        })
+    }
+
+    /// The decoded backtraces among the lines these bytes finish, as event params:
+    /// `frames`, each marked `sketch` when it is in the project's own sketch.
+    async fn feed(&mut self, bytes: &[u8]) -> Vec<Value> {
+        let mut out = Vec::new();
+        for addrs in self.finder.feed(bytes) {
+            let Ok(frames) =
+                esp32bench_build::backtrace::decode(&self.addr2line, &self.elf, &addrs).await
+            else {
+                continue;
+            };
+            let frames: Vec<Value> = frames
+                .into_iter()
+                .map(|f| {
+                    let sketch = f
+                        .file
+                        .as_deref()
+                        .and_then(|p| Path::new(p).file_name())
+                        .is_some_and(|n| n.to_string_lossy() == self.sketch);
+                    let mut v = json!(f);
+                    if sketch {
+                        v["sketch"] = json!(true);
+                    }
+                    v
+                })
+                .collect();
+            out.push(json!({ "frames": frames }));
+        }
+        out
+    }
+}
+
+/// The chip a board is: from the library, or a chip name itself (local projects build
+/// for esp32, esp32s3 and esp32c3).
+async fn board_chip(state: &State, board: &str) -> Option<String> {
+    if let Ok(Some(m)) = state.library.load().await
+        && let Some(b) = m.boards.iter().find(|b| b.id == board)
+    {
+        return Some(b.chip.clone());
+    }
+    ["esp32", "esp32s3", "esp32c3"]
+        .contains(&board)
+        .then(|| board.to_owned())
+}
+
 async fn explainer(state: &State) -> esp32bench_library::explain::Explainer {
     let rules = match state.library.load().await {
         Ok(Some(m)) => m.explain,
@@ -2564,7 +2754,17 @@ async fn explainer(state: &State) -> esp32bench_library::explain::Explainer {
 async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {
     let p: SerialOpenParams = parse_params(params)?;
     check_port(&state, &p.path).await?;
+    if let Some(d) = &p.decode {
+        check_ids(&d.project, &d.board)?;
+    }
     let mut explain = explainer(&state).await;
+    let mut crashes = match &p.decode {
+        Some(d) => match board_chip(&state, &d.board).await {
+            Some(chip) => CrashDecoder::new(&state, &d.project, &d.board, &chip),
+            None => None,
+        },
+        None => None,
+    };
     let (port, mut rx) = {
         let path = p.path.clone();
         tokio::task::spawn_blocking(move || esp32bench_serial::Port::open(&path, p.baud))
@@ -2698,6 +2898,11 @@ async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value
                         let sent = sub.send("serial.data", params);
                         if !sent {
                             break;
+                        }
+                        if let Some(c) = crashes.as_mut() {
+                            for bt in c.feed(&bytes).await {
+                                sub.send("serial.backtrace", bt);
+                            }
                         }
                         if garbled {
                             let mut hint = json!({ "baud": baud });

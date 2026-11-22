@@ -7,6 +7,8 @@
 #include <QPlainTextEdit>
 #include <QSet>
 
+class QMenu;
+
 class CodeView : public QPlainTextEdit {
     Q_OBJECT
 
@@ -22,11 +24,23 @@ public:
     int gutterWidth() const;
     // The line at a point in the gutter's coordinates, or 0.
     int lineAt(int y) const;
+    // Select the next (or previous) match after the cursor, wrapping round; false if
+    // there is none.
+    bool findText(const QString &text, bool backward = false);
+    // Select a line and scroll to it; false if there is no such line.
+    bool goToLine(int line);
+    // Whether the right-click menu's Run to this line works: while the debugger is
+    // paused in this sketch.
+    void setRunToEnabled(bool on) { m_runTo = on; }
+    // The right-click menu for a line (also the gutter's), for tests.
+    QMenu *lineMenu(int line);
 
 signals:
     void gutterClicked(int line);
+    void runToRequested(int line);
 
 protected:
+    void contextMenuEvent(QContextMenuEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void changeEvent(QEvent *event) override;
 
@@ -39,4 +53,5 @@ private:
     QWidget *m_gutter;
     QSet<int> m_breakpoints;
     int m_paused = 0;
+    bool m_runTo = false;
 };

@@ -231,6 +231,10 @@ Programme : %2 sur %3
 Variables globales : %4 sur %5</translation>
     </message>
     <message>
+        <source>It took %1.</source>
+        <translation>Durée : %1.</translation>
+    </message>
+    <message>
         <source>%1 – %2</source>
         <translation>%1 – %2</translation>
     </message>
@@ -284,6 +288,14 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>Add another part like the selected one, on pins it does not use (Ctrl+D)</source>
         <translation>Ajoute un autre composant comme celui sélectionné, sur des broches qu’il n’utilise pas (Ctrl+D)</translation>
+    </message>
+    <message>
+        <source>Paste</source>
+        <translation>Coller</translation>
+    </message>
+    <message>
+        <source>Add the part copied with Ctrl+C, from this or another project, on pins it does not use here (Ctrl+V)</source>
+        <translation>Ajouter le composant copié avec Ctrl+C, de ce projet ou d’un autre, sur des broches qu’il n’utilise pas ici (Ctrl+V)</translation>
     </message>
     <message>
         <source>Undo the last change to the parts (Ctrl+Z)</source>
@@ -362,6 +374,14 @@ Variables globales : %4 sur %5</translation>
         <translation>%1 : GPIO %2</translation>
     </message>
     <message>
+        <source>Copied %1. Paste it into this or another project&apos;s circuit with %2.</source>
+        <translation>%1 copié. Collez-le dans le circuit de ce projet ou d’un autre avec %2.</translation>
+    </message>
+    <message>
+        <source>The copied part is not one this version of the app can place.</source>
+        <translation>Cette version de l’application ne peut pas placer le composant copié.</translation>
+    </message>
+    <message>
         <source>Add %1</source>
         <translation>Ajouter %1</translation>
     </message>
@@ -423,6 +443,18 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>Line numbers and breakpoints</source>
         <translation>Numéros de ligne et points d’arrêt</translation>
+    </message>
+    <message>
+        <source>Add or remove a breakpoint on line %1</source>
+        <translation>Ajouter ou retirer un point d’arrêt à la ligne %1</translation>
+    </message>
+    <message>
+        <source>Run to line %1</source>
+        <translation>Exécuter jusqu’à la ligne %1</translation>
+    </message>
+    <message>
+        <source>While debugging, when the firmware is paused</source>
+        <translation>En débogage, quand le firmware est en pause</translation>
     </message>
 </context>
 <context>
@@ -541,6 +573,18 @@ Variables globales : %4 sur %5</translation>
         <source>Go to the latest output and follow it</source>
         <translation>Aller à la sortie la plus récente et la suivre</translation>
     </message>
+    <message>
+        <source>Crash backtrace, from the build (click a line to see it):</source>
+        <translation>Pile d’appels du plantage, d’après la compilation (cliquez sur une ligne pour la voir) :</translation>
+    </message>
+    <message>
+        <source>%1 at </source>
+        <translation>%1 à </translation>
+    </message>
+    <message>
+        <source>%1, line %2</source>
+        <translation>%1, ligne %2</translation>
+    </message>
 </context>
 <context>
     <name>CoreConnection</name>
@@ -606,6 +650,30 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>Remove</source>
         <translation>Retirer</translation>
+    </message>
+    <message>
+        <source>Expression to watch</source>
+        <translation>Expression à surveiller</translation>
+    </message>
+    <message>
+        <source>Watch an expression, e.g. count * 2 or buf[3]</source>
+        <translation>Surveiller une expression, p. ex. count * 2 ou buf[3]</translation>
+    </message>
+    <message>
+        <source>A C or C++ expression, read again every time the firmware stops</source>
+        <translation>Une expression C ou C++, relue à chaque arrêt du firmware</translation>
+    </message>
+    <message>
+        <source>Watched expressions</source>
+        <translation>Expressions surveillées</translation>
+    </message>
+    <message>
+        <source>Expression</source>
+        <translation>Expression</translation>
+    </message>
+    <message>
+        <source>Stop watching</source>
+        <translation>Ne plus surveiller</translation>
     </message>
     <message>
         <source>Local variables</source>
@@ -680,6 +748,10 @@ Variables globales : %4 sur %5</translation>
         <translation>Pile d’appels</translation>
     </message>
     <message>
+        <source>Watch</source>
+        <translation>Surveiller</translation>
+    </message>
+    <message>
         <source>Running.</source>
         <translation>En cours d’exécution.</translation>
     </message>
@@ -702,6 +774,22 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>Not debugging. Build a project for an ESP32, ESP32-S3 or ESP32-C3 board, then choose Debug in the toolbar.</source>
         <translation>Pas de débogage en cours. Compilez un projet pour une carte ESP32, ESP32-S3 ou ESP32-C3, puis choisissez Déboguer dans la barre d&apos;outils.</translation>
+    </message>
+    <message>
+        <source>Pause the firmware first, then run to a line.</source>
+        <translation>Mettez d’abord le firmware en pause, puis exécutez jusqu’à une ligne.</translation>
+    </message>
+    <message>
+        <source>Run to a line works while debugging: choose Debug in the toolbar.</source>
+        <translation>Exécuter jusqu’à une ligne fonctionne en débogage : choisissez Déboguer dans la barre d’outils.</translation>
+    </message>
+    <message>
+        <source>Running to %1…</source>
+        <translation>Exécution jusqu’à %1…</translation>
+    </message>
+    <message>
+        <source>(read when the firmware stops)</source>
+        <translation>(lue quand le firmware s’arrête)</translation>
     </message>
     <message>
         <source>Pause the firmware first: GDB changes breakpoints only while it is stopped.</source>
@@ -952,6 +1040,29 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>%1 × %2 pixels</source>
         <translation>%1 × %2 pixels</translation>
+    </message>
+</context>
+<context>
+    <name>Labels</name>
+    <message>
+        <source>just now</source>
+        <translation>à l’instant</translation>
+    </message>
+    <message>
+        <source>%1 min ago</source>
+        <translation>il y a %1 min</translation>
+    </message>
+    <message>
+        <source>%1 h ago</source>
+        <translation>il y a %1 h</translation>
+    </message>
+    <message>
+        <source>%1 s</source>
+        <translation>%1 s</translation>
+    </message>
+    <message>
+        <source>%1 min %2 s</source>
+        <translation>%1 min %2 s</translation>
     </message>
 </context>
 <context>
@@ -1654,6 +1765,22 @@ SHA-256 du code : %2</translation>
         <translation>Dans le texte à envoyer : les lignes déjà envoyées</translation>
     </message>
     <message>
+        <source>In the Code tab: go to a line</source>
+        <translation>Dans l’onglet Code : aller à une ligne</translation>
+    </message>
+    <message>
+        <source>In the circuit: copy the selected part, and paste it into this or another project&apos;s circuit</source>
+        <translation>Dans le circuit : copier le composant sélectionné et le coller dans le circuit de ce projet ou d’un autre</translation>
+    </message>
+    <message>
+        <source>Left / Right</source>
+        <translation>Gauche / Droite</translation>
+    </message>
+    <message>
+        <source>In the trace: move marker A to the selected pin&apos;s previous or next change (with Shift, marker B)</source>
+        <translation>Dans le chronogramme : déplacer le marqueur A au changement précédent ou suivant de la broche sélectionnée (avec Maj, le marqueur B)</translation>
+    </message>
+    <message>
         <source>Tab, arrows, Space</source>
         <translation>Tab, flèches, Espace</translation>
     </message>
@@ -2102,6 +2229,38 @@ SHA-256 du code : %2</translation>
         <translation>Code</translation>
     </message>
     <message>
+        <source>Find in the code</source>
+        <translation>Rechercher dans le code</translation>
+    </message>
+    <message>
+        <source>Previous match (Shift+Enter)</source>
+        <translation>Occurrence précédente (Maj+Entrée)</translation>
+    </message>
+    <message>
+        <source>Previous match</source>
+        <translation>Occurrence précédente</translation>
+    </message>
+    <message>
+        <source>Next match (Enter)</source>
+        <translation>Occurrence suivante (Entrée)</translation>
+    </message>
+    <message>
+        <source>Next match</source>
+        <translation>Occurrence suivante</translation>
+    </message>
+    <message>
+        <source>Not found</source>
+        <translation>Introuvable</translation>
+    </message>
+    <message>
+        <source>Close (Esc)</source>
+        <translation>Fermer (Échap)</translation>
+    </message>
+    <message>
+        <source>Close the find row</source>
+        <translation>Fermer la ligne de recherche</translation>
+    </message>
+    <message>
         <source>Copy code</source>
         <translation>Copier le code</translation>
     </message>
@@ -2148,6 +2307,14 @@ SHA-256 du code : %2</translation>
     <message>
         <source>&lt;h3&gt;Getting started&lt;/h3&gt;&lt;ol&gt;&lt;li&gt;Pick a project from the list, or open one of your own ESP-IDF project folders.&lt;/li&gt;&lt;li&gt;Choose your board, then press &lt;b&gt;Build&lt;/b&gt;.&lt;/li&gt;&lt;li&gt;Press &lt;b&gt;Run in simulator&lt;/b&gt; to try it without hardware, or plug in a board, choose its port and press &lt;b&gt;Flash&lt;/b&gt;.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;The first build needs the build tools: &lt;b&gt;Tools → Toolchain setup&lt;/b&gt; installs them.&lt;/p&gt;</source>
         <translation>&lt;h3&gt;Pour commencer&lt;/h3&gt;&lt;ol&gt;&lt;li&gt;Choisissez un projet dans la liste, ou ouvrez l&apos;un de vos propres dossiers de projets ESP-IDF.&lt;/li&gt;&lt;li&gt;Choisissez votre carte, puis appuyez sur &lt;b&gt;Compiler&lt;/b&gt;.&lt;/li&gt;&lt;li&gt;Appuyez sur &lt;b&gt;Exécuter dans le simulateur&lt;/b&gt; pour l&apos;essayer sans matériel, ou branchez une carte, choisissez son port et appuyez sur &lt;b&gt;Flasher&lt;/b&gt;.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;La première compilation a besoin des outils : &lt;b&gt;Outils → Configuration des outils&lt;/b&gt; les installe.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>Go to line</source>
+        <translation>Aller à la ligne</translation>
+    </message>
+    <message>
+        <source>Line (1 to %1):</source>
+        <translation>Ligne (1 à %1) :</translation>
     </message>
     <message>
         <source>Loading…</source>
@@ -2662,6 +2829,14 @@ SHA-256 du code : %2</translation>
         <translation>Réinitialiser</translation>
     </message>
     <message>
+        <source>Pause</source>
+        <translation>Pause</translation>
+    </message>
+    <message>
+        <source>Pause simulation</source>
+        <translation>Mettre la simulation en pause</translation>
+    </message>
+    <message>
         <source>Stop</source>
         <translation>Arrêter</translation>
     </message>
@@ -2716,6 +2891,10 @@ SHA-256 du code : %2</translation>
     <message>
         <source>No line ending</source>
         <translation>Aucune fin de ligne</translation>
+    </message>
+    <message>
+        <source>Paused: the simulated time, pins and trace stand still.</source>
+        <translation>En pause : le temps simulé, les broches et le chronogramme sont figés.</translation>
     </message>
     <message>
         <source>Run the same build again, without rebuilding</source>
@@ -2793,6 +2972,22 @@ SHA-256 du code : %2</translation>
         <source>Simulator error: %1</source>
         <translation>Erreur du simulateur : %1</translation>
     </message>
+    <message>
+        <source>Resume simulation</source>
+        <translation>Reprendre la simulation</translation>
+    </message>
+    <message>
+        <source>Run the firmware on from where it stopped (%1)</source>
+        <translation>Relancer le firmware là où il s’est arrêté (%1)</translation>
+    </message>
+    <message>
+        <source>Stop the firmware where it is, to look at its pins and trace (%1)</source>
+        <translation>Arrêter le firmware là où il est, pour examiner ses broches et son chronogramme (%1)</translation>
+    </message>
+    <message>
+        <source>Resume</source>
+        <translation>Reprendre</translation>
+    </message>
 </context>
 <context>
     <name>TracePanel</name>
@@ -2805,8 +3000,8 @@ SHA-256 du code : %2</translation>
         <translation>Enregistrer en VCD…</translation>
     </message>
     <message>
-        <source>Click to place marker A, again for B, to measure the time between them; right-click clears them. Ctrl and the mouse wheel zoom; the wheel alone scrolls back in time. Right-click a pin&apos;s name to hide it or show only it.</source>
-        <translation>Cliquez pour placer le repère A, puis encore pour B, afin de mesurer le temps entre eux ; un clic droit les efface. Ctrl et la molette zooment ; la molette seule remonte le temps. Faites un clic droit sur le nom d’une broche pour la masquer ou n’afficher qu’elle.</translation>
+        <source>Click to place marker A, again for B, to measure the time between them; right-click clears them. Ctrl and the mouse wheel zoom; the wheel alone scrolls back in time. Right-click a pin&apos;s name to hide it or show only it. Click a pin&apos;s row, then the left and right arrow keys move marker A to its edges (with Shift, marker B); up and down pick another pin.</source>
+        <translation>Cliquez pour placer le marqueur A, puis encore pour B, afin de mesurer le temps entre eux ; un clic droit les efface. Ctrl et la molette zooment ; la molette seule remonte dans le temps. Clic droit sur le nom d’une broche pour la masquer ou n’afficher qu’elle. Cliquez sur la ligne d’une broche : les flèches gauche et droite déplacent alors le marqueur A sur ses fronts (avec Maj, le marqueur B) ; haut et bas choisissent une autre broche.</translation>
     </message>
     <message>
         <source>Pin trace</source>
@@ -2930,6 +3125,10 @@ SHA-256 du code : %2</translation>
     <message>
         <source>A–B: %1 (%2)</source>
         <translation>A–B : %1 (%2)</translation>
+    </message>
+    <message>
+        <source>%1 · %2 high %3% of it</source>
+        <translation>%1 · %2 à l’état haut %3 % du temps</translation>
     </message>
     <message>
         <source>Hide %1</source>

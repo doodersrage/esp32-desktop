@@ -247,6 +247,12 @@ enum SerialCmd {
         /// A library project id: say whether the board prints what it expects.
         #[arg(long)]
         expect: Option<String>,
+        /// The firmware's ELF: crash backtraces are decoded from it, on stderr.
+        #[arg(long, requires = "chip")]
+        elf: Option<PathBuf>,
+        /// The board's chip, for --elf: esp32, esp32s3 or esp32c3.
+        #[arg(long)]
+        chip: Option<Chip>,
     },
 }
 
@@ -643,6 +649,9 @@ enum SimCmd {
         /// opens in PulseView or GTKWave.
         #[arg(long)]
         trace: Option<PathBuf>,
+        /// The image's ELF: crash backtraces are decoded from it, on stderr.
+        #[arg(long)]
+        elf: Option<PathBuf>,
     },
     /// Boot an image and pass if a marker appears on UART0 before the timeout.
     BootTest {
@@ -1070,7 +1079,13 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             crlf,
             reconnect,
             expect,
+            elf,
+            chip,
         }) => {
+            let mut crashes = match (elf, chip) {
+                (Some(elf), Some(chip)) => Some(Crashes::new(elf, chip.id())?),
+                _ => None,
+            };
             let expect = match &expect {
                 Some(id) => {
                     let cache = esp32bench_library::Cache::new(esp32bench_library::cache_dir()?);
@@ -1114,6 +1129,9 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         Some(esp32bench_serial::Event::Data(bytes)) => {
                             out.write_all(&bytes)?;
                             out.flush()?;
+                            if let Some(c) = crashes.as_mut() {
+                                c.feed(&bytes).await;
+                            }
                             if let Some(progress) = checker.as_mut().and_then(|c| c.feed(&bytes))
                                 && progress.complete()
                             {
@@ -1234,7 +1252,11 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             frames,
             circuit,
             trace,
+            elf,
         }) => {
+            let mut crashes = elf
+                .map(|e| Crashes::new(e, session.chip.id()))
+                .transpose()?;
             if trace.is_some() && session.pins.is_empty() && circuit.is_none() {
                 bail!("--trace records bridged pins: add --pins or --circuit");
             }
@@ -1362,6 +1384,9 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                         Some(bytes) => {
                             out.write_all(&bytes)?;
                             out.flush()?;
+                            if let Some(c) = crashes.as_mut() {
+                                c.feed(&bytes).await;
+                            }
                             if let Some(lines) = joiner.as_mut().and_then(|j| j.feed(&bytes)) {
                                 eprintln!(
                                     "[joining the simulated Wi-Fi: setting the sketch's network to {}, no password]",
@@ -1390,6 +1415,11 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                                 (_, None) => eprintln!("no circuit; use --circuit"),
                                 (None, _) => eprintln!("usage: :press <id>, :release <id>, :control <id> <name> <true|false|number>"),
                             }
+                        }
+                        // :pause and :resume stop and restart the CPUs (sim.pause).
+                        Some(l) if l == ":pause" || l == ":resume" => {
+                            if l == ":pause" { s.pause().await? } else { s.resume().await? }
+                            eprintln!("[{}]", if l == ":pause" { "paused" } else { "running" });
                         }
                         Some(l) => match l.strip_prefix(":set ") {
                             Some(cmd) => {
@@ -1430,6 +1460,49 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Decodes the crash backtraces in output from an ELF, printing them on stderr.
+struct Crashes {
+    finder: esp32bench_build::backtrace::Finder,
+    addr2line: PathBuf,
+    elf: PathBuf,
+}
+
+impl Crashes {
+    fn new(elf: PathBuf, chip: &str) -> Result<Self> {
+        if !elf.is_file() {
+            bail!("no ELF at {}", elf.display());
+        }
+        let data = esp32bench_toolchain::Env::default_arduino_data().unwrap_or_default();
+        let addr2line = esp32bench_build::backtrace::find_addr2line(&data, chip).context(
+            "decoding needs the ESP32 core's toolchain (esp32bench toolchain install esp32-core)",
+        )?;
+        Ok(Self {
+            finder: esp32bench_build::backtrace::Finder::new(),
+            addr2line,
+            elf,
+        })
+    }
+
+    async fn feed(&mut self, bytes: &[u8]) {
+        for addrs in self.finder.feed(bytes) {
+            match esp32bench_build::backtrace::decode(&self.addr2line, &self.elf, &addrs).await {
+                Ok(frames) => {
+                    eprintln!("-- backtrace:");
+                    for f in frames {
+                        let place = match (&f.file, f.line) {
+                            (Some(file), Some(line)) => format!(" at {file}:{line}"),
+                            (Some(file), None) => format!(" in {file}"),
+                            _ => String::new(),
+                        };
+                        eprintln!("   {} {}{place}", f.addr, f.func.as_deref().unwrap_or("??"));
+                    }
+                }
+                Err(e) => eprintln!("-- could not decode the backtrace: {e}"),
+            }
+        }
+    }
 }
 
 fn board_command(cmd: BoardCmd) -> Result<()> {

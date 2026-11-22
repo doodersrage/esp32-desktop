@@ -6,6 +6,7 @@
 #include "Labels.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QComboBox>
 #include <QStandardPaths>
 #include <QLocale>
@@ -22,7 +23,11 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
+#include <QInputDialog>
+#include <QKeyEvent>
 #include <QKeySequence>
+#include <QLineEdit>
+#include <QShortcut>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -30,6 +35,7 @@
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTextBlock>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -190,6 +196,63 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
         if (!currentProjectId().isEmpty() && !m_copyCode->isHidden())
             emit codeLineClicked(line);
     });
+    connect(m_code, &CodeView::runToRequested, this, [this](int line) {
+        if (!currentProjectId().isEmpty() && !m_copyCode->isHidden())
+            emit runToLineRequested(line);
+    });
+    // Find in the sketch: hidden until Ctrl+F there; Esc hides it again.
+    m_codeFindRow = new QWidget(codePage);
+    m_codeFind = new QLineEdit(m_codeFindRow);
+    m_codeFind->setAccessibleName(tr("Find in the code"));
+    m_codeFind->setPlaceholderText(tr("Find in the code"));
+    m_codeFind->setClearButtonEnabled(true);
+    auto *findPrev = new QToolButton(m_codeFindRow);
+    findPrev->setIcon(QIcon::fromTheme(u"go-up"_s));
+    findPrev->setToolTip(tr("Previous match (Shift+Enter)"));
+    findPrev->setAccessibleName(tr("Previous match"));
+    auto *findNext = new QToolButton(m_codeFindRow);
+    findNext->setIcon(QIcon::fromTheme(u"go-down"_s));
+    findNext->setToolTip(tr("Next match (Enter)"));
+    findNext->setAccessibleName(tr("Next match"));
+    m_codeFindNone = new QLabel(tr("Not found"), m_codeFindRow);
+    m_codeFindNone->hide();
+    auto *findClose = new QToolButton(m_codeFindRow);
+    findClose->setIcon(QIcon::fromTheme(u"window-close"_s));
+    findClose->setToolTip(tr("Close (Esc)"));
+    findClose->setAccessibleName(tr("Close the find row"));
+    auto *findLayout = new QHBoxLayout(m_codeFindRow);
+    findLayout->setContentsMargins(0, 0, 0, 0);
+    findLayout->addWidget(m_codeFind, 1);
+    findLayout->addWidget(m_codeFindNone);
+    findLayout->addWidget(findPrev);
+    findLayout->addWidget(findNext);
+    findLayout->addWidget(findClose);
+    m_codeFindRow->hide();
+    const auto findCode = [this](bool backward) {
+        m_codeFindNone->setVisible(!m_code->findText(m_codeFind->text(), backward) && !m_codeFind->text().isEmpty());
+    };
+    connect(m_codeFind, &QLineEdit::returnPressed, this, [findCode] {
+        findCode(QGuiApplication::keyboardModifiers() & Qt::ShiftModifier);
+    });
+    connect(m_codeFind, &QLineEdit::textEdited, this, [this, findCode] {
+        // From the start of the current selection, so typing more keeps the match.
+        QTextCursor c = m_code->textCursor();
+        c.setPosition(c.selectionStart());
+        m_code->setTextCursor(c);
+        findCode(false);
+    });
+    connect(findPrev, &QToolButton::clicked, this, [findCode] { findCode(true); });
+    connect(findNext, &QToolButton::clicked, this, [findCode] { findCode(false); });
+    connect(findClose, &QToolButton::clicked, this, [this] {
+        m_codeFindRow->hide();
+        m_code->setFocus(Qt::OtherFocusReason);
+    });
+    // Esc in the field closes the row (a key filter: the window's Esc closes its
+    // message bar, and two shortcuts on one key would cancel each other out).
+    m_codeFind->installEventFilter(this);
+    connect(this, &ProjectView::codeFindEscaped, findClose, &QToolButton::click);
+    auto *lineKey = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_L), codePage, nullptr, nullptr, Qt::WidgetWithChildrenShortcut);
+    connect(lineKey, &QShortcut::activated, this, &ProjectView::goToLine);
     m_copyCode = new QPushButton(QIcon::fromTheme(u"edit-copy"_s), tr("Copy code"), codePage);
     m_copyCode->setToolTip(tr("Copy the sketch, to paste it into the Arduino IDE"));
     connect(m_copyCode, &QPushButton::clicked, this, [this] { QGuiApplication::clipboard()->setText(m_code->toPlainText()); });
@@ -213,6 +276,7 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     codeButtons->addWidget(m_openIde);
     auto *codeLayout = new QVBoxLayout(codePage);
     codeLayout->setContentsMargins(0, 0, 0, 0);
+    codeLayout->addWidget(m_codeFindRow);
     codeLayout->addWidget(m_code, 1);
     codeLayout->addLayout(codeButtons);
     m_tabs->addTab(codePage, tr("Code"));
@@ -244,6 +308,16 @@ ProjectView::ProjectView(CoreConnection *core, QWidget *parent)
     boardRow->addRow(m_boardLabel, m_board);
     m_buildState = new QLabel(page);
     m_buildState->setWordWrap(true);
+    // "Built 3 min ago" stays true: the time is said again each minute.
+    auto *minute = new QTimer(this);
+    minute->start(60'000);
+    connect(minute, &QTimer::timeout, this, [this] {
+        if (!m_builtAt.isValid() || m_builtWhen.isEmpty())
+            return;
+        const QString when = Labels::ago(m_builtAt, QDateTime::currentDateTime());
+        m_buildState->setText(m_buildState->text().replace(m_builtWhen, when));
+        m_builtWhen = when;
+    });
     boardRow->addRow(QString(), m_buildState);
     // Whether the project shown is built for the board shown (build.status), so Run
     // knows whether it builds first.
@@ -328,6 +402,53 @@ bool ProjectView::showCodeLine(int line)
     m_code->centerCursor();
     m_code->setFocus(Qt::OtherFocusReason);
     return true;
+}
+
+bool ProjectView::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_codeFind && (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress)
+        && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+        event->accept();
+        if (event->type() == QEvent::KeyPress)
+            emit codeFindEscaped();
+        return true;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void ProjectView::findInCode()
+{
+    m_tabs->setCurrentIndex(CodeTab);
+    m_codeFindRow->show();
+    if (m_code->textCursor().hasSelection() && !m_code->textCursor().selectedText().contains(QChar::ParagraphSeparator))
+        m_codeFind->setText(m_code->textCursor().selectedText());
+    m_codeFind->setFocus(Qt::ShortcutFocusReason);
+    m_codeFind->selectAll();
+}
+
+bool ProjectView::codeHasFocus() const
+{
+    const QWidget *page = m_code->parentWidget();
+    for (const QWidget *w = QApplication::focusWidget(); w; w = w->parentWidget()) {
+        if (w == page)
+            return m_tabs->currentIndex() == CodeTab;
+    }
+    return false;
+}
+
+void ProjectView::goToLine()
+{
+    const int count = m_code->document()->blockCount();
+    if (m_code->document()->isEmpty())
+        return;
+    bool ok = false;
+    const int line = QInputDialog::getInt(this, tr("Go to line"), tr("Line (1 to %1):").arg(count),
+                                          m_code->textCursor().blockNumber() + 1, 1, count, 1, &ok);
+    if (ok) {
+        m_tabs->setCurrentIndex(CodeTab);
+        m_code->goToLine(line);
+        m_code->setFocus(Qt::OtherFocusReason);
+    }
 }
 
 void ProjectView::showPausedLine(int line)
@@ -654,6 +775,7 @@ void ProjectView::showBuild(int index)
 void ProjectView::requestBuildState()
 {
     m_buildState->clear();
+    m_builtAt = {};
     const QString id = m_project.value(u"id"_s).toString();
     const QString board = m_board->currentData().toString();
     if (!id.isEmpty() && !board.isEmpty() && m_core->state() == CoreConnection::State::Connected)
@@ -665,13 +787,18 @@ void ProjectView::showBuildState(const QJsonObject &status)
     const QString id = m_project.value(u"id"_s).toString();
     const QString board = m_board->currentData().toString();
     const bool prebuilt = !m_local && m_project.value(u"firmware"_s).toString() != u"sketch";
+    m_builtAt = {};
+    m_buildState->setToolTip(QString());
     if (!status.value(u"built"_s).toBool()) {
         m_buildState->setText(prebuilt ? tr("Not downloaded for this board yet.") : tr("Not built for this board yet."));
         emit buildCurrent(id, board, false);
         return;
     }
-    const QString when = QLocale().toString(QDateTime::fromSecsSinceEpoch(status.value(u"builtAt"_s).toInteger()),
-                                            QLocale::ShortFormat);
+    const QDateTime at = QDateTime::fromSecsSinceEpoch(status.value(u"builtAt"_s).toInteger());
+    const QString when = Labels::ago(at, QDateTime::currentDateTime());
+    m_builtAt = at;
+    m_builtWhen = when;
+    m_buildState->setToolTip(QLocale().toString(at, QLocale::LongFormat));
     if (m_local) {
         // Its files may have changed since, so it is built again before running.
         m_buildState->setText(tr("Last built %1.").arg(when));

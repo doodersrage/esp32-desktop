@@ -1,6 +1,8 @@
 #include "ConsoleView.h"
 
 #include "CoreConnection.h"
+#include <QMouseEvent>
+#include <QFileInfo>
 
 #include <QCheckBox>
 #include <QPalette>
@@ -405,6 +407,59 @@ void ConsoleView::appendNotice(const QString &text)
     OutputLines::mark(document()->lastBlock().previous(), OutputLines::Notice, {}, palette());
     m_atLineStart = true;
     followOrOffer(atEnd);
+}
+
+void ConsoleView::appendBacktrace(const QJsonArray &frames)
+{
+    if (frames.isEmpty())
+        return;
+    appendNotice(tr("Crash backtrace, from the build (click a line to see it):"));
+    QScrollBar *bar = verticalScrollBar();
+    const bool atEnd = bar->value() == bar->maximum();
+    QTextCursor c(document());
+    for (const QJsonValue &v : frames) {
+        const QJsonObject f = v.toObject();
+        const QString path = f.value(u"file"_s).toString();
+        const QString file = QFileInfo(path).fileName();
+        const int line = f.value(u"line"_s).toInt();
+        const QString func = f.value(u"func"_s).toString(f.value(u"addr"_s).toString());
+        c.movePosition(QTextCursor::End);
+        if (file.isEmpty() || line <= 0) {
+            c.insertText(u"--   %1\n"_s.arg(func));
+        } else {
+            c.insertText(u"--   "_s + tr("%1 at ").arg(func));
+            QTextCharFormat link;
+            link.setAnchor(true);
+            link.setAnchorHref(u"frame:%1"_s.arg(m_frameLinks.size()));
+            link.setFontUnderline(true);
+            link.setForeground(palette().link());
+            c.insertText(tr("%1, line %2").arg(file).arg(line), link);
+            c.setCharFormat(QTextCharFormat());
+            c.insertText(u"\n"_s);
+            m_frameLinks << QJsonObject{{u"file"_s, file}, {u"line"_s, line}, {u"path"_s, path}};
+        }
+        OutputLines::mark(document()->lastBlock().previous(), OutputLines::Notice, {}, palette());
+    }
+    m_atLineStart = true;
+    followOrOffer(atEnd);
+}
+
+void ConsoleView::mouseMoveEvent(QMouseEvent *event)
+{
+    QPlainTextEdit::mouseMoveEvent(event);
+    viewport()->setCursor(anchorAt(event->position().toPoint()).startsWith(u"frame:") ? Qt::PointingHandCursor
+                                                                                       : Qt::IBeamCursor);
+}
+
+void ConsoleView::mouseReleaseEvent(QMouseEvent *event)
+{
+    const QString href = anchorAt(event->position().toPoint());
+    QPlainTextEdit::mouseReleaseEvent(event);
+    if (event->button() != Qt::LeftButton || textCursor().hasSelection() || !href.startsWith(u"frame:"))
+        return;
+    const qsizetype i = href.mid(6).toLongLong();
+    if (i >= 0 && i < m_frameLinks.size())
+        emit frameActivated(m_frameLinks.at(i));
 }
 
 ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &setting, QWidget *parent)

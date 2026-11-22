@@ -94,6 +94,7 @@ private:
     void showProblemCount();
     QElapsedTimer m_flashClock;
     QJsonObject m_size; // the build's size, until it has finished
+    double m_seconds = -1; // how long it took (build.finished's seconds), or -1
     qint64 m_flashFrom = 0;
 public:
     // The flash progress bar's words: percent, then speed and time left once known.

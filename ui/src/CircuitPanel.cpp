@@ -23,6 +23,10 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QJsonDocument>
+#include <QMimeData>
+#include <QGuiApplication>
+#include <QClipboard>
 #include <QPainter>
 #include <QPushButton>
 #include <QSpinBox>
@@ -402,6 +406,12 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
             }
         }
     });
+    m_paste = new QPushButton(QIcon::fromTheme(u"edit-paste"_s), tr("Paste"), this);
+    m_paste->setToolTip(tr("Add the part copied with Ctrl+C, from this or another project, on pins it does not "
+                           "use here (Ctrl+V)"));
+    m_paste->setEnabled(false);
+    connect(m_paste, &QPushButton::clicked, this, &CircuitPanel::pastePart);
+    connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &CircuitPanel::updatePaste);
     // m_remove as the context: the scene emits selectionChanged while it is destroyed,
     // after the button has gone.
     connect(m_scene, &QGraphicsScene::selectionChanged, m_remove, [this] {
@@ -433,6 +443,7 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     tools->addWidget(m_add);
     tools->addWidget(m_remove);
     tools->addWidget(m_duplicate);
+    tools->addWidget(m_paste);
     tools->addWidget(m_undoButton);
     tools->addWidget(m_redoButton);
     // Zoom: Ctrl+wheel or Ctrl+= / Ctrl+- on the canvas, and Fit for all of it.
@@ -455,6 +466,8 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     key(QKeySequence::Delete, [this] { m_remove->click(); });
     key(QKeySequence(Qt::Key_Backspace), [this] { m_remove->click(); });
     key(QKeySequence(Qt::CTRL | Qt::Key_D), [this] { m_duplicate->click(); });
+    key(QKeySequence::Copy, [this] { copyPart(); });
+    key(QKeySequence::Paste, [this] { pastePart(); });
     m_view->viewport()->installEventFilter(this);
     tools->addStretch(1);
     auto *layout = new QVBoxLayout(this);
@@ -601,6 +614,7 @@ void CircuitPanel::circuitLoaded(const QString &project, const QString &board, c
         return; // an answer for a board no longer shown
     m_circuit = circuit;
     rebuildScene();
+    updatePaste();
     // An empty board: ask what the project's wiring has, to offer it.
     if (parts().isEmpty() && m_suggested.isEmpty())
         m_core->suggestCircuit(project, board);
@@ -918,6 +932,47 @@ void CircuitPanel::redo()
     m_undo.append(m_circuit);
     m_undoButton->setEnabled(true);
     m_core->saveCircuit(m_project, m_board, next);
+}
+
+bool CircuitPanel::copyPart()
+{
+    const QString id = selectedPartId();
+    for (const QJsonValue &v : parts()) {
+        QJsonObject part = v.toObject();
+        if (part.value(u"id"_s).toString() != id)
+            continue;
+        part.remove(u"at"_s); // where it sat on this canvas
+        const QByteArray json = QJsonDocument(part).toJson(QJsonDocument::Compact);
+        auto *data = new QMimeData;
+        data->setData(QString::fromLatin1(PartMime), json);
+        data->setText(QString::fromUtf8(json));
+        QGuiApplication::clipboard()->setMimeData(data);
+        m_status->setText(tr("Copied %1. Paste it into this or another project's circuit with %2.")
+                              .arg(id, QKeySequence(QKeySequence::Paste).toString(QKeySequence::NativeText)));
+        return true;
+    }
+    return false;
+}
+
+bool CircuitPanel::pastePart()
+{
+    const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+    if (m_project.isEmpty() || !data || !data->hasFormat(QString::fromLatin1(PartMime)))
+        return false;
+    const QJsonObject part = QJsonDocument::fromJson(data->data(QString::fromLatin1(PartMime))).object();
+    const QString kind = part.value(u"kind"_s).toString();
+    if (!m_models.contains(kind)) {
+        m_status->setText(tr("The copied part is not one this version of the app can place."));
+        return false;
+    }
+    addDialog(kind, part);
+    return true;
+}
+
+void CircuitPanel::updatePaste()
+{
+    const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+    m_paste->setEnabled(!m_project.isEmpty() && data && data->hasFormat(QString::fromLatin1(PartMime)));
 }
 
 QString CircuitPanel::selectedPartId() const

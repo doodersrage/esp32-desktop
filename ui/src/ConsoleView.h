@@ -4,6 +4,7 @@
 #pragma once
 
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QJsonValue>
 #include <QPlainTextEdit>
 #include <QStringDecoder>
@@ -55,6 +56,9 @@ public:
     void appendBytes(const QByteArray &bytes);
     // A line from the app, not the board, marked so it stands apart.
     void appendNotice(const QString &text);
+    // A crash backtrace the core decoded (sim.backtrace, serial.backtrace): a notice
+    // line per frame; a frame with a file and line is a link (frameActivated).
+    void appendBacktrace(const QJsonArray &frames);
     // Start a new stream: forget any half-decoded character.
     void resetDecoder();
     // Start each new line with this computer's time (hh:mm:ss.zzz). Lines already
@@ -82,13 +86,18 @@ public:
 
 signals:
     void tagsChanged();
+    // A backtrace frame's link was clicked: {file (its name), line, path}.
+    void frameActivated(const QJsonObject &at);
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
     void changeEvent(QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
 private:
+    QList<QJsonObject> m_frameLinks; // backtrace links, by their index in the href
     // After adding text: follow it when the view was at the end, else offer to.
     void followOrOffer(bool wasAtEnd);
     void placeJump();

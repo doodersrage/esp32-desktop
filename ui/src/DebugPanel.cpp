@@ -2,7 +2,9 @@
 
 #include "CoreConnection.h"
 
+#include <QAction>
 #include <QFileInfo>
+#include <QKeySequence>
 #include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -39,7 +41,36 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     , m_stack(new QTreeWidget(this))
     , m_registers(new QTreeWidget(this))
     , m_locals(new QTreeWidget(this))
+    , m_watchInput(new QLineEdit(this))
+    , m_watches(new QTreeWidget(this))
 {
+    m_watchInput->setAccessibleName(tr("Expression to watch"));
+    m_watchInput->setPlaceholderText(tr("Watch an expression, e.g. count * 2 or buf[3]"));
+    m_watchInput->setToolTip(tr("A C or C++ expression, read again every time the firmware stops"));
+    m_watches->setAccessibleName(tr("Watched expressions"));
+    m_watches->setHeaderLabels({tr("Expression"), tr("Value")});
+    m_watches->setRootIsDecorated(false);
+    m_watches->setContextMenuPolicy(Qt::ActionsContextMenu);
+    auto *forget = new QAction(QIcon::fromTheme(u"list-remove"_s), tr("Stop watching"), m_watches);
+    forget->setShortcut(QKeySequence::Delete);
+    forget->setShortcutContext(Qt::WidgetShortcut);
+    m_watches->addAction(forget);
+    connect(forget, &QAction::triggered, this, [this] { delete m_watches->currentItem(); });
+    connect(m_watchInput, &QLineEdit::returnPressed, this, [this] {
+        addWatch(m_watchInput->text().trimmed());
+        m_watchInput->clear();
+    });
+    connect(m_core, &CoreConnection::debugEvaluated, this,
+            [this](const QString &expression, const QString &value, const QString &error) {
+                for (int i = 0; i < m_watches->topLevelItemCount(); ++i) {
+                    QTreeWidgetItem *item = m_watches->topLevelItem(i);
+                    if (item->text(0) != expression)
+                        continue;
+                    item->setText(1, error.isEmpty() ? value : error);
+                    item->setForeground(1, palette().brush(error.isEmpty() ? QPalette::Text : QPalette::PlaceholderText));
+                    item->setToolTip(1, error.isEmpty() ? value : error);
+                }
+            });
     m_locals->setAccessibleName(tr("Local variables"));
     m_locals->setHeaderLabels({tr("Variable"), tr("Value"), tr("Type")});
     m_locals->setRootIsDecorated(false);
@@ -105,7 +136,11 @@ DebugPanel::DebugPanel(CoreConnection *core, QWidget *parent)
     auto *localsLayout = new QVBoxLayout(localsBox);
     localsLayout->setContentsMargins(0, 0, 0, 0);
     localsLayout->addWidget(new QLabel(tr("Local variables"), localsBox));
-    localsLayout->addWidget(m_locals, 1);
+    localsLayout->addWidget(m_locals, 2);
+    localsLayout->addWidget(new QLabel(tr("Watch"), localsBox));
+    localsLayout->addWidget(m_watchInput);
+    localsLayout->addWidget(m_watches, 1);
+    m_watches->setFont(fixed);
     m_locals->setFont(fixed);
     m_locals->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
 
@@ -224,6 +259,40 @@ void DebugPanel::keep(const QStringList &locations)
     emit breakpointsChanged();
 }
 
+bool DebugPanel::runTo(const QString &location)
+{
+    if (m_mode != Mode::Paused) {
+        m_status->setText(m_mode == Mode::Running ? tr("Pause the firmware first, then run to a line.")
+                                                  : tr("Run to a line works while debugging: choose Debug in the toolbar."));
+        return false;
+    }
+    m_status->setText(tr("Running to %1…").arg(location));
+    m_core->debugRunTo(location);
+    return true;
+}
+
+void DebugPanel::addWatch(const QString &expression)
+{
+    if (expression.isEmpty())
+        return;
+    for (int i = 0; i < m_watches->topLevelItemCount(); ++i) {
+        if (m_watches->topLevelItem(i)->text(0) == expression)
+            return;
+    }
+    auto *item = new QTreeWidgetItem(m_watches);
+    item->setText(0, expression);
+    if (m_mode == Mode::Paused)
+        m_core->debugEvaluate(expression);
+    else
+        item->setText(1, tr("(read when the firmware stops)"));
+}
+
+void DebugPanel::evaluateWatches()
+{
+    for (int i = 0; i < m_watches->topLevelItemCount(); ++i)
+        m_core->debugEvaluate(m_watches->topLevelItem(i)->text(0));
+}
+
 bool DebugPanel::toggleBreakpoint(const QString &location)
 {
     if (m_mode == Mode::Running) {
@@ -269,9 +338,13 @@ QString DebugPanel::where(const QJsonObject &frame)
 
 void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int breakpoint)
 {
+    // A breakpoint of the list (not Run to a line's temporary one).
+    bool listed = false;
+    for (int i = 0; i < m_breakpoints->count(); ++i)
+        listed = listed || m_breakpoints->item(i)->data(NumberRole).toInt() == breakpoint;
     if (reason == u"paused" && frame.value(u"func"_s).toString().isEmpty())
         m_status->setText(tr("Paused before the firmware starts. Add breakpoints, then Continue."));
-    else if (reason == u"breakpoint-hit")
+    else if (reason == u"breakpoint-hit" && listed)
         m_status->setText(tr("Stopped at breakpoint %1 in %2.").arg(breakpoint).arg(where(frame)));
     else
         m_status->setText(tr("Paused in %1.").arg(where(frame)));
@@ -281,6 +354,7 @@ void DebugPanel::stopped(const QString &reason, const QJsonObject &frame, int br
     }
     setMode(Mode::Paused);
     m_core->debugInspect();
+    evaluateWatches();
 }
 
 void DebugPanel::showInspection(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals)
@@ -335,5 +409,11 @@ void DebugPanel::setMode(Mode mode)
         m_stack->clear();
         m_registers->clear();
         m_locals->clear();
+    }
+    if (mode != Mode::Paused) {
+        for (int i = 0; i < m_watches->topLevelItemCount(); ++i) {
+            m_watches->topLevelItem(i)->setText(1, QString());
+            m_watches->topLevelItem(i)->setToolTip(1, QString());
+        }
     }
 }

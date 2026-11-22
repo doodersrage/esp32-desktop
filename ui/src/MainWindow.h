@@ -85,6 +85,9 @@ public:
     PreferencesDialog *preferences() const { return m_preferences; }
     // Ctrl+F: find in the console that has the focus, else in the library.
     void find();
+    // Show where a build line or a crash backtrace points: a library sketch's line in the
+    // Code tab, else the file in the user's editor.
+    void showLocation(const QJsonObject &at);
     // Help → Keyboard shortcuts' text (rich text), and its dialog.
     QString shortcutsText() const;
     void showShortcuts();
@@ -173,6 +176,7 @@ private:
     QString m_lastBoardPort;
     // The project the last flash wrote, for the serial monitor's baud rate after it.
     QString m_flashedProject;
+    QString m_flashedBoard;
     // Try Blink was pressed: run it once it is shown and can be.
     bool m_tryPending = false;
     QToolBar *m_toolBar = nullptr;

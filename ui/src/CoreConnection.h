@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 33;
+    static constexpr int ProtocolMinor = 34;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -93,7 +93,9 @@ public:
     // serial.open: one port at a time. serialOpened, then serialData until
     // serialClosed (unplugged, closed, or the connection dropped).
     // `expect`: a library project whose expected output to check (serial.expect).
-    void openSerial(const QString &path, int baud, const QString &expect = {});
+    // `decodeBoard`: with `expect`, the build the board runs (that project for this
+    // board), whose ELF decodes crash backtraces (serialBacktrace).
+    void openSerial(const QString &path, int baud, const QString &expect = {}, const QString &decodeBoard = {});
     void closeSerial();
     void writeSerial(const QByteArray &bytes);
     void resetSerial();
@@ -128,6 +130,10 @@ public:
     void stopSim();
     void writeSim(const QByteArray &bytes);
     void resetSim();
+    // sim.pause: stop or resume the running simulation's CPUs (not a debug run's);
+    // simPaused follows.
+    void pauseSim(bool paused);
+    bool isSimPaused() const { return m_simSub > 0 && m_simPaused; }
     bool isSimRunning() const { return m_simSub > 0; }
     bool isDebugging() const { return m_simSub > 0 && m_debugging; }
     // The running simulation's bridged GPIOs (sim.start's `pins`); empty when it has
@@ -182,6 +188,10 @@ public:
     void debugBreak(const QString &location);
     void debugDelete(int breakpoint);
     void debugControl(const QString &action);
+    // debug.control's runTo: run to a function or file:line.
+    void debugRunTo(const QString &location);
+    // debug.evaluate: debugEvaluated, with the value or why there is none.
+    void debugEvaluate(const QString &expression);
     void debugInspect();
 
     // Error code the core uses when consent is missing (docs/rpc.md).
@@ -288,6 +298,9 @@ signals:
     // A successful Arduino build's size (build.finished's size); sent just before
     // buildFinished.
     void buildSize(const QJsonObject &size);
+    // How long a finished build took (build.finished's seconds); sent just before
+    // buildFinished.
+    void buildTime(double seconds);
     // serial.garbled: the output looks like the wrong baud rate; `suggest` 0 if none.
     void serialGarbled(int baud, int suggest);
     // A port opened with reconnect went away; the core waits for it to come back.
@@ -298,6 +311,12 @@ signals:
                           const QStringList &unmatched);
     void modelsLoaded(const QJsonArray &models);
     void simStopped(const QString &reason);
+    // sim.paused: the simulation was paused or resumed.
+    void simPaused(bool paused);
+    // A crash backtrace the core decoded from the build's ELF (sim.backtrace,
+    // serial.backtrace): frames of {addr, func?, file?, line?, sketch?}.
+    void simBacktrace(const QJsonArray &frames);
+    void serialBacktrace(const QJsonArray &frames);
 
     // Debugger.
     void debugStarted();
@@ -308,6 +327,8 @@ signals:
     void breakpointSet(const QJsonObject &breakpoint, const QString &location = {});
     void breakpointDeleted(int number);
     void debugInspected(const QJsonArray &frames, const QJsonArray &registers, const QJsonArray &locals = {});
+    // `error` is empty when the expression has a value.
+    void debugEvaluated(const QString &expression, const QString &value, const QString &error);
     // A request failed. `method` is the RPC method name.
     void requestFailed(const QString &method, const QString &message);
 
@@ -355,6 +376,7 @@ private:
     bool m_simPartsActive = false;
     QJsonObject m_simNetwork;
     bool m_simIcount = false;
+    bool m_simPaused = false;
     bool m_autoStart = false;
     bool m_autoStartTried = false;
     QList<QPair<QString, QJsonObject>> m_earlySimEvents;

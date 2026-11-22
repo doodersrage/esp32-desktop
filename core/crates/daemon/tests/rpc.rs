@@ -674,6 +674,10 @@ async fn build_runs_after_consent_and_reports() {
             n["params"]["size"],
             json!({ "flash": 1234, "flashMax": 1310720, "ram": 2048, "ramMax": 327680 })
         );
+        // How long it took, in tenths of a second.
+        let secs = n["params"]["seconds"].as_f64().unwrap();
+        assert!((0.0..60.0).contains(&secs), "{n}");
+        assert_eq!((secs * 10.0).round(), secs * 10.0, "{n}");
         break;
     }
     assert!(saw_log);
@@ -1644,6 +1648,74 @@ async fn serial_checks_a_boards_output_against_its_project() {
     assert_eq!(done["params"]["timedOut"], false);
 }
 
+/// app_main's address in an ESP32 ELF, from nm beside the toolchain's addr2line.
+fn app_main_address(addr2line: &std::path::Path, elf: &std::path::Path) -> String {
+    let nm = addr2line.with_file_name("xtensa-esp32-elf-nm");
+    let syms = std::process::Command::new(&nm).arg(elf).output().unwrap();
+    String::from_utf8_lossy(&syms.stdout)
+        .lines()
+        .find_map(|l| l.strip_suffix(" T app_main").map(str::to_owned))
+        .expect("app_main in the ELF")
+}
+
+// A board's crash backtrace, decoded from the build it was flashed with.
+#[cfg(unix)]
+#[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
+async fn serial_decodes_a_boards_backtrace() {
+    use std::os::fd::AsRawFd;
+    let elf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/firmware/build/hello-esp32/esp32bench-hello.elf");
+    let data = esp32bench_toolchain::Env::default_arduino_data().unwrap_or_default();
+    let Some(a2l) =
+        esp32bench_build::backtrace::find_addr2line(&data, "esp32").filter(|_| elf.is_file())
+    else {
+        eprintln!("skipping: needs the hello firmware and the Arduino core's toolchain");
+        return;
+    };
+    let app_main = app_main_address(&a2l, &elf);
+    let (master, port) = pty();
+    let (d, sock, _lock) = serial_daemon(&port).await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&elf, out.join("blink.ino.elf")).unwrap();
+    let params =
+        json!({ "path": port, "baud": 115200, "decode": { "project": "blink", "board": "esp32" } });
+    assert_valid(
+        &method_def("serial.open")["params"],
+        &params,
+        "serial.open params",
+    );
+    c.call("serial.open", params).await.unwrap();
+    let out = format!(
+        "Guru Meditation Error\r\nBacktrace: 0x{app_main}:0x3ffb0000 0x00000000:0x3ffb0020\r\n"
+    );
+    // SAFETY: write a valid buffer to the pty master.
+    unsafe { libc::write(master.as_raw_fd(), out.as_ptr().cast(), out.len()) };
+    let n = next_serial_event(&mut c, 10).await;
+    assert_eq!(n["method"], "serial.backtrace", "{n}");
+    assert_valid(
+        &method_def("serial.backtrace")["params"],
+        &n["params"],
+        "serial.backtrace",
+    );
+    assert_eq!(n["params"]["frames"][0]["func"], "app_main", "{n}");
+    assert_eq!(n["params"]["frames"].as_array().unwrap().len(), 1, "{n}");
+    // An unknown build's ids are checked like any other.
+    match c
+        .call("serial.open", json!({ "path": port, "baud": 115200, "decode": { "project": "../x", "board": "esp32" } }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("odd project accepted: {other:?}"),
+    }
+}
+
 // Output at the wrong speed: the core says so, once, with a speed to try.
 #[cfg(unix)]
 #[tokio::test]
@@ -2226,6 +2298,122 @@ async fn sim_runs_a_build_with_console_and_reset() {
     }
 }
 
+/// The next `event` of `sub`, every event checked against its schema on the way; the
+/// output text seen before it is returned too.
+async fn sim_event(c: &mut Client, sub: &Value, event: &str) -> (Value, String) {
+    let mut text = String::new();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(90);
+    loop {
+        let n = tokio::time::timeout_at(deadline, c.next_notification())
+            .await
+            .unwrap_or_else(|_| panic!("no {event}; output: {text}"))
+            .unwrap();
+        let method = n["method"].as_str().unwrap();
+        assert_valid(&method_def(method)["params"], &n["params"], method);
+        assert_eq!(&n["params"]["subscription"], sub);
+        if method == "sim.output" {
+            text.push_str(n["params"]["text"].as_str().unwrap());
+        }
+        if method == event {
+            return (n["params"].clone(), text);
+        }
+        assert_ne!(method, "sim.exited", "{n}");
+    }
+}
+
+/// sim.pause stops the firmware (its input waits) and resumes it; a backtrace in the
+/// output is decoded from the build's ELF (sim.backtrace). The hello firmware echoes
+/// what it is sent, so echoing a backtrace line naming app_main's address stands in
+/// for a crash.
+#[tokio::test]
+async fn sim_pauses_and_decodes_backtraces() {
+    let elf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/firmware/build/hello-esp32/esp32bench-hello.elf");
+    let Some(hello) = firmware("hello-esp32.bin").filter(|_| elf.is_file()) else {
+        eprintln!("skipping: hello firmware not built");
+        return;
+    };
+    let data = esp32bench_toolchain::Env::default_arduino_data().unwrap_or_default();
+    let Some(a2l) = esp32bench_build::backtrace::find_addr2line(&data, "esp32") else {
+        eprintln!("skipping: needs the Arduino core's toolchain");
+        return;
+    };
+    if esp32bench_sim::install::find_qemu(esp32bench_sim::Arch::Xtensa).is_err() {
+        eprintln!("skipping: QEMU not installed");
+        return;
+    }
+    let app_main = app_main_address(&a2l, &elf);
+
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let out = d.path().join("builds/blink/esp32/out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(&hello, out.join("blink.ino.merged.bin")).unwrap();
+    std::fs::copy(&elf, out.join("blink.ino.elf")).unwrap();
+    let r = c
+        .call("sim.start", json!({ "project": "blink", "board": "esp32" }))
+        .await
+        .unwrap();
+    let sub = r["subscription"].clone();
+    sim_wait_for(&mut c, &sub, "esp32bench-hello ready").await;
+
+    use base64::Engine;
+    let send = |s: &str| base64::engine::general_purpose::STANDARD.encode(s.as_bytes());
+    let r = c
+        .call("sim.pause", json!({ "subscription": sub, "paused": true }))
+        .await
+        .unwrap();
+    assert_valid(&method_def("sim.pause")["result"], &r, "sim.pause result");
+    assert_eq!(r["paused"], true);
+    let (e, _) = sim_event(&mut c, &sub, "sim.paused").await;
+    assert_eq!(e["paused"], true);
+    c.call(
+        "sim.write",
+        json!({ "subscription": sub, "data": send("ping 7\r\n") }),
+    )
+    .await
+    .unwrap();
+    // Paused: no echo for a while.
+    let mut text = String::new();
+    let quiet = tokio::time::Instant::now() + std::time::Duration::from_millis(1500);
+    while let Ok(n) = tokio::time::timeout_at(quiet, c.next_notification()).await {
+        let n = n.unwrap();
+        if n["method"] == "sim.output" {
+            text.push_str(n["params"]["text"].as_str().unwrap());
+        }
+    }
+    assert!(!text.contains("echo ping 7"), "echoed while paused: {text}");
+    c.call("sim.pause", json!({ "subscription": sub, "paused": false }))
+        .await
+        .unwrap();
+    let (e, _) = sim_event(&mut c, &sub, "sim.paused").await;
+    assert_eq!(e["paused"], false);
+    sim_wait_for(&mut c, &sub, "esp32bench-hello echo ping 7").await;
+
+    let line = format!("Backtrace: 0x{app_main}:0x3ffb0000\r\n");
+    c.call(
+        "sim.write",
+        json!({ "subscription": sub, "data": send(&line) }),
+    )
+    .await
+    .unwrap();
+    let (bt, _) = sim_event(&mut c, &sub, "sim.backtrace").await;
+    assert_eq!(bt["frames"][0]["func"], "app_main", "{bt}");
+    assert!(
+        bt["frames"][0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("hello.c"),
+        "{bt}"
+    );
+    // Not the sketch: the project is blink, the file hello.c.
+    assert!(bt["frames"][0].get("sketch").is_none(), "{bt}");
+    c.call("core.unsubscribe", json!({ "subscription": sub }))
+        .await
+        .unwrap();
+}
+
 /// The project's expectation (the manifest's expect) is checked as the output comes:
 /// sim.expect says what is missing at the start and when it has all appeared.
 #[tokio::test]
@@ -2638,6 +2826,38 @@ async fn sim_debugs_a_build_with_gdb() {
     assert!(stop["frame"]["file"].as_str().unwrap().ends_with("hello.c"));
 
     let r = c
+        .call(
+            "debug.evaluate",
+            json!({ "subscription": sub, "expression": "6 * 7" }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("debug.evaluate")["result"],
+        &r,
+        "debug.evaluate result",
+    );
+    assert_eq!(r["value"], "42");
+    match c
+        .call(
+            "debug.evaluate",
+            json!({ "subscription": sub, "expression": "$_shell(\"true\")" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("$_shell accepted: {other:?}"),
+    }
+    // The pause the debugger owns is not sim.pause's.
+    match c
+        .call("sim.pause", json!({ "subscription": sub, "paused": true }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::FAILED),
+        other => panic!("sim.pause on a debug run: {other:?}"),
+    }
+
+    let r = c
         .call("debug.inspect", json!({ "subscription": sub }))
         .await
         .unwrap();
@@ -2664,6 +2884,26 @@ async fn sim_debugs_a_build_with_gdb() {
     let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
     assert_eq!(stop["reason"], "end-stepping-range");
 
+    // Run to a line: the tick's printf, reached within a second.
+    match c
+        .call(
+            "debug.control",
+            json!({ "subscription": sub, "action": "runTo" }),
+        )
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS),
+        other => panic!("runTo without a location: {other:?}"),
+    }
+    c.call(
+        "debug.control",
+        json!({ "subscription": sub, "action": "runTo", "location": "hello.c:37" }),
+    )
+    .await
+    .unwrap();
+    let stop = debug_wait(&mut c, &sub, "debug.stopped").await;
+    assert_eq!(stop["frame"]["line"], 37, "{stop}");
+
     c.call(
         "debug.delete",
         json!({ "subscription": sub, "breakpoint": number }),
@@ -2676,12 +2916,13 @@ async fn sim_debugs_a_build_with_gdb() {
     )
     .await
     .unwrap();
-    // It runs on: the firmware gets to its ready line.
+    // It runs on: the firmware ticks (it printed its ready line before the run to
+    // the tick's line).
     let mut seen = String::new();
     // One deadline for the loop: other events keep arriving, so a per-event
     // timeout would never fire.
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(90);
-    while !seen.contains("esp32bench-hello ready") {
+    while !seen.contains("esp32bench-hello tick") {
         let n = tokio::time::timeout_at(deadline, c.next_notification())
             .await
             .unwrap()

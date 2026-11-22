@@ -1,0 +1,51 @@
+{
+  "method": "sim.pause",
+  "description": "Since protocol 0.34: stop (paused true) or resume (false) a simulation's CPUs, through QMP stop and cont. Its simulated time, pins and trace stand still while it is paused, and a library project's output check waits. sim.paused follows a change. Not for a debug run (debug: true), which debug.control pauses.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "paused"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "paused": {
+        "type": "boolean"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "paused"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "paused": {
+        "type": "boolean"
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "paused": true
+      },
+      "result": {
+        "paused": true
+      }
+    }
+  ]
+}

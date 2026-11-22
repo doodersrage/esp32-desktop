@@ -1,0 +1,53 @@
+{
+  "method": "debug.evaluate",
+  "description": "Since protocol 0.34: the value of a C or C++ expression in the frame the debugged firmware is paused in, as GDB prints it (-data-evaluate-expression). One line of at most 256 characters; GDB's $_ convenience functions are refused.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "subscription",
+      "expression"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "subscription": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "expression": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "value"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "value": {
+        "type": "string"
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "subscription": 5,
+        "expression": "count * 2"
+      },
+      "result": {
+        "value": "84"
+      }
+    }
+  ]
+}

@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+pub mod backtrace;
 pub mod diagnostics;
 pub mod idf;
 
