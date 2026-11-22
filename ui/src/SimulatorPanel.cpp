@@ -18,6 +18,8 @@
 #include <QLocale>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QTextDocument>
+#include <QCursor>
 #include <QToolButton>
 #include <QMenu>
 #include <QVBoxLayout>
@@ -37,7 +39,21 @@ QString SimulatorPanel::readablePattern(const QString &pattern)
 
 QString SimulatorPanel::expectText() const
 {
-    return m_expect->isHidden() ? QString() : m_expect->text();
+    if (m_expect->isHidden())
+        return {};
+    QTextDocument doc;
+    doc.setHtml(m_expect->text());
+    return doc.toPlainText();
+}
+
+QStringList SimulatorPanel::expectChecklist() const
+{
+    QStringList out;
+    for (const QString &p : m_matched)
+        out << tr("✓ %1").arg(readablePattern(p));
+    for (const QString &p : m_missing)
+        out << tr("✗ %1").arg(readablePattern(p));
+    return out;
 }
 
 SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
@@ -207,7 +223,15 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
             });
     // Whether the run prints what the project expects (sim.expect).
     m_expect->setWordWrap(true);
-    m_expect->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_expect->setTextFormat(Qt::RichText);
+    m_expect->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    // Each expected line, seen or not.
+    connect(m_expect, &QLabel::linkActivated, this, [this] {
+        QMenu menu(this);
+        for (const QString &line : expectChecklist())
+            menu.addAction(line)->setEnabled(false);
+        menu.exec(QCursor::pos());
+    });
     m_expect->hide();
     connect(m_core, &CoreConnection::simExpect, this,
             [this](const QStringList &matched, const QStringList &missing, const QString &needs, int seconds,
@@ -231,7 +255,9 @@ SimulatorPanel::SimulatorPanel(CoreConnection *core, QWidget *parent)
                         text += u" "_s + tr("It needs its parts: add them in the Circuit dock, or what it prints "
                                              "about them may differ.");
                 }
-                m_expect->setText(text);
+                m_matched = matched;
+                m_missing = missing;
+                m_expect->setText(u"%1 <a href=\"#each\">%2</a>"_s.arg(text.toHtmlEscaped(), tr("Show each")));
                 m_expect->setToolTip(tr("What a board running this project prints, from esp32bench.dev: %1")
                                          .arg((matched + missing).join(u"; "_s)));
                 m_expect->show();

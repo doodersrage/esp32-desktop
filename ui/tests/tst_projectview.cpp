@@ -232,6 +232,42 @@ private slots:
         QVERIFY(code.wordAt(code.cursorRect(c).center()).isEmpty());
     }
 
+    void marksBuildProblemsAndBreaksOnAFunction()
+    {
+        CodeView code;
+        code.resize(500, 300);
+        code.setPlainText(u"void setup() {\n  foo(1);\n}\nvoid loop() {}\n"_s);
+        code.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&code));
+        code.setProblems({{2, {u"error"_s, u"blink.ino:2:3: error: 'foo' was not declared in this scope"_s}},
+                          {4, {u"warning"_s, u"blink.ino:4: warning: unused"_s}}});
+        QCOMPARE(code.extraSelections().size(), 2);
+        QCOMPARE(code.extraSelections().at(0).format.underlineStyle(), QTextCharFormat::WaveUnderline);
+        QVERIFY(code.problemAt(2).contains(u"was not declared"_s));
+        QVERIFY(code.problemAt(1).isEmpty());
+        // With the paused line too.
+        code.setPausedLine(1);
+        QCOMPARE(code.extraSelections().size(), 3);
+        code.setProblems({});
+        QCOMPARE(code.extraSelections().size(), 1);
+        code.setPausedLine(0);
+
+        // Right-click on a name: break when it runs.
+        QTextCursor c(code.document()->findBlockByNumber(3));
+        c.setPosition(c.position() + 6); // in "loop"
+        QMenu *menu = code.menuAt(code.cursorRect(c).center());
+        QAction *breakOn = nullptr;
+        for (QAction *a : menu->actions())
+            if (a->text() == u"Break when loop runs"_s)
+                breakOn = a;
+        QVERIFY(breakOn);
+        QSignalSpy asked(&code, &CodeView::functionBreakRequested);
+        breakOn->trigger();
+        QCOMPARE(asked.size(), 1);
+        QCOMPARE(asked.at(0).at(0).toString(), u"loop"_s);
+        delete menu;
+    }
+
     void saysWhenThingsHappened()
     {
         const QDateTime now(QDate(2026, 11, 22), QTime(15, 0));

@@ -1987,6 +1987,163 @@ async fn circuit_examples_are_the_projects_that_use_a_part() {
     }
 }
 
+// The speed whose output reads as text. A pseudo-terminal has no speed, so what it
+// carries reads the same at all of them: readable text is found at the first,
+// noise at none.
+#[cfg(unix)]
+#[tokio::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS pseudo-terminals reject the IOSSIOSPEED ioctl serialport sets the baud with"
+)]
+async fn serial_finds_the_speed_that_reads() {
+    use std::os::fd::AsRawFd;
+    for (out, expect) in [
+        (
+            b"rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT) hello there\r\n".to_vec(),
+            Some(115200),
+        ),
+        (
+            (0..120u32)
+                .map(|i| [0x80u8, 0xfe, 0x13, 0x02][i as usize % 4])
+                .collect(),
+            None,
+        ),
+    ] {
+        let (master, port) = pty();
+        let (_d, sock, _lock) = serial_daemon(&port).await;
+        let mut c = Client::connect(&sock).await.unwrap();
+        // The "board" talks all the time.
+        let fd = master.as_raw_fd();
+        let talking = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let still = talking.clone();
+        let writer = std::thread::spawn(move || {
+            while still.load(std::sync::atomic::Ordering::Relaxed) {
+                // SAFETY: write a valid buffer to the pty master, kept open by the test.
+                unsafe { libc::write(fd, out.as_ptr().cast(), out.len()) };
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        });
+        let params = json!({ "path": port, "reset": false });
+        assert_valid(
+            &method_def("serial.findBaud")["params"],
+            &params,
+            "serial.findBaud params",
+        );
+        let r = c.call("serial.findBaud", params).await.unwrap();
+        talking.store(false, std::sync::atomic::Ordering::Relaxed);
+        writer.join().unwrap();
+        assert_valid(
+            &method_def("serial.findBaud")["result"],
+            &r,
+            "serial.findBaud result",
+        );
+        assert_eq!(r["baud"].as_u64(), expect, "{r}");
+        if expect.is_some() {
+            assert_eq!(r["tried"].as_array().unwrap().len(), 1, "{r}");
+        } else {
+            assert_eq!(r["tried"].as_array().unwrap().len(), 9, "{r}");
+        }
+    }
+}
+
+// A board's pins to be careful with, and its circuit written to a file and read back.
+#[tokio::test]
+async fn circuits_go_to_files_and_pins_have_notes() {
+    let (d, sock, _lock) = daemon().await;
+    let mut c = Client::connect(&sock).await.unwrap();
+    with_library(&mut c).await;
+    let r = c
+        .call("circuit.pinNotes", json!({ "board": "esp32" }))
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("circuit.pinNotes")["result"],
+        &r,
+        "circuit.pinNotes result",
+    );
+    assert_eq!(r["chip"], "esp32");
+    assert!(
+        r["notes"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({ "gpio": 12, "kind": "strapping" })),
+        "{r}"
+    );
+    match c
+        .call("circuit.pinNotes", json!({ "board": "no-such-board" }))
+        .await
+    {
+        Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::NOT_FOUND),
+        other => panic!("notes for an unknown board: {other:?}"),
+    }
+
+    let circuit = json!({ "schemaVersion": "1.3.0", "parts": [
+        { "id": "led-1", "kind": "led", "pins": { "anode": 2 } },
+        { "id": "button-1", "kind": "button", "pins": { "pin": 4 } },
+    ] });
+    c.call(
+        "circuit.set",
+        json!({ "project": "blink", "board": "esp32", "circuit": circuit }),
+    )
+    .await
+    .unwrap();
+    let file = d.path().join("shared.json");
+    let r = c
+        .call(
+            "circuit.export",
+            json!({ "project": "blink", "board": "esp32", "path": file }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("circuit.export")["result"],
+        &r,
+        "circuit.export result",
+    );
+    assert_eq!(r["parts"], 2);
+    // Onto another board.
+    let r = c
+        .call(
+            "circuit.import",
+            json!({ "project": "blink", "board": "esp32-doit", "path": file }),
+        )
+        .await
+        .unwrap();
+    assert_valid(
+        &method_def("circuit.import")["result"],
+        &r,
+        "circuit.import result",
+    );
+    assert_eq!(r["circuit"]["parts"].as_array().unwrap().len(), 2);
+    let got = c
+        .call(
+            "circuit.get",
+            json!({ "project": "blink", "board": "esp32-doit" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(got["circuit"]["parts"], r["circuit"]["parts"]);
+    // A file that is not a circuit, or one whose parts share an id, is refused.
+    let bad = d.path().join("bad.json");
+    for text in [
+        "not json",
+        r#"{"schemaVersion":"1.3.0","parts":[{"id":"a","kind":"led","pins":{"anode":2}},{"id":"a","kind":"led","pins":{"anode":5}}]}"#,
+    ] {
+        std::fs::write(&bad, text).unwrap();
+        match c
+            .call(
+                "circuit.import",
+                json!({ "project": "blink", "board": "esp32", "path": bad }),
+            )
+            .await
+        {
+            Err(ClientError::Rpc(e)) => assert_eq!(e.code, code::INVALID_PARAMS, "{text}"),
+            other => panic!("imported {text}: {other:?}"),
+        }
+    }
+}
+
 // Output at the wrong speed: the core says so, once, with a speed to try.
 #[cfg(unix)]
 #[tokio::test]

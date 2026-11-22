@@ -518,7 +518,42 @@ MainWindow::MainWindow(CoreConnection *core, QWidget *parent)
         showConnectionState();
     });
     statusBar()->addWidget(m_connection, 1);
+    // The simulation and the serial port, seen while their docks are closed.
+    m_simState = new QLabel(statusBar());
+    m_simState->setContentsMargins(6, 0, 6, 0);
+    m_simState->hide();
+    m_portState = new QLabel(statusBar());
+    m_portState->setContentsMargins(6, 0, 6, 0);
+    m_portState->hide();
+    statusBar()->addPermanentWidget(m_simState);
+    statusBar()->addPermanentWidget(m_portState);
     statusBar()->addPermanentWidget(m_startCore);
+    const auto simState = [this] {
+        if (!m_core->isSimRunning()) {
+            m_simState->hide();
+            return;
+        }
+        const QString what = m_core->isDebugging() ? tr("Debugging") : m_core->isSimPaused() ? tr("Paused") : tr("Simulating");
+        m_simState->setText(m_simTime.isEmpty() ? what : tr("%1 · %2").arg(what, m_simTime));
+        m_simState->show();
+    };
+    connect(m_core, &CoreConnection::simStarted, this, [this, simState] {
+        m_simTime.clear();
+        simState();
+    });
+    connect(m_core, &CoreConnection::simStopped, this, simState);
+    for (auto signal : {&CoreConnection::debugStarted, &CoreConnection::debugExited})
+        connect(m_core, signal, this, simState);
+    connect(m_core, &CoreConnection::simPaused, this, simState);
+    connect(m_core, &CoreConnection::simClock, this, [this, simState](qint64 ns) {
+        m_simTime = tr("%1 s simulated").arg(QLocale().toString(double(ns) / 1e9, 'f', 1));
+        simState();
+    });
+    connect(m_core, &CoreConnection::serialOpened, this, [this](const QString &path, int baud) {
+        m_portState->setText(tr("Serial: %1 at %2 baud").arg(path).arg(baud));
+        m_portState->show();
+    });
+    connect(m_core, &CoreConnection::serialClosed, m_portState, &QWidget::hide);
 
     // At first only the simulator's console is open below; the build log and the serial
     // monitor open when a build starts or a port is opened.
@@ -625,6 +660,37 @@ void MainWindow::buildToolBar()
             [this] { m_debugger->setProject(m_project->currentProjectId()); });
     connect(m_debugger, &DebugPanel::breakpointsChanged, this, &MainWindow::showBreakpointLines);
     connect(m_project, &ProjectView::currentChanged, this, &MainWindow::showBreakpointLines);
+    // A build's errors and warnings in the sketch shown, marked on its lines.
+    connect(m_core, &CoreConnection::buildStarted, this, [this] {
+        m_codeProblems.clear();
+        m_project->codeView()->setProblems({});
+    });
+    connect(m_core, &CoreConnection::buildLog, this,
+            [this](const QString &, const QString &line, const QString &level, const QJsonObject &at) {
+                const QString id = m_project->currentProjectId();
+                if (level.isEmpty() || id.isEmpty() || at.value(u"file"_s).toString() != id + u".ino"_s)
+                    return;
+                const int n = at.value(u"line"_s).toInt();
+                // An error over a warning on the same line.
+                if (n <= 0 || (m_codeProblems.contains(n) && m_codeProblems.value(n).first == u"error"))
+                    return;
+                m_codeProblems.insert(n, {level, line.trimmed()});
+                m_project->codeView()->setProblems(m_codeProblems);
+            });
+    connect(m_project, &ProjectView::currentChanged, this, [this] {
+        // Another sketch: its lines are not those.
+        if (m_project->currentProjectId() != m_problemsFor) {
+            m_problemsFor = m_project->currentProjectId();
+            m_codeProblems.clear();
+            m_project->codeView()->setProblems({});
+        }
+    });
+    connect(m_project->codeView(), &CodeView::functionBreakRequested, this, [this](const QString &function) {
+        if (!m_debugger->toggleBreakpoint(function)) {
+            m_debugDock->show();
+            m_debugDock->raise();
+        }
+    });
     connect(m_project, &ProjectView::conditionRequested, this, [this](int line) {
         m_debugger->editCondition(u"%1.ino:%2"_s.arg(m_project->currentProjectId()).arg(line));
     });
@@ -1179,6 +1245,16 @@ void MainWindow::showLocation(const QJsonObject &at)
                              "or in the ESP32 core the build uses.")
                               .arg(line)
                               .arg(file));
+}
+
+QString MainWindow::simStateText() const
+{
+    return m_simState->isHidden() ? QString() : m_simState->text();
+}
+
+QString MainWindow::portStateText() const
+{
+    return m_portState->isHidden() ? QString() : m_portState->text();
 }
 
 void MainWindow::showLayout(Layout layout)

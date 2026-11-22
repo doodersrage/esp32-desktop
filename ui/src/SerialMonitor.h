@@ -17,12 +17,14 @@ class QComboBox;
 class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
+class QToolButton;
 
 class SerialMonitor : public QWidget {
     Q_OBJECT
 
 public:
     ConsoleBar *consoleBar() const { return m_tools; }
+    QToolButton *findBaudButton() const { return m_findBaud; }
     ConsoleView *console() const { return m_output; }
     explicit SerialMonitor(CoreConnection *core, QWidget *parent = nullptr);
 
@@ -72,6 +74,8 @@ private:
     CoreConnection *m_core;
     QComboBox *m_port;
     QComboBox *m_baud;
+    QToolButton *m_findBaud = nullptr;
+    bool m_reopenAfterFind = false;
     QPushButton *m_open;
     QPushButton *m_reset;
     QPushButton *m_clear;

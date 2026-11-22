@@ -86,7 +86,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.38.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.39.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -126,6 +126,21 @@ private:
                     return m;
                 }(),
             }}});
+        } else if (m == u"circuit.pinNotes") {
+            reply(id, QJsonObject{{u"chip"_s, u"esp32"_s},
+                                  {u"notes"_s, QJsonArray{QJsonObject{{u"gpio"_s, 12}, {u"kind"_s, u"strapping"_s}},
+                                                          QJsonObject{{u"gpio"_s, 34}, {u"kind"_s, u"inputOnly"_s}}}}});
+        } else if (m == u"circuit.export") {
+            reply(id, QJsonObject{{u"path"_s, p.value(u"path"_s)}, {u"parts"_s, 1}});
+        } else if (m == u"circuit.import") {
+            if (p.value(u"path"_s).toString().endsWith(u"bad.json"_s)) {
+                send({{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
+                      {u"error"_s, QJsonObject{{u"code"_s, -32602}, {u"message"_s, u"not a circuit file"_s}}}});
+                return;
+            }
+            saved = QJsonObject{{u"schemaVersion"_s, u"1.3.0"_s},
+                                {u"parts"_s, QJsonArray{QJsonObject{{u"id"_s, u"button-1"_s}, {u"kind"_s, u"button"_s}, {u"pin"_s, 4}}}}};
+            reply(id, QJsonObject{{u"circuit"_s, saved}});
         } else if (m == u"circuit.examples") {
             reply(id, QJsonObject{{u"projects"_s, p.value(u"kind"_s).toString() == u"led"_s
                        ? QJsonArray{QJsonObject{{u"id"_s, u"blink"_s}, {u"name"_s, u"Blink"_s}, {u"boards"_s, QJsonArray{u"esp32"_s, u"esp32c3"_s}}},
@@ -362,6 +377,21 @@ private slots:
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"5"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
         QVERIFY(!panel.copyPart()); // nothing selected
+        // The board's pins to be careful with.
+        QTRY_VERIFY(panel.pinNote(12).contains(u"strapping pin"_s));
+        QVERIFY(panel.pinNote(34).contains(u"input only"_s));
+        QVERIFY(panel.pinNote(4).isEmpty());
+        // A circuit file: out, and in in place of the parts, which Undo puts back.
+        panel.exportTo(u"/tmp/x/c.json"_s);
+        QTRY_VERIFY(panel.statusText().contains(u"Exported the circuit to /tmp/x/c.json"_s));
+        panel.importFrom(u"/tmp/x/bad.json"_s);
+        QTRY_VERIFY(panel.statusText().contains(u"not a circuit file"_s));
+        QVERIFY(!panel.undoButton()->isEnabled()); // nothing changed
+        panel.importFrom(u"/tmp/x/c.json"_s);
+        QTRY_COMPARE(panel.parts().at(0).toObject().value(u"id"_s).toString(), u"button-1"_s);
+        QTRY_VERIFY(panel.undoButton()->isEnabled());
+        panel.undoButton()->click();
+        QTRY_COMPARE(panel.parts().at(0).toObject().value(u"id"_s).toString(), u"led-1"_s);
         QVERIFY(!panel.examplesButton()->isEnabled());
         // Examples: the library projects that use a part, on this board where they can be.
         QMenu *examples = panel.examplesMenu(u"led"_s, QJsonArray{

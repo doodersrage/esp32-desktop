@@ -507,10 +507,12 @@ async fn idf_light_sleep_on_lcgamboa(chip: Chip) {
         .collect();
     assert_eq!(slept.len(), 3, "{chip}:\n{text}");
     // ESP-IDF shortens the first sleep by the wake-up time it expects of the chip,
-    // which the simulator does not take, then adapts; allow 10 ms.
+    // which the simulator does not take, then adapts; allow 10 ms. Later: simulated
+    // time follows this computer's, so on a busy one the wake-up comes a little
+    // late (512 ms has been seen); allow 25 ms after.
     for us in slept {
         assert!(
-            (490_000..=510_000).contains(&us),
+            (490_000..=525_000).contains(&us),
             "{chip}: slept {us} us:\n{text}"
         );
     }

@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QUrl>
+#include <QHash>
 #include <QMainWindow>
 
 class CoreConnection;
@@ -50,6 +51,9 @@ public:
     SerialMonitor *serialMonitor() const { return m_serial; }
     SetupDialog *setupDialog() const { return m_setup; }
     SimulatorPanel *simulator() const { return m_sim; }
+    // For tests: the status bar's simulation and serial port.
+    QString simStateText() const;
+    QString portStateText() const;
     DebugPanel *debugger() const { return m_debugger; }
     DisplayPanel *display() const { return m_display; }
     PinsPanel *pins() const { return m_pins; }
@@ -185,6 +189,13 @@ private:
     QString m_flashedBoard;
     // The name hovered in the Code tab while paused, waiting for its value.
     QString m_hoverWord;
+    // The status bar's simulation and serial port, and the simulated time last said.
+    QLabel *m_simState = nullptr;
+    QLabel *m_portState = nullptr;
+    QString m_simTime;
+    // The last build's errors and warnings in the sketch shown, by line.
+    QHash<int, QPair<QString, QString>> m_codeProblems;
+    QString m_problemsFor;
     QAction *m_decodeAction = nullptr;
     QAction *m_restartSim = nullptr;
     BacktraceDialog *m_backtraces = nullptr;

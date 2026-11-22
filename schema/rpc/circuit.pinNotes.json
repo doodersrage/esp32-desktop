@@ -1,0 +1,88 @@
+{
+  "method": "circuit.pinNotes",
+  "description": "Since protocol 0.39: a board's chip and its pins to be careful with, from Espressif's datasheets (esp32bench_circuit::pins): strapping pins, input-only pins, pins wired to the flash, the chip's USB pins and the console's UART0.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "board"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "board": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "chip",
+      "notes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "chip": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "gpio",
+            "kind"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "gpio": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 48
+            },
+            "kind": {
+              "enum": [
+                "strapping",
+                "inputOnly",
+                "flash",
+                "usb",
+                "console"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "board": "esp32"
+      },
+      "result": {
+        "chip": "esp32",
+        "notes": [
+          {
+            "gpio": 0,
+            "kind": "strapping"
+          },
+          {
+            "gpio": 12,
+            "kind": "strapping"
+          },
+          {
+            "gpio": 34,
+            "kind": "inputOnly"
+          }
+        ]
+      }
+    }
+  ]
+}

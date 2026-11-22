@@ -4,6 +4,7 @@
 //! to async code over a channel. Dropping the [`Port`] stops that thread within a
 //! read timeout. Output is bytes; callers decode at the edge.
 
+pub mod baud;
 pub mod bootloop;
 pub mod plot;
 pub mod record;

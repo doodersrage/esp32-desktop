@@ -1,5 +1,7 @@
 #include "CircuitPanel.h"
 
+#include "Labels.h"
+
 #include <QKeyEvent>
 #include <QWheelEvent>
 #include <QShortcut>
@@ -23,6 +25,9 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QDir>
+#include <QStandardPaths>
+#include <QFileDialog>
 #include <QJsonDocument>
 #include <QMimeData>
 #include <QGuiApplication>
@@ -492,6 +497,35 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
         menu->popup(m_examples->mapToGlobal(QPoint(0, m_examples->height())));
     });
     tools->addWidget(m_examples);
+    // The parts to a file and back, to share a wiring setup.
+    m_file = new QToolButton(this);
+    m_file->setText(tr("File"));
+    m_file->setIcon(QIcon::fromTheme(u"document-save"_s));
+    m_file->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_file->setPopupMode(QToolButton::InstantPopup);
+    m_file->setToolTip(tr("Save the parts to a file, or put a file's parts on this board"));
+    auto *fileMenu = new QMenu(m_file);
+    fileMenu->addAction(tr("Export circuit…"), this, [this] {
+        const QString path = QFileDialog::getSaveFileName(
+            this, tr("Export the circuit"),
+            QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
+                .filePath(u"%1-%2-circuit.json"_s.arg(m_project, m_board)),
+            tr("Circuit files (*.json)"));
+        if (!path.isEmpty())
+            exportTo(path);
+    });
+    fileMenu->addAction(tr("Import circuit…"), this, [this] {
+        const QString path = QFileDialog::getOpenFileName(
+            this, tr("Import a circuit"), QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+            tr("Circuit files (*.json)"));
+        if (!path.isEmpty())
+            importFrom(path);
+    });
+    m_file->setMenu(fileMenu);
+    connect(core, &CoreConnection::circuitExported, this, [this](const QString &path, int) {
+        m_status->setText(tr("Exported the circuit to %1.").arg(path));
+    });
+    tools->addWidget(m_file);
     const auto key = [this](const QKeySequence &seq, auto slot) {
         auto *s = new QShortcut(seq, m_view, slot);
         s->setContext(Qt::WidgetWithChildrenShortcut);
@@ -553,7 +587,20 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
             m_saving = std::max(0, m_saving - 1);
             updateUndo();
         }
+        // An import that failed changed nothing: no step to undo.
+        if (method == u"circuit.import" && !m_undo.isEmpty()) {
+            m_undo.removeLast();
+            updateUndo();
+        }
     });
+    connect(core, &CoreConnection::pinNotesListed, this,
+            [this](const QString &board, const QString &, const QJsonArray &notes) {
+                if (board != m_board)
+                    return;
+                m_pinNotes.clear();
+                for (const QJsonValue &v : notes)
+                    m_pinNotes.insert(v.toObject().value(u"gpio"_s).toInt(), v.toObject().value(u"kind"_s).toString());
+            });
     connect(core, &CoreConnection::circuitSaved, this, [this] {
         m_saving = std::max(0, m_saving - 1);
         updateUndo();
@@ -646,12 +693,37 @@ void CircuitPanel::showBoard(const QString &project, const QString &board, const
     m_undo.clear();
     m_redo.clear();
     m_saving = 0;
+    m_pinNotes.clear();
+    if (!board.isEmpty())
+        m_core->getPinNotes(board);
     updateUndo();
     m_addSuggested->setVisible(false);
     rebuildScene();
     m_add->setEnabled(!m_models.isEmpty());
     if (m_core->state() == CoreConnection::State::Connected)
         m_core->loadCircuit(project, board);
+}
+
+void CircuitPanel::exportTo(const QString &path)
+{
+    if (!m_project.isEmpty())
+        m_core->exportCircuit(m_project, m_board, path);
+}
+
+void CircuitPanel::importFrom(const QString &path)
+{
+    if (m_project.isEmpty())
+        return;
+    // An import replaces the parts: Undo puts them back.
+    m_undo.append(m_circuit);
+    m_redo.clear();
+    updateUndo();
+    m_core->importCircuit(m_project, m_board, path);
+}
+
+QString CircuitPanel::pinNote(int gpio) const
+{
+    return Labels::pinNoteText(m_pinNotes.value(gpio), gpio);
 }
 
 void CircuitPanel::circuitLoaded(const QString &project, const QString &board, const QJsonObject &circuit)
@@ -1121,6 +1193,18 @@ void CircuitPanel::addDialog(const QString &kind, const QJsonObject &from)
         const QString name = v.toString();
         form->addRow(model.value(u"pins"_s).toArray().size() == 1 ? tr("Pin:") : tr("%1 pin:").arg(name), box);
         pinBoxes << qMakePair(name, box);
+        // A pin to be careful with says so under its box.
+        auto *note = new QLabel(&dialog);
+        note->setWordWrap(true);
+        note->setForegroundRole(QPalette::PlaceholderText);
+        const auto describe = [this, note](int gpio) {
+            const QString text = Labels::pinNoteText(m_pinNotes.value(gpio), gpio);
+            note->setText(text.isEmpty() ? QString() : u"⚠ "_s + text);
+            note->setVisible(!text.isEmpty());
+        };
+        connect(box, &QSpinBox::valueChanged, note, describe);
+        describe(box->value());
+        form->addRow(QString(), note);
     }
     QList<std::function<QPair<QString, QJsonValue>()>> propFields;
     const QJsonObject props = model.value(u"props"_s).toObject();

@@ -60,3 +60,26 @@ QString Labels::forumPost(const QString &context, const QString &text)
         body.chop(1);
     return QStringLiteral("%1\n%2text\n%3\n%2\n").arg(about, fence, body);
 }
+
+QString Labels::pinNoteText(const QString &kind, int gpio)
+{
+    if (kind == u"strapping")
+        return QCoreApplication::translate("Labels", "GPIO %1 is a strapping pin: a part that pulls it high or low at "
+                                                     "power-on can stop the board starting, or start it in another mode.")
+            .arg(gpio);
+    if (kind == u"inputOnly")
+        return QCoreApplication::translate("Labels", "GPIO %1 is input only: it cannot drive a part, and has no "
+                                                     "internal pull-up or pull-down.")
+            .arg(gpio);
+    if (kind == u"flash")
+        return QCoreApplication::translate("Labels", "GPIO %1 is wired to the module's flash: using it crashes the chip.")
+            .arg(gpio);
+    if (kind == u"usb")
+        return QCoreApplication::translate("Labels", "GPIO %1 is one of the chip's USB pins: a board that talks over "
+                                                     "USB needs it.")
+            .arg(gpio);
+    if (kind == u"console")
+        return QCoreApplication::translate("Labels", "GPIO %1 is the console's UART: what it prints and flashing use it.")
+            .arg(gpio);
+    return {};
+}

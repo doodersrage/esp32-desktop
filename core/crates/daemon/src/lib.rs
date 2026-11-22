@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Protocol version, as in `schema/rpc/index.json`. A test keeps them equal.
-pub const PROTOCOL: &str = "0.38.0";
+pub const PROTOCOL: &str = "0.39.0";
 pub const NAME: &str = "esp32benchd";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -254,6 +254,13 @@ pub fn router(state: Arc<State>) -> Router {
             let s = p1.clone();
             async move { sim_pause(p, ctx, s).await }
         })
+        .method("serial.findBaud", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { serial_find_baud(p, s).await }
+            }
+        })
         .method("serial.sendFile", move |p, ctx| {
             let s = q2.clone();
             async move { serial_send_file(p, ctx, s).await }
@@ -308,6 +315,27 @@ pub fn router(state: Arc<State>) -> Router {
         .method("circuit.suggest", move |p, _ctx| {
             let s = c5.clone();
             async move { circuit_suggest(p, s).await }
+        })
+        .method("circuit.export", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { circuit_export(p, s).await }
+            }
+        })
+        .method("circuit.import", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { circuit_import(p, s).await }
+            }
+        })
+        .method("circuit.pinNotes", {
+            let s = stars.clone();
+            move |p, _| {
+                let s = s.clone();
+                async move { circuit_pin_notes(p, s).await }
+            }
         })
         .method("circuit.examples", move |p, _ctx| {
             let s = r4.clone();
@@ -2676,6 +2704,81 @@ async fn circuit_examples(params: Value, state: Arc<State>) -> Result<Value, Rpc
     Ok(json!({ "projects": projects }))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CircuitFileParams {
+    project: String,
+    board: String,
+    path: PathBuf,
+}
+
+/// circuit.export: a board's parts written to a file (the circuit format,
+/// schema/circuit), to share a wiring setup.
+async fn circuit_export(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: CircuitFileParams = parse_params(params)?;
+    check_ids(&p.project, &p.board)?;
+    if !p.path.is_absolute() {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    let circuit = esp32bench_circuit::load(&state.circuits_root, &p.project, &p.board)
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    let mut text =
+        serde_json::to_vec_pretty(&circuit).map_err(|e| RpcError::internal(e.to_string()))?;
+    text.push(b'\n');
+    tokio::fs::write(&p.path, &text)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("writing {}: {e}", p.path.display())))?;
+    Ok(json!({ "path": p.path, "parts": circuit.parts.len() }))
+}
+
+/// circuit.import: the parts in a circuit file, checked, put on a board in place of
+/// its own.
+async fn circuit_import(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: CircuitFileParams = parse_params(params)?;
+    check_ids(&p.project, &p.board)?;
+    if !p.path.is_absolute() {
+        return Err(RpcError::invalid_params("path must be absolute"));
+    }
+    let size = tokio::fs::metadata(&p.path)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("reading {}: {e}", p.path.display())))?
+        .len();
+    if size > 256 * 1024 {
+        return Err(RpcError::invalid_params("the file is larger than 256 KiB"));
+    }
+    let data = tokio::fs::read(&p.path)
+        .await
+        .map_err(|e| RpcError::new(code::FAILED, format!("reading {}: {e}", p.path.display())))?;
+    let circuit: esp32bench_circuit::Circuit = serde_json::from_slice(&data)
+        .map_err(|e| RpcError::invalid_params(format!("not a circuit file: {e}")))?;
+    circuit
+        .validate()
+        .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+    esp32bench_circuit::save(&state.circuits_root, &p.project, &p.board, &circuit)
+        .map_err(|e| RpcError::new(code::FAILED, e.to_string()))?;
+    Ok(json!({ "circuit": circuit }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PinNotesParams {
+    board: String,
+}
+
+/// circuit.pinNotes: the board's chip, and its pins to be careful with
+/// (esp32bench_circuit::pins).
+async fn circuit_pin_notes(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: PinNotesParams = parse_params(params)?;
+    esp32bench_build::safe_id(&p.board).map_err(|e| RpcError::invalid_params(e.to_string()))?;
+    let chip = board_chip(&state, &p.board).await.ok_or_else(|| {
+        RpcError::new(
+            code::NOT_FOUND,
+            format!("no board `{}` in the library", p.board),
+        )
+    })?;
+    Ok(json!({ "chip": chip, "notes": esp32bench_circuit::pins::notes(&chip) }))
+}
+
 async fn circuit_set(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
     let p: CircuitSetParams = parse_params(params)?;
     check_ids(&p.project, &p.board)?;
@@ -3376,6 +3479,49 @@ async fn explainer(state: &State) -> esp32bench_library::explain::Explainer {
         _ => Vec::new(),
     };
     esp32bench_library::explain::Explainer::new(&rules)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FindBaudParams {
+    path: PathBuf,
+    /// Reset the board at each speed, so it prints its boot (a board that prints
+    /// only at start says nothing otherwise).
+    #[serde(default = "yes")]
+    reset: bool,
+}
+
+/// serial.findBaud: try the usual speeds on a port the app does not have open, and
+/// say which reads as text (esp32bench_serial::baud).
+async fn serial_find_baud(params: Value, state: Arc<State>) -> Result<Value, RpcError> {
+    let p: FindBaudParams = parse_params(params)?;
+    check_port(&state, &p.path).await?;
+    let (path, reset) = (p.path.clone(), p.reset);
+    let (baud, tried) =
+        tokio::task::spawn_blocking(move || esp32bench_serial::baud::find(&path, reset))
+            .await
+            .map_err(|e| RpcError::internal(e.to_string()))?
+            .map_err(serial_error)?;
+    let rows: Vec<Value> = tried_rows(&tried);
+    let mut out = json!({ "tried": rows });
+    if let Some(b) = baud {
+        out["baud"] = json!(b);
+    }
+    Ok(out)
+}
+
+/// The speeds tried, as serial.findBaud's result says them.
+fn tried_rows(tried: &[esp32bench_serial::baud::Tried]) -> Vec<Value> {
+    tried
+        .iter()
+        .map(|(baud, r)| {
+            let mut row = json!({ "baud": baud, "chars": r.map_or(0, |(_, n)| n) });
+            if let Some((share, _)) = r {
+                row["readable"] = json!((share * 100.0).round() / 100.0);
+            }
+            row
+        })
+        .collect()
 }
 
 async fn serial_open(params: Value, ctx: Ctx, state: Arc<State>) -> Result<Value, RpcError> {

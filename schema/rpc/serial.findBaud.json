@@ -1,0 +1,81 @@
+{
+  "method": "serial.findBaud",
+  "description": "Since protocol 0.39: try the usual speeds on a port the app does not have open (resetting the board at each, unless reset is false, so it prints its boot), and say which reads as text (esp32bench_serial::baud): the first above 95% readable, else the best above 85%. No baud when none did. Takes up to about 15 s.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "reset": {
+        "type": "boolean",
+        "description": "Reset the board at each speed; true by default."
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "tried"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "baud": {
+        "type": "integer"
+      },
+      "tried": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "baud",
+            "chars"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "baud": {
+              "type": "integer"
+            },
+            "chars": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "readable": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000,
+    -32005
+  ],
+  "examples": [
+    {
+      "params": {
+        "path": "/dev/ttyUSB0"
+      },
+      "result": {
+        "baud": 115200,
+        "tried": [
+          {
+            "baud": 115200,
+            "chars": 312,
+            "readable": 0.99
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+pub mod pins;
 mod runtime;
 pub mod suggest;
 pub use runtime::{Effect, I2cEvent, Runtime};

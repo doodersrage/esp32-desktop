@@ -53,10 +53,12 @@ private:
         const QJsonValue id = req.value(u"id"_s);
         const QString m = req.value(u"method"_s).toString();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.38.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.39.0"_s}});
         } else if (m == u"sim.start") {
             reply(id, QJsonObject{{u"subscription"_s, 5}, {u"chip"_s, u"esp32"_s}, {u"debug"_s, false},
                                   {u"engine"_s, u"lcgamboa"_s}, {u"pins"_s, pinsToReport}});
+        } else if (m == u"circuit.pinNotes") {
+            reply(id, QJsonObject{{u"chip"_s, u"esp32"_s}, {u"notes"_s, QJsonArray{QJsonObject{{u"gpio"_s, 2}, {u"kind"_s, u"strapping"_s}}}}});
         } else if (m == u"sim.pulsePin") {
             pulses << req.value(u"params"_s).toObject();
             reply(id, QJsonObject{});
@@ -102,7 +104,10 @@ private slots:
         QTRY_COMPARE(panel.row(2)->text(PinsPanel::LevelColumn), u"low"_s);
         QCOMPARE(panel.row(4)->text(PinsPanel::DirectionColumn), u"input"_s);
         QVERIFY(!panel.row(9));
-        // A pulse: the other way from the switch, then back; the core times it.
+        // A pin to be careful with says so on its row.
+        QTRY_VERIFY(panel.row(2)->toolTip(PinsPanel::GpioColumn).contains(u"strapping pin"_s));
+        QVERIFY(panel.row(4)->toolTip(PinsPanel::GpioColumn).isEmpty());
+                // A pulse: the other way from the switch, then back; the core times it.
         QVERIFY(panel.pulse(4, 100));
         QTRY_COMPARE(fake.pulses.size(), 1);
         QCOMPARE(fake.pulses.at(0).value(u"gpio"_s).toInt(), 4);

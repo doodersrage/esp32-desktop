@@ -56,6 +56,14 @@ public:
     // (circuit.examples), as a menu.
     QToolButton *examplesButton() const { return m_examples; }
     QMenu *examplesMenu(const QString &kind, const QJsonArray &projects);
+    // What the board's chip says of a pin (circuit.pinNotes), or empty. The Add
+    // dialog shows it under a pin's box.
+    QString pinNote(int gpio) const;
+    // Export circuit… / Import circuit… (circuit.export, circuit.import); an import
+    // replaces the board's parts, and Undo puts them back.
+    void exportTo(const QString &path);
+    void importFrom(const QString &path);
+    QToolButton *fileButton() const { return m_file; }
     // Copy the selected part (Ctrl+C on the canvas), to paste into any project's or
     // board's circuit (Ctrl+V): the Add dialog opens with its settings, on pins of
     // this project that no part uses. False when no part is selected.
@@ -131,10 +139,12 @@ private:
     QPushButton *m_paste = nullptr;
     // Saves (circuit.set) asked for and not yet answered; Undo and Redo wait for them.
     int m_saving = 0;
+    QHash<int, QString> m_pinNotes; // gpio -> its note's kind, for the board shown
     void save(const QJsonObject &circuit);
     void updateUndo();
     QToolButton *m_copyPicture = nullptr;
     QToolButton *m_examples = nullptr;
+    QToolButton *m_file = nullptr;
     QString m_examplesFor; // the part kind whose examples were asked for
     void updatePaste();
     QToolButton *m_fitButton = nullptr;

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <QPlainTextEdit>
+#include <QHash>
 #include <QSet>
 
 class QMenu;
@@ -35,16 +36,24 @@ public:
     // Whether the right-click menu's Run to this line works, and hovering a name asks
     // for its value (wordHovered): while the debugger is paused.
     void setRunToEnabled(bool on) { m_runTo = on; }
+    // A build's errors and warnings in this sketch, by line: level (error, warning) and
+    // message. Each line is underlined, and its message is its tooltip.
+    void setProblems(const QHash<int, QPair<QString, QString>> &problems);
+    QString problemAt(int line) const;
     // The name (an identifier) at a point in the viewport, or empty.
     QString wordAt(const QPoint &pos) const;
     // The right-click menu for a line (also the gutter's), for tests.
     QMenu *lineMenu(int line);
+    // The whole right-click menu at a point in the viewport, for tests.
+    QMenu *menuAt(const QPoint &pos);
 
 signals:
     void gutterClicked(int line);
     void runToRequested(int line);
     // The line menu's Breakpoint with a condition.
     void conditionRequested(int line);
+    // The right-click menu's Break when <name> runs.
+    void functionBreakRequested(const QString &function);
     // The mouse rests on a name while paused: show its value at `globalPos`.
     void wordHovered(const QString &word, const QPoint &globalPos);
 
@@ -64,5 +73,6 @@ private:
     QSet<int> m_breakpoints;
     int m_paused = 0;
     bool m_runTo = false;
+    QHash<int, QPair<QString, QString>> m_problems;
     SketchHighlighter *m_highlighter;
 };

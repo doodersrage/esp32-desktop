@@ -1,0 +1,64 @@
+{
+  "method": "circuit.export",
+  "description": "Since protocol 0.39: write a board's parts to a file (absolute path) in the circuit format, to share a wiring setup.",
+  "params": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "board",
+      "path"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "board": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "path": {
+        "type": "string"
+      }
+    }
+  },
+  "result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "path",
+      "parts"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "parts": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "errors": [
+    -32602,
+    -32000
+  ],
+  "examples": [
+    {
+      "params": {
+        "project": "blink",
+        "board": "esp32",
+        "path": "/home/me/blink-circuit.json"
+      },
+      "result": {
+        "path": "/home/me/blink-circuit.json",
+        "parts": 2
+      }
+    }
+  ]
+}

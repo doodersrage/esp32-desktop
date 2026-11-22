@@ -239,6 +239,14 @@ enum SerialCmd {
         #[arg(long)]
         clear: bool,
     },
+    /// Find the board's speed: try the usual ones (resetting it at each) and say which
+    /// reads as text.
+    FindBaud {
+        port: PathBuf,
+        /// Do not reset the board at each speed.
+        #[arg(long)]
+        no_reset: bool,
+    },
     /// Print what the board sends (raw bytes) and send it each line typed, until
     /// Ctrl-C or the board goes away.
     Monitor {
@@ -411,6 +419,23 @@ enum CircuitCmd {
     /// The library projects whose wiring has a part of this kind (as `circuit models`
     /// lists kinds), with the boards it is wired on: something to try the part with.
     Examples { kind: String },
+    /// Write a board's parts to a file, to share a wiring setup.
+    Export {
+        project: String,
+        board: String,
+        file: PathBuf,
+    },
+    /// Put the parts in a circuit file on a board, in place of its own.
+    Import {
+        project: String,
+        board: String,
+        file: PathBuf,
+    },
+    /// A chip's pins to be careful with: strapping, input-only, flash, USB, console.
+    Pins {
+        /// esp32, esp32s3 or esp32c3.
+        chip: String,
+    },
     /// Remove a part.
     Remove {
         project: String,
@@ -462,6 +487,42 @@ async fn circuit_command(cmd: CircuitCmd) -> Result<()> {
                     what.push(format!("controls {}", c.join(",")));
                 }
                 println!("{:<10} {:<16} {}", m.id, m.name, what.join("; "));
+            }
+        }
+        CircuitCmd::Export {
+            project,
+            board,
+            file,
+        } => {
+            ids(&project, &board)?;
+            let c = esp32bench_circuit::load(&circuits_root()?, &project, &board)?;
+            std::fs::write(&file, serde_json::to_string_pretty(&c)? + "\n")
+                .with_context(|| format!("writing {}", file.display()))?;
+            println!("{} parts written to {}", c.parts.len(), file.display());
+        }
+        CircuitCmd::Import {
+            project,
+            board,
+            file,
+        } => {
+            ids(&project, &board)?;
+            let c: esp32bench_circuit::Circuit = serde_json::from_slice(&std::fs::read(&file)?)
+                .with_context(|| format!("{} is not a circuit file", file.display()))?;
+            c.validate()?;
+            esp32bench_circuit::save(&circuits_root()?, &project, &board, &c)?;
+            println!("{} parts placed on {project} for {board}", c.parts.len());
+        }
+        CircuitCmd::Pins { chip } => {
+            let notes = esp32bench_circuit::pins::notes(&chip);
+            if notes.is_empty() {
+                bail!("no pin notes for `{chip}`: esp32, esp32s3 and esp32c3 have them");
+            }
+            for n in notes {
+                println!(
+                    "GPIO {:>2}  {}",
+                    n.gpio,
+                    serde_json::to_value(n.kind)?.as_str().unwrap_or("")
+                );
             }
         }
         CircuitCmd::Examples { kind } => {
@@ -1170,6 +1231,28 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             };
             for l in kept {
                 println!("{l}");
+            }
+        }
+        Cmd::Serial(SerialCmd::FindBaud { port, no_reset }) => {
+            let (baud, tried) = tokio::task::spawn_blocking(move || {
+                esp32bench_serial::baud::find(&port, !no_reset)
+            })
+            .await??;
+            for (b, r) in &tried {
+                match r {
+                    Some((share, n)) => eprintln!(
+                        "{b:>7} baud: {n} characters, {:.0}% readable",
+                        share * 100.0
+                    ),
+                    None => eprintln!("{b:>7} baud: too little to judge"),
+                }
+            }
+            match baud {
+                Some(b) => println!("{b}"),
+                None => {
+                    eprintln!("no speed read as text");
+                    return Ok(ExitCode::FAILURE);
+                }
             }
         }
         Cmd::Serial(SerialCmd::Monitor {

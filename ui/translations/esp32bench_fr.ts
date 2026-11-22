@@ -433,6 +433,38 @@ Variables globales : %4 sur %5</translation>
         <translation>Projets de la bibliothèque qui utilisent le composant sélectionné, pour l’essayer</translation>
     </message>
     <message>
+        <source>File</source>
+        <translation>Fichier</translation>
+    </message>
+    <message>
+        <source>Save the parts to a file, or put a file&apos;s parts on this board</source>
+        <translation>Enregistrer les composants dans un fichier, ou mettre ceux d’un fichier sur cette carte</translation>
+    </message>
+    <message>
+        <source>Export circuit…</source>
+        <translation>Exporter le circuit…</translation>
+    </message>
+    <message>
+        <source>Export the circuit</source>
+        <translation>Exporter le circuit</translation>
+    </message>
+    <message>
+        <source>Circuit files (*.json)</source>
+        <translation>Fichiers de circuit (*.json)</translation>
+    </message>
+    <message>
+        <source>Import circuit…</source>
+        <translation>Importer un circuit…</translation>
+    </message>
+    <message>
+        <source>Import a circuit</source>
+        <translation>Importer un circuit</translation>
+    </message>
+    <message>
+        <source>Exported the circuit to %1.</source>
+        <translation>Circuit exporté vers %1.</translation>
+    </message>
+    <message>
         <source>%1: %2</source>
         <translation>%1 : %2</translation>
     </message>
@@ -578,6 +610,10 @@ Variables globales : %4 sur %5</translation>
     <message>
         <source>While debugging, when the firmware is paused</source>
         <translation>En débogage, quand le firmware est en pause</translation>
+    </message>
+    <message>
+        <source>Break when %1 runs</source>
+        <translation>S’arrêter quand %1 s’exécute</translation>
     </message>
 </context>
 <context>
@@ -1443,6 +1479,26 @@ Variables globales : %4 sur %5</translation>
         <source>%1 · %2</source>
         <translation>%1 · %2</translation>
     </message>
+    <message>
+        <source>GPIO %1 is a strapping pin: a part that pulls it high or low at power-on can stop the board starting, or start it in another mode.</source>
+        <translation>GPIO %1 est une broche de démarrage (strapping) : un composant qui la tire à l’état haut ou bas à la mise sous tension peut empêcher la carte de démarrer, ou la faire démarrer dans un autre mode.</translation>
+    </message>
+    <message>
+        <source>GPIO %1 is input only: it cannot drive a part, and has no internal pull-up or pull-down.</source>
+        <translation>GPIO %1 est en entrée seulement : elle ne peut pas piloter un composant et n’a pas de pull-up ni de pull-down internes.</translation>
+    </message>
+    <message>
+        <source>GPIO %1 is wired to the module&apos;s flash: using it crashes the chip.</source>
+        <translation>GPIO %1 est reliée à la flash du module : l’utiliser fait planter la puce.</translation>
+    </message>
+    <message>
+        <source>GPIO %1 is one of the chip&apos;s USB pins: a board that talks over USB needs it.</source>
+        <translation>GPIO %1 est l’une des broches USB de la puce : une carte qui communique en USB en a besoin.</translation>
+    </message>
+    <message>
+        <source>GPIO %1 is the console&apos;s UART: what it prints and flashing use it.</source>
+        <translation>GPIO %1 est l’UART de la console : ce qu’elle affiche et le flashage passent par elle.</translation>
+    </message>
 </context>
 <context>
     <name>LibraryPanel</name>
@@ -1926,6 +1982,26 @@ Le panneau Compilation ci-dessous contient tout le journal.</translation>
     <message>
         <source>%1 · %2</source>
         <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <source>Debugging</source>
+        <translation>Débogage</translation>
+    </message>
+    <message>
+        <source>Paused</source>
+        <translation>En pause</translation>
+    </message>
+    <message>
+        <source>Simulating</source>
+        <translation>Simulation</translation>
+    </message>
+    <message>
+        <source>%1 s simulated</source>
+        <translation>%1 s simulées</translation>
+    </message>
+    <message>
+        <source>Serial: %1 at %2 baud</source>
+        <translation>Série : %1 à %2 bauds</translation>
     </message>
     <message>
         <source>%1 — ESP32 Bench</source>
@@ -3068,6 +3144,30 @@ Double-cliquez pour voir la ligne.</translation>
         <translation>Fichier envoyé en entier.</translation>
     </message>
     <message>
+        <source>Find the speed</source>
+        <translation>Trouver la vitesse</translation>
+    </message>
+    <message>
+        <source>Try the usual speeds, resetting the board at each, and use the one whose output reads as text</source>
+        <translation>Essayer les vitesses habituelles, en réinitialisant la carte à chacune, et garder celle dont la sortie se lit comme du texte</translation>
+    </message>
+    <message>
+        <source>Trying the usual speeds on %1, resetting the board at each…</source>
+        <translation>Essai des vitesses habituelles sur %1, avec réinitialisation de la carte à chacune…</translation>
+    </message>
+    <message>
+        <source>The board talks at %1 baud.</source>
+        <translation>La carte parle à %1 bauds.</translation>
+    </message>
+    <message>
+        <source>No speed gave readable output. Is the board printing anything, and is this its port?</source>
+        <translation>Aucune vitesse n’a donné de sortie lisible. La carte affiche-t-elle quelque chose, et est-ce bien son port ?</translation>
+    </message>
+    <message>
+        <source>Could not try the speeds: %1</source>
+        <translation>Impossible d’essayer les vitesses : %1</translation>
+    </message>
+    <message>
         <source>Switch speed</source>
         <translation>Changer de vitesse</translation>
     </message>
@@ -3418,6 +3518,14 @@ Double-cliquez pour voir la ligne.</translation>
         <translation>%1 s</translation>
     </message>
     <message>
+        <source>✓ %1</source>
+        <translation>✓ %1</translation>
+    </message>
+    <message>
+        <source>✗ %1</source>
+        <translation>✗ %1</translation>
+    </message>
+    <message>
         <source>%1 min %2 s</source>
         <translation>%1 min %2 s</translation>
     </message>
@@ -3460,6 +3568,10 @@ Double-cliquez pour voir la ligne.</translation>
     <message>
         <source>It needs its parts: add them in the Circuit dock, or what it prints about them may differ.</source>
         <translation>Il a besoin de ses composants : ajoutez-les dans le panneau Circuit, sinon ce qu’il affiche à leur sujet peut différer.</translation>
+    </message>
+    <message>
+        <source>Show each</source>
+        <translation>Voir chacune</translation>
     </message>
     <message>
         <source>What a board running this project prints, from esp32bench.dev: %1</source>

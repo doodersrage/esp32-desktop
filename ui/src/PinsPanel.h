@@ -47,4 +47,5 @@ private:
     QLabel *m_status;
     QTreeWidget *m_tree;
     QHash<int, QString> m_labels;
+    QString m_board; // the running simulation's
 };

@@ -1,6 +1,7 @@
 #include "SerialMonitor.h"
 
 #include <QFileInfo>
+#include <QToolButton>
 #include <QDir>
 #include <QDateTime>
 #include <QFileDialog>
@@ -171,9 +172,45 @@ SerialMonitor::SerialMonitor(CoreConnection *core, QWidget *parent)
     new InputHistory(m_input); // Up and Down recall what was sent
     connect(m_input, &QLineEdit::returnPressed, this, &SerialMonitor::send);
 
+    // Find the speed: the core tries the usual ones (the port closed meanwhile).
+    m_findBaud = new QToolButton(this);
+    m_findBaud->setText(tr("Find the speed"));
+    m_findBaud->setToolTip(tr("Try the usual speeds, resetting the board at each, and use the one whose output "
+                              "reads as text"));
+    connect(m_findBaud, &QToolButton::clicked, this, [this] {
+        const QString path = m_port->currentData().toString();
+        if (path.isEmpty())
+            return;
+        m_reopenAfterFind = m_open_;
+        if (m_open_)
+            m_core->closeSerial();
+        m_findBaud->setEnabled(false);
+        m_output->appendNotice(tr("Trying the usual speeds on %1, resetting the board at each…").arg(path));
+        m_core->findBaud(path);
+    });
+    connect(m_core, &CoreConnection::baudFound, this, [this](const QString &path, int baud, const QJsonArray &) {
+        m_findBaud->setEnabled(true);
+        if (baud > 0 && m_baud->findData(baud) >= 0) {
+            m_baud->setCurrentIndex(m_baud->findData(baud));
+            m_output->appendNotice(tr("The board talks at %1 baud.").arg(baud));
+            openPort(path);
+        } else {
+            m_output->appendNotice(tr("No speed gave readable output. Is the board printing anything, and is this "
+                                      "its port?"));
+            if (m_reopenAfterFind)
+                openPort(path);
+        }
+    });
+    connect(m_core, &CoreConnection::requestFailed, this, [this](const QString &method, const QString &message) {
+        if (method != u"serial.findBaud")
+            return;
+        m_findBaud->setEnabled(true);
+        m_output->appendNotice(tr("Could not try the speeds: %1").arg(message));
+    });
     auto *top = new QHBoxLayout;
     top->addWidget(m_port, 1);
     top->addWidget(m_baud);
+    top->addWidget(m_findBaud);
     top->addWidget(m_open);
     top->addWidget(m_reset);
     top->addWidget(m_record);

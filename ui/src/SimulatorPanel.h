@@ -23,6 +23,8 @@ public:
     ConsoleBar *consoleBar() const { return m_tools; }
     ConsoleView *console() const { return m_output; }
     QString expectText() const;
+    // Each line the project expects, ✓ seen or ✗ not yet (Show each beside it).
+    QStringList expectChecklist() const;
     static QString readablePattern(const QString &pattern);
     explicit SimulatorPanel(CoreConnection *core, QWidget *parent = nullptr);
 
@@ -54,6 +56,8 @@ private:
     // The simulated Wi-Fi network and the link to the sketch's web page.
     QLabel *m_network;
     QLabel *m_expect;
+    QStringList m_matched;
+    QStringList m_missing;
     QPushButton *m_reset;
     QPushButton *m_pause;
     QToolButton *m_runFor;

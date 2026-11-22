@@ -68,7 +68,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.38.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.39.0"_s}});
             return;
         }
         calls << m;
@@ -388,6 +388,9 @@ private slots:
         core.startSim(u"oled"_s, u"esp32"_s);
         // Half seen, then the time ran out: what is missing, readably, and why it may be.
         QTRY_VERIFY(panel.expectText().startsWith(u"Not seen yet"_s));
+        // Each expected line, seen or not.
+        QCOMPARE(panel.expectChecklist(), (QStringList{u"✓ Display ready"_s, u"✗ temp … C"_s}));
+        QVERIFY(panel.expectText().endsWith(u"Show each"_s));
         QVERIFY(panel.expectText().contains(u"temp … C"_s));
         QVERIFY(panel.expectText().contains(u"Circuit dock"_s));
         QCOMPARE(SimulatorPanel::readablePattern(u"tick \\d+ ms"_s), u"tick … ms"_s);

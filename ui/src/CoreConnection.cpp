@@ -1107,6 +1107,53 @@ void CoreConnection::runSimFor(int ms)
     });
 }
 
+void CoreConnection::getPinNotes(const QString &board)
+{
+    m_client->call(u"circuit.pinNotes"_s, {{u"board"_s, board}}, this, [this, board](const RpcReply &r) {
+        if (!r.ok)
+            return; // a board the table does not know: nothing to say
+        const QJsonObject o = r.result.toObject();
+        emit pinNotesListed(board, o.value(u"chip"_s).toString(), o.value(u"notes"_s).toArray());
+    });
+}
+
+void CoreConnection::exportCircuit(const QString &project, const QString &board, const QString &path)
+{
+    m_client->call(u"circuit.export"_s, {{u"project"_s, project}, {u"board"_s, board}, {u"path"_s, path}}, this,
+                   [this](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"circuit.export"_s, r.errorMessage);
+                           return;
+                       }
+                       const QJsonObject o = r.result.toObject();
+                       emit circuitExported(o.value(u"path"_s).toString(), o.value(u"parts"_s).toInt());
+                   });
+}
+
+void CoreConnection::importCircuit(const QString &project, const QString &board, const QString &path)
+{
+    m_client->call(u"circuit.import"_s, {{u"project"_s, project}, {u"board"_s, board}, {u"path"_s, path}}, this,
+                   [this, project, board](const RpcReply &r) {
+                       if (!r.ok) {
+                           emit requestFailed(u"circuit.import"_s, r.errorMessage);
+                           return;
+                       }
+                       emit circuitLoaded(project, board, r.result.toObject().value(u"circuit"_s).toObject());
+                   });
+}
+
+void CoreConnection::findBaud(const QString &path)
+{
+    m_client->call(u"serial.findBaud"_s, {{u"path"_s, path}}, this, [this, path](const RpcReply &r) {
+        if (!r.ok) {
+            emit requestFailed(u"serial.findBaud"_s, r.errorMessage);
+            return;
+        }
+        const QJsonObject o = r.result.toObject();
+        emit baudFound(path, o.value(u"baud"_s).toInt(), o.value(u"tried"_s).toArray());
+    });
+}
+
 void CoreConnection::circuitExamples(const QString &kind)
 {
     m_client->call(u"circuit.examples"_s, {{u"kind"_s, kind}}, this, [this, kind](const RpcReply &r) {

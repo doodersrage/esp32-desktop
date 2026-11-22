@@ -34,7 +34,7 @@ public:
     // The protocol this program speaks (schema/rpc/index.json). A core with the same
     // major and this minor or newer will do; an older one lacks methods we call.
     static constexpr int ProtocolMajor = 0;
-    static constexpr int ProtocolMinor = 38;
+    static constexpr int ProtocolMinor = 39;
 
     explicit CoreConnection(QObject *parent = nullptr);
 
@@ -227,6 +227,13 @@ public:
     void runSimFor(int ms);
     // circuit.examples: the library projects that use a part of this kind (examplesListed).
     void circuitExamples(const QString &kind);
+    // circuit.pinNotes: a board's pins to be careful with (pinNotesListed).
+    void getPinNotes(const QString &board);
+    // circuit.export / circuit.import: a board's parts to or from a file.
+    void exportCircuit(const QString &project, const QString &board, const QString &path);
+    void importCircuit(const QString &project, const QString &board, const QString &path);
+    // serial.findBaud on a port the monitor does not have open (baudFound).
+    void findBaud(const QString &path);
 
     // Error code the core uses when consent is missing (docs/rpc.md).
     static constexpr int ConsentRequired = -32002;
@@ -385,6 +392,11 @@ signals:
     void assigned(const QString &expression, const QString &value);
     // Each project is {id, name, boards}.
     void examplesListed(const QString &kind, const QJsonArray &projects);
+    // Each note is {gpio, kind}.
+    void pinNotesListed(const QString &board, const QString &chip, const QJsonArray &notes);
+    void circuitExported(const QString &path, int parts);
+    // `baud` 0 when no speed read as text; `tried` as serial.findBaud says.
+    void baudFound(const QString &path, int baud, const QJsonArray &tried);
     // `address` as the core says it (0x…); `asked` what was typed.
     void memoryRead(const QString &asked, const QString &address, const QByteArray &bytes);
     // `error` is empty when the expression has a value.

@@ -17,6 +17,9 @@ QString ago(const QDateTime &when, const QDateTime &now);
 // Text for a forum post or an issue: a line naming the app, its version and
 // `context` (what the text is from), then the text as a fenced code block.
 QString forumPost(const QString &context, const QString &text);
+// What circuit.pinNotes' kind means for a pin, in a sentence: a part on GPIO 12, a
+// strapping pin, can stop the board starting.
+QString pinNoteText(const QString &kind, int gpio);
 // How long something took: "12.3 s", or "2 min 05 s".
 QString duration(double seconds);
 }

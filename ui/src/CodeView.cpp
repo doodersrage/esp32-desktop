@@ -10,6 +10,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QTextBlock>
+#include <QToolTip>
 
 using namespace Qt::StringLiterals;
 
@@ -87,18 +88,28 @@ QMenu *CodeView::lineMenu(int line)
 
 void CodeView::contextMenuEvent(QContextMenuEvent *event)
 {
-    QMenu *menu = createStandardContextMenu(event->pos());
+    QMenu *menu = menuAt(event->pos());
     menu->setAttribute(Qt::WA_DeleteOnClose);
-    const int line = cursorForPosition(event->pos()).blockNumber() + 1;
+    menu->popup(event->globalPos());
+}
+
+QMenu *CodeView::menuAt(const QPoint &pos)
+{
+    QMenu *menu = createStandardContextMenu(pos);
+    const int line = cursorForPosition(pos).blockNumber() + 1;
     QMenu *lines = lineMenu(line);
     menu->addSeparator();
+    // On a name: a breakpoint at that function.
+    if (const QString word = wordAt(pos); !word.isEmpty()) {
+        menu->addAction(tr("Break when %1 runs").arg(word), this, [this, word] { emit functionBreakRequested(word); });
+    }
     for (QAction *a : lines->actions()) {
         a->setParent(menu);
         menu->addAction(a);
     }
     lines->deleteLater();
     menu->setToolTipsVisible(true);
-    menu->popup(event->globalPos());
+    return menu;
 }
 
 QString CodeView::wordAt(const QPoint &pos) const
@@ -126,6 +137,16 @@ bool CodeView::viewportEvent(QEvent *event)
             emit wordHovered(word, help->globalPos());
             return true;
         }
+    }
+    // On a line the build complained about: what it said.
+    if (event->type() == QEvent::ToolTip) {
+        const auto *help = static_cast<QHelpEvent *>(event);
+        const QString problem = problemAt(cursorForPosition(help->pos()).blockNumber() + 1);
+        if (!problem.isEmpty()) {
+            QToolTip::showText(help->globalPos(), problem, viewport());
+            return true;
+        }
+        QToolTip::hideText();
     }
     return QPlainTextEdit::viewportEvent(event);
 }
@@ -193,9 +214,32 @@ void CodeView::setPausedLine(int line)
     m_gutter->update();
 }
 
+void CodeView::setProblems(const QHash<int, QPair<QString, QString>> &problems)
+{
+    m_problems = problems;
+    highlightPaused();
+}
+
+QString CodeView::problemAt(int line) const
+{
+    return m_problems.value(line).second;
+}
+
 void CodeView::highlightPaused()
 {
     QList<QTextEdit::ExtraSelection> marks;
+    // A build's errors and warnings: the line's text underlined in their colour.
+    for (auto it = m_problems.cbegin(); it != m_problems.cend(); ++it) {
+        const QTextBlock line = document()->findBlockByNumber(it.key() - 1);
+        if (!line.isValid())
+            continue;
+        QTextEdit::ExtraSelection mark;
+        mark.format.setUnderlineStyle(QTextCharFormat::WaveUnderline);
+        mark.format.setUnderlineColor(OutputLines::colour(OutputLines::state(it.value().first), palette()));
+        mark.cursor = QTextCursor(line);
+        mark.cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        marks << mark;
+    }
     const QTextBlock b = document()->findBlockByNumber(m_paused - 1);
     if (m_paused > 0 && b.isValid()) {
         QTextEdit::ExtraSelection mark;

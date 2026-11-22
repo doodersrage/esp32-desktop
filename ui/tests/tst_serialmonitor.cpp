@@ -93,7 +93,7 @@ private:
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
             reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                  {u"protocol"_s, u"0.38.0"_s}});
+                                  {u"protocol"_s, u"0.39.0"_s}});
         } else if (m == u"device.watch") {
             reply(id, QJsonObject{{u"subscription"_s, 1},
                                   {u"ports"_s, QJsonArray{QJsonObject{{u"path"_s, u"/dev/ttyUSB0"_s},
@@ -117,6 +117,9 @@ private:
             reply(id, QJsonObject{{u"recording"_s, !to.isEmpty()}, {u"path"_s, to.isEmpty() ? recording : to},
                                   {u"bytes"_s, to.isEmpty() ? 42 : 0}});
             recording = to;
+        } else if (m == u"serial.findBaud") {
+            reply(id, QJsonObject{{u"baud"_s, 9600}, {u"tried"_s, QJsonArray{QJsonObject{{u"baud"_s, 115200}, {u"chars"_s, 90}, {u"readable"_s, 0.3}},
+                                                                              QJsonObject{{u"baud"_s, 9600}, {u"chars"_s, 60}, {u"readable"_s, 0.99}}}}});
         } else if (m == u"console.save") {
             saved.insert(p.value(u"path"_s).toString(), p.value(u"text"_s).toString());
             reply(id, QJsonObject{});
@@ -178,10 +181,22 @@ private slots:
         QCOMPARE(fake.written.at(0), QByteArray("SET wifi_ssid home\n"));
         QVERIFY(mon->input()->text().isEmpty());
 
+        // The status bar says which port is open.
+        QCOMPARE(window.portStateText(), u"Serial: /dev/ttyUSB0 at 115200 baud"_s);
+
+        // Find the speed: the monitor closes, the core tries the speeds, and it opens
+        // again at the one that read as text.
+        mon->findBaudButton()->click();
+        QTRY_COMPARE(fake.opened.size(), 2);
+        QCOMPARE(fake.opened.last(), u"/dev/ttyUSB0@9600"_s);
+        QVERIFY(mon->outputText().contains(u"The board talks at 9600 baud."_s));
+        QTRY_VERIFY(core.isSerialOpen());
+
         fake.pushClosed();
         QTRY_VERIFY(!core.isSerialOpen());
         QVERIFY(mon->outputText().contains(u"Disconnected"_s));
         QVERIFY(!mon->input()->isEnabled());
+        QVERIFY(window.portStateText().isEmpty());
     }
 
     void recordsToAFile()

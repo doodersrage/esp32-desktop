@@ -1,5 +1,7 @@
 #include "PinsPanel.h"
 
+#include "Labels.h"
+
 #include "CoreConnection.h"
 
 #include <QHeaderView>
@@ -58,6 +60,20 @@ PinsPanel::PinsPanel(CoreConnection *core, QWidget *parent)
     layout->addWidget(m_tree, 1);
 
     connect(core, &CoreConnection::simStarted, this, &PinsPanel::started);
+    // The board's pins to be careful with, marked on their rows.
+    connect(core, &CoreConnection::simStarted, this,
+            [this](const QString &, const QString &board) { m_board = board; m_core->getPinNotes(board); });
+    connect(core, &CoreConnection::pinNotesListed, this, [this](const QString &board, const QString &, const QJsonArray &notes) {
+        if (board != m_board)
+            return;
+        for (const QJsonValue &v : notes) {
+            const int gpio = v.toObject().value(u"gpio"_s).toInt();
+            if (QTreeWidgetItem *item = row(gpio)) {
+                item->setIcon(GpioColumn, QIcon::fromTheme(u"dialog-warning"_s));
+                item->setToolTip(GpioColumn, Labels::pinNoteText(v.toObject().value(u"kind"_s).toString(), gpio));
+            }
+        }
+    });
     connect(core, &CoreConnection::simPinsChanged, this, &PinsPanel::update);
     connect(core, &CoreConnection::simStopped, this, [this] {
         if (m_tree->topLevelItemCount() > 0)
