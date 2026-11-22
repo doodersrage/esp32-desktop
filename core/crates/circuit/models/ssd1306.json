@@ -1,10 +1,41 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "id": "ssd1306",
   "name": "SSD1306 OLED, 128 × 64",
   "look": "display",
-  "i2c": { "addresses": [60, 61] },
-  "display": { "width": 128, "height": 64 },
-  "state": { "on": false },
+  "i2c": {
+    "addresses": [
+      60,
+      61
+    ]
+  },
+  "display": {
+    "width": 128,
+    "height": 64
+  },
+  "state": {
+    "on": false
+  },
+  "drawing": {
+    "board": "#1c2a3a",
+    "header": [
+      {
+        "label": "GND",
+        "connect": "ground"
+      },
+      {
+        "label": "VCC",
+        "connect": "power"
+      },
+      {
+        "label": "SCL",
+        "connect": "i2c-scl"
+      },
+      {
+        "label": "SDA",
+        "connect": "i2c-sda"
+      }
+    ]
+  },
   "script": "ssd1306.rhai"
 }

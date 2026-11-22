@@ -72,7 +72,7 @@ private:
         if (method == u"core.hello") {
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
                      {u"result"_s, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s},
-                                               {u"protocol"_s, u"0.41.0"_s}}}});
+                                               {u"protocol"_s, u"0.42.0"_s}}}});
         } else if (method == u"build.status") {
             statusRequests << params.value(u"project"_s).toString() + u"/"_s + params.value(u"board"_s).toString();
             send(s, {{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},

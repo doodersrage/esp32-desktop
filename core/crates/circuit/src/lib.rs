@@ -105,6 +105,75 @@ pub struct DisplaySpec {
     pub height: u32,
 }
 
+/// What a module looks like (part model 1.1): its board's colour, the name on its
+/// chip, and its header's pins in order, as on the real module, so a circuit drawn in
+/// the app shows which wire goes where on the bench.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Drawing {
+    /// The module's board colour, `#rrggbb`.
+    pub board: String,
+    /// The name printed on its chip, if the drawing shows one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chip: Option<String>,
+    pub header: Vec<HeaderPin>,
+}
+
+/// One pin of a module's header, in order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HeaderPin {
+    /// As printed on the module: `VCC`, `SDA`, `DIN`.
+    pub label: String,
+    /// What it is: `power`, `ground`, `i2c-scl`, `i2c-sda`, `pin:<model pin>` (wired to
+    /// the GPIO the part's pin is on), or `none` (not simulated).
+    pub connect: String,
+}
+
+impl Drawing {
+    /// Whether it fits its model: a colour, every model pin on the header once, both I2C
+    /// lines exactly when the part is on I2C, and nothing else wired.
+    pub fn check(&self, model: &Model) -> Result<(), String> {
+        let colour = self.board.strip_prefix('#').unwrap_or("");
+        if colour.len() != 6 || !colour.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!("board colour `{}` is not #rrggbb", self.board));
+        }
+        if self.header.is_empty() || self.header.len() > 16 {
+            return Err("a header has 1 to 16 pins".into());
+        }
+        let mut wired = Vec::new();
+        let (mut scl, mut sda) = (0, 0);
+        for h in &self.header {
+            if h.label.is_empty() || h.label.chars().count() > 6 {
+                return Err(format!(
+                    "header label `{}` is not 1 to 6 characters",
+                    h.label
+                ));
+            }
+            match h.connect.as_str() {
+                "power" | "ground" | "none" => {}
+                "i2c-scl" => scl += 1,
+                "i2c-sda" => sda += 1,
+                c => match c.strip_prefix("pin:") {
+                    Some(pin) if model.pins.iter().any(|p| p == pin) => wired.push(pin),
+                    _ => return Err(format!("`{c}` on {} is not a connection", h.label)),
+                },
+            }
+        }
+        for pin in &model.pins {
+            let n = wired.iter().filter(|w| **w == pin).count();
+            if n != 1 {
+                return Err(format!("pin `{pin}` is on the header {n} times"));
+            }
+        }
+        let i2c = usize::from(model.i2c.is_some());
+        if scl != i2c || sda != i2c {
+            return Err("SCL and SDA go on the header of an I2C part, once each".into());
+        }
+        Ok(())
+    }
+}
+
 /// A kind of part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -131,6 +200,9 @@ pub struct Model {
     /// The state the app shows, with its starting values.
     #[serde(default)]
     pub state: serde_json::Map<String, serde_json::Value>,
+    /// How the module looks, for the app's drawing (part model 1.1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drawing: Option<Drawing>,
     pub script: String,
 }
 
@@ -533,6 +605,19 @@ mod tests {
         }
         for m in models() {
             assert_eq!(format!("{}.rhai", m.model.id), m.model.script);
+            if let Some(d) = &m.model.drawing {
+                d.check(&m.model)
+                    .unwrap_or_else(|e| panic!("{}: {e}", m.model.id));
+                let minor: u32 = m
+                    .model
+                    .schema_version
+                    .split('.')
+                    .nth(1)
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                assert!(minor >= 1, "{}: a drawing needs part model 1.1", m.model.id);
+            }
             for (k, p) in &m.model.props {
                 let ok = match p.kind {
                     PropKind::Bool => p.default.is_boolean(),
@@ -542,6 +627,35 @@ mod tests {
                 assert!(ok, "{}: default of {k}", m.model.id);
             }
         }
+    }
+
+    #[test]
+    fn drawings_must_fit_their_model() {
+        let ds = model("ds3231").unwrap().model;
+        let good = ds.drawing.clone().unwrap();
+        assert!(good.check(&ds).is_ok());
+        let with = |f: &dyn Fn(&mut Drawing)| {
+            let mut d = good.clone();
+            f(&mut d);
+            d.check(&ds)
+        };
+        assert!(with(&|d| d.board = "blue".into()).is_err());
+        // Its alarm pin missing, twice, or a pin the model does not have.
+        assert!(with(&|d| d.header.retain(|h| h.connect != "pin:sqw")).is_err());
+        assert!(with(&|d| d.header.push(d.header[1].clone())).is_err());
+        assert!(with(&|d| d.header[0].connect = "pin:int".into()).is_err());
+        // An I2C part without SDA, and a label too long to print.
+        assert!(with(&|d| d.header.retain(|h| h.connect != "i2c-sda")).is_err());
+        assert!(with(&|d| d.header[0].label = "THIRTY2K".into()).is_err());
+        // A part not on I2C has no SCL or SDA.
+        let pot = model("potentiometer").unwrap().model;
+        let mut d = pot.drawing.clone().unwrap();
+        assert!(d.check(&pot).is_ok());
+        d.header.push(HeaderPin {
+            label: "SDA".into(),
+            connect: "i2c-sda".into(),
+        });
+        assert!(d.check(&pot).is_err());
     }
 
     #[test]

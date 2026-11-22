@@ -26,6 +26,7 @@
 #include <QMimeData>
 #include <QImage>
 #include <QSignalSpy>
+#include <QGraphicsLineItem>
 #include <QTest>
 #include <QToolButton>
 
@@ -87,7 +88,7 @@ private:
         const QString m = req.value(u"method"_s).toString();
         const QJsonObject p = req.value(u"params"_s).toObject();
         if (m == u"core.hello") {
-            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.41.0"_s}});
+            reply(id, QJsonObject{{u"name"_s, u"esp32benchd"_s}, {u"version"_s, u"0.0.1"_s}, {u"protocol"_s, u"0.42.0"_s}});
         } else if (m == u"circuit.models") {
             const QJsonObject off{{u"on"_s, false}};
             reply(id, QJsonObject{{u"models"_s, QJsonArray{
@@ -118,6 +119,12 @@ private:
                                           QJsonObject{{u"leds"_s, QJsonArray{}}});
                     m.insert(u"props"_s, QJsonObject{{u"count"_s, QJsonObject{{u"type"_s, u"int"_s}, {u"default"_s, 8},
                                                                                 {u"label"_s, u"LEDs"_s}}}});
+                    // Drawn as the strip it is: its pads at one end, DIN wired.
+                    m.insert(u"drawing"_s, QJsonObject{{u"board"_s, u"#1e1e1e"_s},
+                                                       {u"header"_s, QJsonArray{
+                                                           QJsonObject{{u"label"_s, u"5V"_s}, {u"connect"_s, u"power"_s}},
+                                                           QJsonObject{{u"label"_s, u"DIN"_s}, {u"connect"_s, u"pin:din"_s}},
+                                                           QJsonObject{{u"label"_s, u"GND"_s}, {u"connect"_s, u"ground"_s}}}}});
                     return m;
                 }(),
                 [&] {
@@ -269,6 +276,47 @@ private slots:
         QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QTest::qWait(100);
         QVERIFY(!panel.addSuggestedButton()->isVisibleTo(&panel));
+    }
+
+    // A module is drawn with its header, and its wire lands on the right pin of it,
+    // level with the board pin, with the rows making room so parts do not overlap.
+    void drawsModulesWithTheirHeaders()
+    {
+        FakeCore fake(path());
+        CoreConnection core;
+        core.setSocketPath(path());
+        CircuitPanel panel(&core);
+        panel.resize(900, 600);
+        panel.show();
+        core.start();
+        QTRY_COMPARE(core.state(), CoreConnection::State::Connected);
+        QTRY_VERIFY(!panel.modelIds().isEmpty());
+        panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"5"_s});
+        QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(!panel.isSaving());
+        panel.addPart(u"ws2812"_s, QJsonObject{{u"din"_s, 5}}, {}, {}, {});
+        QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving());
+        QTRY_VERIFY(panel.item(u"ws2812-1"_s));
+        QVERIFY(panel.drawnAsModule(u"ws2812-1"_s));
+        QVERIFY(!panel.drawnAsModule(u"led-1"_s)); // no drawing in its model
+        QVERIFY(panel.partToolTip(u"ws2812-1"_s).contains(u"5V DIN GND"_s));
+        // The wire to GPIO 5 ends on DIN, and runs level.
+        const QPointF din = panel.pinPoint(u"ws2812-1"_s, u"din"_s);
+        bool wired = false;
+        for (QGraphicsItem *i : panel.view()->scene()->items()) {
+            if (auto *line = dynamic_cast<QGraphicsLineItem *>(i)) {
+                if (line->line().p2() == din) {
+                    wired = true;
+                    QCOMPARE(line->line().p1().y(), din.y());
+                }
+            }
+        }
+        QVERIFY(wired);
+        // The LED on GPIO 2's row stays clear of the strip on GPIO 5's.
+        const QRectF led = panel.partRect(u"led-1"_s);
+        const QRectF strip = panel.partRect(u"ws2812-1"_s);
+        QVERIFY2(!led.intersects(strip), "parts on neighbouring rows overlap");
     }
 
     void dragsPartsAndUndoes()

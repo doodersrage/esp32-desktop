@@ -529,6 +529,12 @@ Variables globales : %4 sur %5</translation>
         <translation>GPIO %1</translation>
     </message>
     <message>
+        <source>%1
+The module&apos;s pins: %2. Power and ground are not simulated.</source>
+        <translation>%1
+Les broches du module : %2. L’alimentation et la masse ne sont pas simulées.</translation>
+    </message>
+    <message>
         <source>I2C bus %1, address 0x%2</source>
         <translation>Bus I2C %1, adresse 0x%2</translation>
     </message>

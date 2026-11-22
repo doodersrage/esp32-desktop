@@ -177,6 +177,53 @@
             "script": {
               "type": "string",
               "pattern": "^[a-z0-9-]+\\.rhai$"
+            },
+            "drawing": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "board",
+                "header"
+              ],
+              "description": "What the module looks like (since 1.1): its board colour, the name on its chip, and its header's pins in order as on the real module. Every model pin is on the header once, as pin:<name>; an I2C part has i2c-scl and i2c-sda once each.",
+              "properties": {
+                "board": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$",
+                  "description": "The board's colour."
+                },
+                "chip": {
+                  "type": "string",
+                  "maxLength": 16,
+                  "description": "The name printed on its chip."
+                },
+                "header": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "label",
+                      "connect"
+                    ],
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 6,
+                        "description": "As printed on the module."
+                      },
+                      "connect": {
+                        "type": "string",
+                        "pattern": "^(power|ground|none|i2c-scl|i2c-sda|pin:[a-z0-9-]{1,32})$",
+                        "description": "power, ground, i2c-scl, i2c-sda, pin:<model pin> (wired to that pin's GPIO), or none (not simulated)."
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }

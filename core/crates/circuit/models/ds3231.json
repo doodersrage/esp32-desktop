@@ -1,14 +1,62 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "id": "ds3231",
   "name": "DS3231 real-time clock",
   "look": "box",
-  "pins": ["sqw"],
-  "optionalPins": ["sqw"],
-  "i2c": { "addresses": [104] },
-  "controls": [
-    { "name": "temperature", "type": "slider", "label": "Temperature", "min": -40, "max": 85, "default": 25, "unit": "°C" }
+  "pins": [
+    "sqw"
   ],
-  "state": { "temperature": 25.0 },
+  "optionalPins": [
+    "sqw"
+  ],
+  "i2c": {
+    "addresses": [
+      104
+    ]
+  },
+  "controls": [
+    {
+      "name": "temperature",
+      "type": "slider",
+      "label": "Temperature",
+      "min": -40,
+      "max": 85,
+      "default": 25,
+      "unit": "°C"
+    }
+  ],
+  "state": {
+    "temperature": 25.0
+  },
+  "drawing": {
+    "board": "#1d4f9a",
+    "chip": "DS3231",
+    "header": [
+      {
+        "label": "32K",
+        "connect": "none"
+      },
+      {
+        "label": "SQW",
+        "connect": "pin:sqw"
+      },
+      {
+        "label": "SCL",
+        "connect": "i2c-scl"
+      },
+      {
+        "label": "SDA",
+        "connect": "i2c-sda"
+      },
+      {
+        "label": "VCC",
+        "connect": "power"
+      },
+      {
+        "label": "GND",
+        "connect": "ground"
+      }
+    ]
+  },
   "script": "ds3231.rhai"
 }

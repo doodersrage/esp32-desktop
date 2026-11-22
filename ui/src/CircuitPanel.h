@@ -102,6 +102,12 @@ public:
     PartItem *item(const QString &id) const { return m_items.value(id); }
     // The middle of a part on the canvas, in scene coordinates.
     QPointF partCentre(const QString &id) const;
+    // Whether a part is drawn as its module (its model has a drawing), and where a wire
+    // to its pin `pin` ends (on the module, its header pin), in scene coordinates.
+    bool drawnAsModule(const QString &id) const;
+    QPointF pinPoint(const QString &id, const QString &pin) const;
+    // Where a part is drawn, label included, in scene coordinates.
+    QRectF partRect(const QString &id) const;
     QToolButton *addPartButton() const { return m_add; }
     // Shown when the board has no parts and the project's wiring names some the
     // simulator has (circuit.suggest): places them all.
