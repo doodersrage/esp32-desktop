@@ -152,6 +152,15 @@ private:
         } else if (m == u"circuit.get") {
             reply(id, QJsonObject{{u"circuit"_s, saved}});
         } else if (m == u"circuit.set") {
+            // A slow core (Windows CI's first runs): answer later, as it would.
+            if (const int ms = qEnvironmentVariableIntValue("ESP32BENCH_TEST_SLOW_SAVE"); ms > 0 && !m_delaying) {
+                m_delaying = true;
+                QTimer::singleShot(ms, this, [this, req] {
+                    handle(req);
+                    m_delaying = false;
+                });
+                return;
+            }
             if (rejectNext) {
                 rejectNext = false;
                 send({{u"jsonrpc"_s, u"2.0"_s}, {u"id"_s, id},
@@ -176,6 +185,7 @@ private:
         }
     }
     QLocalServer *m_server;
+    bool m_delaying = false;
     QPointer<QLocalSocket> m_sock;
 };
 
@@ -203,10 +213,12 @@ private slots:
         QTRY_VERIFY(panel.modelIds().contains(u"ws2812"_s));
         panel.showBoard(u"neopixel"_s, u"esp32"_s, QJsonArray{u"16"_s, u"GND"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
 
         // Stopped, the strip is drawn as long as its count says.
         panel.addPart(u"ws2812"_s, QJsonObject{{u"din"_s, 16}}, QJsonObject{{u"count"_s, 3}}, {});
         QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QTRY_COMPARE(panel.partStripLength(u"ws2812-1"_s), 3);
         QCOMPARE(panel.partStripLength(u"led-1"_s), 0);
 
@@ -247,12 +259,14 @@ private slots:
         QVERIFY(panel.parts().isEmpty()); // nothing placed by asking
         panel.addSuggestedButton()->click();
         QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QCOMPARE(fake.saved, wired);
         QVERIFY(!panel.addSuggestedButton()->isVisibleTo(&panel));
 
         // A board that has parts is left alone.
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s});
         QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QTest::qWait(100);
         QVERIFY(!panel.addSuggestedButton()->isVisibleTo(&panel));
     }
@@ -271,6 +285,7 @@ private slots:
         QTRY_VERIFY(!panel.modelIds().isEmpty());
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QVERIFY(!panel.undoButton()->isEnabled()); // nothing changed yet
 
         // Drag the LED with the mouse: its place is saved (circuit 1.3's at).
@@ -282,6 +297,7 @@ private slots:
         QApplication::sendEvent(view->viewport(), &move);
         QTest::mouseRelease(view->viewport(), Qt::LeftButton, {}, to);
         QTRY_VERIFY(partsOf(fake.saved, 0).contains(u"at"_s));
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         const QJsonObject at = partsOf(fake.saved, 0).value(u"at"_s).toObject();
         QVERIFY(at.value(u"x"_s).toDouble() > 0);
         QTRY_VERIFY(panel.undoButton()->isEnabled());
@@ -291,6 +307,7 @@ private slots:
         QTRY_VERIFY(panel.undoButton()->isEnabled());
         panel.undoButton()->click();
         QTRY_VERIFY2(!partsOf(fake.saved, 0).contains(u"at"_s), qPrintable(fake.saves.join(u" | "_s)));
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QVERIFY(!panel.undoButton()->isEnabled());
 
         // From the keyboard: Tab reaches the LED, the arrows move it, and the place is
@@ -302,26 +319,32 @@ private slots:
         QVERIFY(view->scene()->focusItem());
         QTest::keyClick(view, Qt::Key_Right);
         QTRY_VERIFY(partsOf(fake.saved, 0).contains(u"at"_s));
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         // Off while a save is unanswered: wait for it, as a person does.
         QTRY_VERIFY(panel.undoButton()->isEnabled());
         panel.undoButton()->click();
         QTRY_VERIFY2(!partsOf(fake.saved, 0).contains(u"at"_s), qPrintable(fake.saves.join(u" | "_s)));
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         // Tidy: nothing to do when no part was moved; after a move, all back in place.
         QVERIFY(!panel.tidy());
         view->setFocus();
         QTest::keyClick(view, Qt::Key_Tab); // the canvas was laid out again: reach the LED
         QTest::keyClick(view, Qt::Key_Right);
         QTRY_VERIFY(partsOf(fake.saved, 0).contains(u"at"_s));
-        QTRY_VERIFY(panel.tidy());
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
+        QVERIFY(panel.tidy()); // once: QTRY_VERIFY would call it again
         QTRY_VERIFY2(!partsOf(fake.saved, 0).contains(u"at"_s), qPrintable(fake.saves.join(u" | "_s)));
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
 
         // An added part can be undone too.
         panel.addPart(u"button"_s, 4, true, u"Go"_s);
         QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         // Off while a save is unanswered: wait for it, as a person does.
         QTRY_VERIFY(panel.undoButton()->isEnabled());
         panel.undoButton()->click();
         QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
     }
 
     void redoesDeletesAndDuplicates()
@@ -338,20 +361,24 @@ private slots:
         QTRY_VERIFY(!panel.modelIds().isEmpty());
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"5"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QVERIFY(!panel.redoButton()->isEnabled());
 
         // Redo makes again what Undo took back; a new change ends that.
         panel.addPart(u"button"_s, 4, true, u"Go"_s);
         QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         // Off while a save is unanswered: wait for it, as a person does.
         QTRY_VERIFY(panel.undoButton()->isEnabled());
         panel.undoButton()->click();
         QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QVERIFY(panel.redoButton()->isEnabled());
         // Off while a save is unanswered: wait for it, as a person does.
         QTRY_VERIFY(panel.redoButton()->isEnabled());
         panel.redoButton()->click();
         QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QVERIFY(!panel.redoButton()->isEnabled());
 
         // Delete on the canvas removes the selected part.
@@ -364,6 +391,7 @@ private slots:
         panel.view()->setFocus();
         QTest::keyClick(panel.view(), Qt::Key_Delete);
         QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
 
         // Duplicate: the add dialog, filled from the LED, on the project pin it leaves free.
         QTRY_VERIFY(panel.selectedPartId().isEmpty() || panel.selectedPartId() == u"led-1"_s);
@@ -381,6 +409,7 @@ private slots:
         QTest::keyClick(panel.view(), Qt::Key_D, Qt::ControlModifier);
         QCOMPARE(offered, 5);
         QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         const QJsonObject copy = panel.parts().at(1).toObject();
         QCOMPARE(copy.value(u"kind"_s).toString(), u"led"_s);
         QCOMPARE(copy.value(u"pins"_s).toObject().begin().value().toInt(), 5);
@@ -400,6 +429,7 @@ private slots:
         QTRY_VERIFY(!panel.modelIds().isEmpty());
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"5"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QVERIFY(!panel.copyPart()); // nothing selected
         // The board's pins to be careful with.
         QTRY_VERIFY(panel.pinNote(12).contains(u"strapping pin"_s));
@@ -416,11 +446,13 @@ private slots:
         QVERIFY(!panel.undoButton()->isEnabled()); // nothing changed
         panel.importFrom(u"/tmp/x/c.json"_s);
         QTRY_COMPARE(panel.parts().at(0).toObject().value(u"id"_s).toString(), u"button-1"_s);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QTRY_VERIFY(panel.undoButton()->isEnabled());
         // Off while a save is unanswered: wait for it, as a person does.
         QTRY_VERIFY(panel.undoButton()->isEnabled());
         panel.undoButton()->click();
         QTRY_COMPARE(panel.parts().at(0).toObject().value(u"id"_s).toString(), u"led-1"_s);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QVERIFY(!panel.examplesButton()->isEnabled());
         // Examples: the library projects that use a part, on this board where they can be.
         QMenu *examples = panel.examplesMenu(u"led"_s, QJsonArray{
@@ -455,6 +487,7 @@ private slots:
         // Into another project: the Add dialog, on a pin of that project no part uses.
         panel.showBoard(u"other"_s, u"esp32"_s, QJsonArray{u"2"_s, u"13"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         int offered = -1;
         QTimer::singleShot(0, this, [&offered] {
             auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
@@ -465,6 +498,7 @@ private slots:
         panel.pasteButton()->click();
         QCOMPARE(offered, 13);
         QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QCOMPARE(panel.parts().at(1).toObject().value(u"kind"_s).toString(), u"led"_s);
 
         // A part of a kind this app does not have is refused.
@@ -509,12 +543,14 @@ private slots:
 
         panel.showBoard(u"blink"_s, u"esp32"_s, QJsonArray{u"2"_s, u"GND"_s});
         QTRY_COMPARE(panel.parts().size(), 1);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QVERIFY(panel.item(u"led-1"_s));
         QVERIFY(panel.addPartButton()->isEnabled());
 
         // Adding saves through the core, with fresh ids.
         panel.addPart(u"button"_s, 4, true, u"Go"_s);
         QTRY_COMPARE(panel.parts().size(), 2);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QJsonObject b = partsOf(fake.saved, 1);
         QCOMPARE(b.value(u"id"_s).toString(), u"button-1"_s);
         QCOMPARE(b.value(u"pins"_s).toObject().value(u"pin"_s).toInt(), 4);
@@ -523,22 +559,28 @@ private slots:
         QCOMPARE(fake.saved.value(u"schemaVersion"_s).toString(), u"1.3.0"_s);
         panel.addPart(u"rgb-led"_s, QJsonObject{{u"red"_s, 25}, {u"green"_s, 26}, {u"blue"_s, 27}}, {}, {});
         QTRY_COMPARE(panel.parts().size(), 3);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QCOMPARE(partsOf(fake.saved, 2).value(u"id"_s).toString(), u"rgb-led-1"_s);
         panel.addPart(u"switch"_s, QJsonObject{{u"pin"_s, 5}}, {}, {});
         QTRY_COMPARE(panel.parts().size(), 4);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         // An I2C part: no pins, a bus and an address.
         panel.addPart(u"ssd1306"_s, {}, {}, {}, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 60}});
         QTRY_COMPARE(panel.parts().size(), 5);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QCOMPARE(partsOf(fake.saved, 4).value(u"i2c"_s).toObject().value(u"address"_s).toInt(), 60);
         QVERIFY(!partsOf(fake.saved, 4).contains(u"pins"_s));
         panel.addPart(u"bme280"_s, {}, {}, {}, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 118}});
         QTRY_COMPARE(panel.parts().size(), 6);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         // An I2C part with a pin as well: it stays with the I2C parts, and names the pin.
         panel.addPart(u"ds3231"_s, QJsonObject{{u"sqw"_s, 25}}, {}, {}, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 104}});
         QTRY_COMPARE(panel.parts().size(), 7);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QTRY_COMPARE(panel.partToolTip(u"ds3231-1"_s), u"I2C bus 0, address 0x68, SQW on GPIO 25"_s);
         panel.removePart(u"ds3231-1"_s);
         QTRY_COMPARE(panel.parts().size(), 6);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
 
         // A refusal from the core is shown, and nothing changes.
         fake.rejectNext = true;
@@ -555,6 +597,7 @@ private slots:
         QCOMPARE(start->value(), 21.0);
         start->setValue(25.5);
         QTRY_COMPARE(partsOf(fake.saved, 5).value(u"controls"_s).toObject().value(u"temperature"_s).toDouble(), 25.5);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
         QTRY_COMPARE(panel.partState(u"bme280-1"_s).value(u"temperature"_s).toDouble(), 25.5);
         QTRY_VERIFY(panel.controlBox(u"temperature"_s));
         QCOMPARE(panel.controlBox(u"temperature"_s)->value(), 25.5);
@@ -629,6 +672,7 @@ private slots:
         QVERIFY(panel.partPicture(u"ssd1306-1"_s).isNull()); // cleared when the simulator stopped
         panel.removePart(u"rgb-led-1"_s);
         QTRY_COMPARE(panel.parts().size(), 5);
+        QTRY_VERIFY(!panel.isSaving()); // the core has answered
     }
 };
 

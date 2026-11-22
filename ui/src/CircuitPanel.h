@@ -55,6 +55,8 @@ public:
     // Examples: the library projects that use the selected part's kind
     // (circuit.examples), as a menu.
     QToolButton *examplesButton() const { return m_examples; }
+    // A change sent to the core and not answered yet.
+    bool isSaving() const { return m_saving > 0; }
     QMenu *examplesMenu(const QString &kind, const QJsonArray &projects);
     // What the board's chip says of a pin (circuit.pinNotes), or empty. The Add
     // dialog shows it under a pin's box.
@@ -168,6 +170,7 @@ private:
     QString m_board;
     QList<int> m_projectPins;
     QJsonObject m_circuit;
+    QJsonObject m_confirmed; // the circuit as the core last had it
     QHash<QString, QJsonObject> m_models;
     QStringList m_modelOrder;
     QHash<QString, PartItem *> m_items;

@@ -292,6 +292,7 @@ private slots:
                 QTRY_COMPARE(circuit->parts().size(), 1);
                 circuit->addPart(u"button"_s, 4, false, {});
                 QTRY_COMPARE(circuit->parts().size(), 2);
+                QTRY_VERIFY(!circuit->isSaving()); // saved before the run reads it
                 QVERIFY(QFile::remove(image));
                 QVERIFY(QFile::copy(gpioFw, image));
                 window.buildPanel()->simulateAction()->trigger();
@@ -324,6 +325,7 @@ private slots:
                 const qsizetype before = circuit->parts().size();
                 circuit->addPart(u"bme280"_s, {}, {}, u"Air"_s, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 118}});
                 QTRY_COMPARE(circuit->parts().size(), before + 1);
+                QTRY_VERIFY(!circuit->isSaving()); // saved before the run reads it
                 QVERIFY(QFile::remove(image));
                 QVERIFY(QFile::copy(bmeFw, image));
                 window.buildPanel()->simulateAction()->trigger();
@@ -355,6 +357,7 @@ private slots:
                 const qsizetype before = circuit->parts().size();
                 circuit->addPart(u"ssd1306"_s, {}, {}, u"OLED"_s, QJsonObject{{u"bus"_s, 0}, {u"address"_s, 60}});
                 QTRY_COMPARE(circuit->parts().size(), before + 1);
+                QTRY_VERIFY(!circuit->isSaving()); // saved before the run reads it
                 QVERIFY(QFile::remove(image));
                 QVERIFY(QFile::copy(oledFw, image));
                 window.buildPanel()->simulateAction()->trigger();

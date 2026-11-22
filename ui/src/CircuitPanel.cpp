@@ -610,6 +610,8 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
         if (method == u"circuit.set") {
             m_saving = std::max(0, m_saving - 1);
             updateUndo();
+            // Not saved: back to what the core has.
+            m_circuit = m_confirmed;
         }
         // An import that failed changed nothing: no step to undo.
         if (method == u"circuit.import" && !m_undo.isEmpty()) {
@@ -713,6 +715,7 @@ void CircuitPanel::showBoard(const QString &project, const QString &board, const
             m_projectPins << gpio;
     }
     m_circuit = {};
+    m_confirmed = {};
     m_suggested = {};
     m_unmatched.clear();
     m_undo.clear();
@@ -793,6 +796,7 @@ void CircuitPanel::circuitLoaded(const QString &project, const QString &board, c
     if (project != m_project || board != m_board)
         return; // an answer for a board no longer shown
     m_circuit = circuit;
+    m_confirmed = circuit;
     rebuildScene();
     updatePaste();
     // An empty board: ask what the project's wiring has, to offer it.
@@ -1106,6 +1110,10 @@ void CircuitPanel::save(const QJsonObject &circuit)
 {
     ++m_saving;
     updateUndo();
+    // Kept at once, not when the core answers: the next change (an arrow key, say)
+    // builds on this one, and Undo goes back to it. The canvas is drawn again when the
+    // core answers.
+    m_circuit = circuit;
     m_core->saveCircuit(m_project, m_board, circuit);
 }
 
