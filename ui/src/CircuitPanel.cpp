@@ -452,6 +452,12 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     m_redoButton->setShortcut(QKeySequence::Redo);
     m_redoButton->setEnabled(false);
     connect(m_redoButton, &QPushButton::clicked, this, &CircuitPanel::redo);
+    // Familiar icons: no words, so the row fits a narrow dock; the tooltip names them.
+    for (QPushButton *b : {m_undoButton, m_redoButton}) {
+        b->setAccessibleName(b->text());
+        b->setToolTip(b->text() + u" — "_s + b->toolTip());
+        b->setText({});
+    }
 
     auto *tools = new QHBoxLayout;
     tools->addWidget(m_addSuggested);
@@ -462,7 +468,8 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     m_copyPicture = new QToolButton(this);
     m_copyPicture->setIcon(QIcon::fromTheme(u"edit-copy"_s));
     m_copyPicture->setText(tr("Copy picture"));
-    m_copyPicture->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_copyPicture->setToolButtonStyle(Qt::ToolButtonIconOnly); // its name is the tooltip and what a screen reader says
+    m_copyPicture->setAccessibleName(m_copyPicture->text());
     m_copyPicture->setToolTip(tr("Copy the circuit as a picture, to show its wiring in a question or a README"));
     connect(m_copyPicture, &QToolButton::clicked, this, [this] {
         const QImage image = picture();
@@ -477,7 +484,8 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     m_fitButton = new QToolButton(this);
     m_fitButton->setIcon(QIcon::fromTheme(u"zoom-fit-best"_s));
     m_fitButton->setText(tr("Fit"));
-    m_fitButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_fitButton->setToolButtonStyle(Qt::ToolButtonIconOnly); // its name is the tooltip and what a screen reader says
+    m_fitButton->setAccessibleName(m_fitButton->text());
     m_fitButton->setToolTip(tr("Show the whole circuit (Ctrl+0); Ctrl and the mouse wheel zoom"));
     connect(m_fitButton, &QToolButton::clicked, this, &CircuitPanel::fitView);
     tools->addWidget(m_fitButton);
@@ -508,7 +516,8 @@ CircuitPanel::CircuitPanel(CoreConnection *core, QWidget *parent)
     m_tidy = new QToolButton(this);
     m_tidy->setText(tr("Tidy"));
     m_tidy->setIcon(QIcon::fromTheme(u"view-restore"_s));
-    m_tidy->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_tidy->setToolButtonStyle(Qt::ToolButtonIconOnly); // its name is the tooltip and what a screen reader says
+    m_tidy->setAccessibleName(m_tidy->text());
     m_tidy->setToolTip(tr("Put every part back in its place beside the board (Undo puts them where they were)"));
     connect(m_tidy, &QToolButton::clicked, this, &CircuitPanel::tidy);
     tools->addWidget(m_tidy);

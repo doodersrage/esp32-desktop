@@ -29,6 +29,8 @@
 #include <QLineEdit>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QMenu>
+#include <QAction>
 #include <QToolButton>
 
 #include <algorithm>
@@ -651,10 +653,10 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     , m_tags(new QComboBox(this))
     , m_prev(new QToolButton(this))
     , m_next(new QToolButton(this))
-    , m_stamps(new QCheckBox(tr("Time stamps"), this))
-    , m_deltas(new QCheckBox(tr("Time between lines"), this))
-    , m_forum(new QToolButton(this))
-    , m_highlight(new QToolButton(this))
+    , m_stamps(new QAction(tr("Time stamps"), this))
+    , m_deltas(new QAction(tr("Time between lines"), this))
+    , m_forum(new QAction(QIcon::fromTheme(u"edit-copy"_s), tr("Copy for a forum post"), this))
+    , m_highlight(new QAction(tr("Highlight…"), this))
     , m_only(new QLineEdit(this))
     , m_pause(new QCheckBox(tr("Pause"), this))
     , m_save(new QToolButton(this))
@@ -700,16 +702,18 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
                             "the simulated chip's time."));
     m_stamps->setChecked(QSettings().value(setting, false).toBool());
     m_view->setTimestamps(m_stamps->isChecked());
-    connect(m_stamps, &QCheckBox::toggled, this, [this, setting](bool on) {
+    m_stamps->setCheckable(true);
+    connect(m_stamps, &QAction::toggled, this, [this, setting](bool on) {
         QSettings().setValue(setting, on);
         m_view->setTimestamps(on);
     });
 
     m_deltas->setToolTip(tr("Start each new line with the time since the line before it began (+12 ms), to time "
                             "loops and delays. In the simulator it is this computer's time."));
+    m_deltas->setCheckable(true);
     m_deltas->setChecked(QSettings().value(setting + u"Between"_s, false).toBool());
     m_view->setDeltas(m_deltas->isChecked());
-    connect(m_deltas, &QCheckBox::toggled, this, [this, setting](bool on) {
+    connect(m_deltas, &QAction::toggled, this, [this, setting](bool on) {
         QSettings().setValue(setting + u"Between"_s, on);
         m_view->setDeltas(on);
     });
@@ -721,9 +725,8 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     connect(m_only, &QLineEdit::textChanged, m_view, &ConsoleView::setTextFilter);
     m_pause->setToolTip(tr("Hold the output still to read it; what comes meanwhile is kept, and shown when you go on"));
     connect(m_pause, &QCheckBox::toggled, m_view, &ConsoleView::setPaused);
-    m_highlight->setText(tr("Highlight…"));
     m_highlight->setToolTip(tr("Words to mark the lines of, in every console: ERROR, WiFi connected, your own markers"));
-    connect(m_highlight, &QToolButton::clicked, this, [this] {
+    connect(m_highlight, &QAction::triggered, this, [this] {
         bool ok = false;
         const QString text = QInputDialog::getText(this, tr("Highlight words"),
                                                    tr("Mark the lines that have any of these words (separated by "
@@ -732,13 +735,9 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
         if (ok)
             ConsoleView::setHighlightWords(text.split(u',', Qt::SkipEmptyParts));
     });
-    m_forum->setIcon(QIcon::fromTheme(u"edit-copy"_s));
-    m_forum->setText(tr("Copy for a forum post"));
-    m_forum->setToolButtonStyle(Qt::ToolButtonIconOnly);
     m_forum->setToolTip(tr("Copy the selected output, or the last 200 lines, as a code block for a forum post or "
                            "an issue, with the app's version and what it is from"));
-    m_forum->setAccessibleName(m_forum->text());
-    connect(m_forum, &QToolButton::clicked, this, [this] { QGuiApplication::clipboard()->setText(forumText()); });
+    connect(m_forum, &QAction::triggered, this, [this] { QGuiApplication::clipboard()->setText(forumText()); });
 
     m_save->setIcon(QIcon::fromTheme(u"document-save"_s));
     m_save->setText(tr("Save…"));
@@ -763,10 +762,22 @@ ConsoleBar::ConsoleBar(ConsoleView *view, CoreConnection *core, const QString &s
     layout->addWidget(m_tags);
     layout->addWidget(m_only);
     layout->addWidget(m_pause);
-    layout->addWidget(m_stamps);
-    layout->addWidget(m_deltas);
-    layout->addWidget(m_highlight);
-    layout->addWidget(m_forum);
+    // The less used ones in a menu, so the find field keeps its room.
+    auto *more = new QToolButton(this);
+    more->setText(tr("More"));
+    more->setIcon(QIcon::fromTheme(u"application-menu"_s, QIcon::fromTheme(u"preferences-system"_s)));
+    more->setAccessibleName(tr("More console options"));
+    more->setToolTip(tr("Time stamps, time between lines, highlighted words, and Copy for a forum post"));
+    more->setPopupMode(QToolButton::InstantPopup);
+    auto *menu = new QMenu(more);
+    menu->setToolTipsVisible(true);
+    menu->addAction(m_stamps);
+    menu->addAction(m_deltas);
+    menu->addAction(m_highlight);
+    menu->addSeparator();
+    menu->addAction(m_forum);
+    more->setMenu(menu);
+    layout->addWidget(more);
     layout->addWidget(m_save);
 }
 

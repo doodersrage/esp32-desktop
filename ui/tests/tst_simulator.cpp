@@ -284,7 +284,7 @@ private slots:
         QVERIFY(post.contains(u"two"_s));
         QVERIFY(post.endsWith(u"\n```\n"_s));
         QCOMPARE(Labels::forumPost({}, u"a ``` b"_s), u"ESP32 Bench 9.9.9\n~~~~text\na ``` b\n~~~~\n"_s);
-        panel.consoleBar()->forumButton()->click();
+        panel.consoleBar()->forumButton()->trigger();
         QCOMPARE(QGuiApplication::clipboard()->text(), panel.consoleBar()->forumText());
     }
 

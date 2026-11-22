@@ -12,6 +12,7 @@
 #include <QTextBlock>
 
 class CoreConnection;
+class QAction;
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
@@ -171,16 +172,17 @@ public:
     QComboBox *tagPicker() const { return m_tags; }
     // Put the cursor in the find field, its text selected (Ctrl+F).
     void focusFind();
-    QCheckBox *timestampBox() const { return m_stamps; }
-    QCheckBox *deltaBox() const { return m_deltas; }
+    // In the More menu: checkable actions, and actions.
+    QAction *timestampBox() const { return m_stamps; }
+    QAction *deltaBox() const { return m_deltas; }
     // What the output is from, said with it in Copy for a forum post: "blink on a
     // simulated ESP32".
     void setContext(const QString &context) { m_context = context; }
     // The selected output, else the last 200 lines shown, as a forum post's code
     // block under a line naming the app and the context; put on the clipboard.
     QString forumText() const;
-    QToolButton *forumButton() const { return m_forum; }
-    QToolButton *highlightButton() const { return m_highlight; }
+    QAction *forumButton() const { return m_forum; }
+    QAction *highlightButton() const { return m_highlight; }
     QLineEdit *onlyField() const { return m_only; }
     QCheckBox *pauseBox() const { return m_pause; }
     // Ask which text file to send line by line, and how long to wait after each line
@@ -197,10 +199,10 @@ private:
     QComboBox *m_tags;
     QToolButton *m_prev;
     QToolButton *m_next;
-    QCheckBox *m_stamps;
-    QCheckBox *m_deltas;
-    QToolButton *m_forum;
-    QToolButton *m_highlight;
+    QAction *m_stamps;
+    QAction *m_deltas;
+    QAction *m_forum;
+    QAction *m_highlight;
     QLineEdit *m_only;
     QCheckBox *m_pause;
     QString m_context;

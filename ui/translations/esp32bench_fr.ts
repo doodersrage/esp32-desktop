@@ -806,6 +806,18 @@ Variables globales : %4 sur %5</translation>
         <translation>Fichiers texte (*.txt);;Tous les fichiers (*)</translation>
     </message>
     <message>
+        <source>More</source>
+        <translation>Plus</translation>
+    </message>
+    <message>
+        <source>More console options</source>
+        <translation>Plus d’options de la console</translation>
+    </message>
+    <message>
+        <source>Time stamps, time between lines, highlighted words, and Copy for a forum post</source>
+        <translation>Horodatage, temps entre les lignes, mots mis en évidence et Copier pour un message de forum</translation>
+    </message>
+    <message>
         <source>Saved the output to %1.</source>
         <translation>Sortie enregistrée dans %1.</translation>
     </message>
